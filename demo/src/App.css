@@ -1,0 +1,106 @@
+body {
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Segoe UI', Roboto, sans-serif;
+}
+
+/* Ant Design table overrides */
+.ant-table-thead > tr > th {
+  background: #fafafa !important;
+  font-weight: 600;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.ant-table-tbody > tr > td {
+  font-size: 13px;
+  padding: 6px 8px !important;
+}
+
+/* 移除所有单元格内输入控件的边框 */
+.ant-table-tbody .ant-select-selector,
+.ant-table-tbody .ant-input-number-input,
+.ant-table-tbody .ant-input-affix-wrapper,
+.ant-table-tbody .ant-select-outlined:not(.ant-select-focused) .ant-select-selector {
+  box-shadow: none !important;
+  border: none !important;
+}
+
+.ant-table-tbody .ant-select:not(.ant-select-focused) .ant-select-selector {
+  border: none !important;
+  box-shadow: none !important;
+}
+
+/* Material Design 3 风格按钮 */
+.ant-btn-circle {
+  height: 36px !important;
+  width: 36px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  box-shadow: none !important;
+}
+
+.ant-btn-circle.ant-btn-text:hover {
+  background: rgba(0, 0, 0, 0.06) !important;
+}
+
+.ant-btn-circle.ant-btn-text:active {
+  background: rgba(0, 0, 0, 0.1) !important;
+}
+
+/* 图标线条加粗 - 蓝黑色 */
+.ant-btn-circle {
+  color: #00509e !important;
+}
+.ant-btn-circle.ant-btn-primary {
+  background: #00509e !important;
+  border: none !important;
+  color: #fff !important;
+}
+.ant-btn-circle.ant-btn-primary:hover {
+  background: #0066cc !important;
+}
+.ant-btn-circle .anticon {
+  font-size: 24px !important;
+}
+.ant-btn-circle .anticon svg {
+  filter: drop-shadow(0 0 0.8px currentColor) drop-shadow(0 0 0.4px currentColor);
+}
+
+/* 编码列输入框加粗 */
+td .code-input input,
+td .code-input .ant-select-selection-search-input {
+  font-weight: 600 !important;
+  font-family: monospace !important;
+}
+
+/* AutoComplete / Input 边框移除 */
+.ant-table-tbody .ant-input-outlined {
+  border: none !important;
+  box-shadow: none !important;
+}
+
+/* InputNumber 边框移除 */
+.ant-table-tbody .ant-input-number-outlined {
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.ant-card-head {
+  min-height: 40px;
+}
+
+.ant-card-head-title {
+  padding: 8px 0;
+}
+
+.ant-card-extra {
+  padding: 6px 0;
+}
+
+/* 质保勾选框背景改为深蓝色 */
+.ant-table-tbody .ant-checkbox-wrapper .ant-checkbox-checked .ant-checkbox-inner {
+  background-color: #00509e !important;
+  border-color: #00509e !important;
+}
