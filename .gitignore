@@ -1,0 +1,6 @@
+# Claude memory
+.claude/
+
+# Python temp scripts
+*.py
+!scripts/
