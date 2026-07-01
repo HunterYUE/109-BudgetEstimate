@@ -58,28 +58,30 @@ export function calcProjectSummary(
     for (const item of group.items) {
       total_direct_cost += item.direct_cost;
       total_accounting_price += item.accounting_price;
-      if (group.group_type === 'EQUIPMENT' && item.has_warranty) {
-        warranty_base += item.direct_cost;
+      if (!item.has_warranty) {
+        warranty_base += item.accounting_price;
       }
     }
   }
-
-  const warranty_cost = Math.round(warranty_base * version.warranty_rate);
-  const risk_cost = Math.round(total_direct_cost * version.risk_rate);
-  const commercial_cost = version.commercial_cost;
-  const total_cost = total_direct_cost + warranty_cost + risk_cost + commercial_cost;
 
   const discounted_price = discountedPrice ?? total_accounting_price;
   const discount_rate = total_accounting_price > 0
     ? (total_accounting_price - discounted_price) / total_accounting_price
     : 0;
 
+  // 质保基数按折扣率调整后×质保费率
+  const warranty_base_discounted = Math.round(warranty_base * (1 - discount_rate));
+  const warranty_cost = Math.round(warranty_base_discounted * version.warranty_rate);
+  const risk_cost = Math.round(total_direct_cost * version.risk_rate);
+  const commercial_cost = version.commercial_cost;
+  const total_cost = total_direct_cost + warranty_cost + risk_cost + commercial_cost;
+
   const rp1 = discounted_price > 0 ? (discounted_price - total_direct_cost) / discounted_price : 0;
   const gp3 = discounted_price > 0 ? (discounted_price - total_cost) / discounted_price : 0;
 
   return {
     total_direct_cost,
-    warranty_base,
+    warranty_base: warranty_base_discounted,
     warranty_cost,
     risk_cost,
     commercial_cost,
@@ -97,24 +99,3 @@ export function formatMoney(value: number): string {
   return Math.round(value).toLocaleString('zh-CN');
 }
 
-/** 格式化百分比 */
-export function formatPercent(value: number): string {
-  return (value * 100).toFixed(2) + '%';
-}
-
-/** 计算成本对比项 */
-export function calcCostComparison(
-  estimated: number,
-  actual: number,
-): { variance: number; varianceRate: number; isOutOfRange: boolean } {
-  const variance = actual - estimated;
-  const varianceRate = estimated > 0 ? variance / estimated : 0;
-  const isOutOfRange = varianceRate < -0.05 || varianceRate > 0.10;
-  return { variance, varianceRate, isOutOfRange };
-}
-
-/** 计算总成本判定（红线 -2.5%~+5%）*/
-export function isTotalCostOutOfRange(estimated: number, actual: number): boolean {
-  const rate = estimated > 0 ? (actual - estimated) / estimated : 0;
-  return rate < -0.025 || rate > 0.05;
-}

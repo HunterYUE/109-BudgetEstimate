@@ -1,11 +1,9 @@
-import React, { useMemo } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { Layout, Tooltip } from 'antd';
-import {
-  MdOutlineDashboard, MdOutlineSell, MdOutlineDescription, MdOutlineFactCheck,
-  MdOutlinePeople, MdOutlineLocalShipping, MdOutlineBarChart, MdOutlineSettings,
-  MdOutlinePerson, MdOutlineNotificationsNone
-} from 'react-icons/md';
+import ErrorBoundary from '../components/ErrorBoundary';
+import { MdOutlineDashboard, MdOutlineSell, MdOutlineDescription, MdOutlineFactCheck,
+  MdOutlinePeople, MdOutlineInventory, MdOutlineLocalShipping, MdOutlineBarChart, MdOutlineSettings,
+  MdOutlinePerson, MdOutlineNotificationsNone, MdOutlineLabel } from 'react-icons/md';
 
 const { Header, Content } = Layout;
 
@@ -14,9 +12,11 @@ const MENU_ITEMS = [
   { key: '/opportunities', icon: MdOutlineSell,     label: '销售管理' },
   { key: '/quotations',    icon: MdOutlineDescription, label: '报价列表' },
   { key: '/approval',     icon: MdOutlineFactCheck,  label: '审批管理' },
-  { key: '/clients',      icon: MdOutlinePeople,     label: '客户管理' },
-  { key: '/delivery',     icon: MdOutlineLocalShipping, label: '交付管理' },
   { key: '/analysis',     icon: MdOutlineBarChart,   label: '销售分析' },
+  { key: '/delivery',     icon: MdOutlineLocalShipping, label: '交付管理' },
+  { key: '/tags',         icon: MdOutlineLabel,     label: '标签管理' },
+  { key: '/materials',    icon: MdOutlineInventory,   label: '物料管理' },
+  { key: '/clients',      icon: MdOutlinePeople,     label: '客户管理' },
   { key: '/settings',     icon: MdOutlineSettings,   label: '系统管理' },
 ];
 
@@ -26,11 +26,7 @@ const AppLayout: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const activeKey = useMemo(() => {
-    const path = location.pathname;
-    const match = MENU_ITEMS.find(item => path.startsWith(item.key));
-    return match?.key || '/';
-  }, [location.pathname]);
+  const activeKey = MENU_ITEMS.find(item => location.pathname.startsWith(item.key))?.key || '/';
 
   return (
     <div style={{ display: 'flex', width: '100%', minHeight: '100vh' }}>
@@ -85,7 +81,7 @@ const AppLayout: React.FC = () => {
           }}
         >
           <span style={{ fontSize: 17, fontWeight: 700, color: '#0d1b2a', letterSpacing: 1 }}>
-            销售管理与报价
+            销售和交付管理系统
           </span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <MdOutlineNotificationsNone size={20} style={{ color: '#666', cursor: 'pointer' }} />
@@ -100,8 +96,8 @@ const AppLayout: React.FC = () => {
         </Header>
 
         {/* 内容区 */}
-        <Content style={{ background: '#fff', padding: '20px 24px', flex: 1, overflow: 'auto' }}>
-          <Outlet />
+        <Content className="app-content" style={{ background: '#fff', padding: '20px 24px', flex: 1, overflow: 'auto' }}>
+          <ErrorBoundary><Outlet /></ErrorBoundary>
         </Content>
       </div>
     </div>

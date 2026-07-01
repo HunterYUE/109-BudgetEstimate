@@ -3,17 +3,18 @@ import { Card } from 'antd';
 import { mockOpportunities, mockQuotationSummaries } from '../mockData';
 import type { SalesOpportunity } from '../types';
 import { parseReasons } from '../reasonTaxonomy';
+import { COLORS } from '../styles/constants';
 const fmtK = (v: number) => Math.round(v / 1000).toLocaleString() + 'K';
 
 /* ============================================================
    常量
    ============================================================ */
 const stageColors: Record<string, string> = {
-  信息: '#999', 线索: '#00509e', 机会: '#5a2d82',
-  投标: '#e65100', 议价: '#c76a00', 中标: '#1a6b3c',
+  信息: '#999', 线索: COLORS.primary, 机会: '#5a2d82',
+  投标: '#e65100', 议价: '#c76a00', 中标: COLORS.success,
 };
 const statusColors: Record<string, string> = {
-  赢: '#1a6b3c', 输: '#c62828', 冻结: '#999', 过程中: '#00509e',
+  赢: COLORS.success, 输: COLORS.danger, 冻结: '#999', 过程中: COLORS.primary,
 };
 const STAGES = ['信息', '线索', '机会', '投标', '议价', '中标'] as const;
 const FY_OPTIONS = ['FY2425', 'FY2526', 'FY2627'] as const;
@@ -105,9 +106,9 @@ const SalesFunnel: React.FC<FunnelProps> = ({ funnelData, fyInfo, fyLead, fyOpp,
   // 四阶段可视化数据
   const stages = [
     { key: 'info', label: '信息', color: '#999' },
-    { key: 'lead', label: '线索', color: '#00509e' },
+    { key: 'lead', label: '线索', color: COLORS.primary },
     { key: 'opp', label: '机会', color: '#5a2d82' },
-    { key: 'won', label: '中标', color: '#1a6b3c' },
+    { key: 'won', label: '中标', color: COLORS.success },
   ] as const;
 
   // 漏斗几何参数
@@ -177,7 +178,7 @@ const SalesFunnel: React.FC<FunnelProps> = ({ funnelData, fyInfo, fyLead, fyOpp,
           <line x1={-pts[0].w / 2} y1={0} x2={pts[0].w / 2} y2={0}
             stroke="#999" strokeWidth={2.5} strokeLinecap="round" />
           <line x1={-pts[3].w / 2} y1={pts[3].x} x2={pts[3].w / 2} y2={pts[3].x}
-            stroke="#1a6b3c" strokeWidth={2.5} strokeLinecap="round" />
+            stroke="COLORS.success" strokeWidth={2.5} strokeLinecap="round" />
 
           {/* 阶段标注 */}
           {stages.map((st, idx) => {
@@ -211,15 +212,15 @@ const SalesFunnel: React.FC<FunnelProps> = ({ funnelData, fyInfo, fyLead, fyOpp,
                   dominantBaseline="middle">{count}/{fmtK(amount)}</text>
                 {/* 财年累计 */}
                 <text x={pts[0].w / 2 + 115} y={y + 14}
-                  fill="#00509e" fontSize={11} fontWeight={600}
+                  fill="COLORS.primary" fontSize={11} fontWeight={600}
                   dominantBaseline="middle">{fyc}/{fmtK(fya)}</text>
 
                 {/* 阶段间转化率（漏斗内居中） */}
                 {conv && (
                   <text x={0} y={y + 14} fontSize={12} textAnchor="middle">
-                    <tspan fill="#00509e" fontWeight="600">{conv.cnt.toFixed(1)}%</tspan>
+                    <tspan fill="COLORS.primary" fontWeight="600">{conv.cnt.toFixed(1)}%</tspan>
                     <tspan fill="#999"> / </tspan>
-                    <tspan fill="#1a6b3c" fontWeight="600">{conv.amt.toFixed(1)}%</tspan>
+                    <tspan fill="COLORS.success" fontWeight="600">{conv.amt.toFixed(1)}%</tspan>
                   </text>
                 )}
               </g>
@@ -234,7 +235,7 @@ const SalesFunnel: React.FC<FunnelProps> = ({ funnelData, fyInfo, fyLead, fyOpp,
 /* ============================================================
    竖状柱状图（SVG 绘制，显示前 N 名）
    ============================================================ */
-const TOP_COLORS = ['#00509e', '#5a2d82', '#00509e', '#5a2d82'];
+const TOP_COLORS = [COLORS.primary, '#5a2d82', COLORS.primary, '#5a2d82'];
 
 interface BarItem {
   name: string;
@@ -429,7 +430,7 @@ const VerticalStackedBarChart: React.FC<{
                 fill={color} fontWeight={600}>{total > 0 ? total : '—'}</text>
               {bottomH > 0 && (
                 <rect x={cx - barW / 2} y={cy}
-                  width={barW} height={bottomH} fill="none" stroke="#00509e" strokeWidth={3} rx={0} ry={0} />
+                  width={barW} height={bottomH} fill="none" stroke="COLORS.primary" strokeWidth={3} rx={0} ry={0} />
               )}
               {topH > 0 && (
                 <rect x={cx - barW / 2} y={cy + bottomH}
@@ -477,11 +478,11 @@ interface LossCategoryStack {
 }
 
 const SUB_PATTERNS = [
-  { color: '#00509e', dashed: false },
+  { color: COLORS.primary, dashed: false },
   { color: '#888', dashed: false },
-  { color: '#00509e', dashed: false },
+  { color: COLORS.primary, dashed: false },
   { color: '#888', dashed: false },
-  { color: '#00509e', dashed: false },
+  { color: COLORS.primary, dashed: false },
   { color: '#888', dashed: false },
 ];
 
@@ -832,15 +833,15 @@ const SalesAnalysis: React.FC = () => {
 
   // 概览卡片
   const overviewItems = [
-    { label: '加权管道', value: `¥${fmtK(kpi.weightedPipeline)}`, color: '#00509e', icon: '📊' },
-    { label: '平均订单', value: `¥${fmtK(kpi.avgOrderAmount)}`, color: '#1a6b3c', icon: '📦' },
+    { label: '加权管道', value: `¥${fmtK(kpi.weightedPipeline)}`, color: COLORS.primary, icon: '📊' },
+    { label: '平均订单', value: `¥${fmtK(kpi.avgOrderAmount)}`, color: COLORS.success, icon: '📦' },
     { label: '平均利润', value: `¥${fmtK(kpi.avgProfitAmt)}`, color: '#5a2d82', icon: '💰' },
     { label: '利润率', value: `${kpi.weightedProfitRate.toFixed(1)}%`,
-      color: kpi.weightedProfitRate >= 15 ? '#1a6b3c' : '#e65100', icon: '📈' },
+      color: kpi.weightedProfitRate >= 15 ? COLORS.success : '#e65100', icon: '📈' },
     { label: '销售周期', value: `${kpi.salesCycle} 天`,
-      color: kpi.salesCycle > 0 && kpi.salesCycle <= 120 ? '#1a6b3c' : '#e65100', icon: '⏱️' },
+      color: kpi.salesCycle > 0 && kpi.salesCycle <= 120 ? COLORS.success : '#e65100', icon: '⏱️' },
     { label: '中标转化率', value: `${kpi.leadToWonRate.toFixed(1)}%`,
-      color: kpi.leadToWonRate >= 20 ? '#1a6b3c' : '#e65100', icon: '🎯' },
+      color: kpi.leadToWonRate >= 20 ? COLORS.success : '#e65100', icon: '🎯' },
   ];
 
   return (

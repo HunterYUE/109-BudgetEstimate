@@ -2,6 +2,7 @@ import React from 'react';
 import { Card, Row, Col } from 'antd';
 import type { Group, ProjectVersion } from '../types';
 import { calcProjectSummary, formatMoney } from '../utils/calculations';
+import { COLORS } from '../styles/constants';
 
 interface Props {
   groups: Group[];
@@ -19,7 +20,7 @@ const labelStyle: React.CSSProperties = {
   color: '#1a2744',
 };
 
-const moneyStyle: React.CSSProperties = { fontWeight: 600, color: '#00509e' };
+const moneyStyle: React.CSSProperties = { fontWeight: 600, color: COLORS.primary };
 const WARNS = Array.from({ length: 11 }, (_, i) => i);
 
 /** Calculate material cost and labor cost from groups */
@@ -62,7 +63,7 @@ const SummarySection: React.FC<Props> = ({ groups, version, onDiscountChange, on
 
   return (
     <Card size="small" title={<span style={{ fontSize: 16 }}>概算汇总</span>}
-      style={{ marginTop: 16, borderTop: '3px solid #00509e', background: '#d4c5f0', borderRadius: 4 }}>
+      style={{ marginTop: 16, borderTop: `3px ${COLORS.primary}`, background: '#d4c5f0', borderRadius: 4 }}>
 
       {/* 成本汇总 */}
       <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 16 }}>
@@ -85,7 +86,7 @@ const SummarySection: React.FC<Props> = ({ groups, version, onDiscountChange, on
             <td style={cellStyle}><span style={moneyStyle}>¥{formatMoney(summary.warranty_base)}</span></td>
             <td style={labelStyle}>质保系数</td>
             <td style={cellStyle}>
-              <span style={{ cursor: 'pointer', color: '#00509e', fontWeight: 600 }}
+              <span style={{ cursor: 'pointer', color: COLORS.primary, fontWeight: 600 }}
                 onClick={() => { const n = WARNS[(warnPct + 1) % WARNS.length]; onVersionUpdate?.('warranty_rate', n / 100); }}
                 title="点击切换">{warnPct}%</span>
             </td>
@@ -98,7 +99,7 @@ const SummarySection: React.FC<Props> = ({ groups, version, onDiscountChange, on
             <td style={cellStyle}><span style={moneyStyle}>¥{formatMoney(directCost)}</span></td>
             <td style={labelStyle}>风险系数</td>
             <td style={cellStyle}>
-              <span style={{ cursor: 'pointer', color: '#00509e', fontWeight: 600 }}
+              <span style={{ cursor: 'pointer', color: COLORS.primary, fontWeight: 600 }}
                 onClick={() => { const n = WARNS[(riskPct + 1) % WARNS.length]; onVersionUpdate?.('risk_rate', n / 100); }}
                 title="点击切换">{riskPct}%</span>
             </td>
@@ -118,20 +119,20 @@ const SummarySection: React.FC<Props> = ({ groups, version, onDiscountChange, on
         <Col span={8}>
           <Card size="small" variant="outlined" style={{ height: 116, borderRadius: 4, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
             <div style={{ color: '#666', fontSize: 16, marginBottom: 4, textAlign: 'left' }}>预期总价</div>
-            <div style={{ fontWeight: 600, fontSize: 22, color: '#00509e', textAlign: 'left', fontFamily: 'inherit' }}>¥{formatMoney(Math.round(summary.total_accounting_price * (1 + version.tax_rate)))}</div>
+            <div style={{ fontWeight: 600, fontSize: 22, color: COLORS.primary, textAlign: 'left', fontFamily: 'inherit' }}>¥{formatMoney(Math.round(summary.total_accounting_price * (1 + version.tax_rate)))}</div>
             <div style={{ marginTop: 8, textAlign: 'left', color: '#666' }}>欧元：<strong>€{formatMoney(Math.round(summary.total_accounting_price / version.eur_rate))}</strong></div>
           </Card>
         </Col>
         <Col span={8}>
           <Card size="small" variant="outlined" style={{ height: 116, borderRadius: 4, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
             <div style={{ color: '#666', fontSize: 16, marginBottom: 4, textAlign: 'left' }}>折后报价</div>
-            <div style={{ fontWeight: 600, fontSize: 22, color: '#00509e', textAlign: 'left', fontFamily: 'inherit' }}
+            <div style={{ fontWeight: 600, fontSize: 22, color: COLORS.primary, textAlign: 'left', fontFamily: 'inherit' }}
               contentEditable suppressContentEditableWarning
               onBlur={(e) => {
                 const val = parseFloat(e.currentTarget.textContent?.replace(/[^0-9.-]/g, '')) || 0;
                 onDiscountChange(val);
               }}>{'¥' + formatMoney(Math.round(summary.discounted_price * (1 + version.tax_rate)))}</div>
-            <div style={{ marginTop: 8, color: summary.discount_rate > 0 ? '#f5222d' : '#1a6b3c', textAlign: 'left' }}>
+            <div style={{ marginTop: 8, color: summary.discount_rate > 0 ? '#f5222d' : COLORS.success, textAlign: 'left' }}>
               折扣率：<span style={{ fontWeight: 600 }}>
                 {summary.discount_rate > 0 ? '-' : '+'}
                 {(summary.discount_rate * 100).toFixed(2) + '%'}
@@ -142,7 +143,7 @@ const SummarySection: React.FC<Props> = ({ groups, version, onDiscountChange, on
         <Col span={8}>
           <Card size="small" variant="outlined" style={{ height: 116, borderRadius: 4, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
             <div style={{ color: '#666', fontSize: 16, marginBottom: 4, textAlign: 'left' }}>项目利润</div>
-            <div style={{ fontWeight: 600, fontSize: 22, color: '#00509e', textAlign: 'left', fontFamily: 'inherit' }}>¥{formatMoney(Math.round(summary.discounted_price * (1 + version.tax_rate) - summary.total_cost))}</div>
+            <div style={{ fontWeight: 600, fontSize: 22, color: COLORS.primary, textAlign: 'left', fontFamily: 'inherit' }}>¥{formatMoney(Math.round(summary.discounted_price * (1 + version.tax_rate) - summary.total_cost))}</div>
             <div style={{ marginTop: 8, textAlign: 'left', color: '#666' }}>
               GP3 毛利率：<TextGauge value={summary.gp3} />
             </div>
@@ -156,7 +157,7 @@ const SummarySection: React.FC<Props> = ({ groups, version, onDiscountChange, on
 
 const TextGauge: React.FC<{ value: number }> = ({ value }) => {
   const pct = (value * 100).toFixed(1);
-  const color = value >= 0.2 ? '#1a6b3c' : value >= 0.1 ? '#fa8c16' : '#f5222d';
+  const color = value >= 0.2 ? COLORS.success : value >= 0.1 ? '#fa8c16' : '#f5222d';
   return <span style={{ fontWeight: 600, color }}>{pct}%</span>;
 };
 

@@ -1,10 +1,14 @@
 import React, { useRef } from 'react';
-import { Tag, Select, Input } from 'antd';
+import { Tag, Input, Modal } from 'antd';
 import type { Project } from '../types';
+import { COLORS } from '../styles/constants';
 
 interface Props {
   project: Project;
   onUpdate?: (field: string, value: any) => void;
+  versionBump?: 'minor' | 'major';
+  onVersionBumpChange?: (v: 'minor' | 'major') => void;
+  readOnly?: boolean;
 }
 
 const cellStyle: React.CSSProperties = {
@@ -52,17 +56,17 @@ const DeliveryPeriodInput: React.FC<{ value: string; onChange: (v: string) => vo
   return (
     <span style={{ fontSize: 12, lineHeight: 1.6 }}>
       合同生效后
-      <b style={{ cursor: 'pointer', color: '#00509e' }}
+      <b style={{ cursor: 'pointer', color: COLORS.primary }}
         onClick={() => onChange(formatDelivery(cycle(x, MONTHS), y))}>{x}个月</b>发货，
       货到现场后
-      <b style={{ cursor: 'pointer', color: '#00509e' }}
+      <b style={{ cursor: 'pointer', color: COLORS.primary }}
         onClick={() => onChange(formatDelivery(x, cycle(y, MONTHS)))}>{y}个月</b>安调完毕，
       具备试生产条件
     </span>
   );
 };
 
-const ProjectHeader: React.FC<Props> = ({ project, onUpdate }) => {
+const ProjectHeader: React.FC<Props> = ({ project, onUpdate, versionBump, onVersionBumpChange, readOnly }) => {
   const v = project.current_version;
   const pct = parsePayment(project.payment_terms);
 
@@ -71,7 +75,11 @@ const ProjectHeader: React.FC<Props> = ({ project, onUpdate }) => {
   return (
     <div style={{ marginBottom: 32 }}>
 
-      <table className="proj-header" style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+      <table className="proj-header" style={{
+        width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed',
+        pointerEvents: readOnly ? 'none' as const : undefined,
+        opacity: readOnly ? 0.6 : 1, transition: 'opacity 0.2s',
+      }}>
         <colgroup>
           <col width="72" /><col width="140" /><col width="80" /><col width="80" /><col width="56" /><col width="80" /><col width="100" /><col width="100" />
         </colgroup>
@@ -98,11 +106,18 @@ const ProjectHeader: React.FC<Props> = ({ project, onUpdate }) => {
             </td>
             <td style={labelStyle}>版本</td>
             <td style={cellStyle}>
-              <span style={{ color: '#1a6b3c', fontWeight: 600, ...inputStyle }}>{v.version_no}</span>
+              <span style={{ cursor: 'pointer', color: COLORS.success, fontWeight: 600, ...inputStyle, userSelect: 'none' }}
+                onClick={() => onVersionBumpChange?.(versionBump === 'major' ? 'minor' : 'major')}
+                title={'下次提交: ' + (versionBump === 'major' ? '大版本 +1.0' : '小版本 +0.1')}>
+                {v.version_no}
+                <span style={{ fontSize: 10, color: '#8892a4', marginLeft: 4 }}>
+                  {versionBump === 'major' ? '▲ +1.0' : '▸ +0.1'}
+                </span>
+              </span>
             </td>
             <td style={labelStyle}>后缀号</td>
             <td style={cellStyle} colSpan={2}>
-              <span style={{ cursor: 'pointer', ...inputStyle, fontWeight: 600, color: '#00509e' }}
+              <span style={{ cursor: 'pointer', ...inputStyle, fontWeight: 600, color: COLORS.primary }}
                 onClick={() => {
                   const cur = parseInt(project.postfix?.replace('EC', '')) || 0;
                   const next = (cur + 1) % 10;
@@ -131,24 +146,28 @@ const ProjectHeader: React.FC<Props> = ({ project, onUpdate }) => {
             <td style={labelStyle}>付款条件</td>
             <td style={cellStyle} colSpan={5}>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                {PAYMENT_LABELS.map((label, i) => (
-                  <span key={label} style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                    <span style={{ fontSize: 12, whiteSpace: 'nowrap' }}>{label}</span>
-                    <Select size="small" variant="borderless" value={pct[i]}
-                      onChange={(val) => {
-                        const next = [...pct];
-                        next[i] = val;
-                        onUpdate?.('payment_terms', formatPayment(next));
-                      }}
-                      options={PCT_OPTIONS}
-                      style={{ width: 64, fontSize: 12 }} />
-                  </span>
-                ))}
+                {PAYMENT_LABELS.map((label, i) => {
+                  const curIdx = PCT_OPTIONS.findIndex(o => o.value === pct[i]);
+                  return (
+                    <span key={label} style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                      <span style={{ fontSize: 12, whiteSpace: 'nowrap' }}>{label}</span>
+                      <span style={{ cursor: 'pointer', color: COLORS.primary, fontSize: 12, userSelect: 'none', position: 'relative', top: 2 }}
+                        onClick={() => {
+                          const next = [...pct];
+                          const nIdx = (curIdx + 1) % PCT_OPTIONS.length;
+                          next[i] = PCT_OPTIONS[nIdx].value;
+                          onUpdate?.('payment_terms', formatPayment(next));
+                        }}>
+                        {PCT_OPTIONS[curIdx]?.label ?? pct[i]} ▾
+                      </span>
+                    </span>
+                  );
+                })}
               </div>
             </td>
             <td style={labelStyle}>增值税率</td>
             <td style={cellStyle}>
-              <span style={{ cursor: 'pointer', color: '#00509e', fontWeight: 600 }}
+              <span style={{ cursor: 'pointer', color: COLORS.primary, fontWeight: 600 }}
                 onClick={() => {
                   const rates = [0, 1, 3, 6, 9, 13];
                   const cur = Math.round(v.tax_rate * 100);
@@ -188,7 +207,11 @@ const ProjectLayoutUpload: React.FC<{ value: string; onChange: (v: string) => vo
     if (!file) return;
     // 仅接受 PDF/PNG
     if (!['application/pdf', 'image/png'].includes(file.type)) {
-      alert('仅支持 PDF 或 PNG 格式');
+      Modal.warning({
+        title: '文件格式不支持',
+        content: '仅支持 PDF 或 PNG 格式',
+        okText: '知道了',
+      });
       return;
     }
     const reader = new FileReader();
@@ -208,7 +231,7 @@ const ProjectLayoutUpload: React.FC<{ value: string; onChange: (v: string) => vo
     return (
       <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <a href={value} target="_blank" rel="noopener noreferrer"
-          style={{ color: '#00509e', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
+          style={{ color: COLORS.primary, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
           {isPdf ? '📄 布置图.pdf' : '🖼️ 布置图.png'}
         </a>
         <span onClick={handleRemove} style={{ color: '#f5222d', cursor: 'pointer', fontSize: 16, lineHeight: 1 }}>×</span>
@@ -221,7 +244,7 @@ const ProjectLayoutUpload: React.FC<{ value: string; onChange: (v: string) => vo
       <input ref={inputRef} type="file" accept=".pdf,.png,application/pdf,image/png"
         style={{ display: 'none' }} onChange={handleFileChange} />
       <span onClick={handleClick} style={{
-        color: '#00509e', cursor: 'pointer', fontWeight: 600, fontSize: 13,
+        color: COLORS.primary, cursor: 'pointer', fontWeight: 600, fontSize: 13,
         border: '1px dashed #d9d9d9', borderRadius: 4, padding: '2px 12px', display: 'inline-block'
       }}>
         + 上传布置图

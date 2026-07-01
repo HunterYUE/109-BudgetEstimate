@@ -2,7 +2,7 @@
 export type SourcingType = 'PURCHASED' | 'SELF_MANUFACTURED';
 
 // ===== 组件类型 =====
-export type ItemType = 'COMPLETE_SET' | 'COMPONENT' | 'SOFTWARE' | 'SERVICE';
+export type ItemType = 'COMPLETE_SET' | 'COMPONENT' | 'PART' | 'SOFTWARE' | 'SERVICE';
 
 // ===== 组类型（固定组顺序：集成控制→包装运输→项目交付→其他）=====
 export type GroupType = 'EQUIPMENT' | 'INTEGRATION' | 'PACKAGING_TRANSPORT' | 'PROJECT_DELIVERY' | 'IMPLEMENTATION_EXPENSE' | 'OTHER';
@@ -16,11 +16,20 @@ export interface Component {
   brand: string;
   model: string;
   specification: string;
+  note: string;                 // 备注说明
+  supplier: string;              // 供应商（贸易商/代理商/厂商）
   sourcing_type: SourcingType;
   unit_cost: number;
-  design_hour_rate: number;
-  assembly_hour_rate: number;
+  design_hours: number;
+  assembly_hours: number;
   has_warranty: boolean;
+  unit: string;                 // 计量单位（套/台/个/米…）
+  reviewStatus: ReviewStatus;    // 物料审核状态
+  version: string;               // 编码中的版本号，如 V1.0
+  createdAt: string;
+  updatedAt: string;
+  changeLog: { version: string; date: string; note: string }[];
+  tags?: string[];               // 标签路径数组，如 ["上下料系统","桁架上下料","桁架机械手"]
 }
 
 // ===== 组内明细项 =====
@@ -114,6 +123,7 @@ export interface SalesOpportunity {
   createdAt: string;
   updatedAt: string;
   quotationId?: string;
+  terminated?: boolean;
 }
 
 // ===== 报价列表摘要 =====
@@ -128,7 +138,9 @@ export interface QuotationSummary {
   totalCost: number;
   profitRate: number;
   updatedAt: string;
+  createdAt?: string;
   opportunityId?: string;
+  locked?: boolean;
 }
 
 // ===== 审批请求 =====
@@ -142,13 +154,17 @@ export interface ReviewRecord {
 
 export interface ApprovalRequest {
   id: string;
+  approvalType: 'quotation' | 'plan' | 'cost';
   quotationId: string;
+  /** 交付审批时关联的交付项目 ID */
+  deliveryId?: string;
   salesNo: string;
   clientName: string;
   projectName: string;
   amount: number;
   totalCost: number;
   profitRate: number;
+  /** 报价审批时为 GP3；交付审批时为交付项目相关状态的占位 */
   gp3: number;
   submitter: string;
   submitTime: string;
@@ -194,8 +210,11 @@ export interface DeliveryProject {
   // 成本对比审批
   costStatus: 'draft' | 'pending' | 'approved' | 'rejected';
   costApproval?: { reviewer: string; action: 'approved' | 'rejected'; comment: string; createdAt: string };
+  /** 成本审批通过后的实际总成本，由成本对比表审批时写入 */
+  totalActualCost?: number;
   createdAt: string;
   updatedAt: string;
+  terminated?: boolean;
 }
 
 /** 成本对比行（引用报价表 GroupItem）*/
@@ -212,4 +231,53 @@ export interface ItemCostRow {
   variance: number;
   varianceRate: number;
   isOutOfRange: boolean;
+}
+
+// ===== 客户管理 =====
+export type CreditLevel = 'A' | 'B' | 'C';
+export type ClientGrade = 'A' | 'B' | 'C';
+
+export interface Contact {
+  id: string;
+  name: string;
+  position: string;
+  phone: string;
+  email: string;
+  decisionRole: '使用' | '技术' | '商务' | '高层';
+  superior: string;
+}
+
+export interface ClientHistoryRecord {
+  id: string;
+  projectName: string;
+  salesNo: string;
+  amount: number;
+  status: '赢' | '输' | '冻结';
+  date: string;
+}
+
+export type AccountType = 'enterprise' | 'subsidiary';
+
+export interface Client {
+  id: string;
+  code: string;
+  name: string;
+  type: AccountType;
+  parentId?: string;
+  industry: string;
+  region: string;
+  salesman: string;
+  creditLevel: CreditLevel;
+  grade: ClientGrade;
+  contacts: Contact[];
+  history: ClientHistoryRecord[];
+  createdAt: string;
+}
+
+// ===== 标签系统 =====
+export interface TagNode {
+  id: string;
+  name: string;
+  description?: string;
+  children?: TagNode[];
 }

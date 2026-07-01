@@ -1,31 +1,46 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Table, Tag, Button } from 'antd';
-import { EyeOutlined } from '@ant-design/icons';
+import { EyeOutlined, EditOutlined } from '@ant-design/icons';
 import { mockQuotationSummaries } from '../mockData';
 import { formatMoney } from '../utils/calculations';
+import { parseFY, FYSelector } from '../utils/fiscalYear';
+import { useMockVersion } from '../utils/mockStore';
 import type { QuotationSummary } from '../types';
+import { COLORS } from '../styles/constants';
 
 const statusConfig: Record<string, { label: string; color: string }> = {
   draft:    { label: '草稿',   color: '#666' },
   pending:  { label: '待审批', color: '#e65100' },
   approved: { label: '已通过', color: '#2e7d32' },
-  rejected: { label: '已驳回', color: '#c62828' },
+  rejected: { label: '已驳回', color: COLORS.danger },
 };
 
 
 const QuotationList: React.FC = () => {
   const navigate = useNavigate();
   const [statusTab, setStatusTab] = useState<string>('all');
+  const [fySelect, setFySelect] = useState('FY2526');
 
-  const data = useMemo(() =>
-    mockQuotationSummaries.map(q => ({ ...q, key: q.id })), []
-  );
+  useMockVersion();
+  const data = mockQuotationSummaries.map(q => ({ ...q }));
 
   const filtered = useMemo(() => {
-    if (statusTab === 'all') return data;
-    return data.filter(q => q.status === statusTab);
-  }, [data, statusTab]);
+    const fyRange = parseFY(fySelect);
+    // 未来财年不显示任何数据
+    if (fyRange.start > new Date()) return [];
+    return data.filter(q => {
+      // 财年过滤：创建或更新在财年范围内的报价
+      const created = q.createdAt ? new Date(q.createdAt) : null;
+      const updated = new Date(q.updatedAt);
+      const inFy = (created && created >= fyRange.start && created <= fyRange.end)
+                || (updated >= fyRange.start && updated <= fyRange.end);
+      if (!inFy) return false;
+      // 状态标签过滤
+      if (statusTab === 'all') return true;
+      return q.status === statusTab;
+    });
+  }, [data, statusTab, fySelect]);
 
   const getCount = useCallback((status?: string) => {
     if (!status) return data.length;
@@ -33,9 +48,11 @@ const QuotationList: React.FC = () => {
   }, [data]);
 
   const columns = [
-    { title: '客户', dataIndex: 'clientName', width: 240 },
+    { title: '客户', dataIndex: 'clientName', width: 240,
+      render: (v: string) => <span style={{ color: COLORS.primary }}>{v}</span> },
     { title: '项目', dataIndex: 'projectName', width: 200 },
-    { title: '销售编号', dataIndex: 'salesNo', width: 110 },
+    { title: '销售编号', dataIndex: 'salesNo', width: 110,
+      render: (v: string) => <span style={{ fontWeight: 600 }}>{v}</span> },
     { title: '版本', dataIndex: 'versionNo', width: 70, align: 'center' as const },
     {
       title: '状态', dataIndex: 'status', width: 80, align: 'center' as const,
@@ -55,31 +72,43 @@ const QuotationList: React.FC = () => {
     {
       title: '利润率', dataIndex: 'profitRate', width: 70, align: 'center' as const,
       render: (v: number) => {
-        const color = v >= 20 ? '#1a6b3c' : v >= 15 ? '#d46b08' : '#c62828';
+        const color = v >= 20 ? COLORS.success : v >= 15 ? '#d46b08' : COLORS.danger;
         return <span style={{ fontWeight: 600, color }}>{v.toFixed(1)}%</span>;
       },
     },
     { title: '更新时间', dataIndex: 'updatedAt', width: 100 },
     {
       title: '', key: 'action', width: 70, align: 'center' as const,
-      render: (_: any, record: QuotationSummary) => (
-        <Button type="text" size="small" icon={<EyeOutlined />}
-          onClick={() => navigate(`/quotations/${record.id}`)}
-          style={{ color: '#00509e' }} />
-      ),
+      render: (_: any, record: QuotationSummary) => {
+        return (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+            <Button type="text" size="small" icon={<EyeOutlined style={{ fontSize: 18 }} />}
+              onClick={() => navigate(`/quotations/${record.id}`)}
+              style={{ color: COLORS.primary }} />
+            {(record.status === 'rejected' || record.status === 'draft') && (
+              <Button type="text" size="small" icon={<EditOutlined style={{ fontSize: 18 }} />}
+                onClick={() => navigate(`/quotations/${record.id}`)}
+                style={{ color: COLORS.primary }} />
+            )}
+          </span>
+        );
+      },
     },
   ];
 
   return (
     <div>
-      <div style={{ fontSize: 17, fontWeight: 700, color: '#0d1b2a', marginBottom: 4 }}>报价列表</div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+        <span style={{ fontSize: 17, fontWeight: 700, color: '#0d1b2a' }}>报价列表</span>
+        <FYSelector value={fySelect} onChange={setFySelect} />
+      </div>
 
       <div style={{ display: 'flex', gap: 0, marginBottom: 16, borderBottom: '2px solid #e8e8e8' }}>
         <div onClick={() => setStatusTab('all')}
           style={{
             padding: '8px 20px', cursor: 'pointer', fontSize: 14,
-            borderBottom: statusTab === 'all' ? '2px solid #00509e' : '2px solid transparent',
-            color: statusTab === 'all' ? '#00509e' : '#666', fontWeight: statusTab === 'all' ? 600 : 400,
+            borderBottom: statusTab === 'all' ? '2px solid COLORS.primary' : '2px solid transparent',
+            color: statusTab === 'all' ? COLORS.primary : '#666', fontWeight: statusTab === 'all' ? 600 : 400,
             marginBottom: -2, transition: 'all 0.15s',
           }}>全部({getCount()})
         </div>
@@ -110,8 +139,8 @@ const QuotationList: React.FC = () => {
         <div onClick={() => setStatusTab('rejected')}
           style={{
             padding: '8px 20px', cursor: 'pointer', fontSize: 14,
-            borderBottom: statusTab === 'rejected' ? '2px solid #c62828' : '2px solid transparent',
-            color: statusTab === 'rejected' ? '#c62828' : '#999', fontWeight: statusTab === 'rejected' ? 600 : 400,
+            borderBottom: statusTab === 'rejected' ? '2px solid COLORS.danger' : '2px solid transparent',
+            color: statusTab === 'rejected' ? COLORS.danger : '#999', fontWeight: statusTab === 'rejected' ? 600 : 400,
             marginBottom: -2, transition: 'all 0.15s',
           }}>已驳回({getCount('rejected')})
         </div>

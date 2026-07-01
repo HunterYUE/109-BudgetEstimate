@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { Table } from 'antd';
 import type { Group } from '../types';
 import { formatMoney } from '../utils/calculations';
+import { COLORS } from '../styles/constants';
 
 interface VersionData {
   warranty_rate: number;
@@ -361,7 +362,7 @@ const ItemCostTable: React.FC<Props> = ({ groups, actualCosts, onActualCostChang
         if (rec._type === 'header') {
           const isEquip = !['集成开发', '人工成本', '项目费用', '风险费用', '质保费用'].includes(rec.category);
           return (
-            <span style={{ color: isEquip ? '#00509e' : '#333', fontWeight: 700, fontSize: 13 }}>
+            <span style={{ color: isEquip ? COLORS.primary : '#333', fontWeight: 700, fontSize: 13 }}>
               {rec.category}
             </span>
           );
@@ -412,7 +413,7 @@ const ItemCostTable: React.FC<Props> = ({ groups, actualCosts, onActualCostChang
         return (
           <input type="number" min={0}
             value={rec.actual || ''}
-            onChange={e => handleActualChange(rec, parseInt(e.target.value) || 0)}
+            onChange={e => handleActualChange(rec, parseFloat(e.target.value) || 0)}
             style={{
               width: '100%', textAlign: 'right', border: 'none', background: 'transparent',
               outline: 'none', fontSize: 13, MozAppearance: 'textfield',
@@ -426,7 +427,7 @@ const ItemCostTable: React.FC<Props> = ({ groups, actualCosts, onActualCostChang
       render: (_: any, rec: FlatRow) => {
         if (rec._type === 'header') return null;
         return (
-          <span style={{ fontWeight: 600, fontSize: 13, color: rec.variance <= 0 ? '#1a6b3c' : '#c62828' }}>
+          <span style={{ fontWeight: 600, fontSize: 13, color: rec.variance <= 0 ? COLORS.success : COLORS.danger }}>
             {rec.variance >= 0 ? '+' : ''}¥{formatMoney(rec.variance)}
           </span>
         );
@@ -437,7 +438,7 @@ const ItemCostTable: React.FC<Props> = ({ groups, actualCosts, onActualCostChang
       render: (_: any, rec: FlatRow) => {
         if (rec._type === 'header') return null;
         return (
-          <span style={{ fontWeight: 600, fontSize: 13, color: rec.variance <= 0 ? '#1a6b3c' : '#c62828' }}>
+          <span style={{ fontWeight: 600, fontSize: 13, color: rec.variance <= 0 ? COLORS.success : COLORS.danger }}>
             {rec.varianceRate >= 0 ? '+' : ''}{(rec.varianceRate * 100).toFixed(1)}%
           </span>
         );
@@ -447,13 +448,6 @@ const ItemCostTable: React.FC<Props> = ({ groups, actualCosts, onActualCostChang
 
   return (
     <>
-      <style>{`
-        .ant-table-tbody input[type=number]::-webkit-inner-spin-button,
-        .ant-table-tbody input[type=number]::-webkit-outer-spin-button {
-          -webkit-appearance: none !important; margin: 0 !important;
-        }
-        .ant-table-tbody input { font-family: inherit !important; font-size: 13px !important; }
-      `}</style>
       <Table
         dataSource={rows}
         columns={columns}
@@ -478,12 +472,12 @@ const ItemCostTable: React.FC<Props> = ({ groups, actualCosts, onActualCostChang
                 <strong style={{ fontSize: 14 }}>¥{formatMoney(totals.actual)}</strong>
               </Table.Summary.Cell>
               <Table.Summary.Cell index={4} align="right">
-                <strong style={{ fontSize: 14, color: totals.variance <= 0 ? '#1a6b3c' : '#c62828' }}>
+                <strong style={{ fontSize: 14, color: totals.variance <= 0 ? COLORS.success : COLORS.danger }}>
                   {totals.variance >= 0 ? '+' : ''}¥{formatMoney(totals.variance)}
                 </strong>
               </Table.Summary.Cell>
               <Table.Summary.Cell index={5} align="right">
-                <strong style={{ fontSize: 14, color: totals.variance <= 0 ? '#1a6b3c' : '#c62828' }}>
+                <strong style={{ fontSize: 14, color: totals.variance <= 0 ? COLORS.success : COLORS.danger }}>
                   {totals.rate >= 0 ? '+' : ''}{(totals.rate * 100).toFixed(1)}%
                 </strong>
               </Table.Summary.Cell>

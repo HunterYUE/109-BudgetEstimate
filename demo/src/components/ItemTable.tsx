@@ -5,6 +5,7 @@ import type { ColumnsType } from 'antd/es/table';
 import type { GroupItem, SourcingType, GroupType } from '../types';
 import { mockComponentDB } from '../mockData';
 import { calcDirectCost, calcItemPrices } from '../utils/calculations';
+import { COLORS } from '../styles/constants';
 
 interface Props {
   items: GroupItem[];
@@ -29,7 +30,7 @@ function getColumnConfig(groupType: GroupType) {
 }
 
 const typeColors: Record<string, string> = {
-  COMPLETE_SET: '#00509e', COMPONENT: '#008080', SOFTWARE: '#5a2d82', SERVICE: '#1a6b3c',
+  COMPLETE_SET: COLORS.primary, COMPONENT: '#008080', SOFTWARE: '#5a2d82', SERVICE: COLORS.success,
 };
 
 
@@ -112,7 +113,7 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <span style={{
             fontSize: 13,
-            color: matched ? (parseVersion(v)?.isTemp ? '#fa8c16' : '#00509e') : '#999'
+            color: matched ? (parseVersion(v)?.isTemp ? '#fa8c16' : COLORS.primary) : '#999'
           }}>{v}</span>
           {v && !matched && (
             <Tooltip title="此编码不在组件数据库中，请先注册">
@@ -150,7 +151,7 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
         ]}
       />
     ) : (
-      <Tag color={v === 'PURCHASED' ? 'orange' : '#1a6b3c'} style={{ margin: 0, fontSize: 13 }}>
+      <Tag color={v === 'PURCHASED' ? 'orange' : COLORS.success} style={{ margin: 0, fontSize: 13 }}>
         {v === 'PURCHASED' ? '是' : '否'}
       </Tag>
     ),
@@ -203,7 +204,7 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
   const colPrice: ColumnsType<GroupItem> = [{
     title: '预期售价', dataIndex: 'accounting_price', width: 105, align: 'right' as const,
     onCell: onCellLock(105),
-    render: (v: number) => <span style={{ fontWeight: 600, color: '#00509e' }}>{'¥'}{v.toLocaleString()}</span>,
+    render: (v: number) => <span style={{ fontWeight: 600, color: COLORS.primary }}>{'¥'}{v.toLocaleString()}</span>,
   }];
 
 
@@ -211,7 +212,7 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
     title: '质保', dataIndex: 'has_warranty', width: 44, align: 'center' as const,
     onCell: onCellLock(44),
     render: (v: boolean, _: any, idx: number) => editing ? (
-      <ConfigProvider theme={{ components: { Checkbox: { colorPrimary: '#00509e' } } }}>
+      <ConfigProvider theme={{ components: { Checkbox: { colorPrimary: COLORS.primary } } }}>
         <Checkbox checked={v} onChange={(e) => updateItem(idx, { has_warranty: e.target.checked })} />
       </ConfigProvider>
     ) : v ? '✓' : '✗',
@@ -247,7 +248,7 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
     <>
       <style>{`
         .ant-checkbox-checked .ant-checkbox-inner {
-          background-color: #00509e !important;
+          background-color: COLORS.primary !important;
         }
         .ant-table-tbody .ant-select-selector .ant-select-selection-item,
         .ant-table-tbody .ant-select-item-option-content {
