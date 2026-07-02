@@ -501,9 +501,6 @@ const DeliveryDetail: React.FC = () => {
               version={quotationVersion}
             />
           </Card>
-          <div style={{ fontSize: 12, color: '#999', marginTop: 6, textAlign: 'right' }}>
-            分项红线：-5%~+10% | 总成本红线：-2.5%~+5%
-          </div>
           {costCanEdit && (
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 16, marginTop: 16 }}>
             <IconButton icon={<SaveOutlined style={{ fontWeight: 700 }} />}

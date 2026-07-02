@@ -23,6 +23,8 @@ export const COLORS = {
   bgLight: '#fafafa',
   /** 选中/悬停背景（蓝色调） */
   bgSelected: '#f0f6ff',
+  /** 紫色（机会阶段/标注用） */
+  purple: '#5a2d82',
 } as const;
 
 /** 标签背景色候选项（15 色深色系） */

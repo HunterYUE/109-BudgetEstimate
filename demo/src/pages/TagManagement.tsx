@@ -87,6 +87,7 @@ const TagManagement: React.FC = () => {
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [addModalName, setAddModalName] = useState('');
   const [addModalParentId, setAddModalParentId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
   const addInputRef = React.useRef<HTMLInputElement>(null);
   const editRef = React.useRef<HTMLInputElement>(null);
 
@@ -186,31 +187,28 @@ const TagManagement: React.FC = () => {
     const path = findPath(tree, id);
     if (!path) return;
     const node = getNodeByPath(tree, path);
-    Modal.confirm({
-      title: '删除标签',
-      content: `确定删除"${node?.name}"？物料上引用该标签的信息不会自动清除。`,
-      okText: '确认删除',
-      okButtonProps: { style: { background: COLORS.danger, borderColor: COLORS.danger, borderRadius: 4 } },
-      cancelButtonProps: { style: { borderRadius: 4 } },
-      okType: 'danger',
-      onOk: () => {
-        setTree(prev => {
-          const t = cloneTree(prev);
-          const p = findPath(t, id);
-          if (!p) return prev;
-          if (p.length === 1) {
-            t.splice(p[0], 1);
-          } else {
-            const parentPath = p.slice(0, -1);
-            const parent = getNodeByPath(t, parentPath);
-            if (parent?.children) parent.children.splice(p[p.length - 1], 1);
-          }
-          return t;
-        });
-        if (editingId === id) setEditingId(null);
-        msg.success('已删除');
-      },
+    if (node) setDeleteTarget({ id, name: node.name });
+  };
+
+  const confirmDelete = () => {
+    const target = deleteTarget;
+    if (!target) return;
+    setTree(prev => {
+      const t = cloneTree(prev);
+      const p = findPath(t, target.id);
+      if (!p) return prev;
+      if (p.length === 1) {
+        t.splice(p[0], 1);
+      } else {
+        const parentPath = p.slice(0, -1);
+        const parent = getNodeByPath(t, parentPath);
+        if (parent?.children) parent.children.splice(p[p.length - 1], 1);
+      }
+      return t;
     });
+    if (editingId === target.id) setEditingId(null);
+    setDeleteTarget(null);
+    msg.success('已删除');
   };
 
   const moveNode = (id: string, direction: -1 | 1, e?: React.MouseEvent) => {
@@ -284,16 +282,16 @@ const TagManagement: React.FC = () => {
               <col style={{ width: 36 }} />
               <col />
               <col style={{ width: 56 }} />
-              <col style={{ width: 90 }} />
-              <col />
+              <col style={{ width: 180 }} />
+              <col style={{ width: 500 }} />
             </colgroup>
             <thead>
               <tr style={{ background: '#e0f0fa' }}>
                 <th style={{ width: 36, minWidth: 36, maxWidth: 36, padding: '10px 4px', fontSize: 11, fontWeight: 600, color: '#8892a4', textAlign: 'center', letterSpacing: 0.3, borderBottom: '1px solid #e4e9f0' }} />
                 <th style={{ padding: '10px 4px', fontSize: 11, fontWeight: 600, color: '#8892a4', textAlign: 'left', letterSpacing: 0.3, borderBottom: '1px solid #e4e9f0' }}>标签名称</th>
                 <th style={{ width: 56, minWidth: 56, maxWidth: 56, padding: '10px 4px', fontSize: 11, fontWeight: 600, color: '#8892a4', textAlign: 'center', letterSpacing: 0.3, borderBottom: '1px solid #e4e9f0', borderLeft: '1px solid #eef2f6', borderRight: '1px solid #eef2f6' }}>子级</th>
-                <th style={{ width: 118, minWidth: 118, maxWidth: 118, padding: '10px 4px', fontSize: 11, fontWeight: 600, color: '#8892a4', textAlign: 'center', letterSpacing: 0.3, borderBottom: '1px solid #e4e9f0' }}>操作</th>
-                <th style={{ width: 340, minWidth: 340, maxWidth: 340, padding: '10px 4px', fontSize: 11, fontWeight: 600, color: '#8892a4', textAlign: 'left', letterSpacing: 0.3, borderBottom: '1px solid #e4e9f0', borderLeft: '1px solid #eef2f6', background: '#e0f0fa' }}>说明</th>
+                <th style={{ width: 236, minWidth: 236, maxWidth: 236, padding: '10px 4px', fontSize: 11, fontWeight: 600, color: '#8892a4', textAlign: 'center', letterSpacing: 0.3, borderBottom: '1px solid #e4e9f0' }}>操作</th>
+                <th style={{ width: 500, minWidth: 500, maxWidth: 500, padding: '10px 4px', fontSize: 11, fontWeight: 600, color: '#8892a4', textAlign: 'left', letterSpacing: 0.3, borderBottom: '1px solid #e4e9f0', borderLeft: '1px solid #eef2f6', background: '#e0f0fa' }}>说明</th>
               </tr>
             </thead>
             <tbody>
@@ -312,12 +310,12 @@ const TagManagement: React.FC = () => {
                       background: isEditing ? '#f0f6ff' : '#fff',
                       transition: 'background 0.12s',
                       borderBottom: '1px solid #eef2f6',
-                      height: 32, minHeight: 32,
+                      height: 44, minHeight: 44, lineHeight: '18px',
                     }}
                     onMouseEnter={e => { if (!isEditing) e.currentTarget.style.background = '#f8faff'; }}
                     onMouseLeave={e => { if (!isEditing) e.currentTarget.style.background = '#fff'; }}
                   >
-                    <td style={{ width: 36, minWidth: 36, maxWidth: 36, padding: '4px 2px', textAlign: 'center', verticalAlign: 'middle' }}>
+                    <td style={{ width: 36, minWidth: 36, maxWidth: 36, padding: '2px 2px', textAlign: 'center', verticalAlign: 'middle' }}>
                       {hasChildren ? (
                         <span onClick={e => { e.stopPropagation(); toggleExpand(node.id); }}
                           style={{ cursor: 'pointer', fontSize: 13, color: lc, display: 'inline-block', userSelect: 'none' }}>
@@ -327,11 +325,11 @@ const TagManagement: React.FC = () => {
                         <span style={{ display: 'inline-block', width: 13 }} />
                       )}
                     </td>
-                    <td style={{ padding: '4px 4px', verticalAlign: 'middle' }}>
+                    <td style={{ padding: '2px 4px', verticalAlign: 'middle' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'text' }}
                         onClick={() => { if (!isEditing) startEditing(node.id, node.name); }}>
                         {level > 0 && (
-                          <div style={{ display: 'flex', alignItems: 'stretch', flexShrink: 0, height: 20 }}>
+                          <div style={{ display: 'flex', alignItems: 'stretch', flexShrink: 0, height: 14 }}>
                             {Array.from({ length: level }).map((_, li) => (
                               <div key={li} style={{ width: 22, position: 'relative' }}>
                                 {!connector[li] && (
@@ -377,7 +375,7 @@ const TagManagement: React.FC = () => {
                         )}
                       </div>
                     </td>
-                    <td style={{ padding: '4px 4px', padding: '4px 4px', verticalAlign: 'middle', textAlign: 'center', borderLeft: '1px solid #eef2f6', borderRight: '1px solid #eef2f6' }}>
+                    <td style={{ padding: '2px 4px', verticalAlign: 'middle', textAlign: 'center', borderLeft: '1px solid #eef2f6', borderRight: '1px solid #eef2f6' }}>
                       {hasChildren ? (
                         <span style={{
                           display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
@@ -388,27 +386,27 @@ const TagManagement: React.FC = () => {
                         <span style={{ color: '#d0d6e0', fontSize: 12 }}>—</span>
                       )}
                     </td>
-                    <td style={{ padding: '4px 4px', verticalAlign: 'middle', textAlign: 'center' }}
+                    <td style={{ padding: '2px 4px', verticalAlign: 'middle', textAlign: 'center' }}
                       onClick={e => e.stopPropagation()}>
-                      <Button type="text" icon={<PlusOutlined />}
+                      <Button type="text" size="small" icon={<PlusOutlined style={{ fontSize: 11 }} />}
                         onClick={(e) => addChild(node.id, e)}
-                        style={{ color: COLORS.primary, fontSize: 13 }}
+                        style={{ width: 18, height: 18, lineHeight: '18px', color: COLORS.primary, fontSize: 11 }}
                         title="新增子标签" />
-                      <Button type="text" size="small" icon={<DeleteOutlined style={{ fontSize: 12 }} />}
+                      <Button type="text" size="small" icon={<DeleteOutlined style={{ fontSize: 11 }} />}
                         onClick={() => deleteNode(node.id)}
-                        style={{ width: 20, height: 20, color: COLORS.danger }} title="删除" />
-                      <span style={{ opacity: 0.45, transition: 'opacity 0.12s', display: 'inline-flex' }}
+                        style={{ width: 18, height: 18, lineHeight: '18px', color: COLORS.danger, fontSize: 11 }} title="删除" />
+                      <span style={{ opacity: 0.45, transition: 'opacity 0.12s', display: 'inline-flex', lineHeight: '18px' }}
                         onMouseEnter={e => e.currentTarget.style.opacity = '1'}
                         onMouseLeave={e => e.currentTarget.style.opacity = '0.45'}>
-                        <Button type="text" size="small" icon={<ArrowUpOutlined style={{ fontSize: 12 }} />}
+                        <Button type="text" size="small" icon={<ArrowUpOutlined style={{ fontSize: 11 }} />}
                           onClick={(e) => moveNode(node.id, -1, e)}
-                          style={{ width: 20, height: 20, color: '#8892a4' }} title="上移" />
-                        <Button type="text" size="small" icon={<ArrowDownOutlined style={{ fontSize: 12 }} />}
+                          style={{ width: 18, height: 18, lineHeight: '18px', color: '#8892a4', fontSize: 11 }} title="上移" />
+                        <Button type="text" size="small" icon={<ArrowDownOutlined style={{ fontSize: 11 }} />}
                           onClick={(e) => moveNode(node.id, 1, e)}
-                          style={{ width: 20, height: 20, color: '#8892a4' }} title="下移" />
+                          style={{ width: 18, height: 18, lineHeight: '18px', color: '#8892a4', fontSize: 11 }} title="下移" />
                       </span>
                     </td>
-                    <td style={{ padding: '4px 4px', verticalAlign: 'middle', fontSize: 12, color: '#888', position: 'relative', borderLeft: '1px solid #eef2f6' }}>
+                    <td style={{ padding: '2px 4px', verticalAlign: 'middle', fontSize: 12, color: '#888', position: 'relative', borderLeft: '1px solid #eef2f6', lineHeight: '18px' }}>
                       {descEditId === node.id ? (
                         <input value={descEditValue}
                           onChange={e => setDescEditValue(e.target.value)}
@@ -436,9 +434,9 @@ const TagManagement: React.FC = () => {
           title={<span style={{ fontSize: 17, fontWeight: 600, color: '#0d1b2a', letterSpacing: 0.5 }}>新增标签</span>}
           open={addModalOpen}
           onCancel={() => setAddModalOpen(false)}
-          destroyOnClose
-          width={400}
-          styles={{ body: { padding: '24px 28px 8px' } }}
+          destroyOnHidden
+          width={460}
+          styles={{ body: { padding: '14px 2px 6px' } }}
           footer={
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
               <Button icon={<CloseOutlined />} onClick={() => setAddModalOpen(false)}
@@ -452,11 +450,38 @@ const TagManagement: React.FC = () => {
             ref={addInputRef}
             value={addModalName}
             onChange={e => setAddModalName(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') confirmAdd(); }}
+            onPressEnter={confirmAdd}
             placeholder="输入标签名称"
             style={{ fontSize: 14 }}
           />
         </Modal>
+
+      {/* 删除确认弹窗 */}
+      <Modal
+        title={<span style={{ fontSize: 17, fontWeight: 600, color: '#0d1b2a', letterSpacing: 0.5 }}>删除标签</span>}
+        open={!!deleteTarget}
+        onCancel={() => setDeleteTarget(null)}
+        width={460}
+        destroyOnHidden
+        styles={{ body: { padding: '14px 32px 6px' } }}
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+            <Button icon={<CloseOutlined />} onClick={() => setDeleteTarget(null)}
+              style={{ borderRadius: 3, width: 36, height: 36 }} />
+            <Button type="primary" ghost icon={<CheckOutlined />} onClick={confirmDelete}
+              style={{ borderColor: COLORS.danger, color: COLORS.danger, borderRadius: 3, width: 36, height: 36 }} />
+          </div>
+        }
+      >
+        {deleteTarget && (
+          <div style={{ textAlign: 'center', padding: '4px 0 0' }}>
+            <div style={{ fontSize: 14, color: '#0d1b2a', fontWeight: 600, marginBottom: 6 }}>
+              确定删除"{deleteTarget.name}"？
+            </div>
+            <div style={{ fontSize: 13, color: '#8892a4' }}>物料上引用该标签的信息不会自动清除。</div>
+          </div>
+        )}
+      </Modal>
 
       </div>
     </div>

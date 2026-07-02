@@ -1,8 +1,9 @@
 import React, { useState, useMemo } from 'react';
 import { Card } from 'antd';
-import { mockOpportunities, mockQuotationSummaries } from '../mockData';
+import { mockOpportunities, mockQuotationSummaries, mockDeliveryProjects } from '../mockData';
 import type { SalesOpportunity } from '../types';
-import { parseReasons } from '../reasonTaxonomy';
+import { parseReasons, REASON_TAXONOMY } from '../reasonTaxonomy';
+import { useMockVersion } from '../utils/mockStore';
 import { COLORS } from '../styles/constants';
 const fmtK = (v: number) => Math.round(v / 1000).toLocaleString() + 'K';
 
@@ -10,7 +11,7 @@ const fmtK = (v: number) => Math.round(v / 1000).toLocaleString() + 'K';
    常量
    ============================================================ */
 const stageColors: Record<string, string> = {
-  信息: '#999', 线索: COLORS.primary, 机会: '#5a2d82',
+  信息: '#999', 线索: COLORS.primary, 机会: COLORS.purple,
   投标: '#e65100', 议价: '#c76a00', 中标: COLORS.success,
 };
 const statusColors: Record<string, string> = {
@@ -19,10 +20,6 @@ const statusColors: Record<string, string> = {
 const STAGES = ['信息', '线索', '机会', '投标', '议价', '中标'] as const;
 const FY_OPTIONS = ['FY2425', 'FY2526', 'FY2627'] as const;
 
-/** 竞对数据项 */
-interface CompetitorRow {
-  competitor: string; total: number; wins: number; losses: number; amount: number;
-}
 /* ============================================================
    财年工具函数
    ============================================================ */
@@ -100,14 +97,18 @@ interface FunnelProps {
   fyLead: { count: number; amount: number };
   fyOpp: { count: number; amount: number };
   fyWon: { count: number; amount: number };
+  convInfo?: { count: number; amount: number };
+  convLead?: { count: number; amount: number };
+  convOpp?: { count: number; amount: number };
+  convWon?: { count: number; amount: number };
 }
 
-const SalesFunnel: React.FC<FunnelProps> = ({ funnelData, fyInfo, fyLead, fyOpp, fyWon }) => {
+const SalesFunnel: React.FC<FunnelProps> = ({ funnelData, fyInfo, fyLead, fyOpp, fyWon, convInfo, convLead, convOpp, convWon }) => {
   // 四阶段可视化数据
   const stages = [
     { key: 'info', label: '信息', color: '#999' },
     { key: 'lead', label: '线索', color: COLORS.primary },
-    { key: 'opp', label: '机会', color: '#5a2d82' },
+    { key: 'opp', label: '机会', color: COLORS.purple },
     { key: 'won', label: '中标', color: COLORS.success },
   ] as const;
 
@@ -141,11 +142,12 @@ const SalesFunnel: React.FC<FunnelProps> = ({ funnelData, fyInfo, fyLead, fyOpp,
     info: fyInfo, lead: fyLead, opp: fyOpp, won: fyWon,
   };
 
-  // 阶段间转化率
+  // 转化率使用 conv*（过去12个月），回退到 fy* 兼容
+  const ci = convInfo || fyInfo, cl = convLead || fyLead, co = convOpp || fyOpp, cw = convWon || fyWon;
   const convData = [
-    { key: 'lead', cnt: fyInfo.count > 0 ? fyLead.count / fyInfo.count * 100 : 0, amt: fyInfo.amount > 0 ? fyLead.amount / fyInfo.amount * 100 : 0 },
-    { key: 'opp', cnt: fyLead.count > 0 ? fyOpp.count / fyLead.count * 100 : 0, amt: fyLead.amount > 0 ? fyOpp.amount / fyLead.amount * 100 : 0 },
-    { key: 'won', cnt: fyOpp.count > 0 ? fyWon.count / fyOpp.count * 100 : 0, amt: fyOpp.amount > 0 ? fyWon.amount / fyOpp.amount * 100 : 0 },
+    { key: 'lead', cnt: ci.count > 0 ? cl.count / ci.count * 100 : 0, amt: ci.amount > 0 ? cl.amount / ci.amount * 100 : 0 },
+    { key: 'opp', cnt: cl.count > 0 ? co.count / cl.count * 100 : 0, amt: cl.amount > 0 ? co.amount / cl.amount * 100 : 0 },
+    { key: 'won', cnt: co.count > 0 ? cw.count / co.count * 100 : 0, amt: co.amount > 0 ? cw.amount / co.amount * 100 : 0 },
   ];
 
   return (
@@ -178,7 +180,7 @@ const SalesFunnel: React.FC<FunnelProps> = ({ funnelData, fyInfo, fyLead, fyOpp,
           <line x1={-pts[0].w / 2} y1={0} x2={pts[0].w / 2} y2={0}
             stroke="#999" strokeWidth={2.5} strokeLinecap="round" />
           <line x1={-pts[3].w / 2} y1={pts[3].x} x2={pts[3].w / 2} y2={pts[3].x}
-            stroke="COLORS.success" strokeWidth={2.5} strokeLinecap="round" />
+            stroke={COLORS.danger} strokeWidth={2.5} strokeLinecap="round" />
 
           {/* 阶段标注 */}
           {stages.map((st, idx) => {
@@ -206,21 +208,23 @@ const SalesFunnel: React.FC<FunnelProps> = ({ funnelData, fyInfo, fyLead, fyOpp,
                 <text x={pts[0].w / 2 + 105} y={y - 10}
                   fill={st.color} fontSize={13} fontWeight="700"
                   textAnchor="middle">{st.label}</text>
-                {/* 当期数据 */}
-                <text x={pts[0].w / 2 + 46} y={y + 14}
-                  fill="#666" fontSize={11}
-                  dominantBaseline="middle">{count}/{fmtK(amount)}</text>
-                {/* 财年累计 */}
-                <text x={pts[0].w / 2 + 115} y={y + 14}
-                  fill="COLORS.primary" fontSize={11} fontWeight={600}
+                {/* 当期数据（中标阶段不显示） */}
+                {st.key !== 'won' && (
+                  <text x={pts[0].w / 2 + 46} y={y + 14}
+                    fill="#666" fontSize={11}
+                    dominantBaseline="middle">{count}/{fmtK(amount)}</text>
+                )}
+                {/* 财年累计（中标阶段与红点对齐） */}
+                <text x={pts[0].w / 2 + (st.key === 'won' ? 80 : 115)} y={y + 14}
+                  fill={COLORS.primary} fontSize={11} fontWeight={600}
                   dominantBaseline="middle">{fyc}/{fmtK(fya)}</text>
 
                 {/* 阶段间转化率（漏斗内居中） */}
                 {conv && (
                   <text x={0} y={y + 14} fontSize={12} textAnchor="middle">
-                    <tspan fill="COLORS.primary" fontWeight="600">{conv.cnt.toFixed(1)}%</tspan>
+                    <tspan fill={COLORS.primary} fontWeight="600">{conv.cnt.toFixed(1)}%</tspan>
                     <tspan fill="#999"> / </tspan>
-                    <tspan fill="COLORS.success" fontWeight="600">{conv.amt.toFixed(1)}%</tspan>
+                    <tspan fill={COLORS.success} fontWeight="600">{conv.amt.toFixed(1)}%</tspan>
                   </text>
                 )}
               </g>
@@ -235,11 +239,11 @@ const SalesFunnel: React.FC<FunnelProps> = ({ funnelData, fyInfo, fyLead, fyOpp,
 /* ============================================================
    竖状柱状图（SVG 绘制，显示前 N 名）
    ============================================================ */
-const TOP_COLORS = [COLORS.primary, '#5a2d82', COLORS.primary, '#5a2d82'];
-
 interface BarItem {
   name: string;
   value: number;
+  subValue?: number;
+  color?: string;
 }
 
 const VerticalBarChart: React.FC<{
@@ -250,11 +254,21 @@ const VerticalBarChart: React.FC<{
   topN?: number;
   contentOffset?: number;
   barWidthRatio?: number;
-}> = ({ title, data, format = 'num', height = 220, topN = 10, contentOffset = 0, barWidthRatio = 0.55 }) => {
-  const sorted = [...data].sort((a, b) => b.value - a.value);
-  const top = sorted.slice(0, topN);
+  maxBarWidth?: number;
+  noCard?: boolean;
+  chartWidth?: number;
+  disableSort?: boolean;
+  targetValue?: number;
+  targetLabel?: string;
+  padTop?: number;
+  padBottom?: number;
+  hideAvgLine?: boolean;
+  cardBorder?: boolean;
+}> = ({ title, data, format = 'num', height = 220, topN = 10, contentOffset = 0, barWidthRatio = 0.55, maxBarWidth = 36, noCard, chartWidth = 460, disableSort, targetValue, targetLabel, padTop = 32, padBottom = 28, hideAvgLine, cardBorder = true }) => {
+  const working = disableSort ? data : [...data].sort((a, b) => b.value - a.value);
+  const top = working.slice(0, topN);
   const rawMax = Math.max(...top.map(d => d.value), 0);
-  const effectiveMax = rawMax > 0 ? rawMax : (format === '%' ? 100 : 1);
+  const effectiveMax = Math.max(1, targetValue ? Math.max(rawMax, targetValue) : (rawMax > 0 ? rawMax : (format === '%' ? 100 : 1)));
   const avg = data.length > 0 ? data.reduce((s, d) => s + d.value, 0) / data.length : 0;
   const slots: (BarItem | null)[] = Array.from({ length: topN }, (_, i) => top[i] || null);
 
@@ -264,26 +278,23 @@ const VerticalBarChart: React.FC<{
     return String(Math.round(v));
   };
 
-  const W = 460;
-  const pad = { top: 22, bottom: 28, left: 42, right: 26 };
+  const W = chartWidth;
+  const pad = { top: padTop, bottom: padBottom, left: 42, right: 26 };
   const chartW = W - pad.left - pad.right;
   const chartH = height - pad.top - pad.bottom;
   const slotW = chartW / topN;
-  const barW = Math.min(slotW * barWidthRatio, 36);
-  const gridVals = Array.from({ length: 5 }, (_, i) => (effectiveMax * (4 - i)) / 4);
+  const barW = Math.min(slotW * barWidthRatio, maxBarWidth);
+  const gridVals = effectiveMax <= 10
+    ? Array.from({ length: effectiveMax + 1 }, (_, i) => i).reverse()
+    : Array.from({ length: 5 }, (_, i) => (effectiveMax * (4 - i)) / 4);
 
-  return (
-    <Card size="small"
-      style={{ borderRadius: 8, border: '1px solid #f0f0f0', height: '100%', position: 'relative' }}
-      styles={{ body: { padding: `${contentOffset}px 0 0`, height: '100%' } }}
-    >
-      <span style={{ position: 'absolute', top: 6, right: 10, fontSize: 11, color: '#888', zIndex: 1 }}>
-        {title}
-      </span>
+  const chart = (
+    <>
+      {title && <span style={{ position: 'absolute', top: 6, right: 10, fontSize: 11, color: '#888', zIndex: 1 }}>{title}</span>}
       <svg width="100%" height={height} viewBox={`0 0 ${W} ${height}`} style={{ display: 'block' }}>
         {/* Y 轴网格线 + 标签 */}
         {gridVals.map((gv, i) => {
-          const y = pad.top + (i * chartH) / 4;
+          const y = pad.top + (1 - gv / effectiveMax) * chartH;
           return (
             <g key={`g-${i}`}>
               <line x1={pad.left} y1={y} x2={W - pad.right} y2={y} stroke="#f0f0f0" strokeWidth={1} />
@@ -294,8 +305,18 @@ const VerticalBarChart: React.FC<{
           );
         })}
 
-        {/* 平均值虚线 */}
-        {avg > 0 && data.some(d => d.value > 0) && (() => {
+        {/* 目标线 或 平均值虚线 */}
+        {targetValue != null && targetValue > 0 ? (() => {
+          const tgtY = pad.top + (1 - targetValue / effectiveMax) * chartH;
+          return (
+            <g>
+              <line x1={pad.left} y1={tgtY} x2={W - pad.right} y2={tgtY}
+                stroke="#e65100" strokeWidth={1} strokeDasharray="5,3" />
+              <text x={W - pad.right + 2} y={tgtY + 3}
+                textAnchor="start" fontSize={9} fill="#e65100">{targetLabel || fmtAxis(targetValue)}</text>
+            </g>
+          );
+        })() : (!hideAvgLine && avg > 0 && data.some(d => d.value > 0) && (() => {
           const avgY = pad.top + (1 - avg / effectiveMax) * chartH;
           return (
             <g>
@@ -309,7 +330,7 @@ const VerticalBarChart: React.FC<{
               })()}</text>
             </g>
           );
-        })()}
+        })())}
 
         {/* 柱子 */}
         {slots.map((item, i) => {
@@ -318,7 +339,7 @@ const VerticalBarChart: React.FC<{
 
           const isZero = item.value === 0;
           const barH = isZero ? 0 : Math.max(2, (item.value / effectiveMax) * chartH);
-          const color = i < 4 ? TOP_COLORS[i] : '#ccc';
+          const color = item.color || (targetValue != null && targetValue > 0 ? (item.value >= targetValue ? COLORS.primary : COLORS.danger) : COLORS.primary);
           let label: string;
           if (isZero) label = '—';
           else if (format === 'K') label = fmtK(item.value);
@@ -329,279 +350,196 @@ const VerticalBarChart: React.FC<{
 
           return (
             <g key={item.name}>
-              <text x={cx} y={barTop - 4} textAnchor="middle" fontSize={10}
+              <text x={cx} y={barTop - 18} textAnchor="middle" fontSize={10}
                 fill={color} fontWeight={600}>{label}</text>
+              {item.subValue != null && item.subValue > 0 && (
+                <text x={cx} y={barTop - 6} textAnchor="middle" fontSize={9}
+                  fill=COLORS.purple fontWeight={600}>（{fmtK(item.subValue)}）</text>
+              )}
               {!isZero && (
                 <rect x={cx - barW / 2} y={barTop} width={barW} height={barH}
                   fill="none" stroke={color} strokeWidth={3} rx={0} ry={0} />
               )}
-              <text x={cx} y={height - 6} textAnchor="middle" fontSize={10} fill="#666">
+              <text x={cx} y={height - 10} textAnchor="middle" fontSize={10} fill="#666">
                 {item.name}
               </text>
             </g>
           );
         })}
       </svg>
-    </Card>
+    </>
   );
-};
 
-/* ============================================================
-   竖状堆叠柱状图（漏斗健康度专用）
-   ============================================================ */
-interface StackedBarItem {
-  name: string;
-  bottom: number;
-  top: number;
-}
-
-const VerticalStackedBarChart: React.FC<{
-  title: string;
-  data: StackedBarItem[];
-  height?: number;
-  topN?: number;
-  contentOffset?: number;
-  barWidthRatio?: number;
-}> = ({ title, data, height = 220, topN = 10, contentOffset = 0, barWidthRatio = 0.55 }) => {
-  const sorted = [...data]
-    .filter(d => d.bottom > 0 || d.top > 0)
-    .sort((a, b) => (b.bottom + b.top) - (a.bottom + a.top));
-  const top = sorted.slice(0, topN);
-  const rawMax = Math.max(...top.map(d => d.bottom + d.top), 0);
-  const effectiveMax = rawMax > 0 ? rawMax : 10;
-  const avg = data.length > 0
-    ? data.reduce((s, d) => s + d.bottom + d.top, 0) / data.length
-    : 0;
-  const slots: (StackedBarItem | null)[] = Array.from({ length: topN }, (_, i) => top[i] || null);
-
-  const W = 460;
-  const pad = { top: 22, bottom: 28, left: 42, right: 26 };
-  const chartW = W - pad.left - pad.right;
-  const chartH = height - pad.top - pad.bottom;
-  const slotW = chartW / topN;
-  const barW = Math.min(slotW * barWidthRatio, 36);
-  const gridVals = Array.from({ length: 5 }, (_, i) => (effectiveMax * (4 - i)) / 4);
-
-  return (
-    <Card size="small"
-      style={{ borderRadius: 8, border: '1px solid #f0f0f0', height: '100%', position: 'relative' }}
-      styles={{ body: { padding: `${contentOffset}px 0 0`, height: '100%' } }}
-    >
-      <span style={{ position: 'absolute', top: 6, right: 10, fontSize: 11, color: '#888', zIndex: 1 }}>
-        {title}
-      </span>
-      <svg width="100%" height={height} viewBox={`0 0 ${W} ${height}`} style={{ display: 'block' }}>
-        {gridVals.map((gv, i) => {
-          const y = pad.top + (i * chartH) / 4;
-          return (
-            <g key={`g-${i}`}>
-              <line x1={pad.left} y1={y} x2={W - pad.right} y2={y} stroke="#f0f0f0" strokeWidth={1} />
-              <text x={pad.left - 4} y={y + 3} textAnchor="end" fontSize={9} fill="#aaa">
-                {String(Math.round(gv))}
-              </text>
-            </g>
-          );
-        })}
-
-        {avg > 0 && data.some(d => d.bottom + d.top > 0) && (() => {
-          const avgY = pad.top + (1 - avg / effectiveMax) * chartH;
-          return (
-            <g>
-              <line x1={pad.left} y1={avgY} x2={W - pad.right} y2={avgY}
-                stroke="#e65100" strokeWidth={1} strokeDasharray="5,3" />
-              <text x={W - pad.right + 2} y={avgY + 3}
-                textAnchor="start" fontSize={9} fill="#e65100">{String(Math.round(avg))}</text>
-            </g>
-          );
-        })()}
-
-        {slots.map((item, i) => {
-          const cx = pad.left + i * slotW + slotW / 2;
-          if (!item) return <g key={`e-${i}`} />;
-          const total = item.bottom + item.top;
-          const barH = total > 0 ? Math.max(2, (total / effectiveMax) * chartH) : 0;
-          const bottomH = total > 0 ? (item.bottom / total) * barH : 0;
-          const topH = barH - bottomH;
-          const cy = pad.top + chartH - barH;
-          const color = i < 4 ? TOP_COLORS[i] : '#ccc';
-          return (
-            <g key={item.name}>
-              <text x={cx} y={cy - 4} textAnchor="middle" fontSize={10}
-                fill={color} fontWeight={600}>{total > 0 ? total : '—'}</text>
-              {bottomH > 0 && (
-                <rect x={cx - barW / 2} y={cy}
-                  width={barW} height={bottomH} fill="none" stroke="COLORS.primary" strokeWidth={3} rx={0} ry={0} />
-              )}
-              {topH > 0 && (
-                <rect x={cx - barW / 2} y={cy + bottomH}
-                  width={barW} height={topH} fill="none" stroke="#5a2d82" strokeWidth={3} />
-              )}
-              <text x={cx} y={height - 6} textAnchor="middle" fontSize={10} fill="#666">
-                {item.name}
-              </text>
-              {bottomH > 8 && (
-                <text x={cx} y={cy + bottomH / 2 + 4}
-                  textAnchor="middle" fontSize={9} fill="#5a2d82" fontWeight={600}>
-                  {item.bottom}
-                </text>
-              )}
-              {topH > 8 && (
-                <text x={cx} y={cy + bottomH + topH / 2 + 4}
-                  textAnchor="middle" fontSize={9} fill="#5a2d82" fontWeight={600}>
-                  {item.top}
-                </text>
-              )}
-            </g>
-          );
-        })}
-      </svg>
-    </Card>
-  );
-};
-
-/* ============================================================
-   输单原因子项定义
-   ============================================================ */
-interface LossSubItem {
-  subCategory: string;
-  thirdLevel: string;
-  count: number;
-  color: string;
-}
-
-interface LossCategoryStack {
-  category: string;
-  count: number;
-  percent: number;
-  color: string;
-  subItems: LossSubItem[];
-}
-
-const SUB_PATTERNS = [
-  { color: COLORS.primary, dashed: false },
-  { color: '#888', dashed: false },
-  { color: COLORS.primary, dashed: false },
-  { color: '#888', dashed: false },
-  { color: COLORS.primary, dashed: false },
-  { color: '#888', dashed: false },
-];
-
-/* ============================================================
-   子组件 — 输单原因（横向堆叠图）
-   ============================================================ */
-const LossChart: React.FC<{ data: LossCategoryStack[] }> = ({ data }) => {
-  const total = data.reduce((s, d) => s + d.count, 0);
-  const maxCount = Math.max(...data.map(d => d.count), 1);
-  if (total === 0) {
-    return <div style={{ padding: 32, textAlign: 'center', color: '#bbb', fontSize: 13 }}>暂无输单数据</div>;
+  if (noCard) {
+    return <div style={{ minHeight: '100%', position: 'relative', paddingTop: contentOffset }}>{chart}</div>;
   }
 
   return (
-    <div>
-      {data.map(cat => {
-        if (cat.count === 0) return null;
-        const active = cat.subItems.filter(s => s.count > 0);
-        return (
-          <div key={cat.category}
-              style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 11 }}>
-            <div style={{ width: 64, flexShrink: 0, textAlign: 'right', fontSize: 12, color: '#555', fontWeight: 500 }}>
-              <div style={{ fontSize: 12, lineHeight: 1.2 }}>{cat.category.replace(/\(.*\)/g, '')}</div>
-            </div>
-            <div style={{ flex: 1, position: 'relative', height: 30 }}>
-              <div style={{ display: 'flex', height: '100%', borderLeft: '1px solid #ddd' }}>
-                {Array.from({ length: maxCount }, (_, i) => (
-                  <div key={i} style={{ flex: 1, borderRight: '1px solid #eee', height: '100%' }} />
-                ))}
-              </div>
-              <div style={{ display: 'flex', height: '100%', position: 'absolute', left: 0, right: 0, top: 0, zIndex: 2 }}>
-                {active.map((sub, segIdx) => {
-                  const p = SUB_PATTERNS[segIdx % SUB_PATTERNS.length];
-                  const w = (sub.count / cat.count) * 100;
-                  return (
-                    <div key={sub.subCategory + sub.thirdLevel}
-                      style={{
-                        width: `${w}%`,
-                        borderTop: `2px ${p.dashed ? 'dashed' : 'solid'} ${p.color}`,
-                        borderBottom: `2px ${p.dashed ? 'dashed' : 'solid'} ${p.color}`,
-                        borderRight: segIdx < active.length - 1 ? 'none' : `2px ${p.dashed ? 'dashed' : 'solid'} ${p.color}`,
-                        borderLeft: segIdx === 0 ? `2px ${p.dashed ? 'dashed' : 'solid'} ${p.color}` : 'none',
-                        display: 'flex', flexDirection: 'column',
-                        alignItems: 'center', justifyContent: 'center',
-                        fontSize: 10, color: p.color, fontWeight: 500,
-                        padding: '0 2px', boxSizing: 'border-box',
-                        overflow: 'hidden',
-                      }}
-                    >
-                      <span style={{ lineHeight: 1.3, whiteSpace: 'nowrap' }}>{sub.subCategory}</span>
-                      {sub.thirdLevel && <span style={{ lineHeight: 1.3, fontSize: 9, opacity: 0.65 }}>{sub.thirdLevel}</span>}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        );
-      })}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 9, color: '#aaa' }}>
-        <div style={{ width: 64, flexShrink: 0 }} />
-        <div style={{ flex: 1, position: 'relative', height: 14 }}>
-          {Array.from({ length: maxCount + 1 }, (_, i) => (
-            <div key={i} style={{
-              position: 'absolute',
-              left: `${(i / maxCount) * 100}%`,
-              transform: 'translateX(-50%)',
-            }}>
-              {i}
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
+    <Card size="small"
+      style={{ borderRadius: 8, border: cardBorder ? '1px solid #f0f0f0' : 'none', background: cardBorder ? '#fff' : 'transparent', height: '100%', position: 'relative', boxShadow: cardBorder ? 'none' : 'none' }}
+      styles={{ body: { padding: `${contentOffset}px 0 0`, height: '100%' } }}
+    >
+      {chart}
+    </Card>
   );
 };
 
-/* ============================================================
-   简易横向柱状图（无 Card 包装，内嵌用）
-   ============================================================ */
-const MiniBarChart: React.FC<{ title: string; data: BarItem[]; height?: number }> = ({ title, data, height = 120 }) => {
-  const sorted = [...data].sort((a, b) => b.value - a.value);
-  const maxVal = sorted[0]?.value || 1;
-  return (
-    <div>
-      <div style={{ fontSize: 12, fontWeight: 600, color: '#444', marginBottom: 6 }}>{title}</div>
-      {sorted.length === 0 ? (
-        <div style={{ padding: 16, textAlign: 'center', color: '#ccc', fontSize: 12 }}>暂无数据</div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {sorted.map((item, i) => {
-            const w = (item.value / maxVal) * 100;
-            const color = i < 4 ? TOP_COLORS[i] : '#ccc';
-            return (
-              <div key={item.name} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
-                <span style={{ width: 60, textAlign: 'right', color: '#555', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.name}</span>
-                <div style={{ flex: 1, height: 14, border: `2px solid ${color}`, position: 'relative' }} />
-                <span style={{ width: 20, textAlign: 'right', color: '#888' }}>{item.value}</span>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-};
-
-/* ============================================================
-   子组件 — 竞对分析
-   ============================================================ */
-
+/* ============================================================ */
 
 const SalesAnalysis: React.FC = () => {
   const [fySelect, setFySelect] = useState('FY2526');
   const allOpps = mockOpportunities;
   const fyFiltered = useFyFiltered(allOpps, fySelect);
+  useMockVersion();
 
-  // ── 各阶段数据（FY 过滤） ──
-  const funnel = useMemo(() =>
+  // ── 年度订单指标 + 目标GP3 ──
+  const [annualTargetInput, setAnnualTargetInput] = useState(() => localStorage.getItem('sa_annualTarget') || '');
+  const [targetEditing, setTargetEditing] = useState(false);
+  const targetRef = React.useRef<HTMLInputElement>(null);
+  const [gp3Input, setGp3Input] = useState(() => localStorage.getItem('sa_targetGP3') || '');
+  const [gp3Editing, setGp3Editing] = useState(false);
+  const gp3Ref = React.useRef<HTMLInputElement>(null);
+  // ── 月度销售指标 ──
+  const [annualSalesTarget, setAnnualSalesTarget] = useState(() => localStorage.getItem('sa_annualSalesTarget') || '');
+  const [salesTargetEditing, setSalesTargetEditing] = useState(false);
+  const salesTargetRef = React.useRef<HTMLInputElement>(null);
+  const saveSalesTarget = (v: string) => { setAnnualSalesTarget(v); localStorage.setItem('sa_annualSalesTarget', v); };
+
+  // 保存到 localStorage
+  const saveAnnualTarget = (v: string) => { setAnnualTargetInput(v); localStorage.setItem('sa_annualTarget', v); };
+  const saveGp3 = (v: string) => { setGp3Input(v); localStorage.setItem('sa_targetGP3', v); };
+
+  // ── 月度订单数据（当月转交付项目的合同金额之和，按财年月汇总）──
+  const monthlyOrderData = useMemo(() => {
+    const fyRange = parseFY(fySelect);
+    // 过滤在该财年内转交付的项目
+    const inFy = mockDeliveryProjects.filter(p => {
+      const d = new Date(p.createdAt);
+      return d >= fyRange.start && d <= fyRange.end;
+    });
+    // 财年月：month=1 → 7月(Jul), month=12 → 6月(Jun)
+    const TAX_RATE = 0.13;
+    const byMonth = new Map<number, { amount: number; profit: number }>();
+    for (const p of inFy) {
+      const d = new Date(p.createdAt);
+      const fyMonth = d.getMonth() < 6 ? d.getMonth() + 6 : d.getMonth() - 6;
+      const prev = byMonth.get(fyMonth) || { amount: 0, profit: 0 };
+      const exTax = Math.round(p.contractAmount / (1 + TAX_RATE));
+      // 从报价摘要获取利润率
+      const q = mockQuotationSummaries.find(q => q.id === p.quotationId || q.id.startsWith(p.quotationId + '-v'));
+      const profitRate = q ? q.profitRate / 100 : 0.20;
+      const estProfit = Math.round(exTax * profitRate);
+      byMonth.set(fyMonth, { amount: prev.amount + p.contractAmount, profit: prev.profit + estProfit });
+    }
+    const MONTH_LABELS = ['Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar','Apr','May','Jun'];
+    return Array.from({ length: 12 }, (_, i) => {
+      const m = byMonth.get(i);
+      return {
+        name: MONTH_LABELS[i],
+        value: m ? m.amount : 0,
+        subValue: m ? m.profit : undefined,
+      };
+    });
+  }, [fySelect]);
+
+  // ── 月度销售数据（已完成项目总结的交付项目按月汇总）──
+  const monthlySalesData = useMemo(() => {
+    const fyRange = parseFY(fySelect);
+    const TAX_RATE = 0.13;
+    const MONTH_LABELS = ['Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar','Apr','May','Jun'];
+    const byMonth = new Map<number, { amount: number; profit: number }>();
+    for (const p of mockDeliveryProjects) {
+      const node15 = p.nodes.find(n => n.nodeNo === 15);
+      if (!node15 || (node15.status !== 'completed' && node15.status !== 'delayed')) continue;
+      const completionDate = node15.actualDate || p.updatedAt;
+      const d = new Date(completionDate);
+      if (d < fyRange.start || d > fyRange.end) continue;
+      const fyMonth = d.getMonth() < 6 ? d.getMonth() + 6 : d.getMonth() - 6;
+      const prev = byMonth.get(fyMonth) || { amount: 0, profit: 0 };
+      const exTax = Math.round(p.contractAmount / (1 + TAX_RATE));
+      const actualProfit = p.totalActualCost ? (exTax - p.totalActualCost) : Math.round(exTax * 0.20);
+      byMonth.set(fyMonth, { amount: prev.amount + exTax, profit: prev.profit + actualProfit });
+    }
+    return Array.from({ length: 12 }, (_, i) => {
+      const m = byMonth.get(i);
+      return { name: MONTH_LABELS[i], value: m ? m.amount : 0, subValue: m ? m.profit : undefined };
+    });
+  }, [fySelect]);
+
+  // ── 共享：财年已过月数 ──
+  const elapsedMonths = useMemo(() => {
+    const now = new Date();
+    const fyRange = parseFY(fySelect);
+    if (now > fyRange.end) return 12;
+    if (now < fyRange.start) return 0;
+    const jsMonth = now.getMonth();
+    return (jsMonth >= 6 ? jsMonth - 6 : jsMonth + 6) + 1;
+  }, [fySelect]);
+
+  // ── 销售累计 ──
+  const salesCumulative = useMemo(() => {
+    const cumulative = monthlySalesData.slice(0, elapsedMonths).reduce((s, m) => s + m.value, 0);
+    const profitCumulative = monthlySalesData.slice(0, elapsedMonths).reduce((s, m) => s + (m.subValue || 0), 0);
+    const avgMonthly = annualSalesTarget ? Math.round(parseInt(annualSalesTarget, 10) * 1000 / 12) : 0;
+    const expectedCumulative = avgMonthly * elapsedMonths;
+    const gp3 = parseFloat(gp3Input) || 0;
+    const annualProfitTarget = annualSalesTarget && gp3 ? Math.round(parseInt(annualSalesTarget, 10) * gp3 / 100) : 0;
+    const avgMonthlyProfit = annualProfitTarget ? Math.round(annualProfitTarget * 1000 / 12) : 0;
+    const expectedProfitCumulative = avgMonthlyProfit * elapsedMonths;
+    return { cumulative, expectedCumulative, profitCumulative, expectedProfitCumulative, annualProfitTarget };
+  }, [monthlySalesData, annualSalesTarget, gp3Input]);
+
+  // ── 月度订单累计 + 利润累计 ──
+  const monthlyCumulative = useMemo(() => {
+    const cumulative = monthlyOrderData.slice(0, elapsedMonths).reduce((s, m) => s + m.value, 0);
+    const profitCumulative = monthlyOrderData.slice(0, elapsedMonths).reduce((s, m) => s + (m.subValue || 0), 0);
+    const avgMonthly = annualTargetInput ? Math.round(parseInt(annualTargetInput, 10) * 1000 / 12) : 0;
+    const expectedCumulative = avgMonthly * elapsedMonths;
+
+    const gp3 = parseFloat(gp3Input) || 0;
+    const annualProfitTarget = annualTargetInput && gp3 ? Math.round(parseInt(annualTargetInput, 10) * gp3 / 100) : 0;
+    const avgMonthlyProfit = annualProfitTarget ? Math.round(annualProfitTarget * 1000 / 12) : 0;
+    const expectedProfitCumulative = avgMonthlyProfit * elapsedMonths;
+
+    return { cumulative, expectedCumulative, profitCumulative, expectedProfitCumulative, elapsedMonths, annualProfitTarget, gp3 };
+  }, [monthlyOrderData, annualTargetInput, gp3Input]);
+
+  // ── 过去12个月范围（不随财年变化） ──
+  const past12mRange = useMemo(() => {
+    const now = new Date();
+    const end = new Date(now.getFullYear(), now.getMonth(), 0);
+    const start = new Date(end);
+    start.setFullYear(start.getFullYear() - 1);
+    start.setDate(1);
+    return { start, end };
+  }, []);
+
+  // ── 当前活跃管道（不过滤财年，仅 status='过程中'）──
+  const currentPipeline = useMemo(() =>
+    mockOpportunities.filter(o => o.status === '过程中'),
+  []);
+
+  // ── 过去12个月活跃的机会（用于转化率等）──
+  const past12mOpps = useMemo(() => {
+    const r = past12mRange;
+    return mockOpportunities.filter(o => {
+      const created = new Date(o.createdAt);
+      const updated = new Date(o.updatedAt);
+      return created <= r.end && updated >= r.start;
+    });
+  }, [past12mRange]);
+
+  // ── 漏斗：当前快照 ──
+  const funnelSnapshot = useMemo(() =>
+    STAGES.map(stage => ({
+      stage,
+      count: currentPipeline.filter(o => o.stage === stage).length,
+      amount: currentPipeline.filter(o => o.stage === stage).reduce((s, o) => s + o.amount, 0),
+      color: stageColors[stage] || '#999',
+    })), [currentPipeline]);
+
+  // ── 漏斗：财年累计（FY 过滤） ──
+  const funnelFy = useMemo(() =>
     STAGES.map(stage => {
       const items = fyFiltered.filter(o => o.stage === stage);
       return {
@@ -611,232 +549,267 @@ const SalesAnalysis: React.FC = () => {
       };
     }), [fyFiltered]);
 
-  // ── 财年各阶段汇总 ──
-  const fyInfo = useMemo(() => ({
-    count: fyFiltered.length,
-    amount: fyFiltered.reduce((s, o) => s + o.amount, 0),
-  }), [fyFiltered]);
+  // ── 中标（按赢单时间 updatedAt 归入财年）──
+  const fyWonByTime = useMemo(() => {
+    const fyRange = parseFY(fySelect);
+    return mockOpportunities.filter(o => {
+      if (o.status !== '赢') return false;
+      const d = new Date(o.updatedAt);
+      return d >= fyRange.start && d <= fyRange.end;
+    });
+  }, [fySelect]);
+
+  // ── 订单加权 GP3（财年内交付项目的加权平均 GP3，取自交付管理概算 GP3）──
+  const orderWeightedGP3 = useMemo(() => {
+    const fyRange = parseFY(fySelect);
+    const inFy = mockDeliveryProjects.filter(p => {
+      const d = new Date(p.createdAt);
+      return d >= fyRange.start && d <= fyRange.end;
+    });
+    if (inFy.length === 0) return 0;
+    let totalAmt = 0, weighted = 0;
+    for (const p of inFy) {
+      const q = mockQuotationSummaries.find(s => s.id === p.quotationId);
+      if (q) {
+        totalAmt += p.contractAmount;
+        // 交付管理概算 GP3 = (概算利润 / 未税合同额)，与报价 profitRate 同源
+        const gp3 = q.profitRate / 100;
+        weighted += p.contractAmount * gp3;
+      }
+    }
+    return totalAmt > 0 ? (weighted / totalAmt * 100) : 0;
+  }, [fySelect]);
+
+  // ── 已交付项目实际 GP3（已完成项目总结且成本审批通过的项目的加权平均实际 GP3）──
+  const deliveredActualGP3 = useMemo(() => {
+    const fyRange = parseFY(fySelect);
+    const delivered = mockDeliveryProjects.filter(p => {
+      const d = new Date(p.createdAt);
+      if (d < fyRange.start || d > fyRange.end) return false;
+      const node15 = p.nodes.find(n => n.nodeNo === 15);
+      if (!node15 || (node15.status !== 'completed' && node15.status !== 'delayed')) return false;
+      if (p.costStatus !== 'approved' || !p.totalActualCost) return false;
+      return true;
+    });
+    if (delivered.length === 0) return 0;
+    let totalAmt = 0, weighted = 0;
+    for (const p of delivered) {
+      totalAmt += p.contractAmount;
+      const actProfit = p.contractAmount - p.totalActualCost;
+      const actGP3 = p.contractAmount > 0 ? actProfit / p.contractAmount : 0;
+      weighted += p.contractAmount * actGP3;
+    }
+    return totalAmt > 0 ? (weighted / totalAmt * 100) : 0;
+  }, [fySelect]);
+
+  // ── 漏斗右侧 FY 累计用 ──
+  const fyWon = useMemo(() => ({
+    count: fyWonByTime.length,
+    amount: fyWonByTime.reduce((s, o) => s + o.amount, 0),
+  }), [fyWonByTime]);
+
+  // ── 输单（按输单时间 updatedAt 归入财年）──
+  const fyLostByTime = useMemo(() => {
+    const fyRange = parseFY(fySelect);
+    return mockOpportunities.filter(o => {
+      if (o.status !== '输') return false;
+      const d = new Date(o.updatedAt);
+      return d >= fyRange.start && d <= fyRange.end;
+    });
+  }, [fySelect]);
+
+  // ── 财年各阶段汇总（用于漏斗右侧 FY 累计显示）──
+  const fyInfo = useMemo(() => {
+    const inFy = mockOpportunities.filter(o => {
+      const fyRange = parseFY(fySelect);
+      const created = new Date(o.createdAt);
+      const updated = new Date(o.updatedAt);
+      const effectiveEnd = (o.status === '过程中' || o.status === '冻结') ? new Date() : updated;
+      return created <= fyRange.end && effectiveEnd >= fyRange.start;
+    });
+    return { count: inFy.length, amount: inFy.reduce((s, o) => s + o.amount, 0) };
+  }, [fySelect]);
 
   const fyLead = useMemo(() => {
-    const items = fyFiltered.filter(o =>
-      stageIdx(o.stage) >= stageIdx('线索') || o.status === '赢');
+    const items = fyFiltered.filter(o => stageIdx(o.stage) >= stageIdx('线索') || o.status === '赢');
     return { count: items.length, amount: items.reduce((s, o) => s + o.amount, 0) };
   }, [fyFiltered]);
 
   const fyOpp = useMemo(() => {
-    const items = fyFiltered.filter(o =>
-      stageIdx(o.stage) >= stageIdx('机会') || o.status === '赢');
+    const items = fyFiltered.filter(o => stageIdx(o.stage) >= stageIdx('机会') || o.status === '赢');
     return { count: items.length, amount: items.reduce((s, o) => s + o.amount, 0) };
   }, [fyFiltered]);
 
-  const fyWon = useMemo(() => {
-    const items = fyFiltered.filter(o => o.status === '赢');
+  // ── 过去12个月各阶段汇总（用于转化率）──
+  const p12mInfo = useMemo(() => ({
+    count: past12mOpps.length,
+    amount: past12mOpps.reduce((s, o) => s + o.amount, 0),
+  }), [past12mOpps]);
+
+  const p12mLead = useMemo(() => {
+    const items = past12mOpps.filter(o => stageIdx(o.stage) >= stageIdx('线索') || o.status === '赢');
     return { count: items.length, amount: items.reduce((s, o) => s + o.amount, 0) };
-  }, [fyFiltered]);
+  }, [past12mOpps]);
+
+  const p12mOpp = useMemo(() => {
+    const items = past12mOpps.filter(o => stageIdx(o.stage) >= stageIdx('机会') || o.status === '赢');
+    return { count: items.length, amount: items.reduce((s, o) => s + o.amount, 0) };
+  }, [past12mOpps]);
+
+  const p12mWon = useMemo(() => {
+    const items = past12mOpps.filter(o => o.status === '赢');
+    return { count: items.length, amount: items.reduce((s, o) => s + o.amount, 0) };
+  }, [past12mOpps]);
 
   // ── 关键指标 ──
   const kpi = useMemo(() => {
-    const weightedPipeline = fyFiltered
-      .filter(o => {
-        const idx = stageIdx(o.stage);
-        return (idx >= stageIdx('机会') && o.status !== '输' && o.status !== '冻结') || o.status === '赢';
-      })
-      .reduce((s, o) => s + (o.status === '赢' ? o.amount : Math.round(o.amount * o.winRate / 100)), 0);
-    const wonCount = fyWon.count;
-    const avgOrderAmount = wonCount > 0 ? Math.round(fyWon.amount / wonCount) : 0;
-    const profitData = fyFiltered
-      .filter(o => o.quotationId)
-      .map(o => {
-        const q = mockQuotationSummaries.find(q => q.id === o.quotationId);
-        const profitRate = q ? q.profitRate / 100 : 0.15;
-        return { amount: o.amount, profit: Math.round(o.amount * profitRate) };
-      });
-    const avgProfitAmt = profitData.length > 0
-      ? Math.round(profitData.reduce((s, p) => s + p.profit, 0) / profitData.length)
-      : 0;
-    const totalProfitAmt = profitData.reduce((s, p) => s + p.profit, 0);
-    const totalProfitBase = profitData.reduce((s, p) => s + p.amount, 0);
-    const weightedProfitRate = totalProfitBase > 0 ? totalProfitAmt / totalProfitBase * 100 : 0;
+    const pipelineOpps = currentPipeline.filter(o => stageIdx(o.stage) >= stageIdx('机会'));
+    // 加权管道：当前活跃管道
+    let totalWeighted = 0;
+    let totalProfit = 0;
+    for (const o of pipelineOpps) {
+      const weightedAmt = Math.round(o.amount * o.winRate / 100);
+      totalWeighted += weightedAmt;
+      const q = o.quotationId ? mockQuotationSummaries.find(q => q.id === o.quotationId) : undefined;
+      const profitRate = q ? q.profitRate / 100 : 0.15;
+      totalProfit += Math.round(weightedAmt * profitRate);
+    }
+    const weightedPipeline = totalWeighted;
+    const weightedProfit = totalProfit;
+    const weightedProfitRate = weightedPipeline > 0 ? (totalProfit / totalWeighted * 100) : 0;
+    // 以下为过去12个月滚动数据
+    const p12mWonOpps = past12mOpps.filter(o => o.status === '赢');
     const salesCycle = (() => {
-      if (fyWon.count === 0) return 0;
-      const days = fyFiltered.filter(o => o.status === '赢').reduce((s, o) => {
+      if (p12mWonOpps.length === 0) return 0;
+      const days = p12mWonOpps.reduce((s, o) => {
         const start = new Date(o.createdAt);
         const end = new Date(o.updatedAt);
         return s + Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
       }, 0);
-      return Math.round(days / fyWon.count);
+      return Math.round(days / p12mWonOpps.length);
     })();
-    const leadToWonRate = fyOpp.count > 0 ? fyWon.count / fyOpp.count * 100 : 0;
-    return { weightedPipeline, avgOrderAmount, avgProfitAmt,
-      weightedProfitRate, salesCycle, leadToWonRate };
-  }, [fyFiltered, fyWon, fyOpp]);
+    const leadToWonRate = p12mOpp.count > 0 ? p12mWon.count / p12mOpp.count * 100 : 0;
+    return { weightedPipeline, weightedProfit, weightedProfitRate, salesCycle, leadToWonRate };
+  }, [currentPipeline, past12mOpps]);
 
-  // ── 输单原因分层数据（使用 reasons 字段，通过 parseReasons 解析）──
-  const lossStacked = useMemo(() => {
-    const lost = fyFiltered.filter(o => o.status === '输');
-    const totalLost = lost.length;
+  // ── 漏斗用过去12个月转化率 ──
+  const funnelConv = useMemo(() => [
+    { key: 'lead', cnt: p12mInfo.count > 0 ? p12mLead.count / p12mInfo.count * 100 : 0, amt: p12mInfo.amount > 0 ? p12mLead.amount / p12mInfo.amount * 100 : 0 },
+    { key: 'opp', cnt: p12mLead.count > 0 ? p12mOpp.count / p12mLead.count * 100 : 0, amt: p12mLead.amount > 0 ? p12mOpp.amount / p12mLead.amount * 100 : 0 },
+    { key: 'won', cnt: p12mOpp.count > 0 ? p12mWon.count / p12mOpp.count * 100 : 0, amt: p12mOpp.amount > 0 ? p12mWon.amount / p12mOpp.amount * 100 : 0 },
+  ], [p12mInfo, p12mLead, p12mOpp, p12mWon]);
 
-    // 按 groupLabel 汇总：groupLabel -> { subLabel: count }
-    const groupMap = new Map<string, Map<string, number>>();
-    for (const opp of lost) {
-      if (!opp.reasons) continue;
-      for (const r of parseReasons(opp.reasons)) {
-        let subMap = groupMap.get(r.groupLabel);
-        if (!subMap) { subMap = new Map(); groupMap.set(r.groupLabel, subMap); }
-        subMap.set(r.subLabel, (subMap.get(r.subLabel) || 0) + 1);
+  // ── 输单原因柱状图（按输单时间归入财年）──
+  const dimLossReasons: BarItem[] = useMemo(() => {
+    const lossCompGroup = REASON_TAXONOMY.loss.groups.find(g => g.groupLabel === '竞对');
+    const allReasons: string[] = [];
+    if (lossCompGroup) {
+      for (const item of lossCompGroup.items) {
+        if (item.items && item.items.length > 0) {
+          for (const sub of item.items) allReasons.push(sub.label);
+        } else {
+          allReasons.push(item.label);
+        }
       }
     }
+    const countMap = new Map<string, number>();
+    for (const name of allReasons) countMap.set(name, 0);
+    for (const opp of fyLostByTime) {
+      if (!opp.reasons) continue;
+      for (const r of parseReasons(opp.reasons)) {
+        if (r.groupLabel !== '竞对') continue;
+        if (r.detailItems.length > 0) {
+          for (const item of r.detailItems) { if (countMap.has(item)) countMap.set(item, countMap.get(item)! + 1); }
+        } else {
+          if (countMap.has(r.subLabel)) countMap.set(r.subLabel, countMap.get(r.subLabel)! + 1);
+        }
+      }
+    }
+    return allReasons.map((name, i) => ({ name, value: countMap.get(name) || 0, color: i % 2 === 0 ? COLORS.primary : COLORS.purple }));
+  }, [fyLostByTime]);
 
-    const groupLabels = ['竞对', '取消', '放弃'];
-    return groupLabels.map(groupLabel => {
-      const subMap = groupMap.get(groupLabel);
-      const totalCount = subMap ? [...subMap.values()].reduce((a, b) => a + b, 0) : 0;
-      const subItems: LossSubItem[] = subMap
-        ? [...subMap.entries()].map(([subLabel, count]) => ({
-            subCategory: subLabel, thirdLevel: '', count, color: '#888',
-          }))
-        : [];
-      return {
-        category: groupLabel,
-        count: totalCount,
-        percent: totalLost > 0 ? (totalCount / totalLost) * 100 : 0,
-        color: '#888',
-        subItems,
-      };
-    });
-  }, [fyFiltered]);
+  const dimCancelReasons: BarItem[] = useMemo(() => {
+    const grp = REASON_TAXONOMY.loss.groups.find(g => g.groupLabel === '取消');
+    const allReasons: string[] = grp ? grp.items.map(i => i.label) : [];
+    const countMap = new Map<string, number>();
+    for (const name of allReasons) countMap.set(name, 0);
+    for (const opp of fyLostByTime) {
+      if (!opp.reasons) continue;
+      for (const r of parseReasons(opp.reasons)) {
+        if (r.groupLabel !== '取消') continue;
+        if (r.detailItems.length > 0) { for (const item of r.detailItems) { if (countMap.has(item)) countMap.set(item, countMap.get(item)! + 1); } }
+        else { if (countMap.has(r.subLabel)) countMap.set(r.subLabel, countMap.get(r.subLabel)! + 1); }
+      }
+    }
+    return allReasons.map((name, i) => ({ name, value: countMap.get(name) || 0, color: i % 2 === 0 ? COLORS.primary : COLORS.purple }));
+  }, [fyLostByTime]);
 
-  // ── 竞对分析 ──
+  const dimAbandonReasons: BarItem[] = useMemo(() => {
+    const grp = REASON_TAXONOMY.loss.groups.find(g => g.groupLabel === '放弃');
+    const allReasons: string[] = grp ? grp.items.map(i => i.label) : [];
+    const countMap = new Map<string, number>();
+    for (const name of allReasons) countMap.set(name, 0);
+    for (const opp of fyLostByTime) {
+      if (!opp.reasons) continue;
+      for (const r of parseReasons(opp.reasons)) {
+        if (r.groupLabel !== '放弃') continue;
+        if (r.detailItems.length > 0) { for (const item of r.detailItems) { if (countMap.has(item)) countMap.set(item, countMap.get(item)! + 1); } }
+        else { if (countMap.has(r.subLabel)) countMap.set(r.subLabel, countMap.get(r.subLabel)! + 1); }
+      }
+    }
+    return allReasons.map((name, i) => ({ name, value: countMap.get(name) || 0, color: i % 2 === 0 ? COLORS.primary : COLORS.purple }));
+  }, [fyLostByTime]);
 
-  // ── 销售员统一统计（所有维度一次遍历） ──
+  // ── 销售员统一统计 ──
   const salesmenStats = useMemo(() => {
     const map = new Map<string, {
-      name: string; count: number; amount: number;
-      wins: number; winAmount: number;
+      name: string; wins: number; orderAmount: number; totalAmount: number;
       pipelinePotential: number; profitTotal: number;
-      leadCount: number; lateStageCount: number; lostAmount: number;
     }>();
-    for (const o of fyFiltered) {
+    // 订单金额/利润：财年赢单（按 time 归入）
+    for (const o of fyWonByTime) {
       if (!o.salesman) continue;
       let s = map.get(o.salesman);
-      if (!s) {
-        s = { name: o.salesman, count: 0, amount: 0, wins: 0, winAmount: 0,
-          pipelinePotential: 0, profitTotal: 0, leadCount: 0, lateStageCount: 0, lostAmount: 0 };
-        map.set(o.salesman, s);
+      if (!s) { s = { name: o.salesman, wins: 0, orderAmount: 0, totalAmount: 0, pipelinePotential: 0, profitTotal: 0 }; map.set(o.salesman, s); }
+      s.wins++;
+      s.orderAmount += o.amount;
+      s.totalAmount += o.amount;
+      // 利润
+      let profitRate = 0.15;
+      if (o.quotationId) {
+        const q = mockQuotationSummaries.find(q => q.id === o.quotationId);
+        if (q) profitRate = q.profitRate / 100;
       }
-      s.count++;
-      s.amount += o.amount;
-
-      if (o.status === '赢') {
-        s.wins++;
-        s.winAmount += o.amount;
-        // 利润 = 成交金额 × 报价利润率
-        let profitRate = 0.15;
-        if (o.quotationId) {
-          const q = mockQuotationSummaries.find(q => q.id === o.quotationId);
-          if (q) profitRate = q.profitRate / 100;
-        }
-        s.profitTotal += Math.round(o.amount * profitRate);
-      } else if (o.status === '输') {
-        s.lostAmount += o.amount;
-      }
-
-      if (o.status === '过程中') {
-        const idx = stageIdx(o.stage);
-        if (idx >= stageIdx('机会')) {
-          s.pipelinePotential += Math.round(o.amount * o.winRate / 100);
-          s.lateStageCount++;
-        } else if (idx === stageIdx('线索')) {
-          s.leadCount++;
-        }
-      }
-      // 冻结/信息阶段的 count++ 和 amount 已计入，但不计入任何维度指标
+      s.profitTotal += Math.round(o.amount * profitRate);
     }
-
-    return [...map.values()].map(s => ({
+    // 管道潜力：当前活跃管道（不过滤财年）
+    for (const o of currentPipeline) {
+      if (!o.salesman) continue;
+      let s = map.get(o.salesman);
+      if (!s) { s = { name: o.salesman, wins: 0, orderAmount: 0, pipelinePotential: 0, profitTotal: 0 }; map.set(o.salesman, s); }
+      const idx = stageIdx(o.stage);
+      if (idx >= stageIdx('机会')) {
+        s.pipelinePotential += Math.round(o.amount * o.winRate / 100);
+      }
+    }
+        return [...map.values()].map(s => ({
       ...s,
-      avgAmount: s.count > 0 ? Math.round(s.amount / s.count) : 0,
-      conversionEff: s.amount > 0 ? (s.winAmount / s.amount) * 100 : 0,
+      avgOrderAmount: s.wins > 0 ? Math.round(s.orderAmount / s.wins) : 0,
+      conversionEff: s.totalAmount > 0 ? s.orderAmount / s.totalAmount * 100 : 0,
     }));
-  }, [fyFiltered]);
+  }, [fyWonByTime, currentPipeline]);
 
-  // ── 7 个维度提取 ──
-  const dimWinAmount: BarItem[] = salesmenStats
-    .map(s => ({ name: s.name, value: s.winAmount }));
-  const dimPipeline: BarItem[] = salesmenStats
-    .map(s => ({ name: s.name, value: s.pipelinePotential }));
-  const dimEfficiency: BarItem[] = salesmenStats
-    .map(s => ({ name: s.name, value: Math.round(s.conversionEff * 10) / 10 }));
-  const dimProfit: BarItem[] = salesmenStats
-    .map(s => ({ name: s.name, value: s.profitTotal }));
-  const dimFunnelHealth: StackedBarItem[] = salesmenStats
-    .map(s => ({ name: s.name, bottom: s.leadCount, top: s.lateStageCount }));
-  const dimAvgAmount: BarItem[] = salesmenStats
-    .map(s => ({ name: s.name, value: s.avgAmount }));
-  const dimLostAmount: BarItem[] = salesmenStats
-    .map(s => ({ name: s.name, value: s.lostAmount }));
-
-  // ── 赢单原因统计（6 个预定义子因，含零值）──
-  // ── 输单量按竞争对手排名（前 10）──
-  const dimLossByCompetitor: BarItem[] = useMemo(() => {
-    const lossMap = new Map<string, number>();
-    for (const o of fyFiltered) {
-      if (o.status === '输' && o.competitor) {
-        const names = o.competitor.split(/[、，]/);
-        for (const name of names) {
-          const t = name.trim();
-          if (t) lossMap.set(t, (lossMap.get(t) || 0) + 1);
-        }
-      }
-    }
-    return [...lossMap.entries()]
-      .map(([name, value]) => ({ name, value }))
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 10);
-  }, [fyFiltered]);
-
-  const dimWinReasons: BarItem[] = useMemo(() => {
-    const winLeafItems = ['主机成本', '解决方案成本', '痛点发掘和解决', '主机性能', '客户关系', '品牌'];
-    const won = fyFiltered.filter(o => o.status === '赢');
-    const countMap = new Map<string, number>();
-    for (const opp of won) {
-      if (!opp.reasons) continue;
-      for (const r of parseReasons(opp.reasons)) {
-        if (r.detailItems.length > 0) {
-          for (const item of r.detailItems) {
-            countMap.set(item, (countMap.get(item) || 0) + 1);
-          }
-        } else {
-          countMap.set(r.subLabel, (countMap.get(r.subLabel) || 0) + 1);
-        }
-      }
-    }
-    return winLeafItems.map(name => ({ name, value: countMap.get(name) || 0 }));
-  }, [fyFiltered]);
-
-  // ── 赢单-打败的竞争对手统计 ──
-  const dimWinByCompetitor: BarItem[] = useMemo(() => {
-    const won = fyFiltered.filter(o => o.status === '赢' && o.competitor);
-    const map = new Map<string, number>();
-    for (const o of won) {
-      const names = o.competitor.split(/[、，]/);
-      for (const name of names) {
-        const t = name.trim();
-        if (t) map.set(t, (map.get(t) || 0) + 1);
-      }
-    }
-    return [...map.entries()]
-      .map(([name, value]) => ({ name, value }))
-      .sort((a, b) => b.value - a.value);
-  }, [fyFiltered]);
-
+  // ── 4 个维度提取 ──
+  const dimEfficiency: BarItem[] = salesmenStats.map(s => ({ name: s.name, value: Math.round(s.conversionEff * 10) / 10 }));
+  const dimOrderAmount: BarItem[] = salesmenStats.map(s => ({ name: s.name, value: s.orderAmount }));
+  const dimPipeline: BarItem[] = salesmenStats.map(s => ({ name: s.name, value: s.pipelinePotential }));
+  const dimProfit: BarItem[] = salesmenStats.map(s => ({ name: s.name, value: s.profitTotal }));
 
   // 概览卡片
   const overviewItems = [
     { label: '加权管道', value: `¥${fmtK(kpi.weightedPipeline)}`, color: COLORS.primary, icon: '📊' },
-    { label: '平均订单', value: `¥${fmtK(kpi.avgOrderAmount)}`, color: COLORS.success, icon: '📦' },
-    { label: '平均利润', value: `¥${fmtK(kpi.avgProfitAmt)}`, color: '#5a2d82', icon: '💰' },
-    { label: '利润率', value: `${kpi.weightedProfitRate.toFixed(1)}%`,
+    { label: '加权利润', value: `¥${fmtK(kpi.weightedProfit)}`, color: COLORS.purple, icon: '💰' },
+    { label: '加权利润率', value: `${kpi.weightedProfitRate.toFixed(1)}%`,
       color: kpi.weightedProfitRate >= 15 ? COLORS.success : '#e65100', icon: '📈' },
     { label: '销售周期', value: `${kpi.salesCycle} 天`,
       color: kpi.salesCycle > 0 && kpi.salesCycle <= 120 ? COLORS.success : '#e65100', icon: '⏱️' },
@@ -858,32 +831,86 @@ const SalesAnalysis: React.FC = () => {
       {/* Row 2: 漏斗 | 赢单原因 | 输单原因 */}
       <div style={{ display: 'flex', gap: 16, marginBottom: 16 }}>
         <Card size="small"
-          title={<span style={{ fontSize: 14, fontWeight: 600 }}>赢单原因</span>}
+          title={<span style={{ fontSize: 14, fontWeight: 600 }}>月度订单</span>}
           style={{ flex: 1, borderRadius: 8, border: '1px solid #f0f0f0' }}
-          styles={{ body: { padding: '12px 16px' } }}
+          styles={{ body: { padding: '8px 12px' } }}
         >
-          <VerticalBarChart title="" data={dimWinReasons} format="num" height={200} topN={6} barWidthRatio={0.3} />
-          <div style={{ marginTop: 33, paddingTop: 6 }}>
-            <span style={{ fontSize: 11, fontWeight: 400, color: '#888', display: 'block', marginBottom: 6, textAlign: 'right', paddingRight: 10 }}>击败对手</span>
-            {dimWinByCompetitor.length === 0 ? (
-              <div style={{ fontSize: 12, color: '#ccc', textAlign: 'center', padding: 8 }}>暂无数据</div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginBottom: 2, minHeight: 18 }}>
+            {targetEditing ? (
+              <input type="number" min={0} ref={targetRef}
+                value={annualTargetInput}
+                onChange={e => saveAnnualTarget(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                onBlur={() => setTargetEditing(false)}
+                onKeyDown={e => {{ if (e.key === 'Enter') setTargetEditing(false); }}}
+                style={{
+                  width: `${Math.max(annualTargetInput.length || 1, 1)}ch`,
+                  minWidth: '14ch', height: 18,
+                  border: 'none', borderRadius: 0,
+                  padding: 0, margin: 0, boxSizing: 'content-box',
+                  fontSize: 12, outline: 'none', textAlign: 'right',
+                  background: 'transparent', color: COLORS.primary, fontFamily: 'inherit',
+                  fontWeight: 700,
+                }}
+                autoFocus
+              />
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                {dimWinByCompetitor.slice(0, 5).map((item, i) => {
-                  const maxVal = Math.max(...dimWinByCompetitor.map(d => d.value), 1);
-                  return (
-                    <div key={item.name} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
-                      <span style={{ width: 60, textAlign: 'right', color: '#555', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.name}</span>
-                      <div style={{ flex: 1, height: 12, border: '2px solid #888', position: 'relative' }}>
-                        <div style={{ width: `${(item.value / maxVal) * 100}%`, height: '100%', background: 'transparent' }} />
-                      </div>
-                      <span style={{ width: 16, textAlign: 'right', color: '#888' }}>{item.value}</span>
-                    </div>
-                  );
-                })}
-              </div>
+              <span style={{ fontSize: 10, cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: 700 }}
+                onClick={() => {{ setTargetEditing(true); setTimeout(() => targetRef.current?.focus(), 0); }}}>
+                <span style={{ color: COLORS.primary }}>{annualTargetInput ? `${parseInt(annualTargetInput, 10).toLocaleString()}K` : '—'}</span>
+                {annualTargetInput ? (
+                  <span style={{ color: monthlyCumulative.cumulative >= monthlyCumulative.expectedCumulative ? COLORS.primary : COLORS.danger, fontSize: 10 }}>
+                    {`(${Math.round(monthlyCumulative.cumulative / 1000).toLocaleString()}K)`}
+                  </span>
+                ) : null}
+              </span>
             )}
           </div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginBottom: 2, minHeight: 18 }}>
+            <span style={{ fontSize: 10, whiteSpace: 'nowrap', fontWeight: 700 }}>
+              <span style={{ color: COLORS.purple }}>
+                {annualTargetInput && gp3Input ? `${monthlyCumulative.annualProfitTarget.toLocaleString()}K` : '—'}
+              </span>
+              {annualTargetInput && gp3Input ? (
+                <span style={{ color: monthlyCumulative.profitCumulative >= monthlyCumulative.expectedProfitCumulative ? COLORS.purple : COLORS.danger, fontSize: 10 }}>
+                  &nbsp;{`(${Math.round(monthlyCumulative.profitCumulative / 1000).toLocaleString()}K)`}
+                </span>
+              ) : null}
+            </span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginBottom: 2, minHeight: 18 }}>
+            {gp3Editing ? (
+              <input type="number" min={0} max={100} ref={gp3Ref}
+                value={gp3Input}
+                onChange={e => saveGp3(e.target.value.replace(/[^\d.]/g, '').replace(/(\.\d).*/, '$1').slice(0, 5))}
+                onBlur={() => setGp3Editing(false)}
+                onKeyDown={e => {{ if (e.key === 'Enter') setGp3Editing(false); }}}
+                style={{
+                  width: `${Math.max(gp3Input.length || 1, 1)}ch`,
+                  minWidth: '4ch', height: 18,
+                  border: 'none', borderRadius: 0,
+                  padding: 0, margin: 0, boxSizing: 'content-box',
+                  fontSize: 10, outline: 'none', textAlign: 'right',
+                  background: 'transparent', color: COLORS.purple, fontFamily: 'inherit',
+                  fontWeight: 700,
+                }}
+                autoFocus
+              />
+            ) : (
+              <span style={{ fontSize: 10, cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: 700 }}
+                onClick={() => {{ setGp3Editing(true); setTimeout(() => gp3Ref.current?.focus(), 0); }}}>
+                <span style={{ color: COLORS.purple }}>
+                  {gp3Input || '—'}
+                </span>
+              </span>
+            )}
+            <span style={{ fontSize: 10, color: COLORS.purple, fontWeight: 700, marginLeft: 4 }}>
+              ({orderWeightedGP3 > 0 ? orderWeightedGP3.toFixed(1) : '—'})
+            </span>
+          </div>
+          <VerticalBarChart title="" data={monthlyOrderData} format="K" height={290} topN={12} barWidthRatio={0.6} maxBarWidth={120} contentOffset={25} chartWidth={620} disableSort padTop={32} cardBorder={false}
+            targetValue={annualTargetInput ? Math.round(parseInt(annualTargetInput, 10) * 1000 / 12) : undefined}
+            targetLabel={annualTargetInput ? `${Math.round(parseInt(annualTargetInput, 10) / 12)}K` : undefined}
+          />
         </Card>
 
         <Card size="small"
@@ -892,42 +919,109 @@ const SalesAnalysis: React.FC = () => {
           styles={{ body: { padding: '8px 12px' } }}
         >
           <SalesFunnel
-            funnelData={funnel}
+            funnelData={funnelSnapshot}
             fyInfo={fyInfo} fyLead={fyLead} fyOpp={fyOpp} fyWon={fyWon}
+            convInfo={p12mInfo} convLead={p12mLead} convOpp={p12mOpp} convWon={p12mWon}
           />
         </Card>
 
+
         <Card size="small"
-          title={<span style={{ fontSize: 14, fontWeight: 600 }}>输单原因</span>}
+          title={<span style={{ fontSize: 14, fontWeight: 600 }}>月度销售</span>}
           style={{ flex: 1, borderRadius: 8, border: '1px solid #f0f0f0' }}
-          styles={{ body: { padding: '12px 16px' } }}
+          styles={{ body: { padding: '8px 12px' } }}
         >
-          <div style={{ marginBottom: 12, width: '100%', overflow: 'hidden' }}>
-            <VerticalBarChart title="竞争对手" data={dimLossByCompetitor} format="num" height={200} topN={10} barWidthRatio={0.4} />
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginBottom: 2, minHeight: 18 }}>
+            {salesTargetEditing ? (
+              <input type="number" min={0} ref={salesTargetRef}
+                value={annualSalesTarget}
+                onChange={e => saveSalesTarget(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                onBlur={() => setSalesTargetEditing(false)}
+                onKeyDown={e => {{ if (e.key === 'Enter') setSalesTargetEditing(false); }}}
+                style={{
+                  width: `${Math.max(annualSalesTarget.length || 1, 1)}ch`,
+                  minWidth: '14ch', height: 18,
+                  border: 'none', borderRadius: 0,
+                  padding: 0, margin: 0, boxSizing: 'content-box',
+                  fontSize: 12, outline: 'none', textAlign: 'right',
+                  background: 'transparent', color: COLORS.success, fontFamily: 'inherit',
+                  fontWeight: 700,
+                }}
+                autoFocus
+              />
+            ) : (
+              <span style={{ fontSize: 10, cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: 700 }}
+                onClick={() => {{ setSalesTargetEditing(true); setTimeout(() => salesTargetRef.current?.focus(), 0); }}}>
+                <span style={{ color: COLORS.success }}>{annualSalesTarget ? `${parseInt(annualSalesTarget, 10).toLocaleString()}K` : '—'}</span>
+                {annualSalesTarget ? (
+                  <span style={{ color: salesCumulative.cumulative >= salesCumulative.expectedCumulative ? COLORS.success : COLORS.danger, fontSize: 10 }}>
+                    {`(${Math.round(salesCumulative.cumulative / 1000).toLocaleString()}K)`}
+                  </span>
+                ) : null}
+              </span>
+            )}
           </div>
-          <div style={{ transform: 'translateX(-15px) translateY(25px)' }}><LossChart data={lossStacked} /></div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginBottom: 2, minHeight: 18 }}>
+            <span style={{ fontSize: 10, whiteSpace: 'nowrap', fontWeight: 700 }}>
+              <span style={{ color: COLORS.purple }}>
+                {annualSalesTarget && gp3Input ? `${salesCumulative.annualProfitTarget.toLocaleString()}K` : '—'}
+              </span>
+              {annualSalesTarget && gp3Input ? (
+                <span style={{ color: salesCumulative.profitCumulative >= salesCumulative.expectedProfitCumulative ? COLORS.purple : COLORS.danger, fontSize: 10 }}>
+                  &nbsp;{`(${Math.round(salesCumulative.profitCumulative / 1000).toLocaleString()}K)`}
+                </span>
+              ) : null}
+            </span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginBottom: 2, minHeight: 18 }}>
+            {gp3Editing ? (
+              <input type="number" min={0} max={100} ref={gp3Ref}
+                value={gp3Input}
+                onChange={e => saveGp3(e.target.value.replace(/[^\d.]/g, '').replace(/(\.\d).*/, '$1').slice(0, 5))}
+                onBlur={() => setGp3Editing(false)}
+                onKeyDown={e => {{ if (e.key === 'Enter') setGp3Editing(false); }}}
+                style={{
+                  width: `${Math.max(gp3Input.length || 1, 1)}ch`,
+                  minWidth: '4ch', height: 18,
+                  border: 'none', borderRadius: 0,
+                  padding: 0, margin: 0, boxSizing: 'content-box',
+                  fontSize: 10, outline: 'none', textAlign: 'right',
+                  background: 'transparent', color: COLORS.purple, fontFamily: 'inherit',
+                  fontWeight: 700,
+                }}
+                autoFocus
+              />
+            ) : (
+              <span style={{ fontSize: 10, cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: 700 }}
+                onClick={() => {{ setGp3Editing(true); setTimeout(() => gp3Ref.current?.focus(), 0); }}}>
+                <span style={{ color: COLORS.purple }}>
+                  {gp3Input || '—'}
+                </span>
+              </span>
+            )}
+            <span style={{ fontSize: 10, color: COLORS.danger, fontWeight: 700, marginLeft: 4 }}>
+              ({deliveredActualGP3 > 0 ? deliveredActualGP3.toFixed(1) : '—'})
+            </span>
+          </div>
+          <VerticalBarChart title="" data={monthlySalesData} format="K" height={290} topN={12} barWidthRatio={0.6} maxBarWidth={120} contentOffset={25} chartWidth={620} disableSort padTop={32} cardBorder={false}
+            targetValue={annualSalesTarget ? Math.round(parseInt(annualSalesTarget, 10) * 1000 / 12) : undefined}
+            targetLabel={annualSalesTarget ? `${Math.round(parseInt(annualSalesTarget, 10) / 12)}K` : undefined}
+          />
         </Card>
       </div>
 
       {/* Row 3: 销售排行 4×2 网格 */}
       <div style={{ display: 'flex', flexDirection: 'column' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 16, gridAutoRows: 270, marginTop: 10 }}>
-          <VerticalBarChart title="销售额" data={dimWinAmount} format="K" contentOffset={35} />
-          <VerticalBarChart title="利润额" data={dimProfit} format="K" contentOffset={35} />
-          <VerticalBarChart title="管道潜力" data={dimPipeline} format="K" contentOffset={35} />
-          <VerticalBarChart title="转化效率" data={dimEfficiency} format="%" contentOffset={35} />
+        <div style={{ display: 'flex', gap: 16, justifyContent: 'center', marginTop: 10 }}>
+          <div style={{ flex: '0 0 calc(25% - 12px)' }}><VerticalBarChart title="竞对" data={dimLossReasons} format="num" height={220} topN={7} barWidthRatio={0.6} maxBarWidth={26} hideAvgLine contentOffset={30} padBottom={28} /></div>
+          <div style={{ flex: '0 0 calc(25% - 12px)' }}><VerticalBarChart title="取消" data={dimCancelReasons} format="num" height={220} topN={4} barWidthRatio={0.6} maxBarWidth={26} hideAvgLine contentOffset={30} padBottom={28} /></div>
+          <div style={{ flex: '0 0 calc(25% - 12px)' }}><VerticalBarChart title="放弃" data={dimAbandonReasons} format="num" height={220} topN={6} barWidthRatio={0.6} maxBarWidth={26} hideAvgLine contentOffset={30} padBottom={28} /></div>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 16, marginTop: 15, gridAutoRows: 270 }}>
-          <VerticalBarChart title="项目单价" data={dimAvgAmount} format="K" contentOffset={35} />
-          <VerticalBarChart title="输单金额" data={dimLostAmount} format="K" contentOffset={35} />
-          <VerticalStackedBarChart title="漏斗健康度" data={dimFunnelHealth} contentOffset={35} />
-          {/* 预留格 */}
-          <Card size="small"
-            style={{ borderRadius: 8, border: '1px dashed #e8e8e8', height: '100%' }}
-            styles={{ body: { height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' } }}
-          >
-            <span style={{ color: '#ccc', fontSize: 13 }}>待扩展</span>
-          </Card>
+          <VerticalBarChart title="订单金额" data={dimOrderAmount} format="K" contentOffset={35} />
+          <VerticalBarChart title="订单利润" data={dimProfit} format="K" contentOffset={35} />
+          <VerticalBarChart title="转化效率" data={dimEfficiency} format="%" contentOffset={35} />
+          <VerticalBarChart title="管道潜力" data={dimPipeline} format="K" contentOffset={35} />
         </div>
       </div>
     </div>

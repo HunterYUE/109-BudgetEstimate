@@ -20,7 +20,7 @@ const STAGE_OPTIONS = ['信息', '线索', '机会', '投标', '议价', '中标
 
 const stageColors: Record<string, string> = {
 
-  信息: '#999', 线索: COLORS.primary, 机会: '#5a2d82',
+  信息: '#999', 线索: COLORS.primary, 机会: COLORS.purple,
 
   投标: '#e65100', 议价: '#c76a00', 中标: COLORS.success,
 
@@ -278,14 +278,6 @@ const SalesOpportunityList: React.FC = () => {
 
   }, [msg]);
 
-
-
-  const handleFreezeAnalyze = useCallback((opp: SalesOpportunity) => {
-
-
-    msg.success('项目信息已移交分析模块');
-
-  }, [msg]);
 
 
 
@@ -575,12 +567,12 @@ const SalesOpportunityList: React.FC = () => {
           if (rec.status === '输') return (
             <Button type="text" size="small" icon={<CloseOutlined style={{ fontSize: 18 }} />}
               onClick={() => handleConfirmTerminate(rec)}
-              style={{ color: COLORS.danger }} title="确认终止" />
+              style={{ color: COLORS.purple }} title="确认终止" />
           );
           return (
             <Button type="text" size="small" icon={<CheckOutlined style={{ fontSize: 18 }} />}
               onClick={() => handlePromote(rec, '线索')}
-              style={{ color: COLORS.primary }} title="转线索" />
+              style={{ color: COLORS.purple }} title="转线索" />
           );
         }
         if (tabFilter === 'lead') {
@@ -588,12 +580,12 @@ const SalesOpportunityList: React.FC = () => {
           if (rec.status === '输') return (
             <Button type="text" size="small" icon={<CloseOutlined style={{ fontSize: 18 }} />}
               onClick={() => handleConfirmTerminate(rec)}
-              style={{ color: COLORS.danger }} title="确认终止" />
+              style={{ color: COLORS.purple }} title="确认终止" />
           );
           return (
             <Button type="text" size="small" icon={<CheckOutlined style={{ fontSize: 18 }} />}
               onClick={() => handlePromote(rec, '机会')}
-              style={{ color: '#5a2d82' }} title="转机会" />
+              style={{ color: COLORS.purple }} title="转机会" />
           );
         }
         return (
@@ -601,20 +593,15 @@ const SalesOpportunityList: React.FC = () => {
             {rec.status === '赢' && (
               <Button type="text" size="small" icon={<CheckOutlined style={{ fontSize: 18 }} />}
                 onClick={() => handleWinDeliver(rec)}
-                style={{ color: COLORS.success }} title="转交付" />
+                style={{ color: COLORS.purple }} title="转交付" />
             )}
             {rec.status === '输' && !rec.terminated && (
               <Button type="text" size="small" icon={<CloseOutlined style={{ fontSize: 18 }} />}
                 onClick={() => handleConfirmTerminate(rec)}
-                style={{ color: COLORS.danger }} title="确认终止" />
+                style={{ color: COLORS.purple }} title="确认终止" />
             )}
             {rec.status === '输' && rec.terminated && (
               <span style={{ fontSize: 12, color: '#999' }}>已终止</span>
-            )}
-            {rec.status === '冻结' && (
-              <Button type="text" size="small" icon={<CheckOutlined style={{ fontSize: 18 }} />}
-                onClick={() => handleFreezeAnalyze(rec)}
-                style={{ color: '#fa8c16' }} title="分析" />
             )}
           </div>
         );
@@ -622,7 +609,7 @@ const SalesOpportunityList: React.FC = () => {
     },
     { title: '操作日期', dataIndex: 'updatedAt', width: 100,
       render: (v: string) => <span style={{ fontSize: 13, color: '#999' }}>{v || '—'}</span> },
-  ], [tabFilter, touch, handlePromote, handleConfirmTerminate, handleWinDeliver, handleFreezeAnalyze, handleStageClick, opportunities]);
+  ], [tabFilter, touch, handlePromote, handleConfirmTerminate, handleWinDeliver, handleStageClick, opportunities]);
 
 
 
@@ -663,9 +650,9 @@ const SalesOpportunityList: React.FC = () => {
 
             padding: '8px 20px', cursor: 'pointer', fontSize: 14,
 
-            borderBottom: tabFilter === 'lead' ? '2px solid #5a2d82' : '2px solid transparent',
+            borderBottom: tabFilter === 'lead' ? `2px solid ${COLORS.purple}` : '2px solid transparent',
 
-            color: tabFilter === 'lead' ? '#5a2d82' : '#666', fontWeight: tabFilter === 'lead' ? 600 : 400,
+            color: tabFilter === 'lead' ? COLORS.purple : '#666', fontWeight: tabFilter === 'lead' ? 600 : 400,
 
             marginBottom: -2, transition: 'all 0.15s',
 

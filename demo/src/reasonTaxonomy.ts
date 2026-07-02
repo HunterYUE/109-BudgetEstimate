@@ -29,10 +29,11 @@ export const REASON_TAXONOMY: Record<string, StatusReasons> = {
       {
         groupLabel: '竞对',
         items: [
-          { label: '价格', items: [{ label: '主机成本' }, { label: '解决方案成本' }] },
-          { label: '技术方案', items: [{ label: '痛点发掘和解决' }, { label: '主机性能' }] },
+          { label: '价格', items: [{ label: '主机成本' }, { label: '解决方案' }] },
+          { label: '技术方案', items: [{ label: '痛点发掘' }, { label: '主机性能' }] },
           { label: '客户关系', items: [{ label: '客户关系' }] },
           { label: '品牌', items: [{ label: '品牌' }] },
+          { label: '交货期', items: [{ label: '交货期' }] },
         ],
       },
     ],
@@ -43,10 +44,11 @@ export const REASON_TAXONOMY: Record<string, StatusReasons> = {
       {
         groupLabel: '竞对',
         items: [
-          { label: '价格', items: [{ label: '主机价格' }, { label: '解决方案价格' }] },
-          { label: '技术方案', items: [{ label: '痛点发掘和解决' }, { label: '主机性能' }] },
+          { label: '价格', items: [{ label: '主机价格' }, { label: '解决方案' }] },
+          { label: '技术方案', items: [{ label: '痛点发掘' }, { label: '主机性能' }] },
           { label: '客户关系', items: [{ label: '客户关系' }] },
           { label: '品牌', items: [{ label: '品牌' }] },
+          { label: '交货期', items: [{ label: '交货期' }] },
         ],
       },
       {
@@ -61,11 +63,12 @@ export const REASON_TAXONOMY: Record<string, StatusReasons> = {
       {
         groupLabel: '放弃',
         items: [
-          { label: '利润率过低' },
+          { label: '利润过低' },
           { label: '风险过高' },
-          { label: '技术不达标' },
-          { label: '交付能力不足' },
-          { label: '介入时间晚' },
+          { label: '技术性能' },
+          { label: '交付产能' },
+          { label: '介入太晚' },
+          { label: '客户关系' },
         ],
       },
     ],

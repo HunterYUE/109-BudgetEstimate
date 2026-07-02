@@ -321,7 +321,7 @@ const ItemCostTable: React.FC<Props> = ({ groups, actualCosts, onActualCostChang
         _type: 'item',
         category: '质保费用',
         code: 'W-WARRANTY',
-        detail: '质保成本已计入实际成本，项目执行中不可使用',
+        detail: '质保成本已计入实际成本',
         estimated: warrantyCost,
         actual: warrantyCost,
         variance: 0,
@@ -386,7 +386,7 @@ const ItemCostTable: React.FC<Props> = ({ groups, actualCosts, onActualCostChang
         const isRisk = rec._isRiskItem;
         const isWarr = rec._warrantyItem;
         return (
-          <span style={{ fontSize: 13, color: isRisk ? '#e65100' : isWarr ? '#999' : '#666' }}>
+          <span style={{ fontSize: 13, color: COLORS.primary }}>
             {rec.detail}
 
           </span>
@@ -396,7 +396,7 @@ const ItemCostTable: React.FC<Props> = ({ groups, actualCosts, onActualCostChang
     {
       title: '概算成本', width: 120, align: 'right' as const,
       render: (_: any, rec: FlatRow) => (
-        <span style={{ fontWeight: rec._type === 'header' ? 700 : 600, fontSize: 13 }}>
+        <span style={{ fontWeight: rec._type === 'header' ? 700 : 600, fontSize: 13, color: '#666' }}>
           ¥{formatMoney(rec.estimated)}
         </span>
       ),
@@ -405,20 +405,25 @@ const ItemCostTable: React.FC<Props> = ({ groups, actualCosts, onActualCostChang
       title: '实际成本', width: 140, align: 'right' as const,
       render: (_: any, rec: FlatRow) => {
         if (rec._type === 'header') {
-          return <span style={{ fontWeight: 700, fontSize: 13 }}>¥{formatMoney(rec.actual)}</span>;
+          return <span style={{ fontWeight: 700, fontSize: 13, color: '#000' }}>¥{formatMoney(rec.actual)}</span>;
         }
         if (locked) {
-          return <span style={{ fontWeight: 600, fontSize: 13 }}>¥{formatMoney(rec.actual)}</span>;
+          return <span style={{ fontWeight: 600, fontSize: 13, color: '#000' }}>¥{formatMoney(rec.actual)}</span>;
         }
         return (
-          <input type="number" min={0}
-            value={rec.actual || ''}
-            onChange={e => handleActualChange(rec, parseFloat(e.target.value) || 0)}
-            style={{
-              width: '100%', textAlign: 'right', border: 'none', background: 'transparent',
-              outline: 'none', fontSize: 13, MozAppearance: 'textfield',
-            }}
-          />
+          <div style={{ position: 'relative', textAlign: 'right' }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: '#000' }}>
+              ¥{formatMoney(rec.actual)}
+            </span>
+            <input type="number" min={0}
+              value={rec.actual || ''}
+              onChange={e => handleActualChange(rec, parseFloat(e.target.value) || 0)}
+              style={{
+                position: 'absolute', inset: 0, width: '100%', height: '100%',
+                opacity: 0, cursor: 'text', MozAppearance: 'textfield',
+              }}
+            />
+          </div>
         );
       },
     },
