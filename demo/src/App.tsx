@@ -12,6 +12,7 @@ const ClientManagement = lazy(() => import('./pages/ClientManagement'));
 const MaterialManagement = lazy(() => import('./pages/MaterialManagement'));
 const TagManagement = lazy(() => import('./pages/TagManagement'));
 const DeliveryManagement = lazy(() => import('./pages/DeliveryManagement'));
+const DeliveryAnalysis = lazy(() => import('./pages/DeliveryAnalysis'));
 const SalesAnalysis = lazy(() => import('./pages/SalesAnalysis'));
 const SystemManagement = lazy(() => import('./pages/SystemManagement'));
 
@@ -30,6 +31,7 @@ const App: React.FC = () => {
         <Route path="/tags" element={<TagManagement />} />
         <Route path="/delivery" element={<DeliveryManagement />} />
         <Route path="/delivery/:id" element={<DeliveryDetail />} />
+        <Route path="/delivery-analysis" element={<DeliveryAnalysis />} />
         <Route path="/analysis" element={<SalesAnalysis />} />
         <Route path="/settings" element={<SystemManagement />} />
         <Route path="*" element={<Navigate to="/" replace />} />

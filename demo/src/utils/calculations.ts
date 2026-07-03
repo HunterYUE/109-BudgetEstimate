@@ -99,3 +99,39 @@ export function formatMoney(value: number): string {
   return Math.round(value).toLocaleString('zh-CN');
 }
 
+/**
+ * 计算交付项目的概算 GP3（不含实际成本）
+ * 公式与 DeliveryDetail 保持一致：
+ *   exTax = contractAmount / 1.13
+ *   totalEstimated = Σ direct_cost
+ *   warrantyCost = Σ(warranty items' unit_cost * qty_total) * warranty_rate
+ *   riskCost = totalEstimated * risk_rate
+ *   grandEstimated = totalEstimated + riskCost + warrantyCost
+ *   estGP3 = (exTax - grandEstimated) / exTax
+ */
+export function computeDeliveryEstGP3(
+  contractAmount: number,
+  groups: Group[],
+  version?: { warranty_rate: number; risk_rate: number }
+): { exTax: number; totalEstimated: number; warrantyCost: number; riskCost: number; grandEstimated: number; estGP3: number } {
+  const TAX_RATE = 0.13;
+  const exTax = Math.round(contractAmount / (1 + TAX_RATE));
+
+  const totalEstimated = groups.reduce((s, g) => s + g.items.reduce((si, i) => si + i.direct_cost, 0), 0);
+
+  const warrantyCost = version
+    ? Math.round(
+        groups.reduce((s, g) =>
+          s + g.items.filter(i => i.has_warranty).reduce((si, i) => si + Math.round(i.unit_cost * i.qty_total), 0), 0
+        ) * version.warranty_rate
+      )
+    : 0;
+
+  const riskCost = version ? Math.round(totalEstimated * version.risk_rate) : 0;
+
+  const grandEstimated = totalEstimated + riskCost + warrantyCost;
+  const estGP3 = exTax > 0 ? (exTax - grandEstimated) / exTax : 0;
+
+  return { exTax, totalEstimated, warrantyCost, riskCost, grandEstimated, estGP3 };
+}
+

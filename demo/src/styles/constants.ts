@@ -25,6 +25,10 @@ export const COLORS = {
   bgSelected: '#f0f6ff',
   /** 紫色（机会阶段/标注用） */
   purple: '#5a2d82',
+  /** 琥珀色（甘特图项目色） */
+  amber: '#c76a00',
+  /** 灰色（甘特图项目色） */
+  chartGray: '#888',
 } as const;
 
 /** 标签背景色候选项（15 色深色系） */

@@ -1,10 +1,11 @@
 import React, { useState, useMemo } from 'react';
 import { Card } from 'antd';
-import { mockOpportunities, mockQuotationSummaries, mockDeliveryProjects } from '../mockData';
+import { mockOpportunities, mockQuotationSummaries, mockDeliveryProjects, mockProject } from '../mockData';
 import type { SalesOpportunity } from '../types';
 import { parseReasons, REASON_TAXONOMY } from '../reasonTaxonomy';
 import { useMockVersion } from '../utils/mockStore';
 import { COLORS } from '../styles/constants';
+import { computeDeliveryEstGP3 } from '../utils/calculations';
 const fmtK = (v: number) => Math.round(v / 1000).toLocaleString() + 'K';
 
 /* ============================================================
@@ -29,6 +30,14 @@ const parseFY = (fy: string) => {
   return { start: new Date(y1, 6, 1), end: new Date(y2, 6, 0) };
 };
 const stageIdx = (s: string) => STAGES.indexOf(s as typeof STAGES[number]);
+
+/** 加载报价编制数据（匹配交付详情页逻辑） */
+function loadQuotationGroups(quotationId: string) {
+  if (quotationId === 'proj-003' || quotationId === 'proj-001' || quotationId === 'proj-005') {
+    return { groups: mockProject.groups.map(g => ({ ...g, items: g.items.map(i => ({ ...i })) })), version: { warranty_rate: mockProject.current_version.warranty_rate, risk_rate: mockProject.current_version.risk_rate } };
+  }
+  return { groups: [], version: undefined };
+}
 
 /** 根据财年过滤机会列表 */
 function useFyFiltered(allOpps: SalesOpportunity[], fy: string) {
@@ -109,7 +118,7 @@ const SalesFunnel: React.FC<FunnelProps> = ({ funnelData, fyInfo, fyLead, fyOpp,
     { key: 'info', label: '信息', color: '#999' },
     { key: 'lead', label: '线索', color: COLORS.primary },
     { key: 'opp', label: '机会', color: COLORS.purple },
-    { key: 'won', label: '中标', color: COLORS.success },
+    { key: 'won', label: '赢单', color: COLORS.success },
   ] as const;
 
   // 漏斗几何参数
@@ -354,7 +363,7 @@ const VerticalBarChart: React.FC<{
                 fill={color} fontWeight={600}>{label}</text>
               {item.subValue != null && item.subValue > 0 && (
                 <text x={cx} y={barTop - 6} textAnchor="middle" fontSize={9}
-                  fill=COLORS.purple fontWeight={600}>（{fmtK(item.subValue)}）</text>
+                  fill={COLORS.purple} fontWeight={600}>（{fmtK(item.subValue)}）</text>
               )}
               {!isZero && (
                 <rect x={cx - barW / 2} y={barTop} width={barW} height={barH}
@@ -397,8 +406,10 @@ const SalesAnalysis: React.FC = () => {
   const [targetEditing, setTargetEditing] = useState(false);
   const targetRef = React.useRef<HTMLInputElement>(null);
   const [gp3Input, setGp3Input] = useState(() => localStorage.getItem('sa_targetGP3') || '');
-  const [gp3Editing, setGp3Editing] = useState(false);
-  const gp3Ref = React.useRef<HTMLInputElement>(null);
+  const [orderGp3Editing, setOrderGp3Editing] = useState(false);
+  const orderGp3Ref = React.useRef<HTMLInputElement>(null);
+  const [salesGp3Editing, setSalesGp3Editing] = useState(false);
+  const salesGp3Ref = React.useRef<HTMLInputElement>(null);
   // ── 月度销售指标 ──
   const [annualSalesTarget, setAnnualSalesTarget] = useState(() => localStorage.getItem('sa_annualSalesTarget') || '');
   const [salesTargetEditing, setSalesTargetEditing] = useState(false);
@@ -418,17 +429,14 @@ const SalesAnalysis: React.FC = () => {
       return d >= fyRange.start && d <= fyRange.end;
     });
     // 财年月：month=1 → 7月(Jul), month=12 → 6月(Jun)
-    const TAX_RATE = 0.13;
     const byMonth = new Map<number, { amount: number; profit: number }>();
     for (const p of inFy) {
       const d = new Date(p.createdAt);
       const fyMonth = d.getMonth() < 6 ? d.getMonth() + 6 : d.getMonth() - 6;
       const prev = byMonth.get(fyMonth) || { amount: 0, profit: 0 };
-      const exTax = Math.round(p.contractAmount / (1 + TAX_RATE));
-      // 从报价摘要获取利润率
-      const q = mockQuotationSummaries.find(q => q.id === p.quotationId || q.id.startsWith(p.quotationId + '-v'));
-      const profitRate = q ? q.profitRate / 100 : 0.20;
-      const estProfit = Math.round(exTax * profitRate);
+      const { groups, version } = loadQuotationGroups(p.quotationId);
+      const { exTax, grandEstimated } = computeDeliveryEstGP3(p.contractAmount, groups, version);
+      const estProfit = exTax - grandEstimated;
       byMonth.set(fyMonth, { amount: prev.amount + p.contractAmount, profit: prev.profit + estProfit });
     }
     const MONTH_LABELS = ['Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar','Apr','May','Jun'];
@@ -445,7 +453,6 @@ const SalesAnalysis: React.FC = () => {
   // ── 月度销售数据（已完成项目总结的交付项目按月汇总）──
   const monthlySalesData = useMemo(() => {
     const fyRange = parseFY(fySelect);
-    const TAX_RATE = 0.13;
     const MONTH_LABELS = ['Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar','Apr','May','Jun'];
     const byMonth = new Map<number, { amount: number; profit: number }>();
     for (const p of mockDeliveryProjects) {
@@ -456,7 +463,8 @@ const SalesAnalysis: React.FC = () => {
       if (d < fyRange.start || d > fyRange.end) continue;
       const fyMonth = d.getMonth() < 6 ? d.getMonth() + 6 : d.getMonth() - 6;
       const prev = byMonth.get(fyMonth) || { amount: 0, profit: 0 };
-      const exTax = Math.round(p.contractAmount / (1 + TAX_RATE));
+      const { groups, version } = loadQuotationGroups(p.quotationId);
+      const { exTax } = computeDeliveryEstGP3(p.contractAmount, groups, version);
       const actualProfit = p.totalActualCost ? (exTax - p.totalActualCost) : Math.round(exTax * 0.20);
       byMonth.set(fyMonth, { amount: prev.amount + exTax, profit: prev.profit + actualProfit });
     }
@@ -569,13 +577,10 @@ const SalesAnalysis: React.FC = () => {
     if (inFy.length === 0) return 0;
     let totalAmt = 0, weighted = 0;
     for (const p of inFy) {
-      const q = mockQuotationSummaries.find(s => s.id === p.quotationId);
-      if (q) {
-        totalAmt += p.contractAmount;
-        // 交付管理概算 GP3 = (概算利润 / 未税合同额)，与报价 profitRate 同源
-        const gp3 = q.profitRate / 100;
-        weighted += p.contractAmount * gp3;
-      }
+      const { groups, version } = loadQuotationGroups(p.quotationId);
+      const { estGP3 } = computeDeliveryEstGP3(p.contractAmount, groups, version);
+      totalAmt += p.contractAmount;
+      weighted += p.contractAmount * estGP3;
     }
     return totalAmt > 0 ? (weighted / totalAmt * 100) : 0;
   }, [fySelect]);
@@ -813,7 +818,7 @@ const SalesAnalysis: React.FC = () => {
       color: kpi.weightedProfitRate >= 15 ? COLORS.success : '#e65100', icon: '📈' },
     { label: '销售周期', value: `${kpi.salesCycle} 天`,
       color: kpi.salesCycle > 0 && kpi.salesCycle <= 120 ? COLORS.success : '#e65100', icon: '⏱️' },
-    { label: '中标转化率', value: `${kpi.leadToWonRate.toFixed(1)}%`,
+    { label: '赢单转化率', value: `${kpi.leadToWonRate.toFixed(1)}%`,
       color: kpi.leadToWonRate >= 20 ? COLORS.success : '#e65100', icon: '🎯' },
   ];
 
@@ -878,12 +883,12 @@ const SalesAnalysis: React.FC = () => {
             </span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginBottom: 2, minHeight: 18 }}>
-            {gp3Editing ? (
-              <input type="number" min={0} max={100} ref={gp3Ref}
+            {orderGp3Editing ? (
+              <input type="number" min={0} max={100} ref={orderGp3Ref}
                 value={gp3Input}
                 onChange={e => saveGp3(e.target.value.replace(/[^\d.]/g, '').replace(/(\.\d).*/, '$1').slice(0, 5))}
-                onBlur={() => setGp3Editing(false)}
-                onKeyDown={e => {{ if (e.key === 'Enter') setGp3Editing(false); }}}
+                onBlur={() => setOrderGp3Editing(false)}
+                onKeyDown={e => {{ if (e.key === 'Enter') setOrderGp3Editing(false); }}}
                 style={{
                   width: `${Math.max(gp3Input.length || 1, 1)}ch`,
                   minWidth: '4ch', height: 18,
@@ -897,7 +902,7 @@ const SalesAnalysis: React.FC = () => {
               />
             ) : (
               <span style={{ fontSize: 10, cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: 700 }}
-                onClick={() => {{ setGp3Editing(true); setTimeout(() => gp3Ref.current?.focus(), 0); }}}>
+                onClick={() => {{ setOrderGp3Editing(true); setTimeout(() => orderGp3Ref.current?.focus(), 0); }}}>
                 <span style={{ color: COLORS.purple }}>
                   {gp3Input || '—'}
                 </span>
@@ -974,27 +979,27 @@ const SalesAnalysis: React.FC = () => {
             </span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginBottom: 2, minHeight: 18 }}>
-            {gp3Editing ? (
-              <input type="number" min={0} max={100} ref={gp3Ref}
+            {salesGp3Editing ? (
+              <input type="number" min={0} max={100} ref={salesGp3Ref}
                 value={gp3Input}
                 onChange={e => saveGp3(e.target.value.replace(/[^\d.]/g, '').replace(/(\.\d).*/, '$1').slice(0, 5))}
-                onBlur={() => setGp3Editing(false)}
-                onKeyDown={e => {{ if (e.key === 'Enter') setGp3Editing(false); }}}
+                onBlur={() => setSalesGp3Editing(false)}
+                onKeyDown={e => {{ if (e.key === 'Enter') setSalesGp3Editing(false); }}}
                 style={{
                   width: `${Math.max(gp3Input.length || 1, 1)}ch`,
                   minWidth: '4ch', height: 18,
                   border: 'none', borderRadius: 0,
                   padding: 0, margin: 0, boxSizing: 'content-box',
                   fontSize: 10, outline: 'none', textAlign: 'right',
-                  background: 'transparent', color: COLORS.purple, fontFamily: 'inherit',
+                  background: 'transparent', color: COLORS.danger, fontFamily: 'inherit',
                   fontWeight: 700,
                 }}
                 autoFocus
               />
             ) : (
               <span style={{ fontSize: 10, cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: 700 }}
-                onClick={() => {{ setGp3Editing(true); setTimeout(() => gp3Ref.current?.focus(), 0); }}}>
-                <span style={{ color: COLORS.purple }}>
+                onClick={() => {{ setSalesGp3Editing(true); setTimeout(() => salesGp3Ref.current?.focus(), 0); }}}>
+                <span style={{ color: COLORS.danger }}>
                   {gp3Input || '—'}
                 </span>
               </span>

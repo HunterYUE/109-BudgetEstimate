@@ -3,7 +3,7 @@ import { Layout, Tooltip } from 'antd';
 import ErrorBoundary from '../components/ErrorBoundary';
 import { MdOutlineDashboard, MdOutlineSell, MdOutlineDescription, MdOutlineFactCheck,
   MdOutlinePeople, MdOutlineInventory, MdOutlineLocalShipping, MdOutlineBarChart, MdOutlineSettings,
-  MdOutlinePerson, MdOutlineNotificationsNone, MdOutlineLabel } from 'react-icons/md';
+  MdOutlinePerson, MdOutlineNotificationsNone, MdOutlineLabel, MdOutlineAssessment } from 'react-icons/md';
 
 const { Header, Content } = Layout;
 
@@ -14,6 +14,7 @@ const MENU_ITEMS = [
   { key: '/approval',     icon: MdOutlineFactCheck,  label: '审批管理' },
   { key: '/analysis',     icon: MdOutlineBarChart,   label: '销售分析' },
   { key: '/delivery',     icon: MdOutlineLocalShipping, label: '交付管理' },
+  { key: '/delivery-analysis', icon: MdOutlineAssessment,  label: '交付分析' },
   { key: '/tags',         icon: MdOutlineLabel,     label: '标签管理' },
   { key: '/materials',    icon: MdOutlineInventory,   label: '物料管理' },
   { key: '/clients',      icon: MdOutlinePeople,     label: '客户管理' },
