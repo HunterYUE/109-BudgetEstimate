@@ -55,7 +55,7 @@ interface KpiCard {
 const OverviewCards: React.FC<{ items: KpiCard[] }> = ({ items }) => (
   <div style={{ display: 'flex', gap: 16, marginBottom: 24 }}>
     {items.map((item, i) => (
-      <Card key={i} size="small"
+      <Card key={item.label} size="small"
         style={{
           flex: 1, borderRadius: 8, border: '1px solid #f0f0f0',
           transition: 'box-shadow 0.2s, transform 0.15s',
@@ -67,7 +67,7 @@ const OverviewCards: React.FC<{ items: KpiCard[] }> = ({ items }) => (
         <div style={{ fontSize: 12, color: '#999', marginBottom: 4, letterSpacing: 0.3 }}>
           {item.label}
         </div>
-        <div style={{ fontSize: 22, fontWeight: 700, color: item.color, lineHeight: 1.2 }}>
+        <div style={{ fontSize: 26, fontWeight: 700, color: item.color, lineHeight: 1.2 }}>
           {item.value}
         </div>
         {item.subValue && (
@@ -111,7 +111,8 @@ const VerticalBarChart: React.FC<{
   padBottom?: number;
   hideAvgLine?: boolean;
   cardBorder?: boolean;
-}> = ({ title, data, format = 'num', height = 220, topN = 10, contentOffset = 0, barWidthRatio = 0.55, maxBarWidth = 36, noCard, chartWidth = 460, disableSort, targetValue, targetLabel, padTop = 32, padBottom = 28, hideAvgLine, cardBorder = true }) => {
+  barLabelGap?: number;
+}> = ({ title, data, format = 'num', height = 220, topN = 10, contentOffset = 0, barWidthRatio = 0.55, maxBarWidth = 36, noCard, chartWidth = 460, disableSort, targetValue, targetLabel, padTop = 32, padBottom = 28, hideAvgLine, cardBorder = true, barLabelGap = 18 }) => {
   const working = disableSort ? data : [...data].sort((a, b) => b.value - a.value);
   const top = working.slice(0, topN);
   const rawMax = Math.max(...top.map(d => d.value), 0);
@@ -126,7 +127,7 @@ const VerticalBarChart: React.FC<{
   };
 
   const W = chartWidth;
-  const pad = { top: padTop, bottom: padBottom, left: 42, right: 26 };
+  const pad = { top: padTop, bottom: padBottom, left: 6, right: 6 };
   const chartW = W - pad.left - pad.right;
   const chartH = height - pad.top - pad.bottom;
   const slotW = chartW / topN;
@@ -193,9 +194,9 @@ const VerticalBarChart: React.FC<{
           const barTop = pad.top + chartH - barH;
 
           return (
-            <g key={item.name}>
+            <g key={item.name + '-' + i}>
               {item.tooltip && <title>{item.tooltip}</title>}
-              <text x={cx} y={barTop - 18} textAnchor="middle" fontSize={10}
+              <text x={cx} y={barTop - barLabelGap} textAnchor="middle" fontSize={9}
                 fill={color} fontWeight={600}>{label}</text>
               {item.subValue != null && item.subValue > 0 && (
                 <text x={cx} y={barTop - 6} textAnchor="middle" fontSize={9}
@@ -209,11 +210,11 @@ const VerticalBarChart: React.FC<{
                 {item.name.includes('\n') ? (
                   item.name.split('\n').map((part, li) =>
                     li === 0
-                      ? <tspan key={li} x={cx} y={height - 14}>{part}</tspan>
+                      ? <tspan key={li} x={cx} y={height - 19}>{part}</tspan>
                       : <tspan key={li} x={cx} dy={13}>{part}</tspan>
                   )
                 ) : (
-                  <tspan x={cx} y={height}>{item.name}</tspan>
+                  <tspan x={cx} y={height - 5}>{item.name}</tspan>
                 )}
               </text>
             </g>
@@ -229,8 +230,8 @@ const VerticalBarChart: React.FC<{
 
   return (
     <Card size="small"
-      style={{ borderRadius: 8, border: cardBorder ? '1px solid #f0f0f0' : 'none', background: cardBorder ? '#fff' : 'transparent', height: '100%', position: 'relative', boxShadow: 'none' }}
-      styles={{ body: { padding: `${contentOffset}px 0 0`, height: '100%' } }}
+      style={{ borderRadius: 8, border: cardBorder ? '1px solid #f0f0f0' : 'none', background: cardBorder ? '#fff' : 'transparent', height: '100%', position: 'relative', boxShadow: 'none', width: '100%' }}
+      styles={{ body: { padding: `${contentOffset}px 0 0 0`, height: '100%' } }}
     >
       {chart}
     </Card>
@@ -258,7 +259,7 @@ const ProfitChart: React.FC<{
   contentOffset?: number;
 }> = ({ data, avgEstGP3, avgActGP3, height = 300, chartWidth = 780, contentOffset = 30 }) => {
   const W = chartWidth;
-  const pad = { top: 38, bottom: 32, left: 47, right: 30 };
+  const pad = { top: 35, bottom: 35, left: 10, right: 8 };
   const chartH = height - pad.top - pad.bottom;
   const slots = data.slice(0, 15);
   const maxN = 15;
@@ -271,7 +272,7 @@ const ProfitChart: React.FC<{
     ? Array.from({ length: effectiveMax + 1 }, (_, i) => i).reverse()
     : Array.from({ length: 5 }, (_, i) => (effectiveMax * (4 - i)) / 4);
 
-  const fmtNum = (v: number) => Math.round(v / 1000).toLocaleString();
+  const fmtKNum = (v: number) => Math.round(v / 1000).toLocaleString();
   const fmtPct = (v: number) => (v * 100).toFixed(1);
 
   // 平均利润
@@ -284,8 +285,8 @@ const ProfitChart: React.FC<{
 
   return (
     <Card size="small"
-      style={{ borderRadius: 8, border: '1px solid #f0f0f0', background: '#fff', position: 'relative' }}
-      styles={{ body: { padding: `${contentOffset}px 0 0` } }}
+      style={{ borderRadius: 8, border: '1px solid #f0f0f0', background: '#fff', position: 'relative', width: '100%' }}
+      styles={{ body: { padding: `${contentOffset}px 0 0 0` } }}
     >
       <span style={{ position: 'absolute', top: 6, right: 10, fontSize: 10, color: '#888', zIndex: 1 }}>利润分析</span>
       <svg width="100%" height={height} viewBox={`0 0 ${W} ${height}`} style={{ display: 'block' }}>
@@ -304,8 +305,8 @@ const ProfitChart: React.FC<{
           <g>
             <line x1={pad.left} y1={avgEstY} x2={W - 47} y2={avgEstY}
               stroke={COLORS.primary} strokeWidth={1} strokeDasharray="4,3" />
-            <text x={W - 21} y={avgEstY - 1} textAnchor="middle" fontSize={8} fill={COLORS.primary}>
-              <tspan x={W - 21} dy={0}>{fmtNum(avgEstProfit)}</tspan>
+            <text x={W - 21} y={avgEstY - 1} textAnchor="middle" fontSize={9} fill={COLORS.primary}>
+              <tspan x={W - 21} dy={0}>{fmtKNum(avgEstProfit)}</tspan>
               <tspan x={W - 21} dy={11}>（{(avgEstGP3 * 100).toFixed(1)}%）</tspan>
             </text>
           </g>
@@ -316,8 +317,8 @@ const ProfitChart: React.FC<{
           <g>
             <line x1={pad.left} y1={avgActY} x2={W - 47} y2={avgActY}
               stroke={COLORS.purple} strokeWidth={1} strokeDasharray="4,3" />
-            <text x={W - 21} y={avgActY - 1} textAnchor="middle" fontSize={8} fill={COLORS.purple}>
-              <tspan x={W - 21} dy={0}>{fmtNum(avgActProfit)}</tspan>
+            <text x={W - 21} y={avgActY - 1} textAnchor="middle" fontSize={9} fill={COLORS.purple}>
+              <tspan x={W - 21} dy={0}>{fmtKNum(avgActProfit)}</tspan>
               <tspan x={W - 21} dy={11}>（{(avgActGP3! * 100).toFixed(1)}%）</tspan>
             </text>
           </g>
@@ -325,14 +326,14 @@ const ProfitChart: React.FC<{
 
         {slots.map((item, i) => {
           const cx = pad.left + i * slotW + slotW / 2;
-          const barW = Math.min(slotW * 0.5, 28);
+          const barW = Math.min(slotW * 0.75, 40);
           const estH = Math.max(2, (item.estProfit / effectiveMax) * chartH);
           const estTop = pad.top + chartH - estH;
           const hasAct = item.actProfit != null;
           const actH = hasAct ? Math.max(2, (item.actProfit! / effectiveMax) * chartH) : 0;
 
           return (
-            <g key={item.name}>
+            <g key={item.name + '-' + i}>
               {/* 概算柱（蓝色虚线框） */}
               <rect x={cx - barW / 2} y={estTop} width={barW} height={estH}
                 fill="none" stroke={COLORS.primary} strokeWidth={1.5} strokeDasharray="4,3" rx={0} ry={0} />
@@ -341,14 +342,14 @@ const ProfitChart: React.FC<{
               {estH >= actH ? (
                 <>
                   <text x={cx} y={estTop - 10} textAnchor="middle" fontSize={9}
-                    fill={COLORS.primary} fontWeight={600}>{fmtNum(item.estProfit)}</text>
+                    fill={COLORS.primary} fontWeight={600}>{fmtKNum(item.estProfit)}</text>
                   <text x={cx} y={estTop - 22} textAnchor="middle" fontSize={9}
                     fill={COLORS.primary}>{fmtPct(item.estGP3)}</text>
                 </>
               ) : (
                 <>
                   <text x={cx} y={estTop + 14} textAnchor="middle" fontSize={9}
-                    fill={COLORS.primary} fontWeight={600}>{fmtNum(item.estProfit)}</text>
+                    fill={COLORS.primary} fontWeight={600}>{fmtKNum(item.estProfit)}</text>
                   <text x={cx} y={estTop + 26} textAnchor="middle" fontSize={9}
                     fill={COLORS.primary}>{fmtPct(item.estGP3)}</text>
                 </>
@@ -363,14 +364,14 @@ const ProfitChart: React.FC<{
                   {actH >= estH ? (
                     <>
                       <text x={cx} y={(pad.top + chartH - actH) - 10} textAnchor="middle" fontSize={9}
-                        fill={COLORS.purple} fontWeight={600}>{fmtNum(item.actProfit!)}</text>
+                        fill={COLORS.purple} fontWeight={600}>{fmtKNum(item.actProfit!)}</text>
                       <text x={cx} y={(pad.top + chartH - actH) - 22} textAnchor="middle" fontSize={9}
                         fill={COLORS.purple}>{fmtPct(item.actGP3!)}</text>
                     </>
                   ) : (
                     <>
                       <text x={cx} y={(pad.top + chartH - actH) + 14} textAnchor="middle" fontSize={9}
-                        fill={COLORS.purple} fontWeight={600}>{fmtNum(item.actProfit!)}</text>
+                        fill={COLORS.purple} fontWeight={600}>{fmtKNum(item.actProfit!)}</text>
                       <text x={cx} y={(pad.top + chartH - actH) + 26} textAnchor="middle" fontSize={9}
                         fill={COLORS.purple}>{fmtPct(item.actGP3!)}</text>
                     </>
@@ -383,11 +384,11 @@ const ProfitChart: React.FC<{
                 {item.name.includes('\n') ? (
                   item.name.split('\n').map((part, li) =>
                     li === 0
-                      ? <tspan key={li} x={cx} y={height - 14}>{part}</tspan>
+                      ? <tspan key={li} x={cx} y={height - 19}>{part}</tspan>
                       : <tspan key={li} x={cx} dy={11}>{part}</tspan>
                   )
                 ) : (
-                  <tspan x={cx} y={height - 6}>{item.name}</tspan>
+                  <tspan x={cx} y={height - 11}>{item.name}</tspan>
                 )}
               </text>
             </g>
@@ -409,18 +410,16 @@ const ProjectGantt: React.FC<{
   todayPos: number;
   height?: number;
 }> = ({ data, tlStart, totalDays, months, todayPos, height = 500 }) => {
-  const W = 1250;
+  const W = 1800;
   const labelW = 70;
   const chartW = W - labelW;
   const projColors = [COLORS.primary, COLORS.purple, COLORS.success, COLORS.warning, COLORS.amber, COLORS.chartGray];
   const projCount = Math.max(data.length, 1);
-  const maxProj = 20;
-  const overhead = 64;
-  const totalGap = (projCount - 1) * 4;
-  const barH = Math.max(4, Math.floor((height - overhead - totalGap) / projCount));
-  const rowGap = Math.max(2, Math.min(6, Math.floor(barH * 0.3)));
-  const projH = barH + rowGap;
-  const H = Math.max(height, overhead + projCount * projH + 10);
+  const barH = 20;
+  const rowGap = 10;
+  const projH = barH + rowGap; // =26
+  const baseH = 100;
+  const H = Math.max(height, baseH + projCount * projH);
 
   const posX = (d: Date) => labelW + Math.max(0, Math.min(1, (d.getTime() - tlStart.getTime()) / (1000 * 60 * 60 * 24) / totalDays)) * chartW;
   const todayX = labelW + todayPos / totalDays * chartW;
@@ -428,13 +427,13 @@ const ProjectGantt: React.FC<{
   return (
     <Card size="small" style={{ borderRadius: 8, border: '1px solid #f0f0f0', height: '100%' }} styles={{ body: { padding: '12px 0 0', height: '100%' } }}>
       <span style={{ position: 'absolute', top: 6, right: 10, fontSize: 11, color: '#888', zIndex: 1 }}>项目节点</span>
-      <svg width="100%" height="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: 'block', padding: '0 20px', boxSizing: 'border-box' }}>
+      <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} style={{ display: 'block' }}>
         {Array.from({ length: 13 }, (_, i) => {
           const x = labelW + i / 12 * chartW;
           return (
             <g key={`m-${i}`}>
               <line x1={x} y1={42} x2={x} y2={H - 4} stroke="#f0f0f0" strokeWidth={1} />
-              {i < 12 && <text x={x + chartW / 24 - 20} y={36} textAnchor="middle" fontSize={8} fill="#888">{months[i]}</text>}
+              {i < 12 && <text x={x + chartW / 24 - 20} y={21} textAnchor="middle" fontSize={10} fill="#444">{months[i]}</text>}
             </g>
           );
         })}
@@ -443,9 +442,13 @@ const ProjectGantt: React.FC<{
           const cy = 48 + pi * projH;
           const color = projColors[pi % projColors.length];
           return (
-            <g key={proj.name}>
-              <text x={4} y={cy + barH / 2 + 3} fontSize={8} fill="#444" fontWeight={600}>
-                {proj.name.length > 6 ? proj.name.slice(0, 6) : proj.name}
+            <g key={proj.name + '-' + pi}>
+              <text fontSize={10} fill="#444">
+                {proj.name.length > 4 ? (
+                  <><tspan x={4} y={cy + barH / 2 - 4}>{proj.name.slice(0, 4)}</tspan><tspan x={4} y={cy + barH / 2 + 10}>{proj.name.slice(4)}</tspan></>
+                ) : (
+                  <tspan x={4} y={cy + barH / 2 + 4}>{proj.name}</tspan>
+                )}
               </text>
               {proj.slots.map(s => {
                 const sx = posX(s.startDate);
@@ -477,9 +480,12 @@ const ProjectGantt: React.FC<{
 const BubbleChart: React.FC<{
   data: { name: string; contractAmount: number; delayDays: number; costDeviation: number; status: string; resourceLoad: number }[];
   height?: number;
-}> = ({ data, height = 300 }) => {
-  const W = 1000;
+  /** 画布（viewBox）高度，默认与 height 相同。设大则 SVG 缩放显示，不裁剪边缘项目 */
+  canvasHeight?: number;
+}> = ({ data, height = 300, canvasHeight, bodyPadTop = 37, bodyPadBottom = 25 }) => {
+  const W = 940;
   const H = height;
+  const CH = canvasHeight ?? H;
   const pad = { top: 40, bottom: 32, left: 48, right: 24 };
   const chartW = W - pad.left - pad.right;
   const chartH = H - pad.top - pad.bottom;
@@ -491,9 +497,9 @@ const BubbleChart: React.FC<{
   const maxTick = Math.ceil(maxDelay / step) * step;
 
   return (
-    <Card size="small" style={{ borderRadius: 8, border: '1px solid #f0f0f0' }} styles={{ body: { padding: '22px 0 10px' } }}>
+    <Card size="small" style={{ borderRadius: 8, border: '1px solid #f0f0f0' }} styles={{ body: { padding: `${bodyPadTop}px 0 ${bodyPadBottom}px` } }}>
       <span style={{ position: 'absolute', top: 6, right: 10, fontSize: 11, color: '#888', zIndex: 1 }}>健康矩阵</span>
-      <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} style={{ display: 'block' }}>
+      <svg width="100%" height={H} viewBox={`0 0 ${W} ${CH}`} style={{ display: 'block' }}>
         {Array.from({ length: Math.floor(maxTick / step) * 2 + 1 }, (_, i) => (i - Math.floor(maxTick / step)) * step).map(t => {
           const r = t / maxTick;
           const x = pad.left + (r + 1) / 2 * chartW;
@@ -501,16 +507,16 @@ const BubbleChart: React.FC<{
           return (
             <g key={`g-${t}`}>
               <line x1={pad.left} y1={y} x2={W - pad.right} y2={y} stroke={t === 0 ? '#e0e0e0' : '#f0f0f0'} strokeWidth={t === 0 ? 1.5 : 1} />
-              <text x={pad.left - 4} y={y + 3} textAnchor="end" fontSize={9} fill="#222">{t > 0 ? '+' : ''}{Math.round(t * maxCost / maxTick)}%</text>
+              <text x={pad.left - 4} y={y + 3} textAnchor="end" fontSize={9} fill="#aaa">{t > 0 ? '+' : ''}{Math.round(t * maxCost / maxTick)}%</text>
               <line x1={x} y1={pad.top} x2={x} y2={pad.top + chartH} stroke={t === 0 ? '#e0e0e0' : '#f0f0f0'} strokeWidth={t === 0 ? 1.5 : 1} />
-              <text x={x} y={H - 4} textAnchor="middle" fontSize={9} fill="#222">{t === 0 ? '0' : t}</text>
+              <text x={x} y={H - 4} textAnchor="middle" fontSize={9} fill="#aaa">{t === 0 ? '0' : t}</text>
             </g>
           );
         })}
         <line x1={pad.left + chartW / 2} y1={pad.top} x2={pad.left + chartW / 2} y2={pad.top + chartH} stroke="#ddd" strokeWidth={1} />
         <line x1={pad.left} y1={pad.top + chartH / 2} x2={W - pad.right} y2={pad.top + chartH / 2} stroke="#ddd" strokeWidth={1} />
-        <text x={W - pad.right + 60} y={H - 4} textAnchor="end" fontSize={10} fill="#444">延期天数</text>
-        <text x={8} y={pad.top + chartH / 2} textAnchor="middle" fontSize={10} fill="#444" transform={`rotate(-90, 8, ${pad.top + chartH / 2})`}>成本偏差率</text>
+        <text x={pad.left + chartW / 2} y={H + 21} textAnchor="middle" fontSize={12} fill="#444">延期天数</text>
+        <text x={8} y={pad.top + chartH / 2} textAnchor="middle" fontSize={12} fill="#444" transform={`rotate(-90, 8, ${pad.top + chartH / 2})`}>成本偏差率</text>
         {data.map(d => {
           const cx = pad.left + chartW / 2 + (d.delayDays / maxDelay) * chartW / 2;
           const cy = pad.top + (1 - (d.costDeviation + maxCost) / (maxCost * 2)) * chartH;
@@ -522,8 +528,8 @@ const BubbleChart: React.FC<{
           return (
             <g key={d.name}>
               <circle cx={cx} cy={cy} r={r} fill={statusColors[d.status] || '#999'} fillOpacity={fillOpacity} stroke={statusColors[d.status] || '#999'} strokeWidth={2} opacity={0.8} />
-              <text x={cx} y={cy - r - 4} textAnchor="middle" fontSize={8} fill="#222">{d.name.slice(0, 4)}</text>
-              <text x={cx} y={cy + r + 10} textAnchor="middle" fontSize={8} fill="#222">{d.delayDays}d / {d.costDeviation.toFixed(1)}%</text>
+              <text x={cx} y={cy - r - 4} textAnchor="middle" fontSize={9} fill="#222">{d.name.slice(0, 4)}</text>
+              <text x={cx} y={cy + r + 10} textAnchor="middle" fontSize={9} fill="#222">{d.delayDays}d / {d.costDeviation.toFixed(1)}%</text>
             </g>
           );
         })}
@@ -534,9 +540,11 @@ const BubbleChart: React.FC<{
 
 /* ============================================================
    报价数据加载（匹配 DeliveryDetail.tsx 逻辑）
+   TODO: 数据库就绪后替换为 API 查询，硬编码 mock ID 需移除
    ============================================================ */
 function loadQuotationGroups(quotationId: string) {
-  if (quotationId === 'proj-003' || quotationId === 'proj-001' || quotationId === 'proj-005') {
+  const knownIds = ['proj-003', 'proj-001', 'proj-005'];
+  if (knownIds.includes(quotationId)) {
     return { groups: mockProject.groups.map(g => ({ ...g, items: g.items.map(i => ({ ...i })) })), version: { warranty_rate: mockProject.current_version.warranty_rate, risk_rate: mockProject.current_version.risk_rate } };
   }
   return { groups: [], version: undefined };
@@ -549,9 +557,31 @@ const DeliveryAnalysis: React.FC = () => {
   const [fySelect, setFySelect] = useState('FY2526');
   useMockVersion();
 
+  // ── 共享工具函数 ──
+  /** 计算某项目的最大延期天数 */
+  const calcMaxDelay = (p: typeof mockDeliveryProjects[number], now: Date) => {
+    let maxDelay = 0;
+    for (const n of p.nodes) {
+      if (n.status === 'completed') continue;
+      const plannedEnd = new Date(n.plannedEndDate);
+      const days = Math.round((now.getTime() - plannedEnd.getTime()) / (1000 * 60 * 60 * 24));
+      if (days > maxDelay) maxDelay = days;
+    }
+    return maxDelay;
+  };
+  /** 判断项目节点15是否已完成且在财年范围内 */
+  const isNode15CompletedInFy = (p: typeof mockDeliveryProjects[number], fyRange: ReturnType<typeof parseFY>) => {
+    const n15 = p.nodes.find(n => n.nodeNo === 15);
+    if (!n15 || n15.status !== 'completed') return false;
+    const d = new Date(n15.actualDate || p.updatedAt);
+    return d >= fyRange.start && d <= fyRange.end;
+  };
+
+  // ── 缓存财年范围 ──
+  const fyRange = useMemo(() => parseFY(fySelect), [fySelect]);
+
   // ── 财年过滤（活跃期交集：与销售分析一致的逻辑）──
   const fyFiltered = useMemo(() => {
-    const fyRange = parseFY(fySelect);
     return mockDeliveryProjects.filter(p => {
       const created = new Date(p.createdAt);
       const effectiveEnd = (p.status === '进行中' || p.status === '已延期')
@@ -565,16 +595,9 @@ const DeliveryAnalysis: React.FC = () => {
   const projectDelayDays = useMemo(() => {
     const now = new Date();
     return fyFiltered.map(p => {
-      let maxDelay = 0;
-      for (const n of p.nodes) {
-        if (n.status === 'completed') continue;
-        const plannedEnd = new Date(n.plannedEndDate);
-        const days = Math.round((now.getTime() - plannedEnd.getTime()) / (1000 * 60 * 60 * 24));
-        if (days > maxDelay) maxDelay = days;
-      }
-      const name = splitLabel(p.clientName);
+      const maxDelay = calcMaxDelay(p, now);
       return {
-        name,
+        name: splitLabel(p.clientName),
         value: maxDelay,
         color: maxDelay > 0 ? COLORS.danger : COLORS.success,
       };
@@ -617,13 +640,7 @@ const DeliveryAnalysis: React.FC = () => {
 
   // ── 利润分析数据（仅已完成项目总结的项目，按GP3偏差排序）──
   const profitChartData = useMemo(() => {
-    const fyRange = parseFY(fySelect);
-    const completed = fyFiltered.filter(p => {
-      const n15 = p.nodes.find(n => n.nodeNo === 15);
-      if (!n15 || n15.status !== 'completed') return false;
-      const d = new Date(n15.actualDate || p.updatedAt);
-      return d >= fyRange.start && d <= fyRange.end;
-    });
+    const completed = fyFiltered.filter(p => isNode15CompletedInFy(p, fyRange));
     let totalEstWeighted = 0, totalActWeighted = 0, totalAmt = 0;
     const items: ProfitItem[] = completed.map(p => {
       const { groups, version } = loadQuotationGroups(p.quotationId);
@@ -640,49 +657,29 @@ const DeliveryAnalysis: React.FC = () => {
     const avgEstGP3 = totalAmt > 0 ? totalEstWeighted / totalAmt : 0;
     const avgActGP3 = totalAmt > 0 ? totalActWeighted / totalAmt : 0;
     return { items, avgEstGP3, avgActGP3 };
-  }, [fyFiltered, fySelect]);
+  }, [fyFiltered, fyRange]);
 
   // ── 健康 KPI 卡片 ──
   const overviewItems = useMemo((): KpiCard[] => {
     const now = new Date();
-    const fyRange = parseFY(fySelect);
     let totalDelayDays = 0, delayProjectCount = 0;
     let onTimeCompleted = 0, totalCompleted = 0;
     let costDevNumerator = 0, costDevDenominator = 0;
 
-    // 财年活跃项目总数
     const totalCount = fyFiltered.length;
-    const activeCount = fyFiltered.filter(p => {
-      const n15 = p.nodes.find(n => n.nodeNo === 15);
-      return n15?.status !== 'completed';
-    }).length;
+    const activeCount = fyFiltered.filter(p => p.nodes.find(n => n.nodeNo === 15)?.status !== 'completed').length;
     const delayedCount = fyFiltered.filter(p => p.status === '已延期').length;
-    const completedCount = fyFiltered.filter(p => {
-      const n15 = p.nodes.find(n => n.nodeNo === 15);
-      if (!n15 || n15.status !== 'completed') return false;
-      const d = new Date(n15.actualDate || p.updatedAt);
-      return d >= fyRange.start && d <= fyRange.end;
-    }).length;
-    const fmtKY = (v: number) => Math.round(v / 1000).toLocaleString() + 'K';
+    const completedCount = fyFiltered.filter(p => isNode15CompletedInFy(p, fyRange)).length;
     let totalAmt = 0, activeAmt = 0, completedAmt = 0, delayedAmt = 0;
     for (const p of fyFiltered) {
       const exTax = Math.round(p.contractAmount / (1 + 0.13));
       totalAmt += exTax;
-      const n15 = p.nodes.find(n => n.nodeNo === 15);
-      if (n15?.status !== 'completed') activeAmt += exTax;
+      const n15Done = p.nodes.find(n => n.nodeNo === 15)?.status === 'completed';
+      if (!n15Done) activeAmt += exTax;
       if (p.status === '已延期') delayedAmt += exTax;
-      if (n15?.status === 'completed') {
-        const d = new Date(n15.actualDate || p.updatedAt);
-        if (d >= fyRange.start && d <= fyRange.end) completedAmt += exTax;
-      }
+      if (isNode15CompletedInFy(p, fyRange)) completedAmt += exTax;
       // 加权延期天数：各项目最大延期天数的平均
-      let maxDelay = 0;
-      for (const n of p.nodes) {
-        if (n.status === 'completed') continue;
-        const plannedEnd = new Date(n.plannedEndDate);
-        const days = Math.round((now.getTime() - plannedEnd.getTime()) / (1000 * 60 * 60 * 24));
-        if (days > maxDelay) maxDelay = days;
-      }
+      const maxDelay = calcMaxDelay(p, now);
       if (maxDelay > 0) { totalDelayDays += maxDelay; delayProjectCount++; }
 
       // 节点按时完成率
@@ -707,15 +704,15 @@ const DeliveryAnalysis: React.FC = () => {
     const costDevRate = costDevDenominator > 0 ? (costDevNumerator / costDevDenominator * 100) : 0;
 
     return [
-      { label: '项目总数', value: totalCount + '/' + fmtKY(totalAmt), color: COLORS.primary, icon: '📊' },
-      { label: '进行中项目', value: activeCount + '/' + fmtKY(activeAmt), color: COLORS.primary, icon: '🚧' },
-      { label: '已完成项目', value: completedCount + '/' + fmtKY(completedAmt), color: COLORS.success, icon: '✅' },
-      { label: '延期项目', value: delayedCount + '/' + fmtKY(delayedAmt), color: delayedCount > 0 ? COLORS.danger : COLORS.success, icon: '🚨' },
+      { label: '项目总数', value: totalCount + '/' + fmtK(totalAmt), color: COLORS.primary, icon: '📊' },
+      { label: '进行中项目', value: activeCount + '/' + fmtK(activeAmt), color: COLORS.primary, icon: '🚧' },
+      { label: '已完成项目', value: completedCount + '/' + fmtK(completedAmt), color: COLORS.success, icon: '✅' },
+      { label: '延期项目', value: delayedCount + '/' + fmtK(delayedAmt), color: delayedCount > 0 ? COLORS.danger : COLORS.success, icon: '🚨' },
       { label: '加权延期天数', value: `${avgDelay}天`, color: avgDelay > 0 ? COLORS.danger : COLORS.success, icon: '📅' },
       { label: '节点按时率', value: `${onTimeRate}%`, color: onTimeRate >= 80 ? COLORS.success : onTimeRate >= 50 ? '#e65100' : COLORS.danger, icon: '🎯' },
       { label: '成本偏差率', value: costDevDenominator > 0 ? `${costDevRate > 0 ? '+' : ''}${costDevRate.toFixed(1)}%` : '—', color: costDevRate <= 0 ? COLORS.success : COLORS.danger, icon: '💰' },
     ];
-  }, [fyFiltered, fySelect]);
+  }, [fyFiltered, fyRange]);
 
   // ── 甘特图数据（12个月时间线，仅显示在时间范围内的节点）──
   const ganttData = useMemo(() => {
@@ -729,7 +726,15 @@ const DeliveryAnalysis: React.FC = () => {
       return d.toLocaleString('en', { month: 'short' });
     });
     const todayPos = Math.round((now.getTime() - tlStart.getTime()) / DAY_MS);
-    const projectRows = fyFiltered.map(p => {
+    const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const projectRows = fyFiltered.filter(p => {
+      const n15 = p.nodes.find(n => n.nodeNo === 15);
+      if (n15 && n15.status === 'completed') {
+        const doneDate = n15.actualDate ? new Date(n15.actualDate) : new Date(p.updatedAt);
+        return doneDate >= currentMonthStart;
+      }
+      return true;
+    }).map(p => {
       const slots = p.nodes.map(n => {
         const startH = n.history.find(h => h.field === 'status' && h.newValue === 'in_progress');
         let start: Date, end: Date;
@@ -754,13 +759,7 @@ const DeliveryAnalysis: React.FC = () => {
   const bubbleData = useMemo(() => {
     const now = new Date();
     const items = fyFiltered.map(p => {
-      let maxDelay = 0;
-      for (const n of p.nodes) {
-        if (n.status === 'completed') continue;
-        const plannedEnd = new Date(n.plannedEndDate);
-        const days = Math.round((now.getTime() - plannedEnd.getTime()) / (1000 * 60 * 60 * 24));
-        if (days > maxDelay) maxDelay = days;
-      }
+      const maxDelay = calcMaxDelay(p, now);
       const { groups, version } = loadQuotationGroups(p.quotationId);
       const { exTax, totalEstimated } = computeDeliveryEstGP3(p.contractAmount, groups, version);
       const costDev = p.totalActualCost != null && totalEstimated > 0
@@ -790,6 +789,20 @@ const DeliveryAnalysis: React.FC = () => {
   }, [fyFiltered]);
 
   // ── 渲染 ──
+  // 左列每张卡片高度 = 边框2 + padding-top30 + SVG225 = 257px，间隔16px
+  const CARD_BORDER = 2, CARD_PAD_TOP = 30, SVG_H = 225, GAP = 16;
+  const CARD_TOTAL = CARD_BORDER + CARD_PAD_TOP + SVG_H; // 257
+  const LEFT_COL_H = CARD_TOTAL * 3 + GAP * 2; // 803
+  // 气泡图卡片
+  const BUBBLE_PAD_TOP = 37; // 原22 + 15
+  const BUBBLE_PAD_BOTTOM = 25; // 原10 + 15
+  const BUBBLE_SVG_H = LEFT_COL_H - 2 - BUBBLE_PAD_TOP - BUBBLE_PAD_BOTTOM; // 739
+  // 画布高度 = 左列总高 − 原始border(2) − 原始padding-bottom(10) − 原始padding-top(22) = 769
+  // 再 − 原缩减30px + 标签下移合计25px = 764
+  const BUBBLE_ORIG_PAD_TOP = 22, BUBBLE_ORIG_PAD_BOT = 10;
+  const BUBBLE_CANVAS_SHRINK = 30; // 原高度缩减
+  const BUBBLE_LABEL_OFFSET = 15 + 10; // "延期天数"标签两次下移
+  const BUBBLE_CANVAS_H = LEFT_COL_H - 2 - BUBBLE_ORIG_PAD_BOT - BUBBLE_ORIG_PAD_TOP - BUBBLE_CANVAS_SHRINK + BUBBLE_LABEL_OFFSET; // 764
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
@@ -806,28 +819,29 @@ const DeliveryAnalysis: React.FC = () => {
           <OverviewCards items={overviewItems} />
 
           <div style={{ display: 'flex', gap: 16, marginTop: 16, alignItems: 'stretch' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 16, width: 700, flexShrink: 0 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16, flex: '0 0 calc(3 / 7 * (100% - 96px) + 32px)' }}>
               <ProfitChart data={profitChartData.items}
                 avgEstGP3={profitChartData.avgEstGP3}
                 avgActGP3={profitChartData.avgActGP3}
-                height={300} chartWidth={780} contentOffset={30} />
+                height={225} chartWidth={702} contentOffset={30} />
               <VerticalBarChart title="延期天数" data={projectDelayDays}
-                format="num" height={300} topN={15} barWidthRatio={0.5}
-                maxBarWidth={28} chartWidth={780} contentOffset={30} hideAvgLine />
+                format="num" height={225} topN={15} barWidthRatio={0.75}
+                maxBarWidth={40} chartWidth={702} contentOffset={30} hideAvgLine padTop={27} padBottom={33} barLabelGap={10} />
               <VerticalBarChart title="节点分析" data={nodeBottleneck}
-                format="num" height={300} topN={15} barWidthRatio={0.5}
-                maxBarWidth={28} chartWidth={780} contentOffset={30} hideAvgLine disableSort />
+                format="num" height={225} topN={15} barWidthRatio={0.75}
+                maxBarWidth={40} chartWidth={702} contentOffset={30} hideAvgLine padTop={27} padBottom={33} disableSort />
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16, flex: 1, minWidth: 0 }}>
-              <div style={{ height: 610 }}>
-                <ProjectGantt data={ganttData.projectRows}
-                  tlStart={ganttData.tlStart} totalDays={ganttData.totalDays}
-                  months={ganttData.months} todayPos={ganttData.todayPos} />
-              </div>
-              <div>
-                <BubbleChart data={bubbleData} height={367} />
-              </div>
+              <BubbleChart data={bubbleData} height={BUBBLE_SVG_H} canvasHeight={BUBBLE_CANVAS_H} bodyPadTop={BUBBLE_PAD_TOP} bodyPadBottom={BUBBLE_PAD_BOTTOM} />
             </div>
+          </div>
+
+          {/* Row 4: 项目节点甘特图 */}
+          <div style={{ minHeight: 750, marginTop: 26 }}>
+            <ProjectGantt data={ganttData.projectRows}
+              tlStart={ganttData.tlStart} totalDays={ganttData.totalDays}
+              months={ganttData.months} todayPos={ganttData.todayPos}
+              height={750} />
           </div>
         </>
       )}
