@@ -310,7 +310,7 @@ const MaterialManagement: React.FC = () => {
       onFilter: (value: string, record: Component) => value === '__all__' || record.category === value,
       render: (v: ItemType) => {
         const cfg = CATEGORY_OPTIONS[v] || { label: v, color: '#999' };
-        return <Tag color={cfg.color} style={{ borderRadius: 1, margin: 0, fontSize: '12px !important' }}>{cfg.label}</Tag>;
+        return <Tag color={cfg.color} style={{ borderRadius: 1, margin: 0, fontSize: 12 }}>{cfg.label}</Tag>;
       },
     },
     { title: '品牌', dataIndex: 'brand', width: 55, onCell: onCellLock(55),
@@ -350,7 +350,7 @@ const MaterialManagement: React.FC = () => {
       filterDropdownProps: { minOverlayWidthMatchTrigger: false },
       onFilter: (value: string, record: Component) => value === '__all__' || record.sourcing_type === value,
       render: (v: SourcingType) => (
-        <Tag color={v === 'PURCHASED' ? 'orange' : COLORS.success} style={{ borderRadius: 1, margin: 0, fontSize: '12px !important' }}>
+        <Tag color={v === 'PURCHASED' ? 'orange' : COLORS.success} style={{ borderRadius: 1, margin: 0, fontSize: 12 }}>
           {v === 'PURCHASED' ? '外购' : '自制'}
         </Tag>
       ),
@@ -384,7 +384,7 @@ const MaterialManagement: React.FC = () => {
       title: '状态', dataIndex: 'reviewStatus', width: 70, align: 'center' as const, onCell: onCellLock(70),
       render: (v: ReviewStatus) => {
         const cfg = STATUS_CONFIG[v] || { label: v, color: '#999' };
-        return <Tag color={cfg.color} style={{ borderRadius: 1, margin: 0, fontSize: '12px !important' }}>{cfg.label}</Tag>;
+        return <Tag color={cfg.color} style={{ borderRadius: 1, margin: 0, fontSize: 12 }}>{cfg.label}</Tag>;
       },
     },
     {
@@ -596,7 +596,7 @@ const MaterialManagement: React.FC = () => {
         <div onClick={() => setStatusTab('all')}
           style={{
             padding: '8px 20px', cursor: 'pointer', fontSize: 14,
-            borderBottom: statusTab === 'all' ? '2px solid COLORS.primary' : '2px solid transparent',
+            borderBottom: statusTab === 'all' ? `2px solid ${COLORS.primary}` : '2px solid transparent',
             color: statusTab === 'all' ? COLORS.primary : '#666', fontWeight: statusTab === 'all' ? 600 : 400,
             marginBottom: -2, transition: 'all 0.15s',
           }}>全部({tabCounts.all})

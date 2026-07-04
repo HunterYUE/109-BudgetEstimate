@@ -623,7 +623,7 @@ const SalesOpportunityList: React.FC = () => {
 
             padding: '8px 20px', cursor: 'pointer', fontSize: 14,
 
-            borderBottom: tabFilter === 'info' ? '2px solid COLORS.primary' : '2px solid transparent',
+            borderBottom: tabFilter === 'info' ? `2px solid ${COLORS.primary}` : '2px solid transparent',
 
             color: tabFilter === 'info' ? COLORS.primary : '#666', fontWeight: tabFilter === 'info' ? 600 : 400,
 
@@ -655,7 +655,7 @@ const SalesOpportunityList: React.FC = () => {
 
             padding: '8px 20px', cursor: 'pointer', fontSize: 14,
 
-            borderBottom: tabFilter === 'opp' ? '2px solid COLORS.success' : '2px solid transparent',
+            borderBottom: tabFilter === 'opp' ? `2px solid ${COLORS.success}` : '2px solid transparent',
 
             color: tabFilter === 'opp' ? COLORS.success : '#666', fontWeight: tabFilter === 'opp' ? 600 : 400,
 
@@ -876,7 +876,7 @@ const SalesOpportunityList: React.FC = () => {
             <Button icon={<CloseOutlined />} onClick={() => setTerminateOpp(null)}
               style={{ borderRadius: 3, width: 36, height: 36 }} />
             <Button type="primary" ghost icon={<CheckOutlined />} onClick={confirmTerminate}
-              style={{ borderColor: "COLORS.danger", color: "COLORS.danger", borderRadius: 3, width: 36, height: 36 }} />
+              style={{ borderColor: COLORS.danger, color: COLORS.danger, borderRadius: 3, width: 36, height: 36 }} />
           </div>
         }
       >
@@ -903,7 +903,7 @@ const SalesOpportunityList: React.FC = () => {
             <Button icon={<CloseOutlined />} onClick={() => setPromoteOpp(null)}
               style={{ borderRadius: 3, width: 36, height: 36 }} />
             <Button type="primary" ghost icon={<CheckOutlined />} onClick={confirmPromote}
-              style={{ borderColor: "COLORS.primary", color: "COLORS.primary", borderRadius: 3, width: 36, height: 36 }} />
+              style={{ borderColor: COLORS.primary, color: COLORS.primary, borderRadius: 3, width: 36, height: 36 }} />
           </div>
         }
       >
@@ -955,7 +955,7 @@ const SalesOpportunityList: React.FC = () => {
                       onClick={() => setReasonModal(p => ({ ...p, selectedGroup: g.groupLabel, selections: {} }))}
                       style={{
                         padding: '6px 18px', fontSize: 13, cursor: 'pointer',
-                        borderBottom: reasonModal.selectedGroup === g.groupLabel ? '2px solid COLORS.primary' : '2px solid transparent',
+                        borderBottom: reasonModal.selectedGroup === g.groupLabel ? `2px solid ${COLORS.primary}` : '2px solid transparent',
                         color: reasonModal.selectedGroup === g.groupLabel ? COLORS.primary : '#666',
                         fontWeight: 600,
                         marginBottom: -2, transition: 'all 0.15s',

@@ -16,7 +16,7 @@ const TagManagement: React.FC = () => {
   const [descEditId, setDescEditId] = useState<string | null>(null);
   const [descEditValue, setDescEditValue] = useState('');
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
-  const [expandView, setExpandView] = useState<'expand' | 'collapse'>('collapse');
+  const expandView: 'expand' | 'collapse' = expandedIds.size >= flatRows.length ? 'expand' : 'collapse';
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [addModalName, setAddModalName] = useState('');
   const [addModalParentId, setAddModalParentId] = useState<string | null>(null);
@@ -186,20 +186,18 @@ const TagManagement: React.FC = () => {
                 const walk = (ns: TagNode[]) => ns.forEach(n => { all.push(n.id); if (n.children) walk(n.children); });
                 walk(tree);
                 setExpandedIds(new Set(all));
-                setExpandView('expand');
               }} style={{
                 padding: '8px 20px', cursor: 'pointer', fontSize: 14,
-                borderBottom: expandView === 'expand' ? '2px solid COLORS.primary' : '2px solid transparent',
+                borderBottom: expandView === 'expand' ? `2px solid ${COLORS.primary}` : '2px solid transparent',
                 color: expandView === 'expand' ? COLORS.primary : '#666',
                 fontWeight: expandView === 'expand' ? 600 : 400,
                 marginBottom: -2, transition: 'all 0.15s',
               }}>全部展开</div>
               <div onClick={() => {
                 setExpandedIds(new Set());
-                setExpandView('collapse');
               }} style={{
                 padding: '8px 20px', cursor: 'pointer', fontSize: 14,
-                borderBottom: expandView === 'collapse' ? '2px solid COLORS.primary' : '2px solid transparent',
+                borderBottom: expandView === 'collapse' ? `2px solid ${COLORS.primary}` : '2px solid transparent',
                 color: expandView === 'collapse' ? COLORS.primary : '#666',
                 fontWeight: expandView === 'collapse' ? 600 : 400,
                 marginBottom: -2, transition: 'all 0.15s',
@@ -292,7 +290,7 @@ const TagManagement: React.FC = () => {
                             onKeyDown={e => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') setEditingId(null); }}
                             onClick={e => e.stopPropagation()}
                             style={{
-                              flex: 1, border: '1px solid COLORS.primary', borderRadius: 3,
+                              flex: 1, border: `1px solid ${COLORS.primary}`, borderRadius: 3,
                               padding: '1px 4px', fontSize: 12, outline: 'none',
                               fontFamily: 'inherit', background: '#fff',
                             }}
@@ -346,7 +344,7 @@ const TagManagement: React.FC = () => {
                           onBlur={saveDesc}
                           onKeyDown={e => { if (e.key === 'Enter') saveDesc(); if (e.key === 'Escape') setDescEditId(null); }}
                           autoFocus
-                          style={{ width: '100%', border: '1px solid COLORS.primary', borderRadius: 3, padding: '1px 4px', fontSize: 12, outline: 'none', fontFamily: 'inherit', background: '#fff', boxSizing: 'border-box' }}
+                          style={{ width: '100%', border: `1px solid ${COLORS.primary}`, borderRadius: 3, padding: '1px 4px', fontSize: 12, outline: 'none', fontFamily: 'inherit', background: '#fff', boxSizing: 'border-box' }}
                         />
                       ) : (
                         <span style={{ cursor: 'text', color: node.description ? '#666' : '#ccc' }}

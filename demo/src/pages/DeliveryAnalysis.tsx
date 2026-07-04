@@ -1019,7 +1019,7 @@ const DeliveryAnalysis: React.FC = () => {
         let start: Date, end: Date;
         if (n.status === 'completed') {
           start = startH ? new Date(startH.changedAt) : new Date(n.plannedStartDate);
-          end = new Date(n.actualDate!);
+          end = n.actualDate ? new Date(n.actualDate) : new Date(n.plannedEndDate);
         } else if (n.status === 'in_progress') {
           start = new Date(n.plannedStartDate);
           end = now;

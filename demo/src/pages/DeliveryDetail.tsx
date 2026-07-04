@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Tag, Card, Button, message, Modal, ConfigProvider } from 'antd';
 import { ScheduleOutlined, AuditOutlined, SendOutlined, SaveOutlined, ArrowLeftOutlined, DownloadOutlined } from '@ant-design/icons';
@@ -40,22 +40,22 @@ const DeliveryDetail: React.FC = () => {
   const [costDirty, setCostDirty] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
 
-  const quotationGroups: Group[] = (() => {
+  const quotationGroups: Group[] = useMemo(() => {
     if (!project) return [];
     if (project.quotationId === 'proj-003' || project.quotationId === 'proj-001' || project.quotationId === 'proj-005') {
       return mockProject.groups.map(g => ({ ...g, items: g.items.map(i => ({ ...i })) }));
     }
     return [];
-  })();
+  }, [project]);
 
-  const quotationVersion = (() => {
+  const quotationVersion = useMemo(() => {
     if (!project) return undefined;
     if (project.quotationId === 'proj-003' || project.quotationId === 'proj-001' || project.quotationId === 'proj-005') {
       const v = mockProject.current_version;
       return { warranty_rate: v.warranty_rate, risk_rate: v.risk_rate, commercial_cost: v.commercial_cost };
     }
     return undefined;
-  })();
+  }, [project]);
 
   // 实施计划：仅待审批时锁定（通过后可继续修改无需再审批，驳回后可修改重新提交）
   const planLocked = project?.planStatus === 'pending';

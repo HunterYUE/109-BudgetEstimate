@@ -18,6 +18,12 @@ const stageColors: Record<string, string> = {
 const STAGES = ['信息', '线索', '机会', '投标', '议价', '中标'] as const;
 const FY_OPTIONS = ['FY2425', 'FY2526', 'FY2627'] as const;
 
+// localStorage 输入的 parseInt 保护
+const safeParseInt = (val: string | undefined | null): number => {
+  const n = parseInt(val ?? '', 10);
+  return isNaN(n) ? 0 : n;
+};
+
 /* ============================================================
    财年工具函数
    ============================================================ */
@@ -463,7 +469,7 @@ const SalesAnalysis: React.FC = () => {
       const prev = byMonth.get(fyMonth) || { amount: 0, profit: 0 };
       const { groups, version } = loadQuotationGroups(p.quotationId);
       const { exTax } = computeDeliveryEstGP3(p.contractAmount, groups, version);
-      const actualProfit = p.totalActualCost ? (exTax - p.totalActualCost) : Math.round(exTax * 0.20);
+      const actualProfit = p.totalActualCost != null ? (exTax - p.totalActualCost) : Math.round(exTax * 0.20);
       byMonth.set(fyMonth, { amount: prev.amount + exTax, profit: prev.profit + actualProfit });
     }
     return Array.from({ length: 12 }, (_, i) => {
@@ -486,10 +492,12 @@ const SalesAnalysis: React.FC = () => {
   const salesCumulative = useMemo(() => {
     const cumulative = monthlySalesData.slice(0, elapsedMonths).reduce((s, m) => s + m.value, 0);
     const profitCumulative = monthlySalesData.slice(0, elapsedMonths).reduce((s, m) => s + (m.subValue || 0), 0);
-    const avgMonthly = annualSalesTarget ? Math.round(parseInt(annualSalesTarget, 10) * 1000 / 12) : 0;
+    const parsedAnnualTarget = parseInt(annualSalesTarget, 10);
+    const validAnnualTarget = !isNaN(parsedAnnualTarget) ? parsedAnnualTarget : 0;
+    const avgMonthly = annualSalesTarget ? Math.round(validAnnualTarget * 1000 / 12) : 0;
     const expectedCumulative = avgMonthly * elapsedMonths;
     const gp3 = parseFloat(gp3Input) || 0;
-    const annualProfitTarget = annualSalesTarget && gp3 ? Math.round(parseInt(annualSalesTarget, 10) * gp3 / 100) : 0;
+    const annualProfitTarget = annualSalesTarget && gp3 ? Math.round(validAnnualTarget * gp3 / 100) : 0;
     const avgMonthlyProfit = annualProfitTarget ? Math.round(annualProfitTarget * 1000 / 12) : 0;
     const expectedProfitCumulative = avgMonthlyProfit * elapsedMonths;
     return { cumulative, expectedCumulative, profitCumulative, expectedProfitCumulative, annualProfitTarget };
@@ -499,11 +507,13 @@ const SalesAnalysis: React.FC = () => {
   const monthlyCumulative = useMemo(() => {
     const cumulative = monthlyOrderData.slice(0, elapsedMonths).reduce((s, m) => s + m.value, 0);
     const profitCumulative = monthlyOrderData.slice(0, elapsedMonths).reduce((s, m) => s + (m.subValue || 0), 0);
-    const avgMonthly = annualTargetInput ? Math.round(parseInt(annualTargetInput, 10) * 1000 / 12) : 0;
+    const parsedTargetInput = parseInt(annualTargetInput, 10);
+    const validTargetInput = !isNaN(parsedTargetInput) ? parsedTargetInput : 0;
+    const avgMonthly = annualTargetInput ? Math.round(validTargetInput * 1000 / 12) : 0;
     const expectedCumulative = avgMonthly * elapsedMonths;
 
     const gp3 = parseFloat(gp3Input) || 0;
-    const annualProfitTarget = annualTargetInput && gp3 ? Math.round(parseInt(annualTargetInput, 10) * gp3 / 100) : 0;
+    const annualProfitTarget = annualTargetInput && gp3 ? Math.round(validTargetInput * gp3 / 100) : 0;
     const avgMonthlyProfit = annualProfitTarget ? Math.round(annualProfitTarget * 1000 / 12) : 0;
     const expectedProfitCumulative = avgMonthlyProfit * elapsedMonths;
 
@@ -841,7 +851,7 @@ const SalesAnalysis: React.FC = () => {
             ) : (
               <span style={{ fontSize: 10, cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: 700 }}
                 onClick={() => {{ setTargetEditing(true); setTimeout(() => targetRef.current?.focus(), 0); }}}>
-                <span style={{ color: COLORS.primary }}>{annualTargetInput ? `${parseInt(annualTargetInput, 10).toLocaleString()}K` : '—'}</span>
+                <span style={{ color: COLORS.primary }}>{annualTargetInput ? `${safeParseInt(annualTargetInput).toLocaleString()}K` : '—'}</span>
                 {annualTargetInput ? (
                   <span style={{ color: monthlyCumulative.cumulative >= monthlyCumulative.expectedCumulative ? COLORS.primary : COLORS.danger, fontSize: 10 }}>
                     {`(${Math.round(monthlyCumulative.cumulative / 1000).toLocaleString()}K)`}
@@ -893,8 +903,8 @@ const SalesAnalysis: React.FC = () => {
             </span>
           </div>
           <VerticalBarChart title="" data={monthlyOrderData} format="K" height={290} topN={12} barWidthRatio={0.6} maxBarWidth={120} contentOffset={25} chartWidth={620} disableSort padTop={32} cardBorder={false}
-            targetValue={annualTargetInput ? Math.round(parseInt(annualTargetInput, 10) * 1000 / 12) : undefined}
-            targetLabel={annualTargetInput ? `${Math.round(parseInt(annualTargetInput, 10) / 12)}K` : undefined}
+            targetValue={annualTargetInput ? Math.round(safeParseInt(annualTargetInput) * 1000 / 12) : undefined}
+            targetLabel={annualTargetInput ? `${Math.round(safeParseInt(annualTargetInput) / 12)}K` : undefined}
           />
         </Card>
 
@@ -937,7 +947,7 @@ const SalesAnalysis: React.FC = () => {
             ) : (
               <span style={{ fontSize: 10, cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: 700 }}
                 onClick={() => {{ setSalesTargetEditing(true); setTimeout(() => salesTargetRef.current?.focus(), 0); }}}>
-                <span style={{ color: COLORS.success }}>{annualSalesTarget ? `${parseInt(annualSalesTarget, 10).toLocaleString()}K` : '—'}</span>
+                <span style={{ color: COLORS.success }}>{annualSalesTarget ? `${safeParseInt(annualSalesTarget).toLocaleString()}K` : '—'}</span>
                 {annualSalesTarget ? (
                   <span style={{ color: salesCumulative.cumulative >= salesCumulative.expectedCumulative ? COLORS.success : COLORS.danger, fontSize: 10 }}>
                     {`(${Math.round(salesCumulative.cumulative / 1000).toLocaleString()}K)`}
@@ -989,8 +999,8 @@ const SalesAnalysis: React.FC = () => {
             </span>
           </div>
           <VerticalBarChart title="" data={monthlySalesData} format="K" height={290} topN={12} barWidthRatio={0.6} maxBarWidth={120} contentOffset={25} chartWidth={620} disableSort padTop={32} cardBorder={false}
-            targetValue={annualSalesTarget ? Math.round(parseInt(annualSalesTarget, 10) * 1000 / 12) : undefined}
-            targetLabel={annualSalesTarget ? `${Math.round(parseInt(annualSalesTarget, 10) / 12)}K` : undefined}
+            targetValue={annualSalesTarget ? Math.round(safeParseInt(annualSalesTarget) * 1000 / 12) : undefined}
+            targetLabel={annualSalesTarget ? `${Math.round(safeParseInt(annualSalesTarget) / 12)}K` : undefined}
           />
         </Card>
       </div>
