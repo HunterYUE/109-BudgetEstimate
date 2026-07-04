@@ -187,7 +187,7 @@ const QuotationPage: React.FC = () => {
     }));
   }, []);
 
-  const handleProjectUpdate = useCallback((field: string, value: any) => {
+  const handleProjectUpdate = useCallback((field: string, value: string | number) => {
     setProject(prev => {
       if (field === 'eur_rate' || field === 'tax_rate' || field === 'warranty_rate' || field === 'risk_rate' || field === 'commercial_cost') {
         return { ...prev, current_version: { ...prev.current_version, [field]: value } };

@@ -1,14 +1,14 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Tag, Card, Button, message, Modal, ConfigProvider } from 'antd';
-import { ScheduleOutlined, AuditOutlined, CheckCircleOutlined, CloseCircleOutlined, SendOutlined, SaveOutlined, LockOutlined, ArrowLeftOutlined, DownloadOutlined } from '@ant-design/icons';
+import { ScheduleOutlined, AuditOutlined, SendOutlined, SaveOutlined, ArrowLeftOutlined, DownloadOutlined } from '@ant-design/icons';
 import { mockDeliveryProjects, mockProject, mockApprovalRequests } from '../mockData';
 import { formatMoney } from '../utils/calculations';
 import { notifyMockUpdate } from '../utils/mockStore';
 import DeliveryNodeTimeline from '../components/DeliveryNodeTimeline';
 import IconButton from '../components/IconButton';
 import ItemCostTable from '../components/ItemCostTable';
-import type { DeliveryProject, DeliveryNode, Group, ApprovalRequest } from '../types';
+import type { DeliveryProject, DeliveryNode, Group } from '../types';
 import { COLORS } from '../styles/constants';
 
 const STATUS_CYCLE: DeliveryNode['status'][] = ['pending', 'in_progress', 'completed', 'delayed'];
@@ -62,13 +62,6 @@ const DeliveryDetail: React.FC = () => {
   // 成本对比：仅待审批时锁定（通过后可修改并重新提交覆盖旧数据，驳回后可修改重新提交）
   const costLocked = project?.costStatus === 'pending';
   const costCanEdit = project?.costStatus !== 'pending';
-
-  // Check if project can be marked completed: node15 done + cost approved
-  const canComplete = useMemo(() => {
-    if (!project) return false;
-    const node15 = project.nodes.find(n => n.nodeNo === 15);
-    return node15?.status === 'completed' && project.costStatus === 'approved' && project.status !== '已完成';
-  }, [project]);
 
   // ---- Node handlers ----
   const handleNodeStatusClick = useCallback((nodeId: string) => {
@@ -194,14 +187,6 @@ const DeliveryDetail: React.FC = () => {
     msg.success('成本对比已提交审批，请前往审批管理模块查看');
   }, [project, actualCosts, msg]);
 
-  const handleApprove = useCallback((type: 'plan' | 'cost') => {
-    msg.info(`请在「审批管理」模块进行${type === 'plan' ? '实施计划' : '成本对比'}的审批操作`);
-  }, [msg]);
-
-  const handleReject = useCallback((type: 'plan' | 'cost') => {
-    msg.info(`请在「审批管理」模块进行${type === 'plan' ? '实施计划' : '成本对比'}的审批操作`);
-  }, [msg]);
-
   const handleExportPlan = useCallback(() => {
     if (!project) return;
     const TAX_RATE = 0.13;
@@ -225,8 +210,6 @@ const DeliveryDetail: React.FC = () => {
   const handleExportCost = useCallback(() => {
     if (!project) return;
     const totalAct = Object.values(actualCosts).reduce((s, v) => s + v, 0);
-    const TAX_RATE = 0.13;
-    const exTax = Math.round(project.contractAmount / (1 + TAX_RATE));
     const totEst = quotationGroups.reduce((s, g) => s + g.items.reduce((si, i) => si + i.direct_cost, 0), 0);
     Modal.info({
       title: '成本对比概览',
@@ -242,21 +225,6 @@ const DeliveryDetail: React.FC = () => {
       okText: '关闭',
     });
   }, [project, quotationGroups, actualCosts]);
-
-  // Mark project as completed
-  const handleComplete = useCallback(() => {
-    if (!project) return;
-    Modal.confirm({
-      title: '确认完成项目',
-      content: '项目总结已完成且成本对比已审批通过，确认将此项目标记为已完成并移至历史项目清单？',
-      okText: '确认完成',
-      cancelText: '取消',
-      onOk: () => {
-        setProject(prev => prev ? { ...prev, status: '已完成' } : prev);
-        msg.success('项目已完成');
-      },
-    });
-  }, [project, msg]);
 
   if (!project) {
     return (

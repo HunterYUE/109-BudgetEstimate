@@ -76,7 +76,7 @@ const ApprovalList: React.FC = () => {
     setRequests(prev => prev.map(r => r.id === modal.req.id ? { ...r, status: modal.action === 'approved' ? 'approved' : 'rejected', records: [...r.records, record] } : r));
     // 交付审批同步回 DeliveryProject
     if (modal.req.deliveryId) {
-      const proj = mockDeliveryProjects.find((p: any) => p.id === modal.req.deliveryId);
+      const proj = mockDeliveryProjects.find(p => p.id === modal.req.deliveryId);
       if (proj) {
         const appraisal = { reviewer: '刘总监', action: modal.action as 'approved' | 'rejected', comment: approvalComment, createdAt: record.createdAt };
         if (modal.req.approvalType === 'plan') { proj.planStatus = modal.action; proj.planApproval = appraisal; }
@@ -292,7 +292,7 @@ const ApprovalList: React.FC = () => {
         {historyModal && historyModal.records.length > 0 ? (
           <div style={{ position: 'relative', paddingLeft: 24 }}>
             <div style={{ position: 'absolute', left: 11, top: 4, bottom: 4, width: 2, background: '#e8e8e8' }} />
-            {historyModal.records.map((rec, i) => (
+            {historyModal.records.map(rec => (
               <div key={rec.id} style={{ position: 'relative', paddingBottom: 16 }}>
                 <div style={{
                   position: 'absolute', left: -20, top: 4, width: 12, height: 12, borderRadius: '50%',

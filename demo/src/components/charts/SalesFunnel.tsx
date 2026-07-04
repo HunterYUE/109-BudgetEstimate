@@ -63,7 +63,7 @@ const SalesFunnel: React.FC<Props> = ({ funnelData, fyInfo, fyLead, fyOpp, fyWon
       <svg width="100%" height="360" viewBox="0 0 620 360" style={{ display: 'block' }} preserveAspectRatio="xMidYMid meet">
         <g transform="translate(250, 40)">
           <polygon
-            points={pts.map((p, i) => `${-p.w / 2},${p.x} `).join('') +
+            points={pts.map(p => `${-p.w / 2},${p.x} `).join('') +
               [...pts].reverse().map(p => `${p.w / 2},${p.x} `).join('')}
             fill="rgba(0, 80, 158, 0.12)" stroke="none"
           />

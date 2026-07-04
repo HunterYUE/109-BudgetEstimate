@@ -125,7 +125,7 @@ const ItemCostTable: React.FC<Props> = ({ groups, actualCosts, onActualCostChang
 
     // Computed: design hours (from EQUIPMENT + INTEGRATION)
     let designLaborEst = 0;
-    let designLaborAct = actualCosts['_labor:design'] ?? 0;
+    const designLaborAct = actualCosts['_labor:design'] ?? 0;
     for (const g of groups) {
       if (g.group_type === 'EQUIPMENT' || g.group_type === 'INTEGRATION') {
         for (const item of g.items) {
@@ -154,7 +154,7 @@ const ItemCostTable: React.FC<Props> = ({ groups, actualCosts, onActualCostChang
 
     // Computed: assembly hours (from EQUIPMENT + INTEGRATION)
     let assemblyLaborEst = 0;
-    let assemblyLaborAct = actualCosts['_labor:assembly'] ?? 0;
+    const assemblyLaborAct = actualCosts['_labor:assembly'] ?? 0;
     for (const g of groups) {
       if (g.group_type === 'EQUIPMENT' || g.group_type === 'INTEGRATION') {
         for (const item of g.items) {
@@ -343,7 +343,7 @@ const ItemCostTable: React.FC<Props> = ({ groups, actualCosts, onActualCostChang
 
     const varAmt = act - est;
     return { estimated: est, actual: act, variance: varAmt, rate: est > 0 ? varAmt / est : 0 };
-  }, [rows, version]);
+  }, [rows]);
 
   const handleActualChange = (row: FlatRow, newVal: number) => {
     if (locked || !onActualCostChange) return;
@@ -358,7 +358,7 @@ const ItemCostTable: React.FC<Props> = ({ groups, actualCosts, onActualCostChang
   const columns = [
     {
       title: '成本类别', width: 150,
-      render: (_: any, rec: FlatRow) => {
+      render: (_text: unknown, rec: FlatRow) => {
         if (rec._type === 'header') {
           const isEquip = !['集成开发', '人工成本', '项目费用', '风险费用', '质保费用'].includes(rec.category);
           return (
@@ -381,10 +381,8 @@ const ItemCostTable: React.FC<Props> = ({ groups, actualCosts, onActualCostChang
     },
     {
       title: '描述', width: 240,
-      render: (_: any, rec: FlatRow) => {
+      render: (_text: unknown, rec: FlatRow) => {
         if (rec._type === 'header') return null;
-        const isRisk = rec._isRiskItem;
-        const isWarr = rec._warrantyItem;
         return (
           <span style={{ fontSize: 13, color: COLORS.primary }}>
             {rec.detail}
@@ -395,7 +393,7 @@ const ItemCostTable: React.FC<Props> = ({ groups, actualCosts, onActualCostChang
     },
     {
       title: '概算成本', width: 120, align: 'right' as const,
-      render: (_: any, rec: FlatRow) => (
+      render: (_text: unknown, rec: FlatRow) => (
         <span style={{ fontWeight: rec._type === 'header' ? 700 : 600, fontSize: 13, color: '#666' }}>
           ¥{formatMoney(rec.estimated)}
         </span>
@@ -403,7 +401,7 @@ const ItemCostTable: React.FC<Props> = ({ groups, actualCosts, onActualCostChang
     },
     {
       title: '实际成本', width: 140, align: 'right' as const,
-      render: (_: any, rec: FlatRow) => {
+      render: (_text: unknown, rec: FlatRow) => {
         if (rec._type === 'header') {
           return <span style={{ fontWeight: 700, fontSize: 13, color: '#000' }}>¥{formatMoney(rec.actual)}</span>;
         }
@@ -429,7 +427,7 @@ const ItemCostTable: React.FC<Props> = ({ groups, actualCosts, onActualCostChang
     },
     {
       title: '偏差额', width: 110, align: 'right' as const,
-      render: (_: any, rec: FlatRow) => {
+      render: (_text: unknown, rec: FlatRow) => {
         if (rec._type === 'header') return null;
         return (
           <span style={{ fontWeight: 600, fontSize: 13, color: rec.variance <= 0 ? COLORS.success : COLORS.danger }}>
@@ -440,7 +438,7 @@ const ItemCostTable: React.FC<Props> = ({ groups, actualCosts, onActualCostChang
     },
     {
       title: '偏差率', width: 76, align: 'right' as const,
-      render: (_: any, rec: FlatRow) => {
+      render: (_text: unknown, rec: FlatRow) => {
         if (rec._type === 'header') return null;
         return (
           <span style={{ fontWeight: 600, fontSize: 13, color: rec.variance <= 0 ? COLORS.success : COLORS.danger }}>

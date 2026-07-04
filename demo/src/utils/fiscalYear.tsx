@@ -1,11 +1,6 @@
 import React from 'react';
-
-/** 解析财年字符串（如 FY2526）为起止日期 */
-export function parseFY(fy: string) {
-  const y1 = 2000 + parseInt(fy.slice(2, 4));
-  const y2 = 2000 + parseInt(fy.slice(4, 6));
-  return { start: new Date(y1, 6, 1), end: new Date(y2, 6, 0) };
-}
+// eslint-disable-next-line react-refresh/only-export-components
+export { parseFY } from './fiscalYear';
 
 /** 财年选择器组件：减号 − 当前财年 + 增号 */
 export const FYSelector: React.FC<{

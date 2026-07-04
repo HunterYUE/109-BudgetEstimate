@@ -79,7 +79,7 @@ const QuotationList: React.FC = () => {
     { title: '更新时间', dataIndex: 'updatedAt', width: 100 },
     {
       title: '', key: 'action', width: 70, align: 'center' as const,
-      render: (_: any, record: QuotationSummary) => {
+      render: (_: unknown, record: QuotationSummary) => {
         return (
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
             <Button type="text" size="small" icon={<EyeOutlined style={{ fontSize: 18 }} />}

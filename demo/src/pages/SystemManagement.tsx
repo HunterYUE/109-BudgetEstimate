@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Table, Tag, Button, Modal, Input, InputNumber, message, Switch } from 'antd';
+import { Table, Button, Modal, Input, message, Switch } from 'antd';
 import { PlusOutlined, EditOutlined, KeyOutlined, CheckOutlined, CloseOutlined, SettingOutlined } from '@ant-design/icons';
 import { COLORS } from '../styles/constants';
 import type { TableProps } from 'antd';

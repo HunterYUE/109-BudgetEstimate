@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import { Table, Checkbox, Tag, Select, Tooltip, Button, ConfigProvider } from 'antd';
 import { DeleteOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
@@ -80,7 +80,7 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
   const colType = cfg.showType ? [{
     title: '类型', dataIndex: 'item_type', width: 60, align: 'center' as const,
     onCell: onCellLock(60),
-    render: (v: string, _: any, idx: number) => {
+    render: (v: string, _record: GroupItem, idx: number) => {
       const fontSize = 13;
       const TYPES = ['COMPLETE_SET', 'COMPONENT', 'SOFTWARE', 'SERVICE'];
       const LABELS = { COMPLETE_SET: 'CS', COMPONENT: 'CP', SOFTWARE: 'SW', SERVICE: 'SV' } as Record<string, string>;
@@ -93,7 +93,7 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
         }}>{typeLabel}</span>;
       }
       return (
-        <span onClick={() => updateItem(idx, { item_type: nextType() as any })}
+        <span onClick={() => updateItem(idx, { item_type: nextType() as GroupItem['item_type'] })}
           style={{
             fontSize, cursor: 'pointer', display: 'block', textAlign: 'center',
             color: typeColors[v] || '#888', userSelect: 'none'
@@ -107,7 +107,7 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
   const colCode: ColumnsType<GroupItem> = [{
     title: '编码', dataIndex: 'code', width: 200,
     onCell: () => ({ style: { width: 200, minWidth: 200, maxWidth: 200 } }),
-    render: (v: string, rec: GroupItem, idx: number) => {
+    render: (v: string) => {
       const matched = isInDB(v);
       return (
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -141,7 +141,7 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
   const colSourcing: ColumnsType<GroupItem> = cfg.showSourcing ? [{
     title: '外购', dataIndex: 'sourcing_type', width: 52, align: 'center' as const,
     onCell: onCellLock(52),
-    render: (v: SourcingType, _: any, idx: number) => editing ? (
+    render: (v: SourcingType, _record: GroupItem, idx: number) => editing ? (
       <Select size="small" variant="borderless" value={v}
         onChange={(val) => updateItem(idx, { sourcing_type: val })}
         style={{ width: 56, fontSize: 13 }}
@@ -160,7 +160,7 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
   const colQty: ColumnsType<GroupItem> = cfg.hideQty ? [] : [{
     title: '数量', dataIndex: 'qty_total', width: 52, align: 'center' as const,
     onCell: onCellLock(52),
-    render: (v: number, _: any, idx: number) => editing ? (
+    render: (v: number, _record: GroupItem, idx: number) => editing ? (
       <input type="number" min={0} value={v}
         onChange={(e) => updateItem(idx, { qty_total: parseInt(e.target.value) || 0 })}
         style={{ width: '100%', textAlign: 'center', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, MozAppearance: 'textfield' }} />
@@ -170,7 +170,7 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
   const colCost: ColumnsType<GroupItem> = [{
     title: '单位成本', dataIndex: 'unit_cost', width: 96, align: 'right' as const,
     onCell: onCellLock(96),
-    render: (v: number, _: any, idx: number) => <span>{'¥'}{Math.round(v).toLocaleString()}</span>,
+    render: (v: number) => <span>{'¥'}{Math.round(v).toLocaleString()}</span>,
   }];
 
   const colDesign: ColumnsType<GroupItem> = cfg.showDesign ? [{
@@ -194,7 +194,7 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
   const colMargin: ColumnsType<GroupItem> = [{
     title: '毛利率', dataIndex: 'margin_rate', width: 55, align: 'center' as const,
     onCell: onCellLock(55),
-    render: (v: number, _: any, idx: number) => editing ? (
+    render: (v: number, _record: GroupItem, idx: number) => editing ? (
       <input type="number" min={0} max={100} step={5} value={Math.round(v * 100)}
         onChange={(e) => updateItem(idx, { margin_rate: (parseInt(e.target.value) || 0) / 100 })}
         style={{ width: 60, textAlign: 'center', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, MozAppearance: 'textfield' }} />
@@ -211,7 +211,7 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
   const colWarranty: ColumnsType<GroupItem> = cfg.showWarranty ? [{
     title: '质保', dataIndex: 'has_warranty', width: 44, align: 'center' as const,
     onCell: onCellLock(44),
-    render: (v: boolean, _: any, idx: number) => editing ? (
+    render: (v: boolean, _record: GroupItem, idx: number) => editing ? (
       <ConfigProvider theme={{ components: { Checkbox: { colorPrimary: COLORS.primary } } }}>
         <Checkbox checked={v} onChange={(e) => updateItem(idx, { has_warranty: e.target.checked })} />
       </ConfigProvider>
@@ -221,7 +221,7 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
   const colDelete: ColumnsType<GroupItem> = [{
     title: '', dataIndex: '_action', width: 32, align: 'center' as const,
     onCell: onCellLock(32),
-    render: (_: any, rec: GroupItem) => editing ? (
+    render: (_text: unknown, rec: GroupItem) => editing ? (
       <Button type="text" size="small" danger icon={<DeleteOutlined />}
         onClick={() => onDeleteItem(rec.id)} style={{ padding: 0, fontSize: 14 }} />
     ) : null,

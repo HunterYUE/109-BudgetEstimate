@@ -2,8 +2,6 @@ import React from 'react';
 import { Card } from 'antd';
 import { COLORS } from '../../styles/constants';
 
-const fmtK = (v: number) => Math.round(v / 1000).toLocaleString() + 'K';
-
 const TOP_COLORS = [COLORS.primary, '#5a2d82', COLORS.primary, '#5a2d82'];
 
 export interface BarItem {
@@ -25,7 +23,6 @@ interface Props {
   noBorder?: boolean;
   sorted?: boolean;
   targetValue?: number;
-  onTargetChange?: (v: number) => void;
   profitData?: number[];
 }
 
@@ -33,7 +30,7 @@ const VerticalBarChart: React.FC<Props> = ({
   title, data, format = 'num', height = 220, topN = 10,
   contentOffset = 0, barWidthRatio = 0.55, chartWidth = 460,
   bottomPad = 28, labelOffset = 0, noBorder = false, sorted: doSort = true,
-  targetValue, onTargetChange, profitData,
+  targetValue, profitData,
 }) => {
   const working = doSort ? [...data].sort((a, b) => b.value - a.value) : data;
   const top = working.slice(0, topN);

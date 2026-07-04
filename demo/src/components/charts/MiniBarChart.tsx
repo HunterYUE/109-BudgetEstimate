@@ -10,9 +10,8 @@ interface Props {
   height?: number;
 }
 
-const MiniBarChart: React.FC<Props> = ({ title, data, height = 120 }) => {
+const MiniBarChart: React.FC<Props> = ({ title, data }) => {
   const sorted = [...data].sort((a, b) => b.value - a.value);
-  const maxVal = sorted[0]?.value || 1;
   return (
     <div>
       <div style={{ fontSize: 12, fontWeight: 600, color: '#444', marginBottom: 6 }}>{title}</div>
@@ -21,7 +20,6 @@ const MiniBarChart: React.FC<Props> = ({ title, data, height = 120 }) => {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           {sorted.map((item, i) => {
-            const w = (item.value / maxVal) * 100;
             const color = i < 4 ? TOP_COLORS[i] : '#ccc';
             return (
               <div key={item.name} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}>

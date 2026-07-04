@@ -54,7 +54,7 @@ interface KpiCard {
 }
 const OverviewCards: React.FC<{ items: KpiCard[] }> = ({ items }) => (
   <div style={{ display: 'flex', gap: 16, marginBottom: 24 }}>
-    {items.map((item, i) => (
+    {items.map(item => (
       <Card key={item.label} size="small"
         style={{
           flex: 1, borderRadius: 8, border: '1px solid #f0f0f0',
@@ -400,20 +400,144 @@ const ProfitChart: React.FC<{
 };
 
 /* ============================================================
+   子组件 — 甘特节点（含 tooltip）
+   ============================================================ */
+interface GanttSlot {
+  nodeNo: number;
+  startDate: Date;
+  endDate: Date;
+  status: string;
+  name: string;
+  plannedStartDate: Date;
+  plannedEndDate: Date;
+  actualDate?: Date;
+  /** 初始计划时间（第一次制定时的计划，从 history 推算，无变更时=当前计划） */
+  initStartDate: Date;
+  initEndDate: Date;
+}
+
+/** 格式化日期为短格式 "M/d" */
+const fmtShort = (d: Date) => `${d.getMonth() + 1}/${d.getDate()}`;
+
+/** 节点状态标签 & 条颜色（三类：未开始/进行中/已完成） */
+const GANTT_STATUS_COLOR: Record<string, string> = {
+  pending: '#bbb', in_progress: COLORS.primary, delayed: COLORS.primary, completed: COLORS.success,
+};
+
+/** 计算某节点的延期天数（与初始计划完成时间比） */
+function calcNodeDelay(s: GanttSlot): number {
+  if (s.status === 'completed') {
+    if (!s.actualDate) return 0;
+    return Math.max(0, Math.round((s.actualDate.getTime() - s.initEndDate.getTime()) / (1000 * 60 * 60 * 24)));
+  }
+  if (s.status === 'in_progress' || s.status === 'delayed') {
+    return Math.max(0, Math.round((Date.now() - s.initEndDate.getTime()) / (1000 * 60 * 60 * 24)));
+  }
+  return 0;
+}
+
+/** 单条甘特节点条（hover 提升到父组件） */
+interface GanttHoverInfo {
+  slot: GanttSlot;
+  sx: number; ex: number; w: number;
+  cy: number; barH: number; color: string;
+}
+const GanttNode: React.FC<{
+  slot: GanttSlot;
+  sx: number; ex: number; w: number;
+  cy: number; barH: number;
+  hovered: boolean;
+  onHover: (info: GanttHoverInfo | null) => void;
+}> = ({ slot, sx, ex, w, cy, barH, hovered, onHover }) => {
+  const color = GANTT_STATUS_COLOR[slot.status] || '#bbb';
+  const active = slot.status === 'in_progress' || slot.status === 'delayed';
+  const opacity = slot.status === 'completed' ? 1 : active ? 0.7 : 0.35;
+  return (
+    <g style={{ cursor: 'pointer' }}
+      onMouseEnter={() => onHover({ slot, sx, ex, w, cy, barH, color })}
+      onMouseLeave={() => onHover(null)}>
+      {/* 透明捕获区 */}
+      <rect x={sx} y={cy - 4} width={w} height={barH + 8} fill="transparent" stroke="none" />
+      {/* 可见条 */}
+      <rect x={sx} y={cy} width={w} height={barH} rx={0} ry={0}
+        fill="none" stroke={color} strokeWidth={hovered ? 2.5 : 1.5} opacity={hovered ? 1 : opacity} />
+      {w > 16 && (
+        <text x={sx + w / 2} y={cy + barH / 2 + 2.5} textAnchor="middle" fontSize={7}
+          fill={color} opacity={opacity} fontWeight={600}>{slot.nodeNo}</text>
+      )}
+    </g>
+  );
+};
+
+/** 甘特 tooltip（单独渲染到 SVG 末尾，确保在最上层） */
+const GanttTooltip: React.FC<{
+  hovered: GanttHoverInfo | null;
+  W: number; H: number;
+}> = ({ hovered, W }) => {
+  if (!hovered) return null;
+  const { slot, sx, ex, cy, barH } = hovered;
+  const delayDays = calcNodeDelay(slot);
+  const tooltipW = 250, tooltipH = delayDays > 0 ? 105 : 80;
+  let ttx = ex + 8;
+  let tty = cy - tooltipH - 4;
+  if (ttx + tooltipW > W - 6) ttx = sx - 8 - tooltipW;
+  if (tty < 4) tty = cy + barH + 6;
+  return (
+    <g>
+      <rect x={ttx} y={tty} width={tooltipW} height={tooltipH} rx={5} ry={5}
+        fill="#fff" stroke="#e8e8e8" strokeWidth={1} filter="url(#bubble-shadow)" />
+      <polygon
+        points={tty < cy
+          ? `${ttx + 8},${tty + tooltipH} ${ttx + 4},${tty + tooltipH - 6} ${ttx + 12},${tty + tooltipH - 6}`
+          : `${ttx + 8},${tty} ${ttx + 4},${tty + 6} ${ttx + 12},${tty + 6}`}
+        fill="#fff" stroke="#e8e8e8" strokeWidth={1} />
+      <text x={ttx + 12} y={tty + 20} fontSize={12} fontWeight={700} fill="#0d1b2a">{slot.name.replace('\n', '')}</text>
+      <line x1={ttx + 12} y1={tty + 27} x2={ttx + tooltipW - 12} y2={tty + 27} stroke="#f0f0f0" strokeWidth={1} />
+      {/* 初始计划 */}
+      <text x={ttx + 12} y={tty + 46} fontSize={11} fill="#999">初始计划</text>
+      <text x={ttx + tooltipW - 12} y={tty + 46} fontSize={11} fill="#444" textAnchor="end">
+        {fmtShort(slot.initStartDate)} → {fmtShort(slot.initEndDate)}
+      </text>
+      {/* 更新计划 / 完成时间 */}
+      <text x={ttx + 12} y={tty + 68} fontSize={11} fill="#999">
+        {slot.status === 'completed' ? '完成时间' : '更新计划'}
+      </text>
+      <text x={ttx + tooltipW - 12} y={tty + 68} fontSize={11} fill="#444" textAnchor="end">
+        {slot.status === 'completed'
+          ? `${fmtShort(slot.startDate)} → ${fmtShort(slot.endDate)}`
+          : `${fmtShort(slot.plannedStartDate)} → ${fmtShort(slot.plannedEndDate)}`}
+      </text>
+      {/* 延期天数 */}
+      {delayDays > 0 && (
+        <>
+          <text x={ttx + 12} y={tty + 90} fontSize={11} fill="#999">延期天数</text>
+          <text x={ttx + tooltipW - 12} y={tty + 90} fontSize={11} fill={COLORS.danger} textAnchor="end" fontWeight={600}>
+            +{delayDays} 天
+          </text>
+        </>
+      )}
+    </g>
+  );
+};
+
+/* ============================================================
    子组件 — 项目时间节点分布（甘特图）
    ============================================================ */
 const ProjectGantt: React.FC<{
-  data: Array<{ name: string; slots: { nodeNo: number; startDate: Date; endDate: Date; status: string }[] }>;
+  data: Array<{ name: string; slots: GanttSlot[] }>;
   tlStart: Date;
   totalDays: number;
   months: string[];
   todayPos: number;
+  lifecycles: { id: string; start: Date; end: Date; exTax: number }[];
   height?: number;
-}> = ({ data, tlStart, totalDays, months, todayPos, height = 500 }) => {
+}> = ({ data, tlStart, totalDays, months, todayPos, lifecycles, height = 500 }) => {
+  const [hoveredGantt, setHoveredGantt] = useState<GanttHoverInfo | null>(null);
+  const [lineX, setLineX] = useState<number | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
   const W = 1800;
   const labelW = 70;
   const chartW = W - labelW;
-  const projColors = [COLORS.primary, COLORS.purple, COLORS.success, COLORS.warning, COLORS.amber, COLORS.chartGray];
   const projCount = Math.max(data.length, 1);
   const barH = 20;
   const rowGap = 10;
@@ -424,10 +548,45 @@ const ProjectGantt: React.FC<{
   const posX = (d: Date) => labelW + Math.max(0, Math.min(1, (d.getTime() - tlStart.getTime()) / (1000 * 60 * 60 * 24) / totalDays)) * chartW;
   const todayX = labelW + todayPos / totalDays * chartW;
 
+  // ── 负载压力线 ──
+  const loadInfo = useMemo(() => {
+    if (lineX == null) return null;
+    const dayOffset = (lineX - labelW) / chartW * totalDays;
+    const lineDate = new Date(tlStart.getTime() + dayOffset * 86400000);
+    const t = lineDate.getTime();
+    let wAmt = 0, wCnt = 0;
+    for (const lc of lifecycles) {
+      if (t >= lc.start.getTime() && t <= lc.end.getTime()) {
+        wAmt += lc.exTax;
+        wCnt += 1;
+      }
+    }
+    const k = 0.2;
+    const raw = wAmt * (1 + k * Math.max(0, wCnt - 1));
+    return { value: Math.round(raw / 10000), date: lineDate, count: wCnt };
+  }, [lineX, lifecycles, tlStart, labelW, chartW, totalDays]);
+
+  const svgToX = (clientX: number, svgEl: SVGSVGElement) => {
+    const rect = svgEl.getBoundingClientRect();
+    return (clientX - rect.left) * (W / rect.width);
+  };
+
   return (
     <Card size="small" style={{ borderRadius: 8, border: '1px solid #f0f0f0', height: '100%' }} styles={{ body: { padding: '12px 0 0', height: '100%' } }}>
       <span style={{ position: 'absolute', top: 6, right: 10, fontSize: 11, color: '#888', zIndex: 1 }}>项目节点</span>
-      <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} style={{ display: 'block' }}>
+      <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} style={{ display: 'block', userSelect: 'none' }}
+        onMouseDown={(e) => {
+          const x = svgToX(e.clientX, e.currentTarget);
+          if (x >= labelW && x <= W) { setLineX(x); setIsDragging(true); }
+        }}
+        onMouseMove={(e) => {
+          if (!isDragging) return;
+          const x = svgToX(e.clientX, e.currentTarget);
+          setLineX(Math.max(labelW, Math.min(W, x)));
+        }}
+        onMouseUp={() => setIsDragging(false)}
+        onMouseLeave={() => { if (isDragging) setIsDragging(false); }}>
+        <defs />
         {Array.from({ length: 13 }, (_, i) => {
           const x = labelW + i / 12 * chartW;
           return (
@@ -440,7 +599,6 @@ const ProjectGantt: React.FC<{
         <line x1={todayX} y1={42} x2={todayX} y2={H - 4} stroke={COLORS.danger} strokeWidth={1} strokeDasharray="4,3" />
         {data.map((proj, pi) => {
           const cy = 48 + pi * projH;
-          const color = projColors[pi % projColors.length];
           return (
             <g key={proj.name + '-' + pi}>
               <text fontSize={10} fill="#444">
@@ -454,23 +612,136 @@ const ProjectGantt: React.FC<{
                 const sx = posX(s.startDate);
                 const ex = posX(s.endDate);
                 const w = Math.max(4, ex - sx);
-                const opacity = s.status === 'completed' ? 1 : s.status === 'in_progress' ? 0.6 : 0.3;
                 return (
-                  <g key={s.nodeNo}>
-                    <rect x={sx} y={cy} width={w} height={barH} rx={0} ry={0}
-                      fill="none" stroke={color} strokeWidth={1.5} opacity={opacity} />
-                    {w > 16 && (
-                      <text x={sx + w / 2} y={cy + barH / 2 + 1} textAnchor="middle" fontSize={7}
-                        fill={color} opacity={opacity} fontWeight={600}>{s.nodeNo}</text>
-                    )}
-                  </g>
+                  <GanttNode key={s.nodeNo}
+                    slot={s}
+                    sx={sx} ex={ex} w={w}
+                    cy={cy} barH={barH}
+                    hovered={hoveredGantt?.slot.nodeNo === s.nodeNo && hoveredGantt?.cy === cy}
+                    onHover={setHoveredGantt} />
                 );
               })}
             </g>
           );
         })}
+        {/* tooltip 末尾渲染 = 最上层 */}
+        <GanttTooltip hovered={hoveredGantt} W={W} H={H} />
+        {/* ── 负载压力虚线（最上层，无背景） ── */}
+        {lineX != null && (
+          <g>
+            <line x1={lineX} y1={42} x2={lineX} y2={H - 4}
+              stroke={COLORS.danger} strokeWidth={1} strokeDasharray="4,3"
+              style={{ stroke: COLORS.purple }} />
+            <text x={lineX} y={35} textAnchor="middle" fontSize={12} fill={COLORS.purple}
+              stroke="#fff" strokeWidth={2.5} paintOrder="stroke">
+              {loadInfo ? loadInfo.value.toLocaleString() : '—'}
+            </text>
+            <text x={lineX} y={35} textAnchor="middle" fontSize={12} fill={COLORS.purple}>
+              {loadInfo ? loadInfo.value.toLocaleString() : '—'}
+            </text>
+          </g>
+        )}
       </svg>
     </Card>
+  );
+};
+
+/* ============================================================
+   子组件 — 气泡节点
+   ============================================================ */
+interface BubbleDataItem {
+  name: string;
+  contractAmount: number;
+  delayDays: number;
+  costDeviation: number;
+  status: string;
+  capacityPressure: number;
+}
+
+const fmtWan = (v: number) => Math.round(v / 10000).toLocaleString() + '万';
+
+interface BubbleHoverInfo {
+  item: BubbleDataItem;
+  cx: number; cy: number; r: number;
+  fillOpacity: number; color: string;
+}
+
+/** 单个气泡（hover 提升到父组件） */
+const BubbleNode: React.FC<{
+  item: BubbleDataItem;
+  cx: number; cy: number; r: number;
+  fillOpacity: number; color: string;
+  hovered: boolean;
+  onHover: (info: BubbleHoverInfo | null) => void;
+}> = ({ item, cx, cy, r, fillOpacity, color, hovered, onHover }) => {
+  return (
+    <g style={{ cursor: 'pointer' }}
+      onMouseEnter={() => onHover({ item, cx, cy, r, fillOpacity, color })}
+      onMouseLeave={() => onHover(null)}>
+      {/* 透明大区域方便鼠标捕获 */}
+      <circle cx={cx} cy={cy} r={r + 10} fill="transparent" stroke="none" />
+      {/* 气泡本体 */}
+      <circle cx={cx} cy={cy} r={r} fill={color} fillOpacity={fillOpacity}
+        stroke={color} strokeWidth={hovered ? 3 : 2} opacity={hovered ? 1 : 0.85}
+        style={{ transition: 'opacity 0.15s, stroke-width 0.15s' }} />
+      {/* 标签始终显示 */}
+      <text x={cx} y={cy - r - 4} textAnchor="middle" fontSize={9} fill="#222">
+        {item.name.length > 4 ? item.name.slice(0, 4) : item.name}
+      </text>
+      <text x={cx} y={cy + r + 10} textAnchor="middle" fontSize={9} fill="#222">
+        {item.delayDays}d / {item.costDeviation.toFixed(1)}%
+      </text>
+    </g>
+  );
+};
+
+/** 气泡 tooltip（单独渲染到 SVG 末尾，确保在最上层） */
+const BubbleTooltip: React.FC<{
+  hovered: BubbleHoverInfo | null;
+  W: number; CH: number;
+}> = ({ hovered, W, CH }) => {
+  if (!hovered) return null;
+  const { item, cx, cy, r } = hovered;
+  const tooltipW = 240, tooltipH = 140;
+  let ttx = cx + r + 12;
+  let tty = cy - 10;
+  if (ttx + tooltipW > W - 6) ttx = cx - r - 12 - tooltipW;
+  if (tty + tooltipH > CH - 6) tty = CH - 6 - tooltipH;
+
+  const colorLabel =
+    item.costDeviation > 0 ? COLORS.danger : item.costDeviation < 0 ? COLORS.success : '#666';
+  const delayLabel = item.delayDays > 0 ? `${item.delayDays} 天` : '0 天';
+
+  return (
+    <g>
+      <rect x={ttx} y={tty} width={tooltipW} height={tooltipH} rx={5} ry={5}
+        fill="#fff" stroke="#e8e8e8" strokeWidth={1} filter="url(#bubble-shadow)" />
+      <polygon
+        points={ttx > cx
+          ? `${ttx + 6},${tty + 16} ${ttx},${tty + 10} ${ttx + 6},${tty + 4}`
+          : `${ttx + tooltipW - 6},${tty + 16} ${ttx + tooltipW},${tty + 10} ${ttx + tooltipW - 6},${tty + 4}`}
+        fill="#fff" stroke="#e8e8e8" strokeWidth={1} />
+      <text x={ttx + 12} y={tty + 21} fontSize={12} fontWeight={700} fill="#0d1b2a">
+        {item.name.length > 12 ? item.name.slice(0, 12) + '…' : item.name}
+      </text>
+      <line x1={ttx + 12} y1={tty + 29} x2={ttx + tooltipW - 12} y2={tty + 29} stroke="#f0f0f0" strokeWidth={1} />
+      <text x={ttx + 12} y={tty + 49} fontSize={11} fill="#999">合同金额</text>
+      <text x={ttx + tooltipW - 12} y={tty + 49} fontSize={12} fill="#222" textAnchor="end" fontWeight={600}>
+        {fmtWan(item.contractAmount)}
+      </text>
+      <text x={ttx + 12} y={tty + 72} fontSize={11} fill="#999">延期天数</text>
+      <text x={ttx + tooltipW - 12} y={tty + 72} fontSize={12} fill={item.delayDays > 0 ? COLORS.danger : COLORS.success} textAnchor="end" fontWeight={600}>
+        {delayLabel}
+      </text>
+      <text x={ttx + 12} y={tty + 95} fontSize={11} fill="#999">成本偏差率</text>
+      <text x={ttx + tooltipW - 12} y={tty + 95} fontSize={12} fill={colorLabel} textAnchor="end" fontWeight={600}>
+        {item.costDeviation > 0 ? '+' : ''}{item.costDeviation.toFixed(1)}%
+      </text>
+      <text x={ttx + 12} y={tty + 118} fontSize={11} fill="#999">产能压力</text>
+      <text x={ttx + tooltipW - 12} y={tty + 118} fontSize={12} fill={COLORS.purple} textAnchor="end" fontWeight={600}>
+        {Math.round(item.capacityPressure).toLocaleString()}
+      </text>
+    </g>
   );
 };
 
@@ -478,11 +749,12 @@ const ProjectGantt: React.FC<{
    子组件 — 健康矩阵（气泡图）
    ============================================================ */
 const BubbleChart: React.FC<{
-  data: { name: string; contractAmount: number; delayDays: number; costDeviation: number; status: string; resourceLoad: number }[];
+  data: BubbleDataItem[];
   height?: number;
   /** 画布（viewBox）高度，默认与 height 相同。设大则 SVG 缩放显示，不裁剪边缘项目 */
   canvasHeight?: number;
 }> = ({ data, height = 300, canvasHeight, bodyPadTop = 37, bodyPadBottom = 25 }) => {
+  const [hoveredBubble, setHoveredBubble] = useState<BubbleHoverInfo | null>(null);
   const W = 940;
   const H = height;
   const CH = canvasHeight ?? H;
@@ -491,7 +763,7 @@ const BubbleChart: React.FC<{
   const chartH = H - pad.top - pad.bottom;
   const maxDelay = Math.max(...data.map(d => d.delayDays), 1);
   const maxCost = Math.max(...data.map(d => Math.abs(d.costDeviation)), 1);
-  const maxLoad = Math.max(...data.map(d => d.resourceLoad), 1);
+  const maxPressure = Math.max(...data.map(d => d.capacityPressure), 0.001);
   const statusColors: Record<string, string> = { '进行中': COLORS.primary, '已完成': COLORS.success, '已延期': COLORS.danger };
   const step = 15;
   const maxTick = Math.ceil(maxDelay / step) * step;
@@ -500,6 +772,11 @@ const BubbleChart: React.FC<{
     <Card size="small" style={{ borderRadius: 8, border: '1px solid #f0f0f0' }} styles={{ body: { padding: `${bodyPadTop}px 0 ${bodyPadBottom}px` } }}>
       <span style={{ position: 'absolute', top: 6, right: 10, fontSize: 11, color: '#888', zIndex: 1 }}>健康矩阵</span>
       <svg width="100%" height={H} viewBox={`0 0 ${W} ${CH}`} style={{ display: 'block' }}>
+        <defs>
+          <filter id="bubble-shadow" x="-10%" y="-10%" width="130%" height="130%">
+            <feDropShadow dx="0" dy="2" stdDeviation="4" floodColor="rgba(0,0,0,0.12)" />
+          </filter>
+        </defs>
         {Array.from({ length: Math.floor(maxTick / step) * 2 + 1 }, (_, i) => (i - Math.floor(maxTick / step)) * step).map(t => {
           const r = t / maxTick;
           const x = pad.left + (r + 1) / 2 * chartW;
@@ -524,15 +801,19 @@ const BubbleChart: React.FC<{
           const diff = d.contractAmount - 2000000;
           const dia = 15 + Math.floor(diff / 1000000) * 5 - Math.floor(Math.max(0, -diff) / 1000000) * 5;
           const r = Math.max(3, Math.min(25, Math.round(dia / 2)));
-          const fillOpacity = Math.max(0.1, Math.min(0.5, d.resourceLoad / maxLoad * 0.4));
+          const fillOpacity = Math.max(0.1, Math.min(0.6, (d.capacityPressure / maxPressure) * 0.5 + 0.1));
           return (
-            <g key={d.name}>
-              <circle cx={cx} cy={cy} r={r} fill={statusColors[d.status] || '#999'} fillOpacity={fillOpacity} stroke={statusColors[d.status] || '#999'} strokeWidth={2} opacity={0.8} />
-              <text x={cx} y={cy - r - 4} textAnchor="middle" fontSize={9} fill="#222">{d.name.slice(0, 4)}</text>
-              <text x={cx} y={cy + r + 10} textAnchor="middle" fontSize={9} fill="#222">{d.delayDays}d / {d.costDeviation.toFixed(1)}%</text>
-            </g>
+            <BubbleNode key={d.name}
+              item={d}
+              cx={cx} cy={cy} r={r}
+              fillOpacity={fillOpacity}
+              color={statusColors[d.status] || '#999'}
+              hovered={hoveredBubble?.item.name === d.name}
+              onHover={setHoveredBubble} />
           );
         })}
+        {/* tooltip 末尾渲染 = 最上层 */}
+        <BubbleTooltip hovered={hoveredBubble} W={W} CH={CH} />
       </svg>
     </Card>
   );
@@ -589,7 +870,7 @@ const DeliveryAnalysis: React.FC = () => {
         : new Date(p.updatedAt);
       return created <= fyRange.end && effectiveEnd >= fyRange.start;
     });
-  }, [fySelect]);
+  }, [fyRange]);
 
   // ── 各项目延期天数 ──
   const projectDelayDays = useMemo(() => {
@@ -641,21 +922,19 @@ const DeliveryAnalysis: React.FC = () => {
   // ── 利润分析数据（仅已完成项目总结的项目，按GP3偏差排序）──
   const profitChartData = useMemo(() => {
     const completed = fyFiltered.filter(p => isNode15CompletedInFy(p, fyRange));
-    let totalEstWeighted = 0, totalActWeighted = 0, totalAmt = 0;
-    const items: ProfitItem[] = completed.map(p => {
+    const itemData = completed.map(p => {
       const { groups, version } = loadQuotationGroups(p.quotationId);
       const { exTax, grandEstimated, estGP3 } = computeDeliveryEstGP3(p.contractAmount, groups, version);
       const actProfit = p.totalActualCost != null ? (exTax - p.totalActualCost) : undefined;
       const actGP3 = actProfit != null && exTax > 0 ? actProfit / exTax : undefined;
-      const deviation = actGP3 != null ? actGP3 - estGP3 : 0;
-      totalAmt += exTax;
-      totalEstWeighted += exTax * estGP3;
-      if (actGP3 != null) { totalActWeighted += exTax * actGP3; }
-      return { name: splitLabel(p.clientName), estProfit: exTax - grandEstimated, estGP3, actProfit, actGP3, deviation };
+      return { exTax, estGP3, actGP3, deviation: actGP3 != null ? actGP3 - estGP3 : 0, name: splitLabel(p.clientName), estProfit: exTax - grandEstimated };
     });
-    items.sort((a, b) => Math.abs(b.deviation) - Math.abs(a.deviation));
-    const avgEstGP3 = totalAmt > 0 ? totalEstWeighted / totalAmt : 0;
-    const avgActGP3 = totalAmt > 0 ? totalActWeighted / totalAmt : 0;
+    const items: ProfitItem[] = itemData.map(d => ({ name: d.name, estProfit: d.estProfit, estGP3: d.estGP3, actProfit: d.actProfit, actGP3: d.actGP3, deviation: d.deviation }))
+      .sort((a, b) => Math.abs(b.deviation) - Math.abs(a.deviation));
+    const totalAmt = itemData.reduce((s, d) => s + d.exTax, 0);
+    const avgEstGP3 = totalAmt > 0 ? itemData.reduce((s, d) => s + d.exTax * d.estGP3, 0) / totalAmt : 0;
+    const actItems = itemData.filter(d => d.actGP3 != null);
+    const avgActGP3 = actItems.length > 0 ? actItems.reduce((s, d) => s + d.exTax * d.actGP3!, 0) / actItems.reduce((s, d) => s + d.exTax, 0) : 0;
     return { items, avgEstGP3, avgActGP3 };
   }, [fyFiltered, fyRange]);
 
@@ -748,45 +1027,112 @@ const DeliveryAnalysis: React.FC = () => {
           start = new Date(n.plannedStartDate);
           end = new Date(n.plannedEndDate);
         }
-        return { nodeNo: n.nodeNo, startDate: start, endDate: end, status: n.status };
+        // 初始计划时间：从 history 中找最早的 plannedDate 变更前的值
+        const planChanges = n.history.filter(h => h.field === 'plannedDate')
+          .sort((a, b) => new Date(a.changedAt).getTime() - new Date(b.changedAt).getTime());
+        const initStart = planChanges.length > 0
+          ? new Date(planChanges[0].oldValue)
+          : new Date(n.plannedStartDate);
+        const initEnd = planChanges.length > 0
+          ? new Date(planChanges[planChanges.length - 1].oldValue)
+          : new Date(n.plannedEndDate);
+        return { nodeNo: n.nodeNo, startDate: start, endDate: end, status: n.status,
+          name: n.name, plannedStartDate: new Date(n.plannedStartDate),
+          plannedEndDate: new Date(n.plannedEndDate), actualDate: n.actualDate ? new Date(n.actualDate) : undefined,
+          initStartDate: initStart, initEndDate: initEnd };
       });
       return { name: p.clientName, slots };
     });
     return { tlStart, totalDays, months, todayPos, projectRows, DAY_MS };
   }, [fyFiltered]);
 
-  // ── 气泡图数据 ──
+  // ── 所有 fyFiltered 项目的生命周期（用于甘特图负载压力线）──
+  const projectLifecycles = useMemo(() => {
+    const now = new Date();
+    return fyFiltered.map(p => {
+      const node1 = p.nodes.find(n => n.nodeNo === 1)!;
+      const node15 = p.nodes.find(n => n.nodeNo === 15);
+      const start = new Date(node1.plannedStartDate);
+      // 已完成项目用实际完成日，未完成项目取 updatedAt / 末节点计划完成日 / now 三者最晚
+      const end = node15?.actualDate
+        ? new Date(node15.actualDate)
+        : new Date(Math.max(
+            new Date(p.updatedAt).getTime(),
+            new Date(p.nodes[p.nodes.length - 1].plannedEndDate).getTime(),
+            now.getTime()
+          ));
+      const { groups, version } = loadQuotationGroups(p.quotationId);
+      const { exTax } = computeDeliveryEstGP3(p.contractAmount, groups, version);
+      return { id: p.id, start, end, exTax };
+    });
+  }, [fyFiltered]);
+
+  // ── 气泡图数据（仅含当前财年内完成节点15的项目）──
+  // 产能压力：按实际时间窗口计算并行项目的时间加权贡献
+  // 公式：加权金额 × (1 + k × max(0, 加权个数 - 1))，k=0.2，显示值/10000
   const bubbleData = useMemo(() => {
     const now = new Date();
-    const items = fyFiltered.map(p => {
+    const k = 0.2;
+
+    // 当前财年内完成(节点15)的项目
+    const completed = fyFiltered.filter(p => isNode15CompletedInFy(p, fyRange));
+
+    // 构建所有 fyFiltered 项目的实际生命周期（回顾性分析用实际完成时间）
+    const lifecycles = new Map<string, { start: Date; end: Date; exTax: number }>();
+    for (const p of fyFiltered) {
+      const node1 = p.nodes.find(n => n.nodeNo === 1)!;
+      const node15 = p.nodes.find(n => n.nodeNo === 15);
+      // 实际开始 = 节点1计划开始（无实际开始日期字段时的最佳近似）
+      const start = new Date(node1.plannedStartDate);
+      // 实际结束 = 节点15实际完成（如有），否则使用最近更新时间或现在
+      const end = node15?.actualDate
+        ? new Date(node15.actualDate)
+        : new Date(p.updatedAt);
+      const { groups, version } = loadQuotationGroups(p.quotationId);
+      const { exTax } = computeDeliveryEstGP3(p.contractAmount, groups, version);
+      lifecycles.set(p.id, { start, end, exTax });
+    }
+
+    return completed.map(p => {
+      const lc = lifecycles.get(p.id)!;
+      const projDuration = lc.end.getTime() - lc.start.getTime();
+
       const maxDelay = calcMaxDelay(p, now);
       const { groups, version } = loadQuotationGroups(p.quotationId);
       const { exTax, totalEstimated } = computeDeliveryEstGP3(p.contractAmount, groups, version);
       const costDev = p.totalActualCost != null && totalEstimated > 0
         ? (p.totalActualCost - totalEstimated) / totalEstimated * 100 : 0;
-      const projStart = new Date(p.createdAt);
-      const projEnd = p.status === '已完成' ? new Date(p.updatedAt) : now;
-      let concurrentAmt = 0;
-      for (const other of fyFiltered) {
-        if (other.id === p.id) continue;
-        const oStart = new Date(other.createdAt);
-        const oEnd = other.status === '已完成' ? new Date(other.updatedAt) : now;
-        if (projStart <= oEnd && projEnd >= oStart) {
-          const { exTax: oExTax } = computeDeliveryEstGP3(other.contractAmount, loadQuotationGroups(other.quotationId).groups, loadQuotationGroups(other.quotationId).version);
-          concurrentAmt += oExTax;
-        }
+
+      // 时间加权并行计算
+      let weightedAmount = 0;
+      let weightedCount = 0;
+
+      for (const [otherId, otherLc] of lifecycles) {
+        if (otherId === p.id) continue;
+
+        const overlapStart = Math.max(lc.start.getTime(), otherLc.start.getTime());
+        const overlapEnd = Math.min(lc.end.getTime(), otherLc.end.getTime());
+        const overlapDuration = Math.max(0, overlapEnd - overlapStart);
+
+        if (overlapDuration <= 0) continue;
+
+        const overlapFrac = overlapDuration / projDuration;
+        weightedAmount += otherLc.exTax * overlapFrac;
+        weightedCount += overlapFrac;
       }
+
+      const capacityRaw = weightedAmount * (1 + k * Math.max(0, weightedCount - 1));
+
       return {
         name: p.clientName,
         contractAmount: exTax,
         delayDays: maxDelay,
         costDeviation: costDev,
         status: p.status,
-        resourceLoad: concurrentAmt,
+        capacityPressure: capacityRaw / 10000,
       };
     });
-    return items;
-  }, [fyFiltered]);
+  }, [fyFiltered, fyRange]);
 
   // ── 渲染 ──
   // 左列每张卡片高度 = 边框2 + padding-top30 + SVG225 = 257px，间隔16px
@@ -841,6 +1187,7 @@ const DeliveryAnalysis: React.FC = () => {
             <ProjectGantt data={ganttData.projectRows}
               tlStart={ganttData.tlStart} totalDays={ganttData.totalDays}
               months={ganttData.months} todayPos={ganttData.todayPos}
+              lifecycles={projectLifecycles}
               height={750} />
           </div>
         </>

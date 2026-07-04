@@ -1,11 +1,11 @@
 import React, { useRef } from 'react';
-import { Tag, Input, Modal } from 'antd';
+import { Modal } from 'antd';
 import type { Project } from '../types';
 import { COLORS } from '../styles/constants';
 
 interface Props {
   project: Project;
-  onUpdate?: (field: string, value: any) => void;
+  onUpdate?: (field: string, value: string | number) => void;
   versionBump?: 'minor' | 'major';
   onVersionBumpChange?: (v: 'minor' | 'major') => void;
   readOnly?: boolean;
@@ -70,7 +70,7 @@ const ProjectHeader: React.FC<Props> = ({ project, onUpdate, versionBump, onVers
   const v = project.current_version;
   const pct = parsePayment(project.payment_terms);
 
-  const updater = (field: string) => (e: any) => onUpdate?.(field, e.target?.value ?? e);
+  const updater = (field: string) => (e: React.ChangeEvent<HTMLInputElement>) => onUpdate?.(field, e.target?.value ?? e);
 
   return (
     <div style={{ marginBottom: 32 }}>

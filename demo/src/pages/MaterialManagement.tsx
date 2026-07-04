@@ -5,7 +5,7 @@ import {
   CheckOutlined, CloseOutlined,
 } from '@ant-design/icons';
 import { mockComponentDB, mockTagTree } from '../mockData';
-import { collectTagPaths, collectDescendantIds } from './TagManagement';
+import { collectTagPaths, collectDescendantIds } from '../utils/tagHelpers';
 import MaterialTagSelector from '../components/MaterialTagSelector';
 import { formatMoney } from '../utils/calculations';
 import type { Component, ItemType, SourcingType, ReviewStatus } from '../types';
@@ -36,15 +36,6 @@ const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
   pending:  { label: '待审核', color: '#e65100' },
   draft:    { label: '草稿',   color: '#999' },
   rejected: { label: '已驳回', color: COLORS.danger },
-};
-
-// -- 编码规则：类型 -> 前缀 --
-const CATEGORY_PREFIX: Record<string, string> = {
-  COMPLETE_SET: 'M',
-  COMPONENT: 'C',
-  PART: 'P',
-  SOFTWARE: 'S',
-  SERVICE: 'H',
 };
 
 // ── 辅助函数 ──
@@ -101,7 +92,7 @@ const MaterialManagement: React.FC = () => {
       if (statusTab !== 'all' && c.reviewStatus !== statusTab) return false;
       return true;
     };
-  }, [materials, searchText, typeFilter, sourceFilter, statusTab]);
+  }, [searchText, typeFilter, sourceFilter, statusTab]);
 
   const displayData = useMemo(() => {
     return materials.filter(matchesFilter);
@@ -287,7 +278,7 @@ const MaterialManagement: React.FC = () => {
 
   const onCellLock = (w: number) => () => ({ style: { width: w, minWidth: w, maxWidth: w } });
 
-  const columns: any[] = [
+  const columns: any[] = [  // eslint-disable-line @typescript-eslint/no-explicit-any
     {
       title: '编码', dataIndex: 'code', width: 150,
       onCell: onCellLock(150),
@@ -316,7 +307,7 @@ const MaterialManagement: React.FC = () => {
       filters: [{ text: '全部', value: '__all__' }, ...CATEGORIES.map(c => ({ text: CATEGORY_OPTIONS[c].label, value: c }))],
       filterSearch: true,
       filterDropdownProps: { minOverlayWidthMatchTrigger: false },
-      onFilter: (value: any, record: Component) => value === '__all__' || record.category === value,
+      onFilter: (value: string, record: Component) => value === '__all__' || record.category === value,
       render: (v: ItemType) => {
         const cfg = CATEGORY_OPTIONS[v] || { label: v, color: '#999' };
         return <Tag color={cfg.color} style={{ borderRadius: 1, margin: 0, fontSize: '12px !important' }}>{cfg.label}</Tag>;
@@ -326,7 +317,7 @@ const MaterialManagement: React.FC = () => {
       filters: [{ text: '全部', value: '__all__' }, ...brandFilterOptions],
       filterSearch: true,
       filterDropdownProps: { minOverlayWidthMatchTrigger: false },
-      onFilter: (value: any, record: Component) => value === '__all__' || record.brand === value,
+      onFilter: (value: string, record: Component) => value === '__all__' || record.brand === value,
       render: (v: string) => <span style={{ fontSize: 12, color: '#555' }}>{v || '—'}</span>,
     },
     { title: '供应商', dataIndex: 'supplier', width: 80, onCell: onCellLock(80),
@@ -336,7 +327,7 @@ const MaterialManagement: React.FC = () => {
       })(),
       filterSearch: true,
       filterDropdownProps: { minOverlayWidthMatchTrigger: false },
-      onFilter: (value: any, record: Component) => value === '__all__' || record.supplier === value,
+      onFilter: (value: string, record: Component) => value === '__all__' || record.supplier === value,
       render: (v: string) => <span style={{ fontSize: 12, color: '#555' }}>{v || '—'}</span>,
     },
     { title: '型号', dataIndex: 'model', width: 90, onCell: onCellLock(90),
@@ -346,7 +337,7 @@ const MaterialManagement: React.FC = () => {
       filters: [{ text: '全部', value: '__all__' }, ...UNITS.map(u => ({ text: u, value: u }))],
       filterSearch: true,
       filterDropdownProps: { minOverlayWidthMatchTrigger: false },
-      onFilter: (value: any, record: Component) => value === '__all__' || record.unit === value,
+      onFilter: (value: string, record: Component) => value === '__all__' || record.unit === value,
       render: (v: string) => <span style={{ fontSize: 12, color: '#555' }}>{v || '—'}</span>,
     },
     { title: '规格', dataIndex: 'specification', width: 220, onCell: onCellLock(220),
@@ -357,7 +348,7 @@ const MaterialManagement: React.FC = () => {
       filters: [{ text: '全部', value: '__all__' }, ...SOURCES.map(s => ({ text: s.label, value: s.value }))],
       filterSearch: true,
       filterDropdownProps: { minOverlayWidthMatchTrigger: false },
-      onFilter: (value: any, record: Component) => value === '__all__' || record.sourcing_type === value,
+      onFilter: (value: string, record: Component) => value === '__all__' || record.sourcing_type === value,
       render: (v: SourcingType) => (
         <Tag color={v === 'PURCHASED' ? 'orange' : COLORS.success} style={{ borderRadius: 1, margin: 0, fontSize: '12px !important' }}>
           {v === 'PURCHASED' ? '外购' : '自制'}
@@ -372,7 +363,7 @@ const MaterialManagement: React.FC = () => {
       ],
       filterSearch: true,
       filterDropdownProps: { minOverlayWidthMatchTrigger: false },
-      onFilter: (value: any, record: Component) => {
+      onFilter: (value: string, record: Component) => {
         if (value === '__all__') return true;
         const ids = collectDescendantIds(mockTagTree, value as string);
         return ids.some(id => (record.tags || []).includes(id));
@@ -398,7 +389,7 @@ const MaterialManagement: React.FC = () => {
     },
     {
       title: '', key: 'action', width: 130, align: 'center' as const, onCell: onCellLock(130),
-      render: (_: any, rec: Component) => (
+      render: (_: unknown, rec: Component) => (
         <Space size={0}>
           <Button type="text" size="small" icon={<EyeOutlined />}
             onClick={() => setDrawerItem(rec)}

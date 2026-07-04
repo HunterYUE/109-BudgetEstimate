@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Popover } from 'antd';
 import { mockTagTree } from '../mockData';
-import { flattenTree, collectTagPaths } from '../pages/TagManagement';
+import { flattenTree, collectTagPaths } from '../utils/tagHelpers';
 import { COLORS } from '../styles/constants';
 
 const LEVEL_COLORS = ['#1a2744', COLORS.primary, '#5a2d82', '#008080', '#d46b08'];

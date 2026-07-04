@@ -89,11 +89,11 @@ const SalesOpportunityList: React.FC = () => {
 
   const now = () => new Date().toISOString().slice(0, 10);
 
-  const touch = (id: string, updates: Partial<SalesOpportunity>) => {
+  const touch = useCallback((id: string, updates: Partial<SalesOpportunity>) => {
 
     setOpportunities(prev => prev.map(o => o.id === id && !o.terminated ? { ...o, ...updates, updatedAt: now() } : o));
 
-  };
+  }, []);
 
 
 
@@ -196,14 +196,14 @@ const SalesOpportunityList: React.FC = () => {
     });
   };
 
-  const handleStatusAction = (opp: SalesOpportunity, action: 'win' | 'loss' | 'freeze') => {
+  const handleStatusAction = useCallback((opp: SalesOpportunity, action: 'win' | 'loss' | 'freeze') => {
     if (action === 'freeze' && opp.status === '冻结') {
       setOpportunities(prev => prev.map(o => o.id === opp.id ? { ...o, status: '过程中', reasons: '', updatedAt: now() } : o));
       msg.success('已恢复为过程中');
       return;
     }
     openReasonModal(opp, action);
-  };
+  }, [msg]);
 
 
 
@@ -219,7 +219,7 @@ const SalesOpportunityList: React.FC = () => {
 
     // 查找该机会下所有报价，取最高审批通过版本
     const oppQuotes = mockQuotationSummaries.filter(q => q.opportunityId === opp.id && q.status === 'approved');
-    let bestQuote = oppQuotes.length > 0 ? oppQuotes.reduce((best, q) => {
+    const bestQuote = oppQuotes.length > 0 ? oppQuotes.reduce((best, q) => {
       const vb = parseFloat(best.versionNo.replace('V', ''));
       const vq = parseFloat(q.versionNo.replace('V', ''));
       return vq > vb ? q : best;
@@ -269,17 +269,6 @@ const SalesOpportunityList: React.FC = () => {
     msg.success('已转交付，信息已移交分析模块');
     navigate('/delivery');
   }, [deliveryOpp, msg, navigate]);
-
-
-
-  const handleLossTerminate = useCallback((opp: SalesOpportunity) => {
-
-    msg.info(`项目"${opp.projectName}"已终止，信息已保留`);
-
-  }, [msg]);
-
-
-
 
   const handlePromote = useCallback((opp: SalesOpportunity, targetStage: string) => {
     setPromoteOpp({ opp, targetStage });
@@ -395,7 +384,7 @@ const SalesOpportunityList: React.FC = () => {
 
   const columns = useMemo(() => [
     { title: '序号', key: 'index', width: 26, align: 'center' as const,
-      render: (_: any, rec: SalesOpportunity, i: number) =>
+      render: (_: unknown, rec: SalesOpportunity, i: number) =>
         rec.terminated
           ? <div style={{ position: 'relative', textAlign: 'center' }}>
               <span style={{ position: 'absolute', left: 2, color: COLORS.danger, fontSize: 12, fontWeight: 700 }}>X</span>
@@ -450,7 +439,7 @@ const SalesOpportunityList: React.FC = () => {
         ],
         filterSearch: true,
         filterDropdownProps: { minOverlayWidthMatchTrigger: false },
-        onFilter: (value: any, record: SalesOpportunity) => value === '__all__' || record.stage === value,
+        onFilter: (value: string, record: SalesOpportunity) => value === '__all__' || record.stage === value,
         render: (v: string, rec: SalesOpportunity) => rec.terminated
           ? <Tag color="#999" style={{ cursor: 'default', margin: 0 }}>{v}</Tag>
           : <Tag color={stageColors[v] || '#999'} style={{ cursor: 'pointer', margin: 0 }}
@@ -487,7 +476,7 @@ const SalesOpportunityList: React.FC = () => {
       ],
       filterSearch: true,
       filterDropdownProps: { minOverlayWidthMatchTrigger: false },
-      onFilter: (value: any, record: SalesOpportunity) => value === '__all__' || record.status === value,
+      onFilter: (value: string, record: SalesOpportunity) => value === '__all__' || record.status === value,
       render: (v: string, rec: SalesOpportunity) => {
         if (rec.terminated) return <Tag color="#999" style={{ margin: 0, fontSize: 12 }}>{v}</Tag>;
         const STATUS_ACTIONS: Record<string, { icon: React.ReactNode; action: string; label: string }[]> = {
@@ -500,7 +489,7 @@ const SalesOpportunityList: React.FC = () => {
             { icon: <PlayCircleOutlined />, action: 'freeze', label: '恢复' },
           ],
         };
-        let actions = STATUS_ACTIONS[v] || [];
+        const actions = STATUS_ACTIONS[v] || [];
         const isEarlyStage = (rec.stage === '信息' || rec.stage === '线索') && v === '过程中';
         if (actions.length === 0) {
           return <Tag color={statusColors[v] || '#999'} style={{ margin: 0, fontSize: 12 }}>{v}</Tag>;
@@ -529,7 +518,7 @@ const SalesOpportunityList: React.FC = () => {
       filters: [{ text: '全部', value: '__all__' }, ...Array.from(new Set(opportunities.map(o => o.salesman).filter(Boolean))).map(s => ({ text: s, value: s }))],
       filterSearch: true,
       filterDropdownProps: { minOverlayWidthMatchTrigger: false },
-      onFilter: (value: any, record: SalesOpportunity) => value === '__all__' || record.salesman === value,
+      onFilter: (value: string, record: SalesOpportunity) => value === '__all__' || record.salesman === value,
       render: (v: string, rec: SalesOpportunity) => rec.terminated
         ? <span style={{ fontSize: 13, color: '#999' }}>{v || '—'}</span>
         : (
@@ -540,7 +529,7 @@ const SalesOpportunityList: React.FC = () => {
       )},
     { title: '预计定标', dataIndex: 'expectedCloseDate', width: 67,
       filters: Array.from(new Set(opportunities.map(o => o.expectedCloseDate).filter(Boolean))).sort().map(s => ({ text: s, value: s })),
-      onFilter: (value: any, record: SalesOpportunity) => record.expectedCloseDate === value,
+      onFilter: (value: string, record: SalesOpportunity) => record.expectedCloseDate === value,
       render: (v: string, rec: SalesOpportunity) => rec.terminated
         ? <span style={{ fontSize: 13, color: '#999' }}>{v || '—'}</span>
         : (
@@ -561,7 +550,7 @@ const SalesOpportunityList: React.FC = () => {
         />
       )},
     { title: '操作', key: 'action', width: 75, align: 'center' as const,
-      render: (_: any, rec: SalesOpportunity) => {
+      render: (_: unknown, rec: SalesOpportunity) => {
         if (tabFilter === 'info') {
           if (rec.terminated) return <span style={{ fontSize: 12, color: '#999' }}>已终止</span>;
           if (rec.status === '输') return (
@@ -609,7 +598,7 @@ const SalesOpportunityList: React.FC = () => {
     },
     { title: '操作日期', dataIndex: 'updatedAt', width: 100,
       render: (v: string) => <span style={{ fontSize: 13, color: '#999' }}>{v || '—'}</span> },
-  ], [tabFilter, touch, handlePromote, handleConfirmTerminate, handleWinDeliver, handleStageClick, opportunities]);
+  ], [tabFilter, touch, handlePromote, handleConfirmTerminate, handleWinDeliver, handleStageClick, opportunities, handleStatusAction, navigate]);
 
 
 

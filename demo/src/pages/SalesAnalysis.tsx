@@ -15,9 +15,6 @@ const stageColors: Record<string, string> = {
   信息: '#999', 线索: COLORS.primary, 机会: COLORS.purple,
   投标: '#e65100', 议价: '#c76a00', 中标: COLORS.success,
 };
-const statusColors: Record<string, string> = {
-  赢: COLORS.success, 输: COLORS.danger, 冻结: '#999', 过程中: COLORS.primary,
-};
 const STAGES = ['信息', '线索', '机会', '投标', '议价', '中标'] as const;
 const FY_OPTIONS = ['FY2425', 'FY2526', 'FY2627'] as const;
 
@@ -136,14 +133,15 @@ const SalesFunnel: React.FC<FunnelProps> = ({ funnelData, fyInfo, fyLead, fyOpp,
   // 汇总机会阶段（含投标/议价）
   const oppAgg = funnelData.filter(f => ['机会', '投标', '议价'].includes(f.stage));
 
+  const stageMap: Record<string, string> = { info: '信息', lead: '线索', won: '中标' };
   const countFor = (key: string) => {
     if (key === 'opp') return oppAgg.reduce((s, f) => s + f.count, 0);
-    const f = funnelData.find(f => f.stage === ({ info: '信息', lead: '线索', won: '中标' } as any)[key]);
+    const f = funnelData.find(f => f.stage === stageMap[key]);
     return f?.count || 0;
   };
   const amountFor = (key: string) => {
     if (key === 'opp') return oppAgg.reduce((s, f) => s + f.amount, 0);
-    const f = funnelData.find(f => f.stage === ({ info: '信息', lead: '线索', won: '中标' } as any)[key]);
+    const f = funnelData.find(f => f.stage === stageMap[key]);
     return f?.amount || 0;
   };
 
@@ -161,11 +159,11 @@ const SalesFunnel: React.FC<FunnelProps> = ({ funnelData, fyInfo, fyLead, fyOpp,
 
   return (
     <div style={{ position: 'relative', padding: '12px 0' }}>
-      <svg width="100%" height="360" style={{ display: 'block' }}>
+      <svg width="100%" height="360" viewBox="0 0 680 360" style={{ display: 'block' }}>
         <g transform="translate(250, 40)">
           {/* 漏斗填充 */}
           <polygon
-            points={pts.map((p, i) => `${-p.w / 2},${p.x} `).join('') +
+            points={pts.map(p => `${-p.w / 2},${p.x} `).join('') +
               [...pts].reverse().map(p => `${p.w / 2},${p.x} `).join('')}
             fill="rgba(0, 80, 158, 0.12)" stroke="none"
           />
@@ -495,7 +493,7 @@ const SalesAnalysis: React.FC = () => {
     const avgMonthlyProfit = annualProfitTarget ? Math.round(annualProfitTarget * 1000 / 12) : 0;
     const expectedProfitCumulative = avgMonthlyProfit * elapsedMonths;
     return { cumulative, expectedCumulative, profitCumulative, expectedProfitCumulative, annualProfitTarget };
-  }, [monthlySalesData, annualSalesTarget, gp3Input]);
+  }, [monthlySalesData, annualSalesTarget, gp3Input, elapsedMonths]);
 
   // ── 月度订单累计 + 利润累计 ──
   const monthlyCumulative = useMemo(() => {
@@ -510,7 +508,7 @@ const SalesAnalysis: React.FC = () => {
     const expectedProfitCumulative = avgMonthlyProfit * elapsedMonths;
 
     return { cumulative, expectedCumulative, profitCumulative, expectedProfitCumulative, elapsedMonths, annualProfitTarget, gp3 };
-  }, [monthlyOrderData, annualTargetInput, gp3Input]);
+  }, [monthlyOrderData, annualTargetInput, gp3Input, elapsedMonths]);
 
   // ── 过去12个月范围（不随财年变化） ──
   const past12mRange = useMemo(() => {
@@ -545,17 +543,6 @@ const SalesAnalysis: React.FC = () => {
       amount: currentPipeline.filter(o => o.stage === stage).reduce((s, o) => s + o.amount, 0),
       color: stageColors[stage] || '#999',
     })), [currentPipeline]);
-
-  // ── 漏斗：财年累计（FY 过滤） ──
-  const funnelFy = useMemo(() =>
-    STAGES.map(stage => {
-      const items = fyFiltered.filter(o => o.stage === stage);
-      return {
-        stage, count: items.length,
-        amount: items.reduce((s, o) => s + o.amount, 0),
-        color: stageColors[stage] || '#999',
-      };
-    }), [fyFiltered]);
 
   // ── 中标（按赢单时间 updatedAt 归入财年）──
   const fyWonByTime = useMemo(() => {
@@ -695,14 +682,7 @@ const SalesAnalysis: React.FC = () => {
     })();
     const leadToWonRate = p12mOpp.count > 0 ? p12mWon.count / p12mOpp.count * 100 : 0;
     return { weightedPipeline, weightedProfit, weightedProfitRate, salesCycle, leadToWonRate };
-  }, [currentPipeline, past12mOpps]);
-
-  // ── 漏斗用过去12个月转化率 ──
-  const funnelConv = useMemo(() => [
-    { key: 'lead', cnt: p12mInfo.count > 0 ? p12mLead.count / p12mInfo.count * 100 : 0, amt: p12mInfo.amount > 0 ? p12mLead.amount / p12mInfo.amount * 100 : 0 },
-    { key: 'opp', cnt: p12mLead.count > 0 ? p12mOpp.count / p12mLead.count * 100 : 0, amt: p12mLead.amount > 0 ? p12mOpp.amount / p12mLead.amount * 100 : 0 },
-    { key: 'won', cnt: p12mOpp.count > 0 ? p12mWon.count / p12mOpp.count * 100 : 0, amt: p12mOpp.amount > 0 ? p12mWon.amount / p12mOpp.amount * 100 : 0 },
-  ], [p12mInfo, p12mLead, p12mOpp, p12mWon]);
+  }, [currentPipeline, past12mOpps, p12mOpp, p12mWon]);
 
   // ── 输单原因柱状图（按输单时间归入财年）──
   const dimLossReasons: BarItem[] = useMemo(() => {

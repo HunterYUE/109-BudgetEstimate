@@ -7,7 +7,7 @@ import {
 } from '@ant-design/icons';
 import { mockClients, mockQuotationSummaries } from '../mockData';
 import { formatMoney } from '../utils/calculations';
-import type { Client, Contact, ClientGrade, CreditLevel, AccountType } from '../types';
+import type { Client, Contact, ClientGrade, CreditLevel } from '../types';
 import { COLORS } from '../styles/constants';
 
 // ── 常量 ──
@@ -171,7 +171,7 @@ const ClientManagement: React.FC = () => {
     setEditContacts(prev => prev.filter(c => c.id !== id));
   };
 
-  const updateContactField = (id: string, field: keyof Contact, value: any) => {
+  const updateContactField = (id: string, field: keyof Contact, value: string | number | boolean) => {
     setEditContacts(prev => prev.map(c => c.id === id ? { ...c, [field]: value } : c));
   };
 
@@ -328,7 +328,7 @@ const ClientManagement: React.FC = () => {
 
   // ── Column definitions ──
 
-  const columns: any[] = [
+  const columns: any[] = [  // eslint-disable-line @typescript-eslint/no-explicit-any
     {
       title: '客户名称', dataIndex: 'name', width: 280,
       render: (v: string, record: Client) => {
@@ -349,19 +349,19 @@ const ClientManagement: React.FC = () => {
       filters: [{ text: '全部', value: '__all__' }, ...INDUSTRIES.map(i => ({ text: i, value: i }))],
       filterSearch: true,
       filterDropdownProps: { minOverlayWidthMatchTrigger: false },
-      onFilter: (value: any, record: Client) => value === '__all__' || record.industry === value,
+      onFilter: (value: string, record: Client) => value === '__all__' || record.industry === value,
     },
     { title: '区域', dataIndex: 'region', width: 70,
       filters: [{ text: '全部', value: '__all__' }, ...REGIONS.map(r => ({ text: r, value: r }))],
       filterSearch: true,
       filterDropdownProps: { minOverlayWidthMatchTrigger: false },
-      onFilter: (value: any, record: Client) => value === '__all__' || record.region === value,
+      onFilter: (value: string, record: Client) => value === '__all__' || record.region === value,
     },
     { title: '区域销售', dataIndex: 'salesman', width: 80,
       filters: [{ text: '全部', value: '__all__' }, ...SALESPEOPLE.map(s => ({ text: s, value: s }))],
       filterSearch: true,
       filterDropdownProps: { minOverlayWidthMatchTrigger: false },
-      onFilter: (value: any, record: Client) => value === '__all__' || record.salesman === value,
+      onFilter: (value: string, record: Client) => value === '__all__' || record.salesman === value,
     },
     {
       title: '信用等级', dataIndex: 'creditLevel', width: 80, align: 'center' as const,
@@ -379,11 +379,11 @@ const ClientManagement: React.FC = () => {
     },
     {
       title: '联系人', key: 'contactCount', width: 65, align: 'center' as const,
-      render: (_: any, record: Client) => <span>{record.contacts.length} 人</span>,
+      render: (_: unknown, record: Client) => <span>{record.contacts.length} 人</span>,
     },
     {
       title: '', key: 'action', width: 130, align: 'center' as const,
-      render: (_: any, record: Client) => (
+      render: (_: unknown, record: Client) => (
         <Space size={0}>
           <Button type="text" size="small" icon={<EyeOutlined />}
             onClick={() => setDrawerClient(record)}
@@ -454,7 +454,7 @@ const ClientManagement: React.FC = () => {
               columns={[
                 {
                   title: '联系人', key: 'contact', width: 130,
-                  render: (_: any, c: Contact) => (
+                  render: (_: unknown, c: Contact) => (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <div style={{
                         width: 28, height: 28, borderRadius: 3,
@@ -757,7 +757,7 @@ const ClientManagement: React.FC = () => {
               {
                 title: '联系人', key: 'contact', width: 180,
                 onCell: () => ({ style: { width: 180, minWidth: 180, maxWidth: 180 } }),
-                render: (_: any, c: Contact) => (
+                render: (_: unknown, c: Contact) => (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <div style={{
                       width: 28, height: 28, borderRadius: 3,
@@ -833,7 +833,7 @@ const ClientManagement: React.FC = () => {
               {
                 title: '', key: 'action', width: 40, align: 'center' as const,
                 onCell: () => ({ style: { width: 40, minWidth: 40, maxWidth: 40 } }),
-                render: (_: any, c: Contact) => (
+                render: (_: unknown, c: Contact) => (
                   <Button type="text" size="small" danger icon={<DeleteOutlined />}
                     onClick={() => removeContact(c.id)} />
                 ),

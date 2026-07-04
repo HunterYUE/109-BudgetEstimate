@@ -8,7 +8,7 @@ interface Props {
   groups: Group[];
   version: ProjectVersion;
   onDiscountChange: (value: number) => void;
-  onVersionUpdate?: (field: string, value: any) => void;
+  onVersionUpdate?: (field: string, value: number) => void;
 }
 
 const cellStyle: React.CSSProperties = {
