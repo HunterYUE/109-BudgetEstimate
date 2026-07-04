@@ -965,7 +965,7 @@ const DeliveryAnalysis: React.FC = () => {
       for (const n of p.nodes) {
         if (n.status === 'completed' || n.status === 'delayed') {
           totalCompleted++;
-          if (n.actualDate && n.actualDate <= n.plannedEndDate) onTimeCompleted++;
+          if (n.actualDate && new Date(n.actualDate) <= new Date(n.plannedEndDate)) onTimeCompleted++;
         }
       }
 

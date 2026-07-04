@@ -27,7 +27,9 @@ const AppLayout: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const activeKey = MENU_ITEMS.find(item => location.pathname.startsWith(item.key))?.key || '/';
+  const activeKey = MENU_ITEMS.find(item =>
+    item.key === '/' ? location.pathname === '/' : location.pathname.startsWith(item.key)
+  )?.key || '/';
 
   return (
     <div style={{ display: 'flex', width: '100%', minHeight: '100vh' }}>

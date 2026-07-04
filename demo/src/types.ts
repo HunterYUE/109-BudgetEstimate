@@ -217,21 +217,6 @@ export interface DeliveryProject {
   terminated?: boolean;
 }
 
-/** 成本对比行（引用报价表 GroupItem）*/
-export interface ItemCostRow {
-  key: string;
-  groupName: string;
-  groupType: GroupType;
-  code: string;
-  description: string;
-  qty: number;
-  unitCost: number;
-  estimatedCost: number;       // = direct_cost
-  actualCost: number;          // 交付经理录入
-  variance: number;
-  varianceRate: number;
-  isOutOfRange: boolean;
-}
 
 // ===== 客户管理 =====
 export type CreditLevel = 'A' | 'B' | 'C';
