@@ -30,10 +30,10 @@ const MOCK_USERS: MockUser[] = [
 ];
 
 const ROLE_COLORS: Record<string, string> = {
-  '销售经理': '#00509e',
-  '方案经理': '#1a6b3c',
-  '交付经理': '#e65100',
-  '总监': '#5a2d82',
+  '销售经理': COLORS.primary,
+  '方案经理': COLORS.success,
+  '交付经理': COLORS.warning,
+  '总监': COLORS.purple,
 };
 
 /* ============================================================
@@ -209,7 +209,7 @@ const SystemManagement: React.FC = () => {
       title: '状态', dataIndex: 'active', key: 'active', width: 70,
       render: (v: boolean, rec: MockUser) => (
         <Switch checked={v} size="small" onChange={() => toggleUserActive(rec.key)}
-          style={{ background: v ? COLORS.success : '#ccc' }} />
+          style={{ background: v ? COLORS.success : COLORS.textDisabled }} />
       ),
     },
     {
@@ -222,12 +222,12 @@ const SystemManagement: React.FC = () => {
           </span>
           <span style={{ color: '#d0d0d0' }}>|</span>
           <span onClick={() => openPwdModal(rec)}
-            style={{ color: '#e65100', cursor: 'pointer', fontSize: 13, whiteSpace: 'nowrap' }}>
+            style={{ color: COLORS.warning, cursor: 'pointer', fontSize: 13, whiteSpace: 'nowrap' }}>
             <KeyOutlined style={{ marginRight: 2 }} />密码
           </span>
           <span style={{ color: '#d0d0d0' }}>|</span>
           <span onClick={() => openPermModal(rec)}
-            style={{ color: '#5a2d82', cursor: 'pointer', fontSize: 13, whiteSpace: 'nowrap' }}>
+            style={{ color: COLORS.purple, cursor: 'pointer', fontSize: 13, whiteSpace: 'nowrap' }}>
             <SettingOutlined style={{ marginRight: 2 }} />权限
           </span>
           <span style={{ color: '#d0d0d0' }}>|</span>
@@ -267,17 +267,17 @@ const SystemManagement: React.FC = () => {
       {msgContextHolder}
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <span style={{ fontSize: 17, fontWeight: 700, color: '#0d1b2a' }}>系统管理</span>
+        <span style={{ fontSize: 17, fontWeight: 700, color: COLORS.textDark }}>系统管理</span>
       </div>
 
       {/* Tab 导航 */}
-      <div style={{ display: 'flex', gap: 0, marginBottom: 20, borderBottom: '2px solid #e8e8e8' }}>
+      <div style={{ display: 'flex', gap: 0, marginBottom: 20, borderBottom: `2px solid ${COLORS.border}` }}>
         {TABS.map(t => (
           <div key={t.key} onClick={() => setTab(t.key)}
             style={{
               padding: '8px 20px', cursor: 'pointer', fontSize: 14,
               borderBottom: tab === t.key ? `2px solid ${COLORS.primary}` : '2px solid transparent',
-              color: tab === t.key ? COLORS.primary : '#666',
+              color: tab === t.key ? COLORS.primary : COLORS.textSecondary,
               fontWeight: tab === t.key ? 600 : 400,
               marginBottom: -2, transition: 'all 0.15s',
             }}>{t.label}</div>
@@ -307,7 +307,7 @@ const SystemManagement: React.FC = () => {
 
           {/* ---------- 新增用户弹窗（参考审批管理弹窗样式） ---------- */}
           <Modal
-            title={<span style={{ fontSize: 17, fontWeight: 600, color: '#0d1b2a' }}>新增用户</span>}
+            title={<span style={{ fontSize: 17, fontWeight: 600, color: COLORS.textDark }}>新增用户</span>}
             open={addOpen}
             onCancel={() => setAddOpen(false)}
             width={480}
@@ -325,26 +325,26 @@ const SystemManagement: React.FC = () => {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: '4px 0 0' }}>
               <div style={{ display: 'flex', gap: 12 }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, color: '#666', marginBottom: 4 }}>姓名 <span style={{ color: COLORS.danger }}>*</span></div>
+                  <div style={{ fontSize: 13, color: COLORS.textSecondary, marginBottom: 4 }}>姓名 <span style={{ color: COLORS.danger }}>*</span></div>
                   <Input value={newName} onChange={e => setNewName(e.target.value)}
                     placeholder="输入用户姓名" style={{ borderRadius: 6, fontSize: 13 }} />
                 </div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, color: '#666', marginBottom: 4 }}>手机号</div>
+                  <div style={{ fontSize: 13, color: COLORS.textSecondary, marginBottom: 4 }}>手机号</div>
                   <Input value={newPhone} onChange={e => setNewPhone(e.target.value)}
                     placeholder="输入手机号" style={{ borderRadius: 6, fontSize: 13 }} />
                 </div>
               </div>
               <div>
-                <div style={{ fontSize: 13, color: '#666', marginBottom: 4 }}>
+                <div style={{ fontSize: 13, color: COLORS.textSecondary, marginBottom: 4 }}>
                   邮箱（登录用户名） <span style={{ color: COLORS.danger }}>*</span>
-                  <span style={{ fontSize: 11, color: '#999', marginLeft: 6 }}>此邮箱即为系统登录账号</span>
+                  <span style={{ fontSize: 11, color: COLORS.textLight, marginLeft: 6 }}>此邮箱即为系统登录账号</span>
                 </div>
                 <Input value={newEmail} onChange={e => setNewEmail(e.target.value)}
                   placeholder="user@example.com" style={{ borderRadius: 6, fontSize: 13 }} />
               </div>
               <div>
-                <div style={{ fontSize: 13, color: '#666', marginBottom: 4 }}>角色 <span style={{ color: COLORS.danger }}>*</span></div>
+                <div style={{ fontSize: 13, color: COLORS.textSecondary, marginBottom: 4 }}>角色 <span style={{ color: COLORS.danger }}>*</span></div>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   {['销售经理', '方案经理', '交付经理', '总监'].map(r => (
                     <div key={r} onClick={() => setNewRole(r)}
@@ -358,7 +358,7 @@ const SystemManagement: React.FC = () => {
                   ))}
                 </div>
               </div>
-              <div style={{ fontSize: 12, color: '#999', marginTop: 4 }}>
+              <div style={{ fontSize: 12, color: COLORS.textLight, marginTop: 4 }}>
                 💡 新增用户初始密码为 <strong>123456</strong>，可在「密码」功能中重置
               </div>
             </div>
@@ -366,7 +366,7 @@ const SystemManagement: React.FC = () => {
 
           {/* ---------- 编辑用户弹窗（电话/邮箱） ---------- */}
           <Modal
-            title={<span style={{ fontSize: 17, fontWeight: 600, color: '#0d1b2a' }}>编辑用户</span>}
+            title={<span style={{ fontSize: 17, fontWeight: 600, color: COLORS.textDark }}>编辑用户</span>}
             open={editOpen}
             onCancel={() => { setEditOpen(false); setEditTarget(null); }}
             width={460}
@@ -384,16 +384,16 @@ const SystemManagement: React.FC = () => {
             {editTarget && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: '4px 0 0' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 4 }}>
-                  <span style={{ fontSize: 15, fontWeight: 600, color: '#0d1b2a' }}>{editTarget.name}</span>
+                  <span style={{ fontSize: 15, fontWeight: 600, color: COLORS.textDark }}>{editTarget.name}</span>
                   <span style={{ fontSize: 13, color: ROLE_COLORS[editTarget.role] || COLORS.textSecondary, fontWeight: 600 }}>({editTarget.role})</span>
                 </div>
                 <div>
-                  <div style={{ fontSize: 13, color: '#666', marginBottom: 4 }}>手机号</div>
+                  <div style={{ fontSize: 13, color: COLORS.textSecondary, marginBottom: 4 }}>手机号</div>
                   <Input value={editPhone} onChange={e => setEditPhone(e.target.value)}
                     placeholder="输入手机号" style={{ borderRadius: 6, fontSize: 13 }} />
                 </div>
                 <div>
-                  <div style={{ fontSize: 13, color: '#666', marginBottom: 4 }}>
+                  <div style={{ fontSize: 13, color: COLORS.textSecondary, marginBottom: 4 }}>
                     邮箱（登录用户名） <span style={{ color: COLORS.danger }}>*</span>
                   </div>
                   <Input value={editEmail} onChange={e => setEditEmail(e.target.value)}
@@ -405,7 +405,7 @@ const SystemManagement: React.FC = () => {
 
           {/* ---------- 密码重置弹窗 ---------- */}
           <Modal
-            title={<span style={{ fontSize: 17, fontWeight: 600, color: '#0d1b2a' }}>重置密码</span>}
+            title={<span style={{ fontSize: 17, fontWeight: 600, color: COLORS.textDark }}>重置密码</span>}
             open={pwdOpen}
             onCancel={() => { setPwdOpen(false); setEditTarget(null); }}
             width={460}
@@ -416,23 +416,23 @@ const SystemManagement: React.FC = () => {
                 <Button icon={<CloseOutlined />} onClick={() => { setPwdOpen(false); setEditTarget(null); }}
                   style={{ borderRadius: 3, width: 36, height: 36 }} />
                 <Button type="primary" ghost icon={<CheckOutlined />} onClick={handlePwdReset}
-                  style={{ borderColor: '#e65100', color: '#e65100', borderRadius: 3, width: 36, height: 36 }} />
+                  style={{ borderColor: COLORS.warning, color: COLORS.warning, borderRadius: 3, width: 36, height: 36 }} />
               </div>
             }
           >
             {editTarget && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: '4px 0 0' }}>
-                <div style={{ fontSize: 13, color: '#666', marginBottom: 4 }}>
-                  用户：<strong style={{ color: '#0d1b2a' }}>{editTarget.name}</strong>
-                  <span style={{ color: '#999', marginLeft: 8 }}>（{editTarget.email}）</span>
+                <div style={{ fontSize: 13, color: COLORS.textSecondary, marginBottom: 4 }}>
+                  用户：<strong style={{ color: COLORS.textDark }}>{editTarget.name}</strong>
+                  <span style={{ color: COLORS.textLight, marginLeft: 8 }}>（{editTarget.email}）</span>
                 </div>
                 <div>
-                  <div style={{ fontSize: 13, color: '#666', marginBottom: 4 }}>新密码 <span style={{ color: COLORS.danger }}>*</span></div>
+                  <div style={{ fontSize: 13, color: COLORS.textSecondary, marginBottom: 4 }}>新密码 <span style={{ color: COLORS.danger }}>*</span></div>
                   <Input.Password value={newPwd} onChange={e => setNewPwd(e.target.value)}
                     placeholder="输入新密码（至少6位）" style={{ borderRadius: 6, fontSize: 13 }} />
                 </div>
                 <div>
-                  <div style={{ fontSize: 13, color: '#666', marginBottom: 4 }}>确认密码 <span style={{ color: COLORS.danger }}>*</span></div>
+                  <div style={{ fontSize: 13, color: COLORS.textSecondary, marginBottom: 4 }}>确认密码 <span style={{ color: COLORS.danger }}>*</span></div>
                   <Input.Password value={confirmPwd} onChange={e => setConfirmPwd(e.target.value)}
                     placeholder="再次输入新密码" style={{ borderRadius: 6, fontSize: 13 }} />
                 </div>
@@ -442,7 +442,7 @@ const SystemManagement: React.FC = () => {
 
           {/* ---------- 角色权限配置弹窗 ---------- */}
           <Modal
-            title={<span style={{ fontSize: 17, fontWeight: 600, color: '#0d1b2a' }}>角色权限配置</span>}
+            title={<span style={{ fontSize: 17, fontWeight: 600, color: COLORS.textDark }}>角色权限配置</span>}
             open={permOpen}
             onCancel={() => { setPermOpen(false); setEditTarget(null); }}
             width={460}
@@ -459,11 +459,11 @@ const SystemManagement: React.FC = () => {
           >
             {editTarget && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: '4px 0 0' }}>
-                <div style={{ fontSize: 13, color: '#666', marginBottom: 4 }}>
-                  用户：<strong style={{ color: '#0d1b2a' }}>{editTarget.name}</strong>
+                <div style={{ fontSize: 13, color: COLORS.textSecondary, marginBottom: 4 }}>
+                  用户：<strong style={{ color: COLORS.textDark }}>{editTarget.name}</strong>
                 </div>
                 <div>
-                  <div style={{ fontSize: 13, color: '#666', marginBottom: 8 }}>角色：</div>
+                  <div style={{ fontSize: 13, color: COLORS.textSecondary, marginBottom: 8 }}>角色：</div>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     {['销售经理', '方案经理', '交付经理', '总监'].map(r => (
                       <div key={r} onClick={() => {
@@ -481,14 +481,14 @@ const SystemManagement: React.FC = () => {
                   </div>
                 </div>
                 <div>
-                  <div style={{ fontSize: 13, color: '#666', marginBottom: 8 }}>权限：</div>
+                  <div style={{ fontSize: 13, color: COLORS.textSecondary, marginBottom: 8 }}>权限：</div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                     {(ROLE_PERMISSIONS[permRole] || []).map(p => (
                       <div key={p}
                         style={{
                           display: 'flex', alignItems: 'center', gap: 8,
                           padding: '6px 10px', borderRadius: 4,
-                          background: checkedPerms.includes(p) ? '#f0f6ff' : '#fafafa',
+                          background: checkedPerms.includes(p) ? '#f0f6ff' : COLORS.bgLight,
                           cursor: 'pointer', userSelect: 'none',
                         }}
                         onClick={() => {
@@ -506,12 +506,12 @@ const SystemManagement: React.FC = () => {
                         }}>
                           {checkedPerms.includes(p) && <span style={{ color: '#fff', fontSize: 11, lineHeight: 1 }}>✓</span>}
                         </div>
-                        <span style={{ fontSize: 13, color: '#333' }}>{p}</span>
+                        <span style={{ fontSize: 13, color: COLORS.textPrimary }}>{p}</span>
                       </div>
                     ))}
                   </div>
                 </div>
-                <div style={{ fontSize: 12, color: '#999' }}>
+                <div style={{ fontSize: 12, color: COLORS.textLight }}>
                   💡 Demo 阶段权限为静态展示，角色切换后自动加载该角色的默认权限
                 </div>
               </div>
@@ -532,7 +532,7 @@ const SystemManagement: React.FC = () => {
               <div key={m} onClick={() => setLogModuleFilter(m === '全部' ? null : m)}
                 style={{
                   padding: '3px 12px', borderRadius: 12, cursor: 'pointer', fontSize: 12,
-                  background: (m === '全部' && !logModuleFilter) || logModuleFilter === m ? COLORS.primary : '#f0f0f0',
+                  background: (m === '全部' && !logModuleFilter) || logModuleFilter === m ? COLORS.primary : COLORS.borderLight,
                   color: (m === '全部' && !logModuleFilter) || logModuleFilter === m ? '#fff' : '#555',
                   transition: 'all 0.15s',
                 }}>

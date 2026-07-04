@@ -10,6 +10,7 @@ import type { Group, GroupItem, Project, QuotationSummary } from '../types';
 import { calcProjectSummary, formatMoney } from '../utils/calculations';
 import { notifyMockUpdate } from '../utils/mockStore';
 import IconButton from '../components/IconButton';
+import { COLORS } from '../styles/constants';
 
 /** 生成销售编号：A{年份}-{月份}-{三位流水} */
 function generateSalesNo(): string {
@@ -344,7 +345,7 @@ const QuotationPage: React.FC = () => {
           <Divider />
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
-              <tr style={{ background: '#fafafa' }}>
+              <tr style={{ background: COLORS.bgLight }}>
                 <th style={thStyle}>序号</th>
                 <th style={thStyle}>项目</th>
                 <th style={thStyle}>数量</th>
@@ -384,7 +385,7 @@ const QuotationPage: React.FC = () => {
         </div>
       ),
       okText: '关闭',
-      okButtonProps: { style: { background: '#00509e', borderColor: '#00509e', borderRadius: 4 } },
+      okButtonProps: { style: { background: COLORS.primary, borderColor: COLORS.primary, borderRadius: 4 } },
     });
   }, [project]);
 
@@ -392,7 +393,7 @@ const QuotationPage: React.FC = () => {
     <ConfigProvider
       theme={{
         token: {
-          colorPrimary: '#00509e',
+          colorPrimary: COLORS.primary,
         },
       }}
     >
@@ -400,15 +401,15 @@ const QuotationPage: React.FC = () => {
       <div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <span style={{ fontSize: 17, fontWeight: 700, color: '#0d1b2a' }}>报价编制</span>
+            <span style={{ fontSize: 17, fontWeight: 700, color: COLORS.textDark }}>报价编制</span>
             <span style={{
               fontSize: 12, fontWeight: 600, padding: '2px 10px', borderRadius: 4,
               background: project.current_version.review_status === 'approved' ? '#e8f5e9' :
                           project.current_version.review_status === 'pending' ? '#fff3e0' :
-                          project.current_version.review_status === 'rejected' ? '#ffebee' : '#f5f5f5',
+                          project.current_version.review_status === 'rejected' ? '#ffebee' : COLORS.bgTag,
               color: project.current_version.review_status === 'approved' ? '#2e7d32' :
-                     project.current_version.review_status === 'pending' ? '#e65100' :
-                     project.current_version.review_status === 'rejected' ? '#c62828' : '#666',
+                     project.current_version.review_status === 'pending' ? COLORS.warning :
+                     project.current_version.review_status === 'rejected' ? COLORS.danger : COLORS.textSecondary,
             }}>
               {{
                 draft: '草稿',
@@ -420,11 +421,11 @@ const QuotationPage: React.FC = () => {
             {isLocked && (
               <span style={{
                 fontSize: 12, fontWeight: 600, padding: '2px 10px', borderRadius: 4,
-                background: '#f0f0f0', color: '#8892a4',
+                background: COLORS.borderLight, color: COLORS.textMuted,
               }}>🔒 已锁定</span>
             )}
           </div>
-          <div style={{ fontSize: 13, color: '#999' }}>Pre-Sales Calculation</div>
+          <div style={{ fontSize: 13, color: COLORS.textLight }}>Pre-Sales Calculation</div>
         </div>
 
         <ProjectHeader project={project} onUpdate={handleProjectUpdate} versionBump={versionBump} onVersionBumpChange={setVersionBump} readOnly={isLocked} />
@@ -432,12 +433,12 @@ const QuotationPage: React.FC = () => {
         <div style={{
           marginBottom: 12, fontSize: 12, fontWeight: 600, color: '#3a4a6a', lineHeight: 1.8
         }}>
-          <strong style={{ color: '#00509e' }}>说明：</strong>
+          <strong style={{ color: COLORS.primary }}>说明：</strong>
           ① 所有价格默认不含税 &nbsp;② 直接成本=物料成本+人工成本+项目费用（物料=设备组/集成开发物料，人工=设计工时+装配工时+项目交付，项目费用=包装运输+差旅管理+其他）
           &nbsp;③ 毛利率=1−成本÷售价 &nbsp;④ 质保基数=标"✕"项次的预期售价之和×(1−折扣率)，标"✕"表示物料本身不含质保需项目集成时统筹
           &nbsp;⑤ 风险基数=直接成本=物料成本+人工成本+项目费用
           &nbsp;⑥ 编码不在数据库将显示红色<strong style={{color:'red'}}>!</strong>示警
-          &nbsp;⑦ 实际成本与概算对比：分项 -5%~+10%、总成本 -2.5%~+5% 为正常，超出此范围标红，<strong style={{color:'#00509e'}}>目标不是做多也不是做少，而是越来越准</strong>
+          &nbsp;⑦ 实际成本与概算对比：分项 -5%~+10%、总成本 -2.5%~+5% 为正常，超出此范围标红，<strong style={{color:COLORS.primary}}>目标不是做多也不是做少，而是越来越准</strong>
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
@@ -469,7 +470,7 @@ const QuotationPage: React.FC = () => {
 
         {/* 删除设备组弹窗 */}
         <Modal
-          title={<span style={{ fontSize: 17, fontWeight: 600, color: '#0d1b2a', letterSpacing: 0.5 }}>确认删除此设备组？</span>}
+          title={<span style={{ fontSize: 17, fontWeight: 600, color: COLORS.textDark, letterSpacing: 0.5 }}>确认删除此设备组？</span>}
           open={!!deleteGroupId}
           onCancel={() => setDeleteGroupId(null)}
           width={420}
@@ -480,7 +481,7 @@ const QuotationPage: React.FC = () => {
               <Button icon={<CloseOutlined />} onClick={() => setDeleteGroupId(null)}
                 style={{ borderRadius: 3, width: 36, height: 36 }} />
               <Button type="primary" ghost icon={<CheckOutlined />} onClick={confirmDeleteGroup}
-                style={{ borderColor: '#c62828', color: '#c62828', borderRadius: 3, width: 36, height: 36 }} />
+                style={{ borderColor: COLORS.danger, color: COLORS.danger, borderRadius: 3, width: 36, height: 36 }} />
             </div>
           }
         >
@@ -489,15 +490,15 @@ const QuotationPage: React.FC = () => {
 
         <div style={{
           display: 'flex', justifyContent: 'flex-end', alignItems: 'center',
-          marginTop: 16, padding: '12px 0', borderTop: '1px solid #e8e8e8'
+          marginTop: 16, padding: '12px 0', borderTop: `1px solid ${COLORS.border}`
         }}>
           <div style={{ display: 'flex', gap: 16 }}>
             <IconButton icon={<SaveOutlined style={{ fontWeight: 700 }} />}
               onClick={handleSave} color="#d46b08" hoverBg="#fff7e6" title="保存" />
             <IconButton icon={<SendOutlined style={{ fontWeight: 700 }} />}
-              onClick={handleSubmit} color="#00509e" hoverBg="#e6f0fa" title="提交" />
+              onClick={handleSubmit} color={COLORS.primary} hoverBg="#e6f0fa" title="提交" />
             <IconButton icon={<DownloadOutlined style={{ fontWeight: 700 }} />}
-              onClick={handleExport} color="#1a6b3c" hoverBg="#e8f5e9" title="生成报价" />
+              onClick={handleExport} color={COLORS.success} hoverBg="#e8f5e9" title="生成报价" />
           </div>
         </div>
       </div>
@@ -506,10 +507,10 @@ const QuotationPage: React.FC = () => {
 };
 
 const thStyle: React.CSSProperties = {
-  padding: '8px 12px', border: '1px solid #e8e8e8', textAlign: 'left', fontWeight: 600,
+  padding: '8px 12px', border: `1px solid ${COLORS.border}`, textAlign: 'left', fontWeight: 600,
 };
 const tdStyle: React.CSSProperties = {
-  padding: '6px 12px', border: '1px solid #e8e8e8',
+  padding: '6px 12px', border: `1px solid ${COLORS.border}`,
 };
 
 if (import.meta.hot) {

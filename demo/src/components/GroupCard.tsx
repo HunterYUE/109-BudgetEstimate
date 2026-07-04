@@ -18,7 +18,7 @@ interface Props {
 
 const groupTypeConfig: Record<string, { label: string; color: string }> = {
   EQUIPMENT:              { label: '设备组',        color: COLORS.primary },
-  INTEGRATION:            { label: '集成开发',      color: '#5a2d82' },
+  INTEGRATION:            { label: '集成开发',      color: COLORS.purple },
   PACKAGING_TRANSPORT:    { label: '包装运输',      color: '#006b6b' },
   PROJECT_DELIVERY:       { label: '项目交付',      color: COLORS.success },
   IMPLEMENTATION_EXPENSE: { label: '差旅和管理',    color: '#c76a00' },
@@ -66,7 +66,7 @@ const GroupCard: React.FC<Props> = ({ group, onGroupChange, onAddItem, onDeleteI
             ) : (
               <span onClick={e => { e.stopPropagation(); startNameEdit(); }}
                 style={{
-                  fontSize: 13, fontWeight: 600, color: '#1a2744', cursor: 'pointer',
+                  fontSize: 13, fontWeight: 600, color: COLORS.labelDark, cursor: 'pointer',
                   padding: '2px 6px', borderRadius: 3, border: '1px solid transparent',
                   transition: 'all 0.12s',
                 }}

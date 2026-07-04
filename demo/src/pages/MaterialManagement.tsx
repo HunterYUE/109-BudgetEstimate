@@ -10,6 +10,8 @@ import MaterialTagSelector from '../components/MaterialTagSelector';
 import { formatMoney } from '../utils/calculations';
 import type { Component, ItemType, SourcingType, ReviewStatus } from '../types';
 import { COLORS } from '../styles/constants';
+const LABEL_CELL_STYLE = { padding: '7px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle', fontWeight: 600, background: COLORS.bgLight, whiteSpace: 'nowrap', color: COLORS.labelDark } as const;
+
 
 // ── 常量 ──
 
@@ -17,7 +19,7 @@ const CATEGORY_OPTIONS: Record<ItemType, { label: string; color: string }> = {
   COMPLETE_SET:     { label: '成套', color: COLORS.primary },
   COMPONENT:        { label: '组件', color: '#008080' },
   PART:             { label: '零件', color: '#6d4c41' },
-  SOFTWARE:         { label: '软件', color: '#5a2d82' },
+  SOFTWARE:         { label: '软件', color: COLORS.purple },
   SERVICE:          { label: '服务', color: COLORS.success },
 };
 
@@ -33,8 +35,8 @@ const SOURCES: { value: SourcingType; label: string }[] = [
 
 const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
   approved: { label: '已通过', color: '#2e7d32' },
-  pending:  { label: '待审核', color: '#e65100' },
-  draft:    { label: '草稿',   color: '#999' },
+  pending:  { label: '待审核', color: COLORS.warning },
+  draft:    { label: '草稿',   color: COLORS.textLight },
   rejected: { label: '已驳回', color: COLORS.danger },
 };
 
@@ -290,7 +292,7 @@ const MaterialManagement: React.FC = () => {
               fontFamily: 'monospace',
               color: rec.reviewStatus === 'approved' ? COLORS.primary
                    : rec.reviewStatus === 'rejected' ? COLORS.danger
-                   : '#333',
+                   : COLORS.textPrimary,
             }}>{v}</span>
             {rec.version && /^V0\.[0-9]/.test(rec.version) && (
               <Tag color="orange" style={{ borderRadius: 1, margin: 0, fontSize: 9, lineHeight: '16px', padding: '0 4px' }}>临</Tag>
@@ -309,7 +311,7 @@ const MaterialManagement: React.FC = () => {
       filterDropdownProps: { minOverlayWidthMatchTrigger: false },
       onFilter: (value: string, record: Component) => value === '__all__' || record.category === value,
       render: (v: ItemType) => {
-        const cfg = CATEGORY_OPTIONS[v] || { label: v, color: '#999' };
+        const cfg = CATEGORY_OPTIONS[v] || { label: v, color: COLORS.textLight };
         return <Tag color={cfg.color} style={{ borderRadius: 1, margin: 0, fontSize: 12 }}>{cfg.label}</Tag>;
       },
     },
@@ -341,7 +343,7 @@ const MaterialManagement: React.FC = () => {
       render: (v: string) => <span style={{ fontSize: 12, color: '#555' }}>{v || '—'}</span>,
     },
     { title: '规格', dataIndex: 'specification', width: 220, onCell: onCellLock(220),
-      render: (v: string) => <span style={{ fontSize: 12, color: '#666' }}>{v || '—'}</span>,
+      render: (v: string) => <span style={{ fontSize: 12, color: COLORS.textSecondary }}>{v || '—'}</span>,
     },
     {
       title: '来源', dataIndex: 'sourcing_type', width: 52, align: 'center' as const, onCell: onCellLock(52),
@@ -369,7 +371,7 @@ const MaterialManagement: React.FC = () => {
         return ids.some(id => (record.tags || []).includes(id));
       },
       render: (v: string[] | undefined) => {
-        if (!v || v.length === 0) return <span style={{ fontSize: 12, color: '#ccc' }}>—</span>;
+        if (!v || v.length === 0) return <span style={{ fontSize: 12, color: COLORS.textDisabled }}>—</span>;
         const labels = v.map(id => {
           const found = tagPathMap.find(t => t.id === id);
           return found ? found.path.join(' / ') : id;
@@ -383,7 +385,7 @@ const MaterialManagement: React.FC = () => {
     {
       title: '状态', dataIndex: 'reviewStatus', width: 70, align: 'center' as const, onCell: onCellLock(70),
       render: (v: ReviewStatus) => {
-        const cfg = STATUS_CONFIG[v] || { label: v, color: '#999' };
+        const cfg = STATUS_CONFIG[v] || { label: v, color: COLORS.textLight };
         return <Tag color={cfg.color} style={{ borderRadius: 1, margin: 0, fontSize: 12 }}>{cfg.label}</Tag>;
       },
     },
@@ -396,7 +398,7 @@ const MaterialManagement: React.FC = () => {
             style={{ color: COLORS.primary, fontSize: 14 }} />
           <Button type="text" size="small" icon={<EditOutlined />}
             onClick={() => openEdit(rec)}
-            style={{ color: rec.reviewStatus === 'pending' ? '#d9d9d9' : COLORS.primary, fontSize: 14 }}
+            style={{ color: rec.reviewStatus === 'pending' ? COLORS.borderInput : COLORS.primary, fontSize: 14 }}
             disabled={rec.reviewStatus === 'pending'} />
           {rec.reviewStatus === 'pending' && (
             <>
@@ -410,7 +412,7 @@ const MaterialManagement: React.FC = () => {
           )}
           <Button type="text" size="small" icon={<DeleteOutlined />}
             onClick={() => deleteItem(rec)}
-            style={{ color: rec.reviewStatus === 'pending' ? '#d9d9d9' : '#999', fontSize: 14 }}
+            style={{ color: rec.reviewStatus === 'pending' ? COLORS.borderInput : COLORS.textLight, fontSize: 14 }}
             disabled={rec.reviewStatus === 'pending'} />
         </Space>
       ),
@@ -423,13 +425,13 @@ const MaterialManagement: React.FC = () => {
     const sectionHeader = (title: string) => (
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
         <div style={{ width: 3, height: 16, background: COLORS.primary, borderRadius: 1 }} />
-        <span style={{ fontSize: 14, fontWeight: 600, color: '#0d1b2a', letterSpacing: 0.3 }}>{title}</span>
+        <span style={{ fontSize: 14, fontWeight: 600, color: COLORS.textDark, letterSpacing: 0.3 }}>{title}</span>
       </div>
     );
 
     const infoRow = (label: string, value: React.ReactNode) => (
       <div style={{ padding: '8px 0', borderBottom: '1px solid #f0f4fa', display: 'flex', alignItems: 'center' }}>
-        <span style={{ color: '#667085', fontSize: 12, width: 100, flexShrink: 0 }}>{label}</span>
+        <span style={{ color: COLORS.textFormLabel, fontSize: 12, width: 100, flexShrink: 0 }}>{label}</span>
         <span style={{ color: '#1a2234', fontSize: 13, fontWeight: 500 }}>{value}</span>
       </div>
     );
@@ -442,7 +444,7 @@ const MaterialManagement: React.FC = () => {
             padding: '14px 20px',
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-              <span style={{ fontSize: 14, fontWeight: 600, color: '#e65100' }}>⏳ 待审核</span>
+              <span style={{ fontSize: 14, fontWeight: 600, color: COLORS.warning }}>⏳ 待审核</span>
               <Tag color="orange" style={{ borderRadius: 1, margin: 0, fontSize: 11 }}>
                 {item.note.startsWith('[新建]') ? '新建' : item.note.startsWith('[编辑]') ? '编辑' : '删除'}
               </Tag>
@@ -462,7 +464,7 @@ const MaterialManagement: React.FC = () => {
             )}
           </div>
         )}
-        <div style={{ background: '#fafcff', border: '1px solid #e8edf4', borderRadius: 5, padding: '20px 24px' }}>
+        <div style={{ background: COLORS.bgCard, border: `1px solid ${COLORS.borderCard}`, borderRadius: 5, padding: '20px 24px' }}>
           {sectionHeader('基本信息')}
           {infoRow('物料编码', item.code)}
           {infoRow('物料名称', item.name_cn)}
@@ -479,7 +481,7 @@ const MaterialManagement: React.FC = () => {
           {infoRow('质保', item.has_warranty ? '是' : '否')}
           {infoRow('备注', item.note || '—')}
           {infoRow('版本', item.version)}
-          {infoRow('状态', <Tag color={STATUS_CONFIG[item.reviewStatus]?.color || '#999'} style={{ borderRadius: 1, margin: 0 }}>{STATUS_CONFIG[item.reviewStatus]?.label}</Tag>)}
+          {infoRow('状态', <Tag color={STATUS_CONFIG[item.reviewStatus]?.color || COLORS.textLight} style={{ borderRadius: 1, margin: 0 }}>{STATUS_CONFIG[item.reviewStatus]?.label}</Tag>)}
           {infoRow('标签', item.tags && item.tags.length > 0
             ? item.tags.map(id => { const f = tagPathMap.find(t => t.id === id); return f ? f.path.join(' / ') : id; }).join('; ')
             : '—')}
@@ -487,20 +489,20 @@ const MaterialManagement: React.FC = () => {
           {infoRow('更新时间', item.updatedAt)}
         </div>
 
-        <div style={{ background: '#fafcff', border: '1px solid #e8edf4', borderRadius: 5, padding: '20px 24px' }}>
+        <div style={{ background: COLORS.bgCard, border: `1px solid ${COLORS.borderCard}`, borderRadius: 5, padding: '20px 24px' }}>
           {sectionHeader('变更历史')}
           {item.changeLog.length > 0 ? (
             <div style={{ position: 'relative', paddingLeft: 24 }}>
-              <div style={{ position: 'absolute', left: 11, top: 4, bottom: 4, width: 2, background: '#e8e8e8' }} />
+              <div style={{ position: 'absolute', left: 11, top: 4, bottom: 4, width: 2, background: COLORS.border }} />
               {[...item.changeLog].reverse().map((entry, i) => (
                 <div key={i} style={{ position: 'relative', paddingBottom: 12 }}>
                   <div style={{
                     position: 'absolute', left: -20, top: 4, width: 12, height: 12,
                     borderRadius: '50%', background: COLORS.primary, border: '2px solid #fff',
                   }} />
-                  <div style={{ fontSize: 13, color: '#0d1b2a', fontWeight: 600 }}>{entry.version}</div>
-                  <div style={{ fontSize: 12, color: '#999' }}>{entry.date}</div>
-                  <div style={{ fontSize: 13, color: '#666', marginTop: 2 }}>{entry.note}</div>
+                  <div style={{ fontSize: 13, color: COLORS.textDark, fontWeight: 600 }}>{entry.version}</div>
+                  <div style={{ fontSize: 12, color: COLORS.textLight }}>{entry.date}</div>
+                  <div style={{ fontSize: 13, color: COLORS.textSecondary, marginTop: 2 }}>{entry.note}</div>
                 </div>
               ))}
             </div>
@@ -542,8 +544,8 @@ const MaterialManagement: React.FC = () => {
   return (
     <div>
       {msgContextHolder}
-      <div style={{ fontSize: 17, fontWeight: 700, color: '#0d1b2a', marginBottom: 4 }}>物料数据管理</div>
-      <div style={{ fontSize: 13, color: '#999', marginBottom: 16 }}>&nbsp;</div>
+      <div style={{ fontSize: 17, fontWeight: 700, color: COLORS.textDark, marginBottom: 4 }}>物料数据管理</div>
+      <div style={{ fontSize: 13, color: COLORS.textLight, marginBottom: 16 }}>&nbsp;</div>
 
       {/* 搜索 + 筛选栏 */}
       <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 16 }}>
@@ -552,15 +554,15 @@ const MaterialManagement: React.FC = () => {
         </colgroup>
         <tbody>
           <tr>
-            <td style={{ padding: '7px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle', fontWeight: 600, background: '#fafafa', whiteSpace: 'nowrap', color: '#1a2744' }}>搜索</td>
-            <td style={{ padding: '7px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle' }}>
+            <td style={LABEL_CELL_STYLE}>搜索</td>
+            <td style={{ padding: '7px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>
               <input placeholder="搜索物料名称 / 编码 / 品牌"
                 value={searchText}
                 onChange={e => setSearchText(e.target.value)}
                 style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, padding: '2px 0', margin: 0, display: 'block', boxSizing: 'border-box', lineHeight: 1.3 }} />
             </td>
-            <td style={{ padding: '7px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle', fontWeight: 600, background: '#fafafa', whiteSpace: 'nowrap', color: '#1a2744' }}>类型</td>
-            <td style={{ padding: '7px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle' }}>
+            <td style={LABEL_CELL_STYLE}>类型</td>
+            <td style={{ padding: '7px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>
               <span style={{ cursor: 'pointer', color: COLORS.primary, fontSize: 12 }}
                 onClick={() => {
                   const opts = ['', ...CATEGORY_LABELS];
@@ -571,8 +573,8 @@ const MaterialManagement: React.FC = () => {
                 {typeFilter ? CATEGORY_OPTIONS[typeFilter as ItemType]?.label || typeFilter : '全部'} ▾
               </span>
             </td>
-            <td style={{ padding: '7px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle', fontWeight: 600, background: '#fafafa', whiteSpace: 'nowrap', color: '#1a2744' }}>来源</td>
-            <td style={{ padding: '7px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle' }}>
+            <td style={LABEL_CELL_STYLE}>来源</td>
+            <td style={{ padding: '7px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>
               <span style={{ cursor: 'pointer', color: COLORS.primary, fontSize: 12 }}
                 onClick={() => {
                   const opts = ['', ...SOURCES.map(s => s.label)];
@@ -583,7 +585,7 @@ const MaterialManagement: React.FC = () => {
                 {sourceFilter ? (sourceFilter === 'PURCHASED' ? '外购' : '自制') : '全部'} ▾
               </span>
             </td>
-            <td style={{ padding: 0, border: '1px solid #e8e8e8', verticalAlign: 'middle', textAlign: 'center' }}>
+            <td style={{ padding: 0, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle', textAlign: 'center' }}>
               <Button type="text" icon={<PlusOutlined />} onClick={openNew}
                 style={{ color: COLORS.primary, fontSize: 18, width: 42, height: 42 }} />
             </td>
@@ -592,12 +594,12 @@ const MaterialManagement: React.FC = () => {
       </table>
 
       {/* 状态标签 */}
-      <div style={{ display: 'flex', gap: 0, marginBottom: 16, borderBottom: '2px solid #e8e8e8' }}>
+      <div style={{ display: 'flex', gap: 0, marginBottom: 16, borderBottom: `2px solid ${COLORS.border}` }}>
         <div onClick={() => setStatusTab('all')}
           style={{
             padding: '8px 20px', cursor: 'pointer', fontSize: 14,
             borderBottom: statusTab === 'all' ? `2px solid ${COLORS.primary}` : '2px solid transparent',
-            color: statusTab === 'all' ? COLORS.primary : '#666', fontWeight: statusTab === 'all' ? 600 : 400,
+            color: statusTab === 'all' ? COLORS.primary : COLORS.textSecondary, fontWeight: statusTab === 'all' ? 600 : 400,
             marginBottom: -2, transition: 'all 0.15s',
           }}>全部({tabCounts.all})
         </div>
@@ -605,15 +607,15 @@ const MaterialManagement: React.FC = () => {
           style={{
             padding: '8px 20px', cursor: 'pointer', fontSize: 14,
             borderBottom: statusTab === 'approved' ? '2px solid #2e7d32' : '2px solid transparent',
-            color: statusTab === 'approved' ? '#2e7d32' : '#666', fontWeight: statusTab === 'approved' ? 600 : 400,
+            color: statusTab === 'approved' ? '#2e7d32' : COLORS.textSecondary, fontWeight: statusTab === 'approved' ? 600 : 400,
             marginBottom: -2, transition: 'all 0.15s',
           }}>已通过({tabCounts.approved})
         </div>
         <div onClick={() => setStatusTab('pending')}
           style={{
             padding: '8px 20px', cursor: 'pointer', fontSize: 14,
-            borderBottom: statusTab === 'pending' ? '2px solid #e65100' : '2px solid transparent',
-            color: statusTab === 'pending' ? '#e65100' : '#666', fontWeight: statusTab === 'pending' ? 600 : 400,
+            borderBottom: statusTab === 'pending' ? `2px solid ${COLORS.warning}` : '2px solid transparent',
+            color: statusTab === 'pending' ? COLORS.warning : COLORS.textSecondary, fontWeight: statusTab === 'pending' ? 600 : 400,
             marginBottom: -2, transition: 'all 0.15s',
           }}>待审核({tabCounts.pending})
         </div>
@@ -636,7 +638,7 @@ const MaterialManagement: React.FC = () => {
       {/* ── 编辑模态框 ── */}
       <Modal
         title={
-          <span style={{ fontSize: 17, fontWeight: 600, color: '#0d1b2a', letterSpacing: 0.5 }}>
+          <span style={{ fontSize: 17, fontWeight: 600, color: COLORS.textDark, letterSpacing: 0.5 }}>
             {editingId ? '编辑物料' : '新增物料'}
           </span>
         }
@@ -655,13 +657,13 @@ const MaterialManagement: React.FC = () => {
         }
       >
         <div style={{
-          background: '#fafcff', border: '1px solid #e8edf4', borderRadius: 5,
+          background: COLORS.bgCard, border: `1px solid ${COLORS.borderCard}`, borderRadius: 5,
           padding: '16px 20px',
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 }}>
             <div style={{ width: 3, height: 16, background: COLORS.primary, borderRadius: 1 }} />
-            <span style={{ fontSize: 14, fontWeight: 600, color: '#0d1b2a', letterSpacing: 0.3 }}>物料信息</span>
-            <span style={{ fontSize: 11, color: '#999', marginLeft: 8 }}>
+            <span style={{ fontSize: 14, fontWeight: 600, color: COLORS.textDark, letterSpacing: 0.3 }}>物料信息</span>
+            <span style={{ fontSize: 11, color: COLORS.textLight, marginLeft: 8 }}>
               编码格式：{'{类型缩写}-{名称}-{型号}-V{版本}'}
             </span>
           </div>
@@ -672,23 +674,23 @@ const MaterialManagement: React.FC = () => {
             </colgroup>
             <tbody>
               <tr>
-                <td style={{ padding: '7px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle', fontWeight: 600, background: '#fafafa', whiteSpace: 'nowrap', color: '#1a2744' }}>物料编码</td>
-                <td style={{ padding: '7px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle' }}>
+                <td style={LABEL_CELL_STYLE}>物料编码</td>
+                <td style={{ padding: '7px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>
                   <input value={editForm.code || ''}
                     onChange={e => setEditForm(p => ({ ...p, code: e.target.value }))}
                     placeholder="M-NAME-MODEL-V1.0"
                     style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 12, padding: 0, margin: 0, display: 'block', boxSizing: 'border-box', fontFamily: 'monospace', fontWeight: 600 }} />
                 </td>
-                <td style={{ padding: '7px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle', fontWeight: 600, background: '#fafafa', whiteSpace: 'nowrap', color: '#1a2744' }}>物料名称</td>
-                <td style={{ padding: '7px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle' }}>
+                <td style={LABEL_CELL_STYLE}>物料名称</td>
+                <td style={{ padding: '7px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>
                   <input value={editForm.name_cn || ''}
                     onChange={e => setEditForm(p => ({ ...p, name_cn: e.target.value }))}
                     style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, padding: '2px 0', margin: 0, display: 'block', boxSizing: 'border-box', lineHeight: 1.3 }} />
                 </td>
               </tr>
               <tr>
-                <td style={{ padding: '7px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle', fontWeight: 600, background: '#fafafa', whiteSpace: 'nowrap', color: '#1a2744' }}>类型</td>
-                <td style={{ padding: '7px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle' }}>
+                <td style={LABEL_CELL_STYLE}>类型</td>
+                <td style={{ padding: '7px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>
                   <span style={{ cursor: 'pointer', color: COLORS.primary, fontSize: 12, paddingLeft: 2 }}
                     onClick={() => {
                       const cur = CATEGORIES.indexOf((editForm.category as ItemType) || 'COMPLETE_SET');
@@ -697,37 +699,37 @@ const MaterialManagement: React.FC = () => {
                     {editForm.category ? CATEGORY_OPTIONS[editForm.category as ItemType]?.label || editForm.category : '点击选择'} ▾
                   </span>
                 </td>
-                <td style={{ padding: '7px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle', fontWeight: 600, background: '#fafafa', whiteSpace: 'nowrap', color: '#1a2744' }}>品牌</td>
-                <td style={{ padding: '7px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle' }}>
+                <td style={LABEL_CELL_STYLE}>品牌</td>
+                <td style={{ padding: '7px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>
                   <input value={editForm.brand || ''}
                     onChange={e => setEditForm(p => ({ ...p, brand: e.target.value }))}
                     style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, padding: '2px 0', margin: 0, display: 'block', boxSizing: 'border-box', lineHeight: 1.3 }} />
                 </td>
               </tr>
               <tr>
-                <td style={{ padding: '7px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle', fontWeight: 600, background: '#fafafa', whiteSpace: 'nowrap', color: '#1a2744' }}>供应商</td>
-                <td style={{ padding: '7px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle' }}>
+                <td style={LABEL_CELL_STYLE}>供应商</td>
+                <td style={{ padding: '7px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>
                   <input value={editForm.supplier || ''}
                     onChange={e => setEditForm(p => ({ ...p, supplier: e.target.value }))}
                     placeholder="贸易商/代理商/厂商"
                     style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, padding: '2px 0', margin: 0, display: 'block', boxSizing: 'border-box', lineHeight: 1.3 }} />
                 </td>
-                <td style={{ padding: '7px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle', fontWeight: 600, background: '#fafafa', whiteSpace: 'nowrap', color: '#1a2744' }}>型号</td>
-                <td style={{ padding: '7px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle' }}>
+                <td style={LABEL_CELL_STYLE}>型号</td>
+                <td style={{ padding: '7px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>
                   <input value={editForm.model || ''}
                     onChange={e => setEditForm(p => ({ ...p, model: e.target.value }))}
                     style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, padding: '2px 0', margin: 0, display: 'block', boxSizing: 'border-box', lineHeight: 1.3 }} />
                 </td>
-                <td style={{ padding: '7px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle', fontWeight: 600, background: '#fafafa', whiteSpace: 'nowrap', color: '#1a2744' }}>规格</td>
-                <td style={{ padding: '7px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle' }}>
+                <td style={LABEL_CELL_STYLE}>规格</td>
+                <td style={{ padding: '7px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>
                   <input value={editForm.specification || ''}
                     onChange={e => setEditForm(p => ({ ...p, specification: e.target.value }))}
                     style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, padding: '2px 0', margin: 0, display: 'block', boxSizing: 'border-box', lineHeight: 1.3 }} />
                 </td>
               </tr>
               <tr>
-                <td style={{ padding: '7px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle', fontWeight: 600, background: '#fafafa', whiteSpace: 'nowrap', color: '#1a2744' }}>来源</td>
-                <td style={{ padding: '7px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle' }}>
+                <td style={LABEL_CELL_STYLE}>来源</td>
+                <td style={{ padding: '7px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>
                   <span style={{ cursor: 'pointer', color: COLORS.primary, fontSize: 12 }}
                     onClick={() => {
                       const cur = SOURCES.findIndex(s => s.value === editForm.sourcing_type);
@@ -737,8 +739,8 @@ const MaterialManagement: React.FC = () => {
                     {editForm.sourcing_type === 'PURCHASED' ? '外购' : editForm.sourcing_type === 'SELF_MANUFACTURED' ? '自制' : '点击选择'} ▾
                   </span>
                 </td>
-                <td style={{ padding: '7px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle', fontWeight: 600, background: '#fafafa', whiteSpace: 'nowrap', color: '#1a2744' }}>单位</td>
-                <td style={{ padding: '7px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle' }}>
+                <td style={LABEL_CELL_STYLE}>单位</td>
+                <td style={{ padding: '7px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>
                   <div style={{ position: 'relative' }}>
                     <span style={{ cursor: 'pointer', color: COLORS.primary, fontSize: 12 }}
                       onClick={() => setUnitDropdownOpen(p => !p)}>
@@ -747,7 +749,7 @@ const MaterialManagement: React.FC = () => {
                     {unitDropdownOpen && (
                       <div style={{
                         position: 'absolute', top: '100%', left: 0, zIndex: 10,
-                        background: '#fff', border: '1px solid #d9d9d9', borderRadius: 4,
+                        background: '#fff', border: `1px solid ${COLORS.borderInput}`, borderRadius: 4,
                         minWidth: 80, maxHeight: 240, overflowY: 'auto', boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
                       }}>
                         {UNITS.map(u => (
@@ -755,7 +757,7 @@ const MaterialManagement: React.FC = () => {
                             onClick={() => { setEditForm(p => ({ ...p, unit: u })); setUnitDropdownOpen(false); }}
                             style={{
                               padding: '5px 12px', fontSize: 12, cursor: 'pointer',
-                              color: (editForm.unit || '套') === u ? COLORS.primary : '#333',
+                              color: (editForm.unit || '套') === u ? COLORS.primary : COLORS.textPrimary,
                               background: (editForm.unit || '套') === u ? '#eef4ff' : 'transparent',
                               fontWeight: (editForm.unit || '套') === u ? 600 : 400,
                             }}
@@ -767,41 +769,41 @@ const MaterialManagement: React.FC = () => {
                     )}
                   </div>
                 </td>
-                <td style={{ padding: '7px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle', fontWeight: 600, background: '#fafafa', whiteSpace: 'nowrap', color: '#1a2744' }}>单位成本</td>
-                <td style={{ padding: '7px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle' }}>
+                <td style={LABEL_CELL_STYLE}>单位成本</td>
+                <td style={{ padding: '7px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>
                   <input type="number" min={0} value={editForm.unit_cost ?? 0}
                     onChange={e => setEditForm(p => ({ ...p, unit_cost: parseInt(e.target.value) || 0 }))}
                     style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, padding: '2px 0', margin: 0, display: 'block', boxSizing: 'border-box', lineHeight: 1.3 }} />
                 </td>
               </tr>
               <tr>
-                <td style={{ padding: '7px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle', fontWeight: 600, background: '#fafafa', whiteSpace: 'nowrap', color: '#1a2744' }}>设计工时</td>
-                <td style={{ padding: '7px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle' }}>
+                <td style={LABEL_CELL_STYLE}>设计工时</td>
+                <td style={{ padding: '7px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>
                   <input type="number" min={0} value={editForm.design_hours ?? 0}
                     onChange={e => setEditForm(p => ({ ...p, design_hours: parseInt(e.target.value) || 0 }))}
                     style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, padding: '2px 0', margin: 0, display: 'block', boxSizing: 'border-box', lineHeight: 1.3 }} />
                 </td>
-                <td style={{ padding: '7px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle', fontWeight: 600, background: '#fafafa', whiteSpace: 'nowrap', color: '#1a2744' }}>装配工时</td>
-                <td style={{ padding: '7px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle' }}>
+                <td style={LABEL_CELL_STYLE}>装配工时</td>
+                <td style={{ padding: '7px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>
                   <input type="number" min={0} value={editForm.assembly_hours ?? 0}
                     onChange={e => setEditForm(p => ({ ...p, assembly_hours: parseInt(e.target.value) || 0 }))}
                     style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, padding: '2px 0', margin: 0, display: 'block', boxSizing: 'border-box', lineHeight: 1.3 }} />
                 </td>
               </tr>
               <tr>
-                <td style={{ padding: '7px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle', fontWeight: 600, background: '#fafafa', whiteSpace: 'nowrap', color: '#1a2744' }}>质保</td>
-                <td style={{ padding: '7px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle' }}>
+                <td style={LABEL_CELL_STYLE}>质保</td>
+                <td style={{ padding: '7px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>
                   <span style={{ cursor: 'pointer', color: COLORS.primary, fontSize: 12 }}
                     onClick={() => setEditForm(p => ({ ...p, has_warranty: !p.has_warranty }))}>
                     {editForm.has_warranty ? '是' : '否'} ▾
                   </span>
                 </td>
-                <td style={{ padding: '7px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle', fontWeight: 600, background: '#fafafa', whiteSpace: 'nowrap', color: '#1a2744' }}></td>
-                <td style={{ padding: '7px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle' }}></td>
+                <td style={LABEL_CELL_STYLE}></td>
+                <td style={{ padding: '7px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}></td>
               </tr>
               <tr>
-                <td style={{ padding: '7px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle', fontWeight: 600, background: '#fafafa', whiteSpace: 'nowrap', color: '#1a2744' }}>标签</td>
-                <td colSpan={5} style={{ padding: '7px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle' }}>
+                <td style={LABEL_CELL_STYLE}>标签</td>
+                <td colSpan={5} style={{ padding: '7px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>
                   <MaterialTagSelector
                     value={editForm.tags as string[] || []}
                     onChange={val => setEditForm(p => ({ ...p, tags: val }))}
@@ -809,8 +811,8 @@ const MaterialManagement: React.FC = () => {
                 </td>
               </tr>
               <tr>
-                <td style={{ padding: '7px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle', fontWeight: 600, background: '#fafafa', whiteSpace: 'nowrap', color: '#1a2744' }}>说明</td>
-                <td colSpan={5} style={{ padding: '7px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle' }}>
+                <td style={LABEL_CELL_STYLE}>说明</td>
+                <td colSpan={5} style={{ padding: '7px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>
                   <input value={editForm.note || ''}
                     onChange={e => setEditForm(p => ({ ...p, note: e.target.value }))}
                     placeholder="物料用途、技术参数补充说明…"
@@ -832,11 +834,11 @@ const MaterialManagement: React.FC = () => {
         title={
           drawerItem ? (
             <Space>
-              <span style={{ fontSize: 16, fontWeight: 700, color: '#0d1b2a' }}>{drawerItem.name_cn}</span>
-              <Tag color={STATUS_CONFIG[drawerItem.reviewStatus]?.color || '#999'} style={{ borderRadius: 1 }}>
+              <span style={{ fontSize: 16, fontWeight: 700, color: COLORS.textDark }}>{drawerItem.name_cn}</span>
+              <Tag color={STATUS_CONFIG[drawerItem.reviewStatus]?.color || COLORS.textLight} style={{ borderRadius: 1 }}>
                 {STATUS_CONFIG[drawerItem.reviewStatus]?.label}
               </Tag>
-              <span style={{ fontSize: 12, color: '#999' }}>{drawerItem.code}</span>
+              <span style={{ fontSize: 12, color: COLORS.textLight }}>{drawerItem.code}</span>
             </Space>
           ) : ''
         }

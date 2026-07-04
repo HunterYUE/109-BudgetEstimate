@@ -12,8 +12,8 @@ const fmtK = (v: number) => Math.round(v / 1000).toLocaleString() + 'K';
    常量
    ============================================================ */
 const stageColors: Record<string, string> = {
-  信息: '#999', 线索: COLORS.primary, 机会: COLORS.purple,
-  投标: '#e65100', 议价: '#c76a00', 中标: COLORS.success,
+  信息: COLORS.textLight, 线索: COLORS.primary, 机会: COLORS.purple,
+  投标: COLORS.warning, 议价: COLORS.amber, 中标: COLORS.success,
 };
 const STAGES = ['信息', '线索', '机会', '投标', '议价', '中标'] as const;
 const FY_OPTIONS = ['FY2425', 'FY2526', 'FY2627'] as const;
@@ -65,7 +65,7 @@ const FYSelector: React.FC<{ value: string; onChange: (v: string) => void }> =
       style={{
         fontSize: 13, padding: '4px 12px', borderRadius: 4,
         border: 'none', background: 'transparent',
-        cursor: 'pointer', outline: 'none', color: '#333',
+        cursor: 'pointer', outline: 'none', color: COLORS.textPrimary,
       }}>
       {FY_OPTIONS.map(fy => <option key={fy} value={fy}>{fy}</option>)}
     </select>
@@ -82,14 +82,14 @@ const OverviewCards: React.FC<{ items: KpiCard[] }> = ({ items }) => (
     {items.map((item, i) => (
       <Card key={i} size="small"
         style={{
-          flex: 1, borderRadius: 8, border: '1px solid #f0f0f0',
+          flex: 1, borderRadius: 8, border: `1px solid ${COLORS.borderLight}`,
           transition: 'box-shadow 0.2s, transform 0.15s',
         }}
         styles={{ body: { padding: '16px 12px', textAlign: 'center' as const } }}
         hoverable
       >
         <div style={{ fontSize: 20, marginBottom: 2 }}>{item.icon}</div>
-        <div style={{ fontSize: 12, color: '#999', marginBottom: 4, letterSpacing: 0.3 }}>
+        <div style={{ fontSize: 12, color: COLORS.textLight, marginBottom: 4, letterSpacing: 0.3 }}>
           {item.label}
         </div>
         <div style={{ fontSize: 22, fontWeight: 700, color: item.color, lineHeight: 1.2 }}>
@@ -118,7 +118,7 @@ interface FunnelProps {
 const SalesFunnel: React.FC<FunnelProps> = ({ funnelData, fyInfo, fyLead, fyOpp, fyWon, convInfo, convLead, convOpp, convWon }) => {
   // 四阶段可视化数据
   const stages = [
-    { key: 'info', label: '信息', color: '#999' },
+    { key: 'info', label: '信息', color: COLORS.textLight },
     { key: 'lead', label: '线索', color: COLORS.primary },
     { key: 'opp', label: '机会', color: COLORS.purple },
     { key: 'won', label: '赢单', color: COLORS.success },
@@ -191,7 +191,7 @@ const SalesFunnel: React.FC<FunnelProps> = ({ funnelData, fyInfo, fyLead, fyOpp,
 
           {/* 顶边 / 底边 */}
           <line x1={-pts[0].w / 2} y1={0} x2={pts[0].w / 2} y2={0}
-            stroke="#999" strokeWidth={2.5} strokeLinecap="round" />
+            stroke={COLORS.textLight} strokeWidth={2.5} strokeLinecap="round" />
           <line x1={-pts[3].w / 2} y1={pts[3].x} x2={pts[3].w / 2} y2={pts[3].x}
             stroke={COLORS.danger} strokeWidth={2.5} strokeLinecap="round" />
 
@@ -224,7 +224,7 @@ const SalesFunnel: React.FC<FunnelProps> = ({ funnelData, fyInfo, fyLead, fyOpp,
                 {/* 当期数据（中标阶段不显示） */}
                 {st.key !== 'won' && (
                   <text x={pts[0].w / 2 + 46} y={y + 14}
-                    fill="#666" fontSize={11}
+                    fill={COLORS.textSecondary} fontSize={11}
                     dominantBaseline="middle">{count}/{fmtK(amount)}</text>
                 )}
                 {/* 财年累计（中标阶段与红点对齐） */}
@@ -236,7 +236,7 @@ const SalesFunnel: React.FC<FunnelProps> = ({ funnelData, fyInfo, fyLead, fyOpp,
                 {conv && (
                   <text x={0} y={y + 14} fontSize={12} textAnchor="middle">
                     <tspan fill={COLORS.primary} fontWeight="600">{conv.cnt.toFixed(1)}%</tspan>
-                    <tspan fill="#999"> / </tspan>
+                    <tspan fill={COLORS.textLight}> / </tspan>
                     <tspan fill={COLORS.success} fontWeight="600">{conv.amt.toFixed(1)}%</tspan>
                   </text>
                 )}
@@ -303,14 +303,14 @@ const VerticalBarChart: React.FC<{
 
   const chart = (
     <>
-      {title && <span style={{ position: 'absolute', top: 6, right: 10, fontSize: 11, color: '#888', zIndex: 1 }}>{title}</span>}
+      {title && <span style={{ position: 'absolute', top: 6, right: 10, fontSize: 11, color: COLORS.chartGray, zIndex: 1 }}>{title}</span>}
       <svg width="100%" height={height} viewBox={`0 0 ${W} ${height}`} style={{ display: 'block' }}>
         {/* Y 轴网格线 + 标签 */}
         {gridVals.map((gv, i) => {
           const y = pad.top + (1 - gv / effectiveMax) * chartH;
           return (
             <g key={`g-${i}`}>
-              <line x1={pad.left} y1={y} x2={W - pad.right} y2={y} stroke="#f0f0f0" strokeWidth={1} />
+              <line x1={pad.left} y1={y} x2={W - pad.right} y2={y} stroke={COLORS.borderLight} strokeWidth={1} />
               <text x={pad.left - 4} y={y + 3} textAnchor="end" fontSize={9} fill="#aaa">
                 {fmtAxis(gv)}
               </text>
@@ -324,9 +324,9 @@ const VerticalBarChart: React.FC<{
           return (
             <g>
               <line x1={pad.left} y1={tgtY} x2={W - pad.right} y2={tgtY}
-                stroke="#e65100" strokeWidth={1} strokeDasharray="5,3" />
+                stroke={COLORS.warning} strokeWidth={1} strokeDasharray="5,3" />
               <text x={W - pad.right + 2} y={tgtY + 3}
-                textAnchor="start" fontSize={9} fill="#e65100">{targetLabel || fmtAxis(targetValue)}</text>
+                textAnchor="start" fontSize={9} fill={COLORS.warning}>{targetLabel || fmtAxis(targetValue)}</text>
             </g>
           );
         })() : (!hideAvgLine && avg > 0 && data.some(d => d.value > 0) && (() => {
@@ -334,9 +334,9 @@ const VerticalBarChart: React.FC<{
           return (
             <g>
               <line x1={pad.left} y1={avgY} x2={W - pad.right} y2={avgY}
-                stroke="#e65100" strokeWidth={1} strokeDasharray="5,3" />
+                stroke={COLORS.warning} strokeWidth={1} strokeDasharray="5,3" />
               <text x={W - pad.right + 2} y={avgY + 3}
-                textAnchor="start" fontSize={9} fill="#e65100">{(() => {
+                textAnchor="start" fontSize={9} fill={COLORS.warning}>{(() => {
                 if (format === 'K') return fmtAxis(avg);
                 if (format === '%') return avg.toFixed(1) + '%';
                 return String(Math.round(avg));
@@ -373,7 +373,7 @@ const VerticalBarChart: React.FC<{
                 <rect x={cx - barW / 2} y={barTop} width={barW} height={barH}
                   fill="none" stroke={color} strokeWidth={3} rx={0} ry={0} />
               )}
-              <text x={cx} y={height - 10} textAnchor="middle" fontSize={10} fill="#666">
+              <text x={cx} y={height - 10} textAnchor="middle" fontSize={10} fill={COLORS.textSecondary}>
                 {item.name}
               </text>
             </g>
@@ -389,7 +389,7 @@ const VerticalBarChart: React.FC<{
 
   return (
     <Card size="small"
-      style={{ borderRadius: 8, border: cardBorder ? '1px solid #f0f0f0' : 'none', background: cardBorder ? '#fff' : 'transparent', height: '100%', position: 'relative', boxShadow: cardBorder ? 'none' : 'none' }}
+      style={{ borderRadius: 8, border: cardBorder ? `1px solid ${COLORS.borderLight}` : 'none', background: cardBorder ? '#fff' : 'transparent', height: '100%', position: 'relative', boxShadow: cardBorder ? 'none' : 'none' }}
       styles={{ body: { padding: `${contentOffset}px 0 0`, height: '100%' } }}
     >
       {chart}
@@ -551,7 +551,7 @@ const SalesAnalysis: React.FC = () => {
       stage,
       count: currentPipeline.filter(o => o.stage === stage).length,
       amount: currentPipeline.filter(o => o.stage === stage).reduce((s, o) => s + o.amount, 0),
-      color: stageColors[stage] || '#999',
+      color: stageColors[stage] || COLORS.textLight,
     })), [currentPipeline]);
 
   // ── 中标（按赢单时间 updatedAt 归入财年）──
@@ -805,18 +805,18 @@ const SalesAnalysis: React.FC = () => {
     { label: '加权管道', value: `¥${fmtK(kpi.weightedPipeline)}`, color: COLORS.primary, icon: '📊' },
     { label: '加权利润', value: `¥${fmtK(kpi.weightedProfit)}`, color: COLORS.purple, icon: '💰' },
     { label: '加权利润率', value: `${kpi.weightedProfitRate.toFixed(1)}%`,
-      color: kpi.weightedProfitRate >= 15 ? COLORS.success : '#e65100', icon: '📈' },
+      color: kpi.weightedProfitRate >= 15 ? COLORS.success : COLORS.warning, icon: '📈' },
     { label: '销售周期', value: `${kpi.salesCycle} 天`,
-      color: kpi.salesCycle > 0 && kpi.salesCycle <= 120 ? COLORS.success : '#e65100', icon: '⏱️' },
+      color: kpi.salesCycle > 0 && kpi.salesCycle <= 120 ? COLORS.success : COLORS.warning, icon: '⏱️' },
     { label: '赢单转化率', value: `${kpi.leadToWonRate.toFixed(1)}%`,
-      color: kpi.leadToWonRate >= 20 ? COLORS.success : '#e65100', icon: '🎯' },
+      color: kpi.leadToWonRate >= 20 ? COLORS.success : COLORS.warning, icon: '🎯' },
   ];
 
   return (
     <div>
       {/* 标题行 */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-        <span style={{ fontSize: 17, fontWeight: 700, color: '#0d1b2a' }}>销售分析</span>
+        <span style={{ fontSize: 17, fontWeight: 700, color: COLORS.textDark }}>销售分析</span>
         <FYSelector value={fySelect} onChange={setFySelect} />
       </div>
 
@@ -827,7 +827,7 @@ const SalesAnalysis: React.FC = () => {
       <div style={{ display: 'flex', gap: 16, marginBottom: 16 }}>
         <Card size="small"
           title={<span style={{ fontSize: 14, fontWeight: 600 }}>月度订单</span>}
-          style={{ flex: 1, borderRadius: 8, border: '1px solid #f0f0f0' }}
+          style={{ flex: 1, borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
           styles={{ body: { padding: '8px 12px' } }}
         >
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginBottom: 2, minHeight: 18 }}>
@@ -910,7 +910,7 @@ const SalesAnalysis: React.FC = () => {
 
         <Card size="small"
           title={<span style={{ fontSize: 14, fontWeight: 600 }}>销售漏斗</span>}
-          style={{ flex: 1, borderRadius: 8, border: '1px solid #f0f0f0' }}
+          style={{ flex: 1, borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
           styles={{ body: { padding: '8px 12px' } }}
         >
           <SalesFunnel
@@ -923,7 +923,7 @@ const SalesAnalysis: React.FC = () => {
 
         <Card size="small"
           title={<span style={{ fontSize: 14, fontWeight: 600 }}>月度销售</span>}
-          style={{ flex: 1, borderRadius: 8, border: '1px solid #f0f0f0' }}
+          style={{ flex: 1, borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
           styles={{ body: { padding: '8px 12px' } }}
         >
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginBottom: 2, minHeight: 18 }}>

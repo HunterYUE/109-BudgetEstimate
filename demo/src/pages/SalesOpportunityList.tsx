@@ -20,21 +20,21 @@ const STAGE_OPTIONS = ['信息', '线索', '机会', '投标', '议价', '中标
 
 const stageColors: Record<string, string> = {
 
-  信息: '#999', 线索: COLORS.primary, 机会: COLORS.purple,
+  信息: COLORS.textLight, 线索: COLORS.primary, 机会: COLORS.purple,
 
-  投标: '#e65100', 议价: '#c76a00', 中标: COLORS.success,
+  投标: COLORS.warning, 议价: COLORS.amber, 中标: COLORS.success,
 
 };
 
 const statusColors: Record<string, string> = {
 
-  过程中: COLORS.primary, 赢: COLORS.success, 输: COLORS.danger, 冻结: '#999',
+  过程中: COLORS.primary, 赢: COLORS.success, 输: COLORS.danger, 冻结: COLORS.textLight,
 
 };
 
 const CELL_INPUT: React.CSSProperties = {
   width: '100%', border: 'none', background: 'transparent', outline: 'none',
-  fontSize: 13, color: '#333', padding: '2px 0',
+  fontSize: 13, color: COLORS.textPrimary, padding: '2px 0',
 };
 
 
@@ -388,20 +388,20 @@ const SalesOpportunityList: React.FC = () => {
         rec.terminated
           ? <div style={{ position: 'relative', textAlign: 'center' }}>
               <span style={{ position: 'absolute', left: 2, color: COLORS.danger, fontSize: 12, fontWeight: 700 }}>X</span>
-              <span style={{ color: '#999' }}>{i + 1}</span>
+              <span style={{ color: COLORS.textLight }}>{i + 1}</span>
             </div>
-          : <span style={{ color: '#999' }}>{i + 1}</span> },
+          : <span style={{ color: COLORS.textLight }}>{i + 1}</span> },
     { title: '客户名称', dataIndex: 'clientName', width: 154,
       render: (v: string, rec: SalesOpportunity) => rec.terminated
-        ? <span style={{ fontSize: 13, color: '#999' }}>{v || '—'}</span>
+        ? <span style={{ fontSize: 13, color: COLORS.textLight }}>{v || '—'}</span>
         : <ClientNameCell value={v} onSelect={name => touch(rec.id, { clientName: name })} />},
     { title: '销售编号', dataIndex: 'salesNo', width: 80,
       render: (v: string, rec: SalesOpportunity) => rec.terminated
-        ? <span style={{ color: '#999' }}>{v}</span>
+        ? <span style={{ color: COLORS.textLight }}>{v}</span>
         : <span style={{ fontWeight: 600 }}>{v}</span> },
     { title: '项目名称', dataIndex: 'projectName', width: 200,
       render: (v: string, rec: SalesOpportunity) => rec.terminated
-        ? <span style={{ fontSize: 13, color: '#999' }}>{v || '—'}</span>
+        ? <span style={{ fontSize: 13, color: COLORS.textLight }}>{v || '—'}</span>
         : (
         <input type="text" defaultValue={v || ''}
           onBlur={e => touch(rec.id, { projectName: e.target.value })}
@@ -410,17 +410,17 @@ const SalesOpportunityList: React.FC = () => {
       )},
     { title: '说明', dataIndex: 'notes', width: 315,
       render: (v: string, rec: SalesOpportunity) => rec.terminated
-        ? <span style={{ fontSize: 13, color: '#999' }}>{v || '—'}</span>
+        ? <span style={{ fontSize: 13, color: COLORS.textLight }}>{v || '—'}</span>
         : (
         <input type="text" defaultValue={v || ''}
           onBlur={e => touch(rec.id, { notes: e.target.value })}
           placeholder="—"
-          style={{ ...CELL_INPUT, color: '#888' }}
+          style={{ ...CELL_INPUT, color: COLORS.chartGray }}
         />
       )},
     { title: '金额', dataIndex: 'amount', width: 90, align: 'right' as const,
       render: (v: number, rec: SalesOpportunity) => (
-        <span style={{ cursor: rec.terminated ? 'default' : 'pointer', color: rec.terminated ? '#999' : COLORS.primary, fontWeight: 600, fontSize: 13 }}
+        <span style={{ cursor: rec.terminated ? 'default' : 'pointer', color: rec.terminated ? COLORS.textLight : COLORS.primary, fontWeight: 600, fontSize: 13 }}
           onClick={rec.terminated ? undefined : () => {
             const input = prompt('输入金额（元）：', String(v));
             if (input !== null) {
@@ -441,19 +441,19 @@ const SalesOpportunityList: React.FC = () => {
         filterDropdownProps: { minOverlayWidthMatchTrigger: false },
         onFilter: (value: string, record: SalesOpportunity) => value === '__all__' || record.stage === value,
         render: (v: string, rec: SalesOpportunity) => rec.terminated
-          ? <Tag color="#999" style={{ cursor: 'default', margin: 0 }}>{v}</Tag>
-          : <Tag color={stageColors[v] || '#999'} style={{ cursor: 'pointer', margin: 0 }}
+          ? <Tag color={COLORS.textLight} style={{ cursor: 'default', margin: 0 }}>{v}</Tag>
+          : <Tag color={stageColors[v] || COLORS.textLight} style={{ cursor: 'pointer', margin: 0 }}
               onClick={() => handleStageClick(rec)}>{v}</Tag>
         }]
       : []),
     { title: '赢率', dataIndex: 'winRate', width: 30, align: 'center' as const,
       render: (v: number, rec: SalesOpportunity) => (
-        <span style={{ cursor: rec.terminated ? 'default' : 'pointer', color: rec.terminated ? '#999' : COLORS.primary, fontWeight: 600 }}
+        <span style={{ cursor: rec.terminated ? 'default' : 'pointer', color: rec.terminated ? COLORS.textLight : COLORS.primary, fontWeight: 600 }}
           onClick={rec.terminated ? undefined : () => { const next = v >= 100 ? 0 : Math.min(v + 10, 100); touch(rec.id, { winRate: next }); }}>{v}%</span>
       )},
     { title: '竞争对手', dataIndex: 'competitor', width: 145,
       render: (v: string, rec: SalesOpportunity) => {
-        if (rec.terminated) return <span style={{ fontSize: 13, color: '#333' }}>{v || '—'}</span>;
+        if (rec.terminated) return <span style={{ fontSize: 13, color: COLORS.textPrimary }}>{v || '—'}</span>;
         const hasInvalidSep = v && /[^一-龥a-zA-Z0-9、， ]/.test(v);
         return (
           <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
@@ -478,7 +478,7 @@ const SalesOpportunityList: React.FC = () => {
       filterDropdownProps: { minOverlayWidthMatchTrigger: false },
       onFilter: (value: string, record: SalesOpportunity) => value === '__all__' || record.status === value,
       render: (v: string, rec: SalesOpportunity) => {
-        if (rec.terminated) return <Tag color="#999" style={{ margin: 0, fontSize: 12 }}>{v}</Tag>;
+        if (rec.terminated) return <Tag color={COLORS.textLight} style={{ margin: 0, fontSize: 12 }}>{v}</Tag>;
         const STATUS_ACTIONS: Record<string, { icon: React.ReactNode; action: string; label: string }[]> = {
           '过程中': [
             { icon: <CheckCircleOutlined />, action: 'win', label: '赢单' },
@@ -492,21 +492,21 @@ const SalesOpportunityList: React.FC = () => {
         const actions = STATUS_ACTIONS[v] || [];
         const isEarlyStage = (rec.stage === '信息' || rec.stage === '线索') && v === '过程中';
         if (actions.length === 0) {
-          return <Tag color={statusColors[v] || '#999'} style={{ margin: 0, fontSize: 12 }}>{v}</Tag>;
+          return <Tag color={statusColors[v] || COLORS.textLight} style={{ margin: 0, fontSize: 12 }}>{v}</Tag>;
         }
         return (
           <Dropdown menu={{
             items: actions.map(a => ({
               key: a.action,
               disabled: a.action === 'win' && isEarlyStage,
-              label: <div style={{ fontSize: 18, color: a.action === 'win' && isEarlyStage ? '#ccc' : statusColors[a.action === 'freeze' && v === '冻结' ? '过程中' : a.action === 'win' ? '赢' : a.action === 'loss' ? '输' : '过程中'] || '#999', textAlign: 'center', padding: '2px 4px' }}>{a.icon}</div>,
+              label: <div style={{ fontSize: 18, color: a.action === 'win' && isEarlyStage ? COLORS.textDisabled : statusColors[a.action === 'freeze' && v === '冻结' ? '过程中' : a.action === 'win' ? '赢' : a.action === 'loss' ? '输' : '过程中'] || COLORS.textLight, textAlign: 'center', padding: '2px 4px' }}>{a.icon}</div>,
               onClick: a.action === 'win' && isEarlyStage ? undefined
                 : () => a.action === 'win' ? handleStatusAction(rec, 'win')
                 : a.action === 'loss' ? handleStatusAction(rec, 'loss')
                 : handleStatusAction(rec, 'freeze'),
             })),
                     }} trigger={['click']}>
-            <Tag color={statusColors[v] || '#999'}
+            <Tag color={statusColors[v] || COLORS.textLight}
               style={{ cursor: 'pointer', margin: 0, fontSize: 12 }}>
               {v} <span style={{ fontSize: 10, marginLeft: 2 }}>▼</span>
             </Tag>
@@ -520,7 +520,7 @@ const SalesOpportunityList: React.FC = () => {
       filterDropdownProps: { minOverlayWidthMatchTrigger: false },
       onFilter: (value: string, record: SalesOpportunity) => value === '__all__' || record.salesman === value,
       render: (v: string, rec: SalesOpportunity) => rec.terminated
-        ? <span style={{ fontSize: 13, color: '#999' }}>{v || '—'}</span>
+        ? <span style={{ fontSize: 13, color: COLORS.textLight }}>{v || '—'}</span>
         : (
         <input type="text" defaultValue={v || ''}
           onBlur={e => touch(rec.id, { salesman: e.target.value })}
@@ -531,17 +531,17 @@ const SalesOpportunityList: React.FC = () => {
       filters: Array.from(new Set(opportunities.map(o => o.expectedCloseDate).filter(Boolean))).sort().map(s => ({ text: s, value: s })),
       onFilter: (value: string, record: SalesOpportunity) => record.expectedCloseDate === value,
       render: (v: string, rec: SalesOpportunity) => rec.terminated
-        ? <span style={{ fontSize: 13, color: '#999' }}>{v || '—'}</span>
+        ? <span style={{ fontSize: 13, color: COLORS.textLight }}>{v || '—'}</span>
         : (
         <input type="text" defaultValue={v || ''}
           onBlur={e => touch(rec.id, { expectedCloseDate: e.target.value })}
           placeholder="yyyy-mm-dd"
-          style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, color: '#333' }}
+          style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, color: COLORS.textPrimary }}
         />
       )},
     { title: '报价', dataIndex: 'quotationId', width: 50, align: 'center' as const,
       render: (v: string | undefined, rec: SalesOpportunity) => rec.terminated
-        ? <span style={{ color: '#999', fontSize: 13 }}>—</span>
+        ? <span style={{ color: COLORS.textLight, fontSize: 13 }}>—</span>
         : (
         <Button type="text" size="small"
           icon={v ? <EditOutlined style={{ fontSize: 18 }} /> : <FileAddOutlined style={{ fontSize: 18 }} />}
@@ -552,7 +552,7 @@ const SalesOpportunityList: React.FC = () => {
     { title: '操作', key: 'action', width: 75, align: 'center' as const,
       render: (_: unknown, rec: SalesOpportunity) => {
         if (tabFilter === 'info') {
-          if (rec.terminated) return <span style={{ fontSize: 12, color: '#999' }}>已终止</span>;
+          if (rec.terminated) return <span style={{ fontSize: 12, color: COLORS.textLight }}>已终止</span>;
           if (rec.status === '输') return (
             <Button type="text" size="small" icon={<CloseOutlined style={{ fontSize: 18 }} />}
               onClick={() => handleConfirmTerminate(rec)}
@@ -565,7 +565,7 @@ const SalesOpportunityList: React.FC = () => {
           );
         }
         if (tabFilter === 'lead') {
-          if (rec.terminated) return <span style={{ fontSize: 12, color: '#999' }}>已终止</span>;
+          if (rec.terminated) return <span style={{ fontSize: 12, color: COLORS.textLight }}>已终止</span>;
           if (rec.status === '输') return (
             <Button type="text" size="small" icon={<CloseOutlined style={{ fontSize: 18 }} />}
               onClick={() => handleConfirmTerminate(rec)}
@@ -590,14 +590,14 @@ const SalesOpportunityList: React.FC = () => {
                 style={{ color: COLORS.purple }} title="确认终止" />
             )}
             {rec.status === '输' && rec.terminated && (
-              <span style={{ fontSize: 12, color: '#999' }}>已终止</span>
+              <span style={{ fontSize: 12, color: COLORS.textLight }}>已终止</span>
             )}
           </div>
         );
       },
     },
     { title: '操作日期', dataIndex: 'updatedAt', width: 100,
-      render: (v: string) => <span style={{ fontSize: 13, color: '#999' }}>{v || '—'}</span> },
+      render: (v: string) => <span style={{ fontSize: 13, color: COLORS.textLight }}>{v || '—'}</span> },
   ], [tabFilter, touch, handlePromote, handleConfirmTerminate, handleWinDeliver, handleStageClick, opportunities, handleStatusAction, navigate]);
 
 
@@ -609,7 +609,7 @@ const SalesOpportunityList: React.FC = () => {
       {ctx}
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <span style={{ fontSize: 17, fontWeight: 700, color: '#0d1b2a' }}>销售管理</span>
+        <span style={{ fontSize: 17, fontWeight: 700, color: COLORS.textDark }}>销售管理</span>
         <FYSelector value={fySelect} onChange={setFySelect} />
       </div>
 
@@ -625,7 +625,7 @@ const SalesOpportunityList: React.FC = () => {
 
             borderBottom: tabFilter === 'info' ? `2px solid ${COLORS.primary}` : '2px solid transparent',
 
-            color: tabFilter === 'info' ? COLORS.primary : '#666', fontWeight: tabFilter === 'info' ? 600 : 400,
+            color: tabFilter === 'info' ? COLORS.primary : COLORS.textSecondary, fontWeight: tabFilter === 'info' ? 600 : 400,
 
             marginBottom: -2, transition: 'all 0.15s',
 
@@ -641,7 +641,7 @@ const SalesOpportunityList: React.FC = () => {
 
             borderBottom: tabFilter === 'lead' ? `2px solid ${COLORS.purple}` : '2px solid transparent',
 
-            color: tabFilter === 'lead' ? COLORS.purple : '#666', fontWeight: tabFilter === 'lead' ? 600 : 400,
+            color: tabFilter === 'lead' ? COLORS.purple : COLORS.textSecondary, fontWeight: tabFilter === 'lead' ? 600 : 400,
 
             marginBottom: -2, transition: 'all 0.15s',
 
@@ -657,7 +657,7 @@ const SalesOpportunityList: React.FC = () => {
 
             borderBottom: tabFilter === 'opp' ? `2px solid ${COLORS.success}` : '2px solid transparent',
 
-            color: tabFilter === 'opp' ? COLORS.success : '#666', fontWeight: tabFilter === 'opp' ? 600 : 400,
+            color: tabFilter === 'opp' ? COLORS.success : COLORS.textSecondary, fontWeight: tabFilter === 'opp' ? 600 : 400,
 
             marginBottom: -2, transition: 'all 0.15s',
 
@@ -687,12 +687,12 @@ const SalesOpportunityList: React.FC = () => {
 
       <div style={{
         display: 'flex', gap: 24, marginTop: 12, padding: '10px 16px',
-        background: '#fafafa', borderRadius: 4, border: '1px solid #e8e8e8',
+        background: COLORS.bgLight, borderRadius: 4, border: `1px solid ${COLORS.border}`,
         fontSize: 13,
       }}>
 
         <div style={{ flex: 1 }} />
-        <div style={{ fontSize: 12, color: '#ccc' }}>
+        <div style={{ fontSize: 12, color: COLORS.textDisabled }}>
           {filtered.length} 个项目
         </div>
       </div>
@@ -701,7 +701,7 @@ const SalesOpportunityList: React.FC = () => {
 
       <Modal
 
-        title={<span style={{ fontSize: 17, fontWeight: 600, color: '#0d1b2a', letterSpacing: 0.5 }}>{editing ? '编辑销售机会' : '新建销售机会'}</span>}
+        title={<span style={{ fontSize: 17, fontWeight: 600, color: COLORS.textDark, letterSpacing: 0.5 }}>{editing ? '编辑销售机会' : '新建销售机会'}</span>}
 
         open={modalOpen}
 
@@ -735,7 +735,7 @@ const SalesOpportunityList: React.FC = () => {
                   (option?.label as string || '').toLowerCase().includes(input.toLowerCase())
                 }
                 notFoundContent={
-                  <div style={{ padding: 8, fontSize: 12, color: '#999' }}>
+                  <div style={{ padding: 8, fontSize: 12, color: COLORS.textLight }}>
                     未找到，请先到
                     <a href="/clients" onClick={e => { e.preventDefault(); navigate('/clients'); }}
                       style={{ color: COLORS.primary }}> 客户管理</a>
@@ -836,7 +836,7 @@ const SalesOpportunityList: React.FC = () => {
 
       {/* 转交付弹窗 */}
       <Modal
-        title={<span style={{ fontSize: 17, fontWeight: 600, color: '#0d1b2a', letterSpacing: 0.5 }}>转交付</span>}
+        title={<span style={{ fontSize: 17, fontWeight: 600, color: COLORS.textDark, letterSpacing: 0.5 }}>转交付</span>}
         open={!!deliveryOpp}
         onCancel={() => setDeliveryOpp(null)}
         width={460}
@@ -853,10 +853,10 @@ const SalesOpportunityList: React.FC = () => {
       >
         {deliveryOpp && (
           <div style={{ textAlign: 'center', padding: '4px 0 0' }}>
-            <div style={{ fontSize: 14, color: '#0d1b2a', fontWeight: 600, marginBottom: 6 }}>
+            <div style={{ fontSize: 14, color: COLORS.textDark, fontWeight: 600, marginBottom: 6 }}>
               将"{deliveryOpp.projectName}"转为交付项目？
             </div>
-            <div style={{ fontSize: 13, color: '#8892a4', lineHeight: 1.6 }}>
+            <div style={{ fontSize: 13, color: COLORS.textMuted, lineHeight: 1.6 }}>
               该项目将从机会清单删除，信息转入交付管理和销售分析。
             </div>
           </div>
@@ -865,7 +865,7 @@ const SalesOpportunityList: React.FC = () => {
 
       {/* 确认终止弹窗 */}
       <Modal
-        title={<span style={{ fontSize: 17, fontWeight: 600, color: "#0d1b2a", letterSpacing: 0.5 }}>确认终止</span>}
+        title={<span style={{ fontSize: 17, fontWeight: 600, color: COLORS.textDark, letterSpacing: 0.5 }}>确认终止</span>}
         open={!!terminateOpp}
         onCancel={() => setTerminateOpp(null)}
         width={460}
@@ -882,17 +882,17 @@ const SalesOpportunityList: React.FC = () => {
       >
         {terminateOpp && (
           <div style={{ textAlign: 'center', padding: '4px 0 0' }}>
-            <div style={{ fontSize: 14, color: '#0d1b2a', fontWeight: 600, marginBottom: 6 }}>
+            <div style={{ fontSize: 14, color: COLORS.textDark, fontWeight: 600, marginBottom: 6 }}>
               项目"{terminateOpp.projectName}"终止后将不可再修改。
             </div>
-            <div style={{ fontSize: 13, color: '#8892a4' }}>确认终止？</div>
+            <div style={{ fontSize: 13, color: COLORS.textMuted }}>确认终止？</div>
           </div>
         )}
       </Modal>
 
       {/* 阶段晋升弹窗（转线索/转机会） */}
       <Modal
-        title={<span style={{ fontSize: 17, fontWeight: 600, color: "#0d1b2a", letterSpacing: 0.5 }}>{promoteOpp ? (promoteOpp.targetStage === "线索" ? "转线索" : "转机会") : ""}</span>}
+        title={<span style={{ fontSize: 17, fontWeight: 600, color: COLORS.textDark, letterSpacing: 0.5 }}>{promoteOpp ? (promoteOpp.targetStage === "线索" ? "转线索" : "转机会") : ""}</span>}
         open={!!promoteOpp}
         onCancel={() => setPromoteOpp(null)}
         width={460}
@@ -917,7 +917,7 @@ const SalesOpportunityList: React.FC = () => {
                 value={promoteReason}
                 onChange={e => { setPromoteReason(e.target.value); }}
                 placeholder={"输入" + (promoteOpp.targetStage === "线索" ? "转线索" : "转机会") + "原因…"}
-                style={{ width: "100%", border: "1px solid #d9d9d9", borderRadius: 3, padding: "6px 24px", fontSize: 13, resize: "vertical", boxSizing: "border-box", fontFamily: "inherit", borderLeft: "none", borderRight: "none" }}
+                style={{ width: "100%", border: `1px solid ${COLORS.borderInput}`, borderRadius: 3, padding: "6px 24px", fontSize: 13, resize: "vertical", boxSizing: "border-box", fontFamily: "inherit", borderLeft: "none", borderRight: "none" }}
             />
             </div>
           </div>
@@ -927,7 +927,7 @@ const SalesOpportunityList: React.FC = () => {
       {/* 原因选择弹窗 */}
 
       <Modal
-        title={<span style={{ fontSize: 17, fontWeight: 600, color: '#0d1b2a', letterSpacing: 0.5 }}>{reasonModal.action === 'loss' ? '输单原因' : reasonModal.action === 'win' ? '赢单原因' : '冻结原因'}</span>}
+        title={<span style={{ fontSize: 17, fontWeight: 600, color: COLORS.textDark, letterSpacing: 0.5 }}>{reasonModal.action === 'loss' ? '输单原因' : reasonModal.action === 'win' ? '赢单原因' : '冻结原因'}</span>}
         open={reasonModal.open}
         onCancel={() => setReasonModal(p => ({ ...p, open: false }))}
         width={420}
@@ -956,7 +956,7 @@ const SalesOpportunityList: React.FC = () => {
                       style={{
                         padding: '6px 18px', fontSize: 13, cursor: 'pointer',
                         borderBottom: reasonModal.selectedGroup === g.groupLabel ? `2px solid ${COLORS.primary}` : '2px solid transparent',
-                        color: reasonModal.selectedGroup === g.groupLabel ? COLORS.primary : '#666',
+                        color: reasonModal.selectedGroup === g.groupLabel ? COLORS.primary : COLORS.textSecondary,
                         fontWeight: 600,
                         marginBottom: -2, transition: 'all 0.15s',
                       }}
@@ -976,7 +976,7 @@ const SalesOpportunityList: React.FC = () => {
                       <div onClick={() => setReasonModal(p => ({ ...p, dropdownOpen: !p.dropdownOpen }))}
                         style={{
                           fontSize: 13, padding: '4px 8px', borderRadius: 4,
-                          background: '#fafafa', color: COLORS.primary, cursor: 'pointer',
+                          background: COLORS.bgLight, color: COLORS.primary, cursor: 'pointer',
                           minWidth: 100, userSelect: 'none', position: 'relative',
                         }}
                       >
@@ -986,7 +986,7 @@ const SalesOpportunityList: React.FC = () => {
                       {reasonModal.dropdownOpen && (
                         <div style={{
                           position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 10,
-                          background: '#fafafa', marginTop: 2, borderRadius: 4,
+                          background: COLORS.bgLight, marginTop: 2, borderRadius: 4,
                           overflow: 'hidden',
                         }}>
                           {competitors.map(c => (
@@ -1020,9 +1020,9 @@ const SalesOpportunityList: React.FC = () => {
                         const checked = reasonModal.selections[item.label] !== undefined;
                         return (
                           <div key={item.label} onClick={() => toggleSub(item.label)}
-                            style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', padding: '5px 10px', borderRadius: 5, marginBottom: 2, background: checked ? '#eef4ff' : '#f8f8f8', border: '1px solid ' + (checked ? COLORS.primary : '#e8e8e8') }}
+                            style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', padding: '5px 10px', borderRadius: 5, marginBottom: 2, background: checked ? '#eef4ff' : '#f8f8f8', border: '1px solid ' + (checked ? COLORS.primary : COLORS.border) }}
                           >
-                            <span style={{ width: 15, height: 15, borderRadius: 3, border: '1.5px solid ' + (checked ? COLORS.primary : '#ccc'), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: checked ? '#fff' : 'transparent', background: checked ? COLORS.primary : 'transparent', fontWeight: 700, flexShrink: 0 }}>
+                            <span style={{ width: 15, height: 15, borderRadius: 3, border: '1.5px solid ' + (checked ? COLORS.primary : COLORS.textDisabled), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: checked ? '#fff' : 'transparent', background: checked ? COLORS.primary : 'transparent', fontWeight: 700, flexShrink: 0 }}>
                               {checked ? '✓' : ''}
                             </span>
                             <span style={{ fontSize: 13, color: checked ? COLORS.primary : '#444' }}>{item.label}</span>
@@ -1037,9 +1037,9 @@ const SalesOpportunityList: React.FC = () => {
                               const dc = (reasonModal.selections[item.label] || []).includes(subItem.label);
                               return (
                                 <div key={subItem.label} onClick={() => toggleDetail(item.label, subItem.label)}
-                                  style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', padding: '5px 10px', borderRadius: 5, background: dc ? '#eef4ff' : '#f8f8f8', border: '1px solid ' + (dc ? COLORS.primary : '#e8e8e8') }}
+                                  style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', padding: '5px 10px', borderRadius: 5, background: dc ? '#eef4ff' : '#f8f8f8', border: '1px solid ' + (dc ? COLORS.primary : COLORS.border) }}
                                 >
-                                  <span style={{ width: 15, height: 15, borderRadius: 3, border: '1.5px solid ' + (dc ? COLORS.primary : '#ccc'), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: dc ? '#fff' : 'transparent', background: dc ? COLORS.primary : 'transparent', fontWeight: 700, flexShrink: 0 }}>
+                                  <span style={{ width: 15, height: 15, borderRadius: 3, border: '1.5px solid ' + (dc ? COLORS.primary : COLORS.textDisabled), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: dc ? '#fff' : 'transparent', background: dc ? COLORS.primary : 'transparent', fontWeight: 700, flexShrink: 0 }}>
                                     {dc ? '✓' : ''}
                                   </span>
                                   <span style={{ fontSize: 13, color: dc ? COLORS.primary : '#444' }}>{subItem.label}</span>
@@ -1082,7 +1082,7 @@ const SalesOpportunityList: React.FC = () => {
 
 const labelStyle: React.CSSProperties = {
 
-  fontSize: 12, fontWeight: 600, color: '#333', marginBottom: 4,
+  fontSize: 12, fontWeight: 600, color: COLORS.textPrimary, marginBottom: 4,
 
 };
 

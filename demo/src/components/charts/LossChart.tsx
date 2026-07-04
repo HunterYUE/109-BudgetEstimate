@@ -3,11 +3,11 @@ import { COLORS } from '../../styles/constants';
 
 const SUB_PATTERNS = [
   { color: COLORS.primary, dashed: false },
-  { color: '#888', dashed: false },
+  { color: COLORS.chartGray, dashed: false },
   { color: COLORS.primary, dashed: false },
-  { color: '#888', dashed: false },
+  { color: COLORS.chartGray, dashed: false },
   { color: COLORS.primary, dashed: false },
-  { color: '#888', dashed: false },
+  { color: COLORS.chartGray, dashed: false },
 ];
 
 interface LossSubItem {
@@ -42,8 +42,8 @@ const LossChart: React.FC<Props> = ({ data }) => {
     return (
           <div key={cat.category}
               style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 11 }}>
-            <div style={{ width: 64, flexShrink: 0, textAlign: 'right', fontSize: 10, color: '#666' }}>
-              <div style={{ fontSize: 10, color: '#666', lineHeight: 1.4 }}>{cat.category.replace(/\(.*\)/g, '')}</div>
+            <div style={{ width: 64, flexShrink: 0, textAlign: 'right', fontSize: 10, color: COLORS.textSecondary }}>
+              <div style={{ fontSize: 10, color: COLORS.textSecondary, lineHeight: 1.4 }}>{cat.category.replace(/\(.*\)/g, '')}</div>
             </div>
             <div style={{ flex: 1, position: 'relative', height: 30 }}>
               {/* 左侧基线 */}

@@ -12,13 +12,13 @@ interface Props {
 }
 
 const cellStyle: React.CSSProperties = {
-  padding: '6px 12px', fontSize: 12, border: '1px solid #e8e8e8', textAlign: 'left',
+  padding: '6px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, textAlign: 'left',
 };
 
 const labelStyle: React.CSSProperties = {
   ...cellStyle,
-  fontWeight: 600, fontSize: 12, background: '#fafafa', whiteSpace: 'nowrap',
-  color: '#1a2744',
+  fontWeight: 600, fontSize: 12, background: COLORS.bgLight, whiteSpace: 'nowrap',
+  color: COLORS.labelDark,
 };
 
 const inputStyle: React.CSSProperties = {
@@ -110,7 +110,7 @@ const ProjectHeader: React.FC<Props> = ({ project, onUpdate, versionBump, onVers
                 onClick={() => onVersionBumpChange?.(versionBump === 'major' ? 'minor' : 'major')}
                 title={'下次提交: ' + (versionBump === 'major' ? '大版本 +1.0' : '小版本 +0.1')}>
                 {v.version_no}
-                <span style={{ fontSize: 10, color: '#8892a4', marginLeft: 4 }}>
+                <span style={{ fontSize: 10, color: COLORS.textMuted, marginLeft: 4 }}>
                   {versionBump === 'major' ? '▲ +1.0' : '▸ +0.1'}
                 </span>
               </span>
@@ -245,7 +245,7 @@ const ProjectLayoutUpload: React.FC<{ value: string; onChange: (v: string) => vo
         style={{ display: 'none' }} onChange={handleFileChange} />
       <span onClick={handleClick} style={{
         color: COLORS.primary, cursor: 'pointer', fontWeight: 600, fontSize: 13,
-        border: '1px dashed #d9d9d9', borderRadius: 4, padding: '2px 12px', display: 'inline-block'
+        border: `1px dashed ${COLORS.borderInput}`, borderRadius: 4, padding: '2px 12px', display: 'inline-block'
       }}>
         + 上传布置图
       </span>

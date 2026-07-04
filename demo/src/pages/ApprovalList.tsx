@@ -8,12 +8,12 @@ import type { ApprovalRequest, ReviewRecord } from '../types';
 import { COLORS } from '../styles/constants';
 
 const statusConfig: Record<string, { label: string; color: string }> = {
-  pending:  { label: '待审批', color: '#e65100' },
+  pending:  { label: '待审批', color: COLORS.warning },
   approved: { label: '已通过', color: '#2e7d32' },
   rejected: { label: '已驳回', color: COLORS.danger },
 };
 
-const typeColor = (t: string) => t === 'quotation' ? '#00509e' : t === 'plan' ? '#e65100' : '#1a6b3c';
+const typeColor = (t: string) => t === 'quotation' ? COLORS.primary : t === 'plan' ? COLORS.warning : COLORS.success;
 
 const ApprovalList: React.FC = () => {
   const navigate = useNavigate();
@@ -91,16 +91,16 @@ const ApprovalList: React.FC = () => {
   return (
     <div>
       {ctx}
-      <div style={{ fontSize: 17, fontWeight: 700, color: '#0d1b2a', marginBottom: 4 }}>审批管理</div>
+      <div style={{ fontSize: 17, fontWeight: 700, color: COLORS.textDark, marginBottom: 4 }}>审批管理</div>
 
-      <div style={{ display: 'flex', gap: 0, marginBottom: 20, borderBottom: '2px solid #e8e8e8' }}>
+      <div style={{ display: 'flex', gap: 0, marginBottom: 20, borderBottom: `2px solid ${COLORS.border}` }}>
         <div onClick={() => setFilter('draft')}
-          style={{ padding: '8px 20px', cursor: 'pointer', fontSize: 14, borderBottom: filter === 'draft' ? '2px solid #999' : '2px solid transparent', color: filter === 'draft' ? '#999' : '#666', fontWeight: filter === 'draft' ? 600 : 400, marginBottom: -2, transition: 'all 0.15s' }}>草稿({draftItems.length})</div>
+          style={{ padding: '8px 20px', cursor: 'pointer', fontSize: 14, borderBottom: filter === 'draft' ? `2px solid ${COLORS.textLight}` : '2px solid transparent', color: filter === 'draft' ? COLORS.textLight : COLORS.textSecondary, fontWeight: filter === 'draft' ? 600 : 400, marginBottom: -2, transition: 'all 0.15s' }}>草稿({draftItems.length})</div>
         <div onClick={() => setFilter('pending')}
           style={{
             padding: '8px 20px', cursor: 'pointer', fontSize: 14,
-            borderBottom: filter === 'pending' ? '2px solid #e65100' : '2px solid transparent',
-            color: filter === 'pending' ? '#e65100' : '#666', fontWeight: filter === 'pending' ? 600 : 400,
+            borderBottom: filter === 'pending' ? `2px solid ${COLORS.warning}` : '2px solid transparent',
+            color: filter === 'pending' ? COLORS.warning : COLORS.textSecondary, fontWeight: filter === 'pending' ? 600 : 400,
             marginBottom: -2, transition: 'all 0.15s',
           }}>待审批({requests.filter(r => r.status === 'pending').length})
         </div>
@@ -108,15 +108,15 @@ const ApprovalList: React.FC = () => {
           style={{
             padding: '8px 20px', cursor: 'pointer', fontSize: 14,
             borderBottom: filter === 'done' ? '2px solid #2e7d32' : '2px solid transparent',
-            color: filter === 'done' ? '#2e7d32' : '#666', fontWeight: filter === 'done' ? 600 : 400,
+            color: filter === 'done' ? '#2e7d32' : COLORS.textSecondary, fontWeight: filter === 'done' ? 600 : 400,
             marginBottom: -2, transition: 'all 0.15s',
           }}>已审批({requests.filter(r => r.status !== 'pending').length})
         </div>
         <div onClick={() => setFilter('all')}
           style={{
             padding: '8px 20px', cursor: 'pointer', fontSize: 14,
-            borderBottom: filter === 'all' ? '2px solid #00509e' : '2px solid transparent',
-            color: filter === 'all' ? '#00509e' : '#666', fontWeight: filter === 'all' ? 600 : 400,
+            borderBottom: filter === 'all' ? `2px solid ${COLORS.primary}` : '2px solid transparent',
+            color: filter === 'all' ? COLORS.primary : COLORS.textSecondary, fontWeight: filter === 'all' ? 600 : 400,
             marginBottom: -2, transition: 'all 0.15s',
           }}>全部({requests.length})
         </div>
@@ -132,19 +132,19 @@ const ApprovalList: React.FC = () => {
               <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
                 <div style={{ flex: 1 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                    <span style={{ fontSize: 15, fontWeight: 600, color: '#0d1b2a' }}>{item.clientName}</span>
+                    <span style={{ fontSize: 15, fontWeight: 600, color: COLORS.textDark }}>{item.clientName}</span>
 
                     <Tag color={typeColor(item.approvalType)}
                       style={{ fontSize: 12, border: 'none', fontWeight: 600 }}>
                       {item.approvalType === 'quotation' ? '报价审批' : item.approvalType === 'plan' ? '实施计划' : '成本对比'}
                     </Tag>
                   </div>
-                  <div style={{ display: 'flex', gap: 24, fontSize: 13, color: '#666', flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', gap: 24, fontSize: 13, color: COLORS.textSecondary, flexWrap: 'wrap' }}>
                     <span style={{ fontWeight: 600 }}>{item.projectName}</span>
                     <span>{item.salesNo}</span>
                     <span><strong style={{ color: COLORS.primary }}>&yen;{formatMoney(item.amount)}</strong></span>
                   </div>
-                  <div style={{ marginTop: 4, fontSize: 12, color: '#999' }}>
+                  <div style={{ marginTop: 4, fontSize: 12, color: COLORS.textLight }}>
                     {item.submitter}@未提交
                   </div>
                 </div>
@@ -170,26 +170,26 @@ const ApprovalList: React.FC = () => {
               style={{
                 borderRadius: 4,
                 borderLeft: `4px solid ${
-                  req.status === 'pending' ? '#e65100' :
-                  req.status === 'approved' ? '#2e7d32' : '#c62828'
+                  req.status === 'pending' ? COLORS.warning :
+                  req.status === 'approved' ? '#2e7d32' : COLORS.danger
                 }`,
               }}
             >
               <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
                 <div style={{ flex: 1 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                    <span style={{ fontSize: 15, fontWeight: 600, color: '#0d1b2a' }}>{req.clientName}</span>
+                    <span style={{ fontSize: 15, fontWeight: 600, color: COLORS.textDark }}>{req.clientName}</span>
                     {req.status !== 'pending' && <Tag color={statusConfig[req.status]?.color} style={{ fontWeight: 600, fontSize: 12, lineHeight: '20px', borderRadius: 3 }}>{statusConfig[req.status]?.label}</Tag>}
                     <Tag color={typeColor(req.approvalType)} style={{ fontSize: 12, border: 'none', fontWeight: 600 }}>{req.approvalType === 'quotation' ? '报价审批' : req.approvalType === 'plan' ? '实施计划' : '成本对比'}</Tag>
                   </div>
-                  <div style={{ display: 'flex', gap: 24, fontSize: 13, color: '#666', flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', gap: 24, fontSize: 13, color: COLORS.textSecondary, flexWrap: 'wrap' }}>
                     <span style={{ fontWeight: 600 }}>{req.projectName}</span>
                     <span>{req.salesNo}</span>
                     <span><strong style={{ color: COLORS.primary }}>&yen;{formatMoney(req.amount)}</strong></span>
                     <span><Gauge value={req.profitRate} />%</span>
                     <span><Gauge value={req.gp3 * 100} />%</span>
                   </div>
-                  <div style={{ marginTop: 4, fontSize: 12, color: '#999' }}>
+                  <div style={{ marginTop: 4, fontSize: 12, color: COLORS.textLight }}>
                     {req.submitter}@{req.submitTime}
                     {req.records.length > 0 && (
                       <span> | {req.records[req.records.length - 1].reviewer}@{req.records[req.records.length - 1].createdAt}</span>
@@ -204,7 +204,7 @@ const ApprovalList: React.FC = () => {
                   {req.records.length > 0 && (
                     <Button type="text" size="small" icon={<HistoryOutlined />}
                       onClick={() => setHistoryModal(req)}
-                      style={{ color: '#666' }} />
+                      style={{ color: COLORS.textSecondary }} />
                   )}
                   {req.status === 'pending' && (
                     <>
@@ -225,7 +225,7 @@ const ApprovalList: React.FC = () => {
 
       {/* 审批操作弹窗 */}
       <Modal
-        title={<span style={{ fontSize: 17, fontWeight: 600, color: '#0d1b2a', letterSpacing: 0.5 }}>{approvalModal?.action === 'approved' ? '确认通过' : '确认驳回'}</span>}
+        title={<span style={{ fontSize: 17, fontWeight: 600, color: COLORS.textDark, letterSpacing: 0.5 }}>{approvalModal?.action === 'approved' ? '确认通过' : '确认驳回'}</span>}
         open={!!approvalModal}
         onCancel={() => setApprovalModal(null)}
         width={460}
@@ -236,16 +236,16 @@ const ApprovalList: React.FC = () => {
             <Button icon={<CloseOutlined />} onClick={() => setApprovalModal(null)}
               style={{ borderRadius: 3, width: 36, height: 36 }} />
             <Button type="primary" ghost icon={<CheckOutlined />} onClick={confirmApproval}
-              style={{ borderColor: approvalModal?.action === 'approved' ? '#1a6b3c' : '#c62828', color: approvalModal?.action === 'approved' ? '#1a6b3c' : '#c62828', borderRadius: 3, width: 36, height: 36 }} />
+              style={{ borderColor: approvalModal?.action === 'approved' ? COLORS.success : COLORS.danger, color: approvalModal?.action === 'approved' ? COLORS.success : COLORS.danger, borderRadius: 3, width: 36, height: 36 }} />
           </div>
         }
       >
         {approvalModal && (
           <div style={{ padding: '4px 0 0' }}>
-            <div style={{ fontSize: 13, color: '#666', marginBottom: 12, lineHeight: 1.6 }}>
-              项目：<strong style={{ color: '#333' }}>{approvalModal.req.projectName}</strong>&nbsp;&nbsp;|&nbsp;&nbsp;金额：<strong style={{ color: COLORS.primary }}>&yen;{formatMoney(approvalModal.req.amount)}</strong>
+            <div style={{ fontSize: 13, color: COLORS.textSecondary, marginBottom: 12, lineHeight: 1.6 }}>
+              项目：<strong style={{ color: COLORS.textPrimary }}>{approvalModal.req.projectName}</strong>&nbsp;&nbsp;|&nbsp;&nbsp;金额：<strong style={{ color: COLORS.primary }}>&yen;{formatMoney(approvalModal.req.amount)}</strong>
             </div>
-            <div style={{ fontWeight: 600, fontSize: 13, color: approvalModal.action === 'approved' ? '#333' : '#c62828', marginBottom: 6 }}>
+            <div style={{ fontWeight: 600, fontSize: 13, color: approvalModal.action === 'approved' ? COLORS.textPrimary : COLORS.danger, marginBottom: 6 }}>
               {approvalModal.action === 'approved' ? '审批意见' : '驳回原因 *'}
             </div>
             <Input.TextArea rows={3}
@@ -277,7 +277,7 @@ const ApprovalList: React.FC = () => {
 
       {/* 审批历史 Modal */}
       <Modal
-        title={<span style={{ fontSize: 17, fontWeight: 600, color: '#0d1b2a', letterSpacing: 0.5 }}>审批记录</span>}
+        title={<span style={{ fontSize: 17, fontWeight: 600, color: COLORS.textDark, letterSpacing: 0.5 }}>审批记录</span>}
         open={!!historyModal}
         onCancel={() => setHistoryModal(null)}
         width={460}
@@ -291,24 +291,24 @@ const ApprovalList: React.FC = () => {
         }>
         {historyModal && historyModal.records.length > 0 ? (
           <div style={{ position: 'relative', paddingLeft: 24 }}>
-            <div style={{ position: 'absolute', left: 11, top: 4, bottom: 4, width: 2, background: '#e8e8e8' }} />
+            <div style={{ position: 'absolute', left: 11, top: 4, bottom: 4, width: 2, background: COLORS.border }} />
             {historyModal.records.map(rec => (
               <div key={rec.id} style={{ position: 'relative', paddingBottom: 16 }}>
                 <div style={{
                   position: 'absolute', left: -20, top: 4, width: 12, height: 12, borderRadius: '50%',
-                  background: rec.action === 'approved' ? '#2e7d32' : '#c62828',
+                  background: rec.action === 'approved' ? '#2e7d32' : COLORS.danger,
                   border: '2px solid #fff',
                 }} />
-                <div style={{ fontSize: 13, color: '#0d1b2a', fontWeight: 600 }}>
+                <div style={{ fontSize: 13, color: COLORS.textDark, fontWeight: 600 }}>
                   {rec.action === 'approved' ? '✓ 通过' : '✗ 驳回'} — {rec.reviewer}
                 </div>
-                <div style={{ fontSize: 12, color: '#999' }}>{rec.createdAt}</div>
-                {rec.comment && <div style={{ fontSize: 13, color: '#666', marginTop: 4 }}>{rec.comment}</div>}
+                <div style={{ fontSize: 12, color: COLORS.textLight }}>{rec.createdAt}</div>
+                {rec.comment && <div style={{ fontSize: 13, color: COLORS.textSecondary, marginTop: 4 }}>{rec.comment}</div>}
               </div>
             ))}
           </div>
         ) : (
-          <div style={{ textAlign: 'center', color: '#999', padding: 20 }}>暂无审批记录</div>
+          <div style={{ textAlign: 'center', color: COLORS.textLight, padding: 20 }}>暂无审批记录</div>
         )}
       </Modal>
     </div>
@@ -322,10 +322,10 @@ const Gauge: React.FC<{ value: number }> = ({ value }) => {
 
 const detailRow: React.CSSProperties = {
   display: 'flex', justifyContent: 'space-between', padding: '6px 0',
-  borderBottom: '1px solid #f0f0f0',
+  borderBottom: `1px solid ${COLORS.borderLight}`,
 };
 const detailLabel: React.CSSProperties = {
-  fontWeight: 600, color: '#666', minWidth: 80,
+  fontWeight: 600, color: COLORS.textSecondary, minWidth: 80,
 };
 
 export default ApprovalList;

@@ -30,7 +30,7 @@ function getColumnConfig(groupType: GroupType) {
 }
 
 const typeColors: Record<string, string> = {
-  COMPLETE_SET: COLORS.primary, COMPONENT: '#008080', SOFTWARE: '#5a2d82', SERVICE: COLORS.success,
+  COMPLETE_SET: COLORS.primary, COMPONENT: '#008080', SOFTWARE: COLORS.purple, SERVICE: COLORS.success,
 };
 
 
@@ -74,7 +74,7 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
   const colSeq = {
     title: '序号', dataIndex: 'item_no', width: 44, align: 'center' as const,
     onCell: onCellLock(44),
-    render: (v: number) => <span style={{ color: '#999' }}>{v}</span>,
+    render: (v: number) => <span style={{ color: COLORS.textLight }}>{v}</span>,
   };
 
   const colType = cfg.showType ? [{
@@ -89,14 +89,14 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
       if (!editing) {
         return <span style={{
           fontSize,
-          color: typeColors[v] || '#888', textAlign: 'center', display: 'block'
+          color: typeColors[v] || COLORS.chartGray, textAlign: 'center', display: 'block'
         }}>{typeLabel}</span>;
       }
       return (
         <span onClick={() => updateItem(idx, { item_type: nextType() as GroupItem['item_type'] })}
           style={{
             fontSize, cursor: 'pointer', display: 'block', textAlign: 'center',
-            color: typeColors[v] || '#888', userSelect: 'none'
+            color: typeColors[v] || COLORS.chartGray, userSelect: 'none'
           }}
           title={'点击切换类型'}
         >{typeLabel}</span>
@@ -113,7 +113,7 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <span style={{
             fontSize: 13,
-            color: matched ? (parseVersion(v)?.isTemp ? '#fa8c16' : COLORS.primary) : '#999'
+            color: matched ? (parseVersion(v)?.isTemp ? '#fa8c16' : COLORS.primary) : COLORS.textLight
           }}>{v}</span>
           {v && !matched && (
             <Tooltip title="此编码不在组件数据库中，请先注册">
@@ -132,7 +132,7 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
       const display = v || '-';
       return (
         <Tooltip title={display} placement="topLeft">
-          <span style={{ fontSize: 13, color: '#666', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{display}</span>
+          <span style={{ fontSize: 13, color: COLORS.textSecondary, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{display}</span>
         </Tooltip>
       );
     },

@@ -2,7 +2,7 @@ import React from 'react';
 import type { BarItem } from './VerticalBarChart';
 import { COLORS } from '../../styles/constants';
 
-const TOP_COLORS = [COLORS.primary, '#5a2d82', COLORS.primary, '#5a2d82'];
+const TOP_COLORS = [COLORS.primary, COLORS.purple, COLORS.primary, COLORS.purple];
 
 interface Props {
   title: string;
@@ -25,7 +25,7 @@ const MiniBarChart: React.FC<Props> = ({ title, data }) => {
               <div key={item.name} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
                 <span style={{ width: 60, textAlign: 'right', color: '#555', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.name}</span>
                 <div style={{ flex: 1, height: 14, border: `2px solid ${color}`, position: 'relative' }} />
-                <span style={{ width: 20, textAlign: 'right', color: '#888' }}>{item.value}</span>
+                <span style={{ width: 20, textAlign: 'right', color: COLORS.chartGray }}>{item.value}</span>
               </div>
             );
           })}

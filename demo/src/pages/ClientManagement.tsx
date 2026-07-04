@@ -9,6 +9,7 @@ import { mockClients, mockQuotationSummaries } from '../mockData';
 import { formatMoney } from '../utils/calculations';
 import type { Client, Contact, ClientGrade, CreditLevel } from '../types';
 import { COLORS } from '../styles/constants';
+const LABEL_CELL_STYLE = { padding: '6px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle', fontWeight: 600, background: COLORS.bgLight, whiteSpace: 'nowrap', color: COLORS.labelDark } as const;
 
 // ── 常量 ──
 
@@ -25,7 +26,7 @@ const creditConfig: Record<string, { label: string; color: string }> = {
 };
 
 const roleColors: Record<string, string> = {
-  使用: COLORS.primary, 技术: '#5a2d82', 商务: '#e65100', 高层: COLORS.danger,
+  使用: COLORS.primary, 技术: COLORS.purple, 商务: COLORS.warning, 高层: COLORS.danger,
 };
 
 const INDUSTRIES = [
@@ -64,13 +65,13 @@ const IndustryDropdown: React.FC<{ value?: string; onChange: (v: string) => void
           />
           <div style={{ maxHeight: 220, overflowY: 'auto' }}>
             {filtered.length === 0 ? (
-              <div style={{ padding: '10px', fontSize: 12, color: '#999', textAlign: 'center' }}>无匹配</div>
+              <div style={{ padding: '10px', fontSize: 12, color: COLORS.textLight, textAlign: 'center' }}>无匹配</div>
             ) : filtered.map(i => (
               <div key={i}
                 onClick={() => { onChange(i); setOpen(false); setSearch(''); }}
                 style={{
                   padding: '6px 10px', cursor: 'pointer', fontSize: 12,
-                  background: i === value ? '#f0f6ff' : '#fff', color: i === value ? COLORS.primary : '#333',
+                  background: i === value ? '#f0f6ff' : '#fff', color: i === value ? COLORS.primary : COLORS.textPrimary,
                   borderBottom: '1px solid #f5f5f5',
                 }}
                 onMouseEnter={e => e.currentTarget.style.background = '#f5f8ff'}
@@ -366,14 +367,14 @@ const ClientManagement: React.FC = () => {
     {
       title: '信用等级', dataIndex: 'creditLevel', width: 80, align: 'center' as const,
       render: (v: string) => {
-        const cfg = creditConfig[v] || { label: v, color: '#999' };
+        const cfg = creditConfig[v] || { label: v, color: COLORS.textLight };
         return <Tag color={cfg.color} style={{ borderRadius: 1 }}>{cfg.label}</Tag>;
       },
     },
     {
       title: '客户分级', dataIndex: 'grade', width: 75, align: 'center' as const,
       render: (v: ClientGrade) => {
-        const cfg = gradeConfig[v] || { label: v, color: '#999' };
+        const cfg = gradeConfig[v] || { label: v, color: COLORS.textLight };
         return <Tag color={cfg.color} style={{ borderRadius: 1 }}>{cfg.label}</Tag>;
       },
     },
@@ -404,14 +405,14 @@ const ClientManagement: React.FC = () => {
     const sectionHeader = (title: string, count?: number) => (
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
         <div style={{ width: 3, height: 16, background: COLORS.primary, borderRadius: 1 }} />
-        <span style={{ fontSize: 14, fontWeight: 600, color: '#0d1b2a', letterSpacing: 0.3 }}>{title}</span>
-        {count !== undefined && <span style={{ fontSize: 12, color: '#667085' }}>（{count}）</span>}
+        <span style={{ fontSize: 14, fontWeight: 600, color: COLORS.textDark, letterSpacing: 0.3 }}>{title}</span>
+        {count !== undefined && <span style={{ fontSize: 12, color: COLORS.textFormLabel }}>（{count}）</span>}
       </div>
     );
 
     const infoRow = (label: string, value: React.ReactNode) => (
       <div style={{ padding: '8px 0', borderBottom: '1px solid #f0f4fa', display: 'flex', alignItems: 'center' }}>
-        <span style={{ color: '#667085', fontSize: 12, width: 80, flexShrink: 0 }}>{label}</span>
+        <span style={{ color: COLORS.textFormLabel, fontSize: 12, width: 80, flexShrink: 0 }}>{label}</span>
         <span style={{ color: '#1a2234', fontSize: 13, fontWeight: 500 }}>{value}</span>
       </div>
     );
@@ -420,7 +421,7 @@ const ClientManagement: React.FC = () => {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
         {/* ── 基本信息卡片 ── */}
         <div style={{
-          background: '#fafcff', border: '1px solid #e8edf4', borderRadius: 5,
+          background: COLORS.bgCard, border: `1px solid ${COLORS.borderCard}`, borderRadius: 5,
           padding: '20px 24px',
         }}>
           {sectionHeader('基本信息')}
@@ -429,7 +430,7 @@ const ClientManagement: React.FC = () => {
           {infoRow('区域', client.region)}
           {infoRow('区域销售', client.salesman)}
           {infoRow('信用等级', (
-            <Tag color={creditConfig[client.creditLevel]?.color || '#999'}
+            <Tag color={creditConfig[client.creditLevel]?.color || COLORS.textLight}
               style={{ borderRadius: 1, margin: 0, fontSize: 12, lineHeight: '20px' }}>
               {creditConfig[client.creditLevel]?.label}
             </Tag>
@@ -439,7 +440,7 @@ const ClientManagement: React.FC = () => {
 
         {/* ── 联系人卡片 ── */}
         <div style={{
-          background: '#fafcff', border: '1px solid #e8edf4', borderRadius: 5,
+          background: COLORS.bgCard, border: `1px solid ${COLORS.borderCard}`, borderRadius: 5,
           padding: '20px 24px',
         }}>
           {sectionHeader('联系人', client.contacts.length)}
@@ -465,20 +466,20 @@ const ClientManagement: React.FC = () => {
                         {c.name.charAt(0)}
                       </div>
                       <div>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: '#0d1b2a' }}>{c.name}</div>
-                        <div style={{ fontSize: 11, color: '#667085' }}>{c.position}</div>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.textDark }}>{c.name}</div>
+                        <div style={{ fontSize: 11, color: COLORS.textFormLabel }}>{c.position}</div>
                       </div>
                     </div>
                   ),
                 },
                 {
                   title: '汇报人', dataIndex: 'superior', width: 80,
-                  render: (v: string) => <span style={{ fontSize: 12, color: '#667085' }}>{v || '—'}</span>,
+                  render: (v: string) => <span style={{ fontSize: 12, color: COLORS.textFormLabel }}>{v || '—'}</span>,
                 },
                 {
                   title: '电话', dataIndex: 'phone', width: 130,
                   render: (v: string) => (
-                    <span style={{ fontSize: 12, color: '#333' }}>
+                    <span style={{ fontSize: 12, color: COLORS.textPrimary }}>
                       <PhoneOutlined style={{ marginRight: 4, fontSize: 11, color: '#b0b8c4' }} />{v}
                     </span>
                   ),
@@ -486,7 +487,7 @@ const ClientManagement: React.FC = () => {
                 {
                   title: '邮箱', dataIndex: 'email', width: 170,
                   render: (v: string) => (
-                    <span style={{ fontSize: 12, color: '#333' }}>
+                    <span style={{ fontSize: 12, color: COLORS.textPrimary }}>
                       <MailOutlined style={{ marginRight: 4, fontSize: 11, color: '#b0b8c4' }} />{v}
                     </span>
                   ),
@@ -494,7 +495,7 @@ const ClientManagement: React.FC = () => {
                 {
                   title: '角色', dataIndex: 'decisionRole', width: 60, align: 'center' as const,
                   render: (v: string) => (
-                    <Tag color={roleColors[v] || '#999'} style={{ borderRadius: 1, fontSize: 11, lineHeight: '20px', margin: 0 }}>
+                    <Tag color={roleColors[v] || COLORS.textLight} style={{ borderRadius: 1, fontSize: 11, lineHeight: '20px', margin: 0 }}>
                       {v}
                     </Tag>
                   ),
@@ -508,7 +509,7 @@ const ClientManagement: React.FC = () => {
 
         {/* ── 历史报价记录卡片 ── */}
         <div style={{
-          background: '#fafcff', border: '1px solid #e8edf4', borderRadius: 5,
+          background: COLORS.bgCard, border: `1px solid ${COLORS.borderCard}`, borderRadius: 5,
           padding: '20px 24px',
         }}>
           {sectionHeader('历史报价记录')}
@@ -521,7 +522,7 @@ const ClientManagement: React.FC = () => {
                   <div key={h.id} onClick={() => clickable && navigate('/quotations/' + qId)}
                     style={{
                       display: 'flex', alignItems: 'center', gap: 10,
-                      background: '#fff', border: '1px solid #eef2f6', borderRadius: 1,
+                      background: '#fff', border: `1px solid ${COLORS.borderInner}`, borderRadius: 1,
                       padding: '10px 14px', fontSize: 13,
                       cursor: clickable ? 'pointer' : 'default',
                       transition: 'background 0.15s',
@@ -529,13 +530,13 @@ const ClientManagement: React.FC = () => {
                     onMouseEnter={e => { if (clickable) (e.currentTarget as HTMLElement).style.background = '#f5f8ff'; }}
                     onMouseLeave={e => { if (clickable) (e.currentTarget as HTMLElement).style.background = '#fff'; }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 600, color: '#0d1b2a' }}>
+                      <div style={{ fontWeight: 600, color: COLORS.textDark }}>
                         {h.projectName}
                         {clickable && <span style={{ marginLeft: 6, fontSize: 11, color: COLORS.primary }}>›</span>}
                       </div>
-                      <div style={{ fontSize: 11, color: '#667085', marginTop: 1 }}>{h.salesNo}</div>
+                      <div style={{ fontSize: 11, color: COLORS.textFormLabel, marginTop: 1 }}>{h.salesNo}</div>
                     </div>
-                    <div style={{ fontWeight: 600, color: '#0d1b2a', minWidth: 90, textAlign: 'right' }}>
+                    <div style={{ fontWeight: 600, color: COLORS.textDark, minWidth: 90, textAlign: 'right' }}>
                       &yen;{formatMoney(h.amount)}
                     </div>
                     {h.status === '赢' ? (
@@ -545,7 +546,7 @@ const ClientManagement: React.FC = () => {
                     ) : (
                       <Tag color={COLORS.danger} style={{ borderRadius: 1, fontSize: 11, lineHeight: '20px' }}>输单</Tag>
                     )}
-                    <span style={{ fontSize: 12, color: '#667085', minWidth: 80, textAlign: 'center' }}>{h.date}</span>
+                    <span style={{ fontSize: 12, color: COLORS.textFormLabel, minWidth: 80, textAlign: 'center' }}>{h.date}</span>
                   </div>
                 );
               })}
@@ -563,8 +564,8 @@ const ClientManagement: React.FC = () => {
   return (
     <div>
       {msgContextHolder}
-      <div style={{ fontSize: 17, fontWeight: 700, color: '#0d1b2a', marginBottom: 4 }}>客户管理</div>
-      <div style={{ fontSize: 13, color: '#999', marginBottom: 16 }}>&nbsp;</div>
+      <div style={{ fontSize: 17, fontWeight: 700, color: COLORS.textDark, marginBottom: 4 }}>客户管理</div>
+      <div style={{ fontSize: 13, color: COLORS.textLight, marginBottom: 16 }}>&nbsp;</div>
 
       {/* 搜索 + 筛选栏 */}
       <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 16 }}>
@@ -573,15 +574,15 @@ const ClientManagement: React.FC = () => {
         </colgroup>
         <tbody>
           <tr>
-            <td style={{ padding: '6px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle', fontWeight: 600, background: '#fafafa', whiteSpace: 'nowrap', color: '#1a2744' }}>搜索</td>
-            <td style={{ padding: '6px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle' }}>
+            <td style={LABEL_CELL_STYLE}>搜索</td>
+            <td style={{ padding: '6px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>
               <input placeholder="搜索客户名称 / 编号"
                 value={searchText}
                 onChange={e => setSearchText(e.target.value)}
                 style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 12, padding: 0, margin: 0, display: 'block', boxSizing: 'border-box' }} />
             </td>
-            <td style={{ padding: '6px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle', fontWeight: 600, background: '#fafafa', whiteSpace: 'nowrap', color: '#1a2744' }}>行业</td>
-            <td style={{ padding: '6px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle' }}>
+            <td style={LABEL_CELL_STYLE}>行业</td>
+            <td style={{ padding: '6px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>
               <span style={{ cursor: 'pointer', color: COLORS.primary, fontSize: 12 }}
                 onClick={() => {
                   const opts = ['', ...INDUSTRIES];
@@ -591,8 +592,8 @@ const ClientManagement: React.FC = () => {
                 {industryFilter || '全部'} ▾
               </span>
             </td>
-            <td style={{ padding: '6px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle', fontWeight: 600, background: '#fafafa', whiteSpace: 'nowrap', color: '#1a2744' }}>分级</td>
-            <td style={{ padding: '6px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle' }}>
+            <td style={LABEL_CELL_STYLE}>分级</td>
+            <td style={{ padding: '6px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>
               <span style={{ cursor: 'pointer', color: COLORS.primary, fontSize: 12, paddingLeft: 2 }}
                 onClick={() => {
                   const opts = ['', 'A', 'B', 'C'];
@@ -602,7 +603,7 @@ const ClientManagement: React.FC = () => {
                 {gradeFilter ? gradeFilter + ' 类' : '全部'} ▾
               </span>
             </td>
-            <td style={{ padding: 0, border: '1px solid #e8e8e8', verticalAlign: 'middle', textAlign: 'center' }}>
+            <td style={{ padding: 0, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle', textAlign: 'center' }}>
               <Button type="text" icon={<PlusOutlined />} onClick={openNewEnterprise}
                 style={{ color: COLORS.primary, fontSize: 18, width: 42, height: 42 }} />
             </td>
@@ -626,7 +627,7 @@ const ClientManagement: React.FC = () => {
       {/* ── 编辑模态框 ── */}
       <Modal
         title={
-          <span style={{ fontSize: 17, fontWeight: 600, color: '#0d1b2a', letterSpacing: 0.5 }}>
+          <span style={{ fontSize: 17, fontWeight: 600, color: COLORS.textDark, letterSpacing: 0.5 }}>
             {editingId ? '编辑客户' : '新增客户'}
           </span>
         }
@@ -646,14 +647,14 @@ const ClientManagement: React.FC = () => {
       >
         {/* ── 基本信息卡片 ── */}
         <div style={{
-          background: '#fafcff', border: '1px solid #e8edf4', borderRadius: 5,
+          background: COLORS.bgCard, border: `1px solid ${COLORS.borderCard}`, borderRadius: 5,
           padding: '20px 24px', marginBottom: 20,
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 18 }}>
             <div style={{ width: 3, height: 16, background: COLORS.primary, borderRadius: 1 }} />
-            <span style={{ fontSize: 14, fontWeight: 600, color: '#0d1b2a', letterSpacing: 0.3 }}>基本信息</span>
+            <span style={{ fontSize: 14, fontWeight: 600, color: COLORS.textDark, letterSpacing: 0.3 }}>基本信息</span>
             {editForm.type === 'subsidiary' && editingId && (
-              <span style={{ fontSize: 12, color: '#667085', marginLeft: 'auto' }}>
+              <span style={{ fontSize: 12, color: COLORS.textFormLabel, marginLeft: 'auto' }}>
                 隶属于：{clients.find(c => c.id === editForm.parentId)?.name || ''}
               </span>
             )}
@@ -665,27 +666,27 @@ const ClientManagement: React.FC = () => {
             </colgroup>
             <tbody>
               <tr>
-                <td style={{ padding: '6px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle', fontWeight: 600, background: '#fafafa', whiteSpace: 'nowrap', color: '#1a2744' }}>客户名称</td>
-                <td style={{ padding: '6px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle' }}>
+                <td style={LABEL_CELL_STYLE}>客户名称</td>
+                <td style={{ padding: '6px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>
                   <input value={editForm.name || ''}
                     onChange={e => setEditForm(p => ({ ...p, name: e.target.value }))}
                     disabled={editForm.type === 'subsidiary' && !!editingId}
                     style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 12, padding: 0, margin: 0, display: 'block', boxSizing: 'border-box' }} />
                 </td>
-                <td style={{ padding: '6px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle', fontWeight: 600, background: '#fafafa', whiteSpace: 'nowrap', color: '#1a2744' }}>客户编号</td>
-                <td style={{ padding: '6px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle' }}>
+                <td style={LABEL_CELL_STYLE}>客户编号</td>
+                <td style={{ padding: '6px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>
                   <input value={editForm.code || ''}
                     onChange={e => setEditForm(p => ({ ...p, code: e.target.value }))}
                     style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 12, padding: 0, margin: 0, display: 'block', boxSizing: 'border-box' }} />
                 </td>
               </tr>
               <tr>
-                <td style={{ padding: '6px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle', fontWeight: 600, background: '#fafafa', whiteSpace: 'nowrap', color: '#1a2744' }}>行业</td>
-                <td style={{ padding: '6px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle' }}>
+                <td style={LABEL_CELL_STYLE}>行业</td>
+                <td style={{ padding: '6px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>
                   <IndustryDropdown value={editForm.industry} onChange={val => setEditForm(p => ({ ...p, industry: val }))} />
                 </td>
-                <td style={{ padding: '6px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle', fontWeight: 600, background: '#fafafa', whiteSpace: 'nowrap', color: '#1a2744' }}>区域</td>
-                <td style={{ padding: '6px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle' }}>
+                <td style={LABEL_CELL_STYLE}>区域</td>
+                <td style={{ padding: '6px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>
                   <span style={{ cursor: 'pointer', color: COLORS.primary, fontSize: 12 }}
                     onClick={() => {
                       const cur = REGIONS.indexOf(editForm.region || '');
@@ -696,14 +697,14 @@ const ClientManagement: React.FC = () => {
                 </td>
               </tr>
               <tr>
-                <td style={{ padding: '6px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle', fontWeight: 600, background: '#fafafa', whiteSpace: 'nowrap', color: '#1a2744' }}>区域销售</td>
-                <td style={{ padding: '6px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle' }}>
+                <td style={LABEL_CELL_STYLE}>区域销售</td>
+                <td style={{ padding: '6px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>
                   <input value={editForm.salesman || ''}
                     onChange={e => setEditForm(p => ({ ...p, salesman: e.target.value }))}
                     style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 12, padding: 0, margin: 0, display: 'block', boxSizing: 'border-box' }} />
                 </td>
-                <td style={{ padding: '6px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle', fontWeight: 600, background: '#fafafa', whiteSpace: 'nowrap', color: '#1a2744' }}>信用等级</td>
-                <td style={{ padding: '6px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle' }}>
+                <td style={LABEL_CELL_STYLE}>信用等级</td>
+                <td style={{ padding: '6px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>
                   <span style={{ cursor: 'pointer', color: COLORS.primary, fontSize: 12, paddingLeft: 2 }}
                     onClick={() => {
                       const levels: CreditLevel[] = ['A', 'B', 'C'];
@@ -715,8 +716,8 @@ const ClientManagement: React.FC = () => {
                 </td>
               </tr>
               <tr>
-                <td style={{ padding: '6px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle', fontWeight: 600, background: '#fafafa', whiteSpace: 'nowrap', color: '#1a2744' }}>客户分级</td>
-                <td style={{ padding: '6px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle' }}>
+                <td style={LABEL_CELL_STYLE}>客户分级</td>
+                <td style={{ padding: '6px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>
                   <span style={{ cursor: 'pointer', color: COLORS.primary, fontSize: 12, paddingLeft: 2 }}
                     onClick={() => {
                       const grades: ClientGrade[] = ['A', 'B', 'C'];
@@ -726,8 +727,8 @@ const ClientManagement: React.FC = () => {
                     {editForm.grade || '点击选择'} ▾
                   </span>
                 </td>
-                <td style={{ padding: '6px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle', fontWeight: 600, background: '#fafafa', whiteSpace: 'nowrap', color: '#1a2744' }}></td>
-                <td style={{ padding: '6px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle' }}></td>
+                <td style={LABEL_CELL_STYLE}></td>
+                <td style={{ padding: '6px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}></td>
               </tr>
             </tbody>
           </table>
@@ -735,13 +736,13 @@ const ClientManagement: React.FC = () => {
 
         {/* ── 联系人卡片 ── */}
         <div style={{
-          background: '#fafcff', border: '1px solid #e8edf4', borderRadius: 5,
+          background: COLORS.bgCard, border: `1px solid ${COLORS.borderCard}`, borderRadius: 5,
           padding: '20px 24px', marginBottom: 20,
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
             <div style={{ width: 3, height: 16, background: COLORS.primary, borderRadius: 1 }} />
-            <span style={{ fontSize: 14, fontWeight: 600, color: '#0d1b2a', letterSpacing: 0.3 }}>联系人</span>
-            <span style={{ fontSize: 12, color: '#667085' }}>（{editContacts.length}）</span>
+            <span style={{ fontSize: 14, fontWeight: 600, color: COLORS.textDark, letterSpacing: 0.3 }}>联系人</span>
+            <span style={{ fontSize: 12, color: COLORS.textFormLabel }}>（{editContacts.length}）</span>
           </div>
 
           {/* 联系人表格（可编辑） */}
@@ -771,11 +772,11 @@ const ClientManagement: React.FC = () => {
                       <input value={c.name}
                         onChange={e => updateContactField(c.id, 'name', e.target.value)}
                         placeholder="姓名"
-                        style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, fontWeight: 600, color: '#0d1b2a', padding: 0, margin: 0, display: 'block', boxSizing: 'border-box' }} />
+                        style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, fontWeight: 600, color: COLORS.textDark, padding: 0, margin: 0, display: 'block', boxSizing: 'border-box' }} />
                       <input value={c.position}
                         onChange={e => updateContactField(c.id, 'position', e.target.value)}
                         placeholder="职位"
-                        style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 11, color: '#667085', padding: 0, margin: 0, display: 'block', boxSizing: 'border-box' }} />
+                        style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 11, color: COLORS.textFormLabel, padding: 0, margin: 0, display: 'block', boxSizing: 'border-box' }} />
                     </div>
                   </div>
                 ),
@@ -787,7 +788,7 @@ const ClientManagement: React.FC = () => {
                   <input value={v || ''}
                     onChange={e => updateContactField(c.id, 'superior', e.target.value)}
                     placeholder="—"
-                    style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 12, color: '#667085', padding: 0, margin: 0, display: 'block', boxSizing: 'border-box' }} />
+                    style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 12, color: COLORS.textFormLabel, padding: 0, margin: 0, display: 'block', boxSizing: 'border-box' }} />
                 ),
               },
               {
@@ -799,7 +800,7 @@ const ClientManagement: React.FC = () => {
                     <input value={v || ''}
                       onChange={e => updateContactField(c.id, 'phone', e.target.value)}
                       placeholder="电话"
-                      style={{ flex: 1, border: 'none', background: 'transparent', outline: 'none', fontSize: 12, color: '#333', padding: 0, margin: 0, display: 'block', boxSizing: 'border-box' }} />
+                      style={{ flex: 1, border: 'none', background: 'transparent', outline: 'none', fontSize: 12, color: COLORS.textPrimary, padding: 0, margin: 0, display: 'block', boxSizing: 'border-box' }} />
                   </span>
                 ),
               },
@@ -812,7 +813,7 @@ const ClientManagement: React.FC = () => {
                     <input value={v || ''}
                       onChange={e => updateContactField(c.id, 'email', e.target.value)}
                       placeholder="邮箱"
-                      style={{ flex: 1, border: 'none', background: 'transparent', outline: 'none', fontSize: 12, color: '#333', padding: 0, margin: 0, display: 'block', boxSizing: 'border-box' }} />
+                      style={{ flex: 1, border: 'none', background: 'transparent', outline: 'none', fontSize: 12, color: COLORS.textPrimary, padding: 0, margin: 0, display: 'block', boxSizing: 'border-box' }} />
                   </span>
                 ),
               },
@@ -851,15 +852,15 @@ const ClientManagement: React.FC = () => {
         {/* ── 子公司卡片（仅企业类型） ── */}
         {((editingId && editForm.type === 'enterprise') || (!editingId && editForm.type === 'enterprise')) && (
           <div style={{
-            background: '#fafcff', border: '1px solid #e8edf4', borderRadius: 5,
+            background: COLORS.bgCard, border: `1px solid ${COLORS.borderCard}`, borderRadius: 5,
             padding: '20px 24px', marginBottom: 4,
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
               <div style={{ width: 3, height: 16, background: COLORS.primary, borderRadius: 1 }} />
-              <span style={{ fontSize: 14, fontWeight: 600, color: '#0d1b2a', letterSpacing: 0.3 }}>子公司</span>
+              <span style={{ fontSize: 14, fontWeight: 600, color: COLORS.textDark, letterSpacing: 0.3 }}>子公司</span>
               {(() => {
                 const subs = clients.filter(c => c.parentId === editingId);
-                return <span style={{ fontSize: 12, color: '#667085' }}>（{subs.length}）</span>;
+                return <span style={{ fontSize: 12, color: COLORS.textFormLabel }}>（{subs.length}）</span>;
               })()}
             </div>
 
@@ -870,12 +871,12 @@ const ClientManagement: React.FC = () => {
                   {subs.map(sub => (
                     <div key={sub.id} style={{
                       display: 'flex', alignItems: 'center', gap: 10,
-                      background: '#fff', border: '1px solid #eef2f6', borderRadius: 1,
+                      background: '#fff', border: `1px solid ${COLORS.borderInner}`, borderRadius: 1,
                       padding: '8px 12px', fontSize: 13,
                     }}>
                       <span style={{ fontSize: 11, color: '#b0b8c4' }}>└─</span>
-                      <span style={{ fontWeight: 500, color: '#0d1b2a' }}>{editForm.name}（{sub.name}）</span>
-                      <span style={{ color: '#667085', fontSize: 12 }}>{sub.code}</span>
+                      <span style={{ fontWeight: 500, color: COLORS.textDark }}>{editForm.name}（{sub.name}）</span>
+                      <span style={{ color: COLORS.textFormLabel, fontSize: 12 }}>{sub.code}</span>
                       <div style={{ marginLeft: 'auto', display: 'flex', gap: 2 }}>
                         <Button type="text" size="small" icon={<EditOutlined />}
                           onClick={() => { setSubOpen(false); openEdit(sub); }}
@@ -904,7 +905,7 @@ const ClientManagement: React.FC = () => {
 
       {/* ── 新增子公司模态框 ── */}
       <Modal
-        title={<span style={{ fontSize: 17, fontWeight: 600, color: '#0d1b2a', letterSpacing: 0.5 }}>新增子公司</span>}
+        title={<span style={{ fontSize: 17, fontWeight: 600, color: COLORS.textDark, letterSpacing: 0.5 }}>新增子公司</span>}
         open={subOpen}
         onCancel={() => setSubOpen(false)}
         width={860}
@@ -927,27 +928,27 @@ const ClientManagement: React.FC = () => {
           </colgroup>
           <tbody>
             <tr>
-              <td style={{ padding: '6px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle', fontWeight: 600, background: '#fafafa', whiteSpace: 'nowrap', color: '#1a2744' }}>子公司名称</td>
-              <td style={{ padding: '6px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle' }}>
+              <td style={LABEL_CELL_STYLE}>子公司名称</td>
+              <td style={{ padding: '6px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>
                 <input value={subForm.name}
                   onChange={e => setSubForm(p => ({ ...p, name: e.target.value }))}
                   placeholder="输入简称"
                   style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 12, padding: 0, margin: 0, display: 'block', boxSizing: 'border-box' }} />
               </td>
-              <td style={{ padding: '6px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle', fontWeight: 600, background: '#fafafa', whiteSpace: 'nowrap', color: '#1a2744' }}>编号</td>
-              <td style={{ padding: '6px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle' }}>
+              <td style={LABEL_CELL_STYLE}>编号</td>
+              <td style={{ padding: '6px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>
                 <input value={subForm.code}
                   onChange={e => setSubForm(p => ({ ...p, code: e.target.value }))}
                   style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 12, padding: 0, margin: 0, display: 'block', boxSizing: 'border-box' }} />
               </td>
             </tr>
             <tr>
-              <td style={{ padding: '6px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle', fontWeight: 600, background: '#fafafa', whiteSpace: 'nowrap', color: '#1a2744' }}>行业</td>
-              <td style={{ padding: '6px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle' }}>
+              <td style={LABEL_CELL_STYLE}>行业</td>
+              <td style={{ padding: '6px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>
                 <IndustryDropdown value={subForm.industry} onChange={val => setSubForm(p => ({ ...p, industry: val }))} />
               </td>
-              <td style={{ padding: '6px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle', fontWeight: 600, background: '#fafafa', whiteSpace: 'nowrap', color: '#1a2744' }}>区域</td>
-              <td style={{ padding: '6px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle' }}>
+              <td style={LABEL_CELL_STYLE}>区域</td>
+              <td style={{ padding: '6px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>
                 <span style={{ cursor: 'pointer', color: COLORS.primary, fontSize: 12 }}
                   onClick={() => {
                     const cur = REGIONS.indexOf(subForm.region || '');
@@ -958,14 +959,14 @@ const ClientManagement: React.FC = () => {
               </td>
             </tr>
             <tr>
-              <td style={{ padding: '6px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle', fontWeight: 600, background: '#fafafa', whiteSpace: 'nowrap', color: '#1a2744' }}>区域销售</td>
-              <td style={{ padding: '6px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle' }}>
+              <td style={LABEL_CELL_STYLE}>区域销售</td>
+              <td style={{ padding: '6px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>
                 <input value={subForm.salesman || ''}
                   onChange={e => setSubForm(p => ({ ...p, salesman: e.target.value }))}
                   style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 12, padding: 0, margin: 0, display: 'block', boxSizing: 'border-box' }} />
               </td>
-              <td style={{ padding: '6px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle', fontWeight: 600, background: '#fafafa', whiteSpace: 'nowrap', color: '#1a2744' }}>信用等级</td>
-              <td style={{ padding: '6px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle' }}>
+              <td style={LABEL_CELL_STYLE}>信用等级</td>
+              <td style={{ padding: '6px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>
                 <span style={{ cursor: 'pointer', color: COLORS.primary, fontSize: 12, paddingLeft: 2 }}
                   onClick={() => {
                     const levels: CreditLevel[] = ['A', 'B', 'C'];
@@ -977,8 +978,8 @@ const ClientManagement: React.FC = () => {
               </td>
             </tr>
             <tr>
-              <td style={{ padding: '6px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle', fontWeight: 600, background: '#fafafa', whiteSpace: 'nowrap', color: '#1a2744' }}>客户分级</td>
-              <td style={{ padding: '6px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle' }}>
+              <td style={LABEL_CELL_STYLE}>客户分级</td>
+              <td style={{ padding: '6px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>
                 <span style={{ cursor: 'pointer', color: COLORS.primary, fontSize: 12, paddingLeft: 2 }}
                   onClick={() => {
                     const grades: ClientGrade[] = ['A', 'B', 'C'];
@@ -988,8 +989,8 @@ const ClientManagement: React.FC = () => {
                   {subForm.grade || '点击选择'} ▾
                 </span>
               </td>
-              <td style={{ padding: '6px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle', fontWeight: 600, background: '#fafafa', whiteSpace: 'nowrap', color: '#1a2744' }}></td>
-              <td style={{ padding: '6px 12px', fontSize: 12, border: '1px solid #e8e8e8', verticalAlign: 'middle' }}></td>
+              <td style={LABEL_CELL_STYLE}></td>
+              <td style={{ padding: '6px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}></td>
             </tr>
           </tbody>
         </table>
@@ -1003,17 +1004,17 @@ const ClientManagement: React.FC = () => {
         title={
           drawerClient ? (
             <Space>
-              {drawerClient.type === 'subsidiary' && <span style={{ fontSize: 12, color: '#999' }}>子公司</span>}
-              <span style={{ fontSize: 16, fontWeight: 700, color: '#0d1b2a' }}>
+              {drawerClient.type === 'subsidiary' && <span style={{ fontSize: 12, color: COLORS.textLight }}>子公司</span>}
+              <span style={{ fontSize: 16, fontWeight: 700, color: COLORS.textDark }}>
                 {drawerClient.type === 'enterprise'
                   ? drawerClient.name
                   : (clients.find(c => c.id === drawerClient.parentId)?.name || '') + '（' + drawerClient.name + '）'
                 }
               </span>
-              <Tag color={gradeConfig[drawerClient.grade]?.color || '#999'} style={{ borderRadius: 1 }}>
+              <Tag color={gradeConfig[drawerClient.grade]?.color || COLORS.textLight} style={{ borderRadius: 1 }}>
                 {gradeConfig[drawerClient.grade]?.label}
               </Tag>
-              <span style={{ fontSize: 12, color: '#999' }}>{drawerClient.code}</span>
+              <span style={{ fontSize: 12, color: COLORS.textLight }}>{drawerClient.code}</span>
             </Space>
           ) : ''
         }

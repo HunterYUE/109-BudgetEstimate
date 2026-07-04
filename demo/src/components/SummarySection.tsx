@@ -12,12 +12,12 @@ interface Props {
 }
 
 const cellStyle: React.CSSProperties = {
-  padding: '8px 14px', fontSize: 14, border: '1px solid #e8e8e8',
+  padding: '8px 14px', fontSize: 14, border: `1px solid ${COLORS.border}`,
 };
 const labelStyle: React.CSSProperties = {
   ...cellStyle,
-  fontWeight: 600, background: '#fafafa', whiteSpace: 'nowrap',
-  color: '#1a2744',
+  fontWeight: 600, background: COLORS.bgLight, whiteSpace: 'nowrap',
+  color: COLORS.labelDark,
 };
 
 const moneyStyle: React.CSSProperties = { fontWeight: 600, color: COLORS.primary };
@@ -118,14 +118,14 @@ const SummarySection: React.FC<Props> = ({ groups, version, onDiscountChange, on
       <Row gutter={24}>
         <Col span={8}>
           <Card size="small" variant="outlined" style={{ height: 116, borderRadius: 4, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-            <div style={{ color: '#666', fontSize: 16, marginBottom: 4, textAlign: 'left' }}>预期总价</div>
+            <div style={{ color: COLORS.textSecondary, fontSize: 16, marginBottom: 4, textAlign: 'left' }}>预期总价</div>
             <div style={{ fontWeight: 600, fontSize: 22, color: COLORS.primary, textAlign: 'left', fontFamily: 'inherit' }}>¥{formatMoney(Math.round(summary.total_accounting_price * (1 + version.tax_rate)))}</div>
-            <div style={{ marginTop: 8, textAlign: 'left', color: '#666' }}>欧元：<strong>€{formatMoney(Math.round(summary.total_accounting_price / version.eur_rate))}</strong></div>
+            <div style={{ marginTop: 8, textAlign: 'left', color: COLORS.textSecondary }}>欧元：<strong>€{formatMoney(Math.round(summary.total_accounting_price / version.eur_rate))}</strong></div>
           </Card>
         </Col>
         <Col span={8}>
           <Card size="small" variant="outlined" style={{ height: 116, borderRadius: 4, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-            <div style={{ color: '#666', fontSize: 16, marginBottom: 4, textAlign: 'left' }}>折后报价</div>
+            <div style={{ color: COLORS.textSecondary, fontSize: 16, marginBottom: 4, textAlign: 'left' }}>折后报价</div>
             <div style={{ fontWeight: 600, fontSize: 22, color: COLORS.primary, textAlign: 'left', fontFamily: 'inherit' }}
               contentEditable suppressContentEditableWarning
               onBlur={(e) => {
@@ -142,9 +142,9 @@ const SummarySection: React.FC<Props> = ({ groups, version, onDiscountChange, on
         </Col>
         <Col span={8}>
           <Card size="small" variant="outlined" style={{ height: 116, borderRadius: 4, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-            <div style={{ color: '#666', fontSize: 16, marginBottom: 4, textAlign: 'left' }}>项目利润</div>
+            <div style={{ color: COLORS.textSecondary, fontSize: 16, marginBottom: 4, textAlign: 'left' }}>项目利润</div>
             <div style={{ fontWeight: 600, fontSize: 22, color: COLORS.primary, textAlign: 'left', fontFamily: 'inherit' }}>¥{formatMoney(Math.round(summary.discounted_price * (1 + version.tax_rate) - summary.total_cost))}</div>
-            <div style={{ marginTop: 8, textAlign: 'left', color: '#666' }}>
+            <div style={{ marginTop: 8, textAlign: 'left', color: COLORS.textSecondary }}>
               GP3 毛利率：<TextGauge value={summary.gp3} />
             </div>
           </Card>

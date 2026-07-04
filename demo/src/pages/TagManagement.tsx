@@ -73,7 +73,7 @@ const TagManagement: React.FC = () => {
   };
 
   // Level colors
-  const LEVEL_COLORS = ['#1a2744', COLORS.primary, '#5a2d82', '#008080', '#d46b08'];
+  const LEVEL_COLORS = [COLORS.labelDark, COLORS.primary, COLORS.purple, '#008080', '#d46b08'];
   const LEVEL_BG = ['#e8ecf0', '#e0ecfa', '#ede6f5', '#dceeea', '#f5ede4'];
 
   const toggleExpand = (id: string) => {
@@ -173,14 +173,14 @@ const TagManagement: React.FC = () => {
     <div>
       {ctx}
       <div style={{ marginBottom: 4 }}>
-        <span style={{ fontSize: 17, fontWeight: 700, color: '#0d1b2a' }}>标签管理</span>
+        <span style={{ fontSize: 17, fontWeight: 700, color: COLORS.textDark }}>标签管理</span>
       </div>
 
       <div style={{ width: '100%', maxWidth: 1050, display: 'flex', gap: 20, alignItems: 'flex-start', paddingTop: 20 }}>
         {/* 左侧：标签表格 */}
         <div style={{ flex: 1 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-            <div style={{ display: 'flex', gap: 0, borderBottom: '2px solid #e8e8e8' }}>
+            <div style={{ display: 'flex', gap: 0, borderBottom: `2px solid ${COLORS.border}` }}>
               <div onClick={() => {
                 const all: string[] = [];
                 const walk = (ns: TagNode[]) => ns.forEach(n => { all.push(n.id); if (n.children) walk(n.children); });
@@ -189,7 +189,7 @@ const TagManagement: React.FC = () => {
               }} style={{
                 padding: '8px 20px', cursor: 'pointer', fontSize: 14,
                 borderBottom: expandView === 'expand' ? `2px solid ${COLORS.primary}` : '2px solid transparent',
-                color: expandView === 'expand' ? COLORS.primary : '#666',
+                color: expandView === 'expand' ? COLORS.primary : COLORS.textSecondary,
                 fontWeight: expandView === 'expand' ? 600 : 400,
                 marginBottom: -2, transition: 'all 0.15s',
               }}>全部展开</div>
@@ -198,7 +198,7 @@ const TagManagement: React.FC = () => {
               }} style={{
                 padding: '8px 20px', cursor: 'pointer', fontSize: 14,
                 borderBottom: expandView === 'collapse' ? `2px solid ${COLORS.primary}` : '2px solid transparent',
-                color: expandView === 'collapse' ? COLORS.primary : '#666',
+                color: expandView === 'collapse' ? COLORS.primary : COLORS.textSecondary,
                 fontWeight: expandView === 'collapse' ? 600 : 400,
                 marginBottom: -2, transition: 'all 0.15s',
               }}>全部折叠</div>
@@ -207,7 +207,7 @@ const TagManagement: React.FC = () => {
               onClick={() => addChild(null)}
               style={{ color: COLORS.primary, fontSize: 13 }}>新增一级标签</Button>
           </div>
-          <div style={{ border: '1px solid #e8edf4', borderRadius: 6, overflow: 'auto', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+          <div style={{ border: `1px solid ${COLORS.borderCard}`, borderRadius: 6, overflow: 'auto', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
           <table style={{ width: '100%', minWidth: 600, borderCollapse: 'collapse', tableLayout: 'fixed' }}>
             <colgroup>
               <col style={{ width: 36 }} />
@@ -218,16 +218,16 @@ const TagManagement: React.FC = () => {
             </colgroup>
             <thead>
               <tr style={{ background: '#e0f0fa' }}>
-                <th style={{ width: 36, minWidth: 36, maxWidth: 36, padding: '10px 4px', fontSize: 11, fontWeight: 600, color: '#8892a4', textAlign: 'center', letterSpacing: 0.3, borderBottom: '1px solid #e4e9f0' }} />
-                <th style={{ padding: '10px 4px', fontSize: 11, fontWeight: 600, color: '#8892a4', textAlign: 'left', letterSpacing: 0.3, borderBottom: '1px solid #e4e9f0' }}>标签名称</th>
-                <th style={{ width: 56, minWidth: 56, maxWidth: 56, padding: '10px 4px', fontSize: 11, fontWeight: 600, color: '#8892a4', textAlign: 'center', letterSpacing: 0.3, borderBottom: '1px solid #e4e9f0', borderLeft: '1px solid #eef2f6', borderRight: '1px solid #eef2f6' }}>子级</th>
-                <th style={{ width: 236, minWidth: 236, maxWidth: 236, padding: '10px 4px', fontSize: 11, fontWeight: 600, color: '#8892a4', textAlign: 'center', letterSpacing: 0.3, borderBottom: '1px solid #e4e9f0' }}>操作</th>
-                <th style={{ width: 500, minWidth: 500, maxWidth: 500, padding: '10px 4px', fontSize: 11, fontWeight: 600, color: '#8892a4', textAlign: 'left', letterSpacing: 0.3, borderBottom: '1px solid #e4e9f0', borderLeft: '1px solid #eef2f6', background: '#e0f0fa' }}>说明</th>
+                <th style={{ width: 36, minWidth: 36, maxWidth: 36, padding: '10px 4px', fontSize: 11, fontWeight: 600, color: COLORS.textMuted, textAlign: 'center', letterSpacing: 0.3, borderBottom: '1px solid #e4e9f0' }} />
+                <th style={{ padding: '10px 4px', fontSize: 11, fontWeight: 600, color: COLORS.textMuted, textAlign: 'left', letterSpacing: 0.3, borderBottom: '1px solid #e4e9f0' }}>标签名称</th>
+                <th style={{ width: 56, minWidth: 56, maxWidth: 56, padding: '10px 4px', fontSize: 11, fontWeight: 600, color: COLORS.textMuted, textAlign: 'center', letterSpacing: 0.3, borderBottom: '1px solid #e4e9f0', borderLeft: `1px solid ${COLORS.borderInner}`, borderRight: `1px solid ${COLORS.borderInner}` }}>子级</th>
+                <th style={{ width: 236, minWidth: 236, maxWidth: 236, padding: '10px 4px', fontSize: 11, fontWeight: 600, color: COLORS.textMuted, textAlign: 'center', letterSpacing: 0.3, borderBottom: '1px solid #e4e9f0' }}>操作</th>
+                <th style={{ width: 500, minWidth: 500, maxWidth: 500, padding: '10px 4px', fontSize: 11, fontWeight: 600, color: COLORS.textMuted, textAlign: 'left', letterSpacing: 0.3, borderBottom: '1px solid #e4e9f0', borderLeft: `1px solid ${COLORS.borderInner}`, background: '#e0f0fa' }}>说明</th>
               </tr>
             </thead>
             <tbody>
               {visibleRows.length === 0 ? (
-                <tr><td colSpan={5} style={{ padding: 32, textAlign: 'center', color: '#ccc', fontSize: 13 }}>暂无标签，点击右上角「新增一级标签」开始</td></tr>
+                <tr><td colSpan={5} style={{ padding: 32, textAlign: 'center', color: COLORS.textDisabled, fontSize: 13 }}>暂无标签，点击右上角「新增一级标签」开始</td></tr>
               ) : visibleRows.map(({ node, level, connector }) => {
                 const isEditing = editingId === node.id;
                 const hasChildren = node.children && node.children.length > 0;
@@ -240,7 +240,7 @@ const TagManagement: React.FC = () => {
                       cursor: 'pointer',
                       background: isEditing ? '#f0f6ff' : '#fff',
                       transition: 'background 0.12s',
-                      borderBottom: '1px solid #eef2f6',
+                      borderBottom: `1px solid ${COLORS.borderInner}`,
                       height: 44, minHeight: 44, lineHeight: '18px',
                     }}
                     onMouseEnter={e => { if (!isEditing) e.currentTarget.style.background = '#f8faff'; }}
@@ -306,12 +306,12 @@ const TagManagement: React.FC = () => {
                         )}
                       </div>
                     </td>
-                    <td style={{ padding: '2px 4px', verticalAlign: 'middle', textAlign: 'center', borderLeft: '1px solid #eef2f6', borderRight: '1px solid #eef2f6' }}>
+                    <td style={{ padding: '2px 4px', verticalAlign: 'middle', textAlign: 'center', borderLeft: `1px solid ${COLORS.borderInner}`, borderRight: `1px solid ${COLORS.borderInner}` }}>
                       {hasChildren ? (
                         <span style={{
                           display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                           minWidth: 16, height: 16, borderRadius: 8,
-                          background: '#eef2f7', color: '#667085', fontSize: 11, fontWeight: 500,
+                          background: '#eef2f7', color: COLORS.textFormLabel, fontSize: 11, fontWeight: 500,
                         }}>{node.children!.length}</span>
                       ) : (
                         <span style={{ color: '#d0d6e0', fontSize: 12 }}>—</span>
@@ -331,13 +331,13 @@ const TagManagement: React.FC = () => {
                         onMouseLeave={e => e.currentTarget.style.opacity = '0.45'}>
                         <Button type="text" size="small" icon={<ArrowUpOutlined style={{ fontSize: 11 }} />}
                           onClick={(e) => moveNode(node.id, -1, e)}
-                          style={{ width: 18, height: 18, lineHeight: '18px', color: '#8892a4', fontSize: 11 }} title="上移" />
+                          style={{ width: 18, height: 18, lineHeight: '18px', color: COLORS.textMuted, fontSize: 11 }} title="上移" />
                         <Button type="text" size="small" icon={<ArrowDownOutlined style={{ fontSize: 11 }} />}
                           onClick={(e) => moveNode(node.id, 1, e)}
-                          style={{ width: 18, height: 18, lineHeight: '18px', color: '#8892a4', fontSize: 11 }} title="下移" />
+                          style={{ width: 18, height: 18, lineHeight: '18px', color: COLORS.textMuted, fontSize: 11 }} title="下移" />
                       </span>
                     </td>
-                    <td style={{ padding: '2px 4px', verticalAlign: 'middle', fontSize: 12, color: '#888', position: 'relative', borderLeft: '1px solid #eef2f6', lineHeight: '18px' }}>
+                    <td style={{ padding: '2px 4px', verticalAlign: 'middle', fontSize: 12, color: '#888', position: 'relative', borderLeft: `1px solid ${COLORS.borderInner}`, lineHeight: '18px' }}>
                       {descEditId === node.id ? (
                         <input value={descEditValue}
                           onChange={e => setDescEditValue(e.target.value)}
@@ -347,7 +347,7 @@ const TagManagement: React.FC = () => {
                           style={{ width: '100%', border: `1px solid ${COLORS.primary}`, borderRadius: 3, padding: '1px 4px', fontSize: 12, outline: 'none', fontFamily: 'inherit', background: '#fff', boxSizing: 'border-box' }}
                         />
                       ) : (
-                        <span style={{ cursor: 'text', color: node.description ? '#666' : '#ccc' }}
+                        <span style={{ cursor: 'text', color: node.description ? COLORS.textSecondary : COLORS.textDisabled }}
                           onClick={() => { setDescEditId(node.id); setDescEditValue(node.description || ''); }}>
                           {node.description || '点击添加说明'}
                         </span>
@@ -362,7 +362,7 @@ const TagManagement: React.FC = () => {
 
         {/**_─ 新增标签弹窗 ─_*/}
         <Modal
-          title={<span style={{ fontSize: 17, fontWeight: 600, color: '#0d1b2a', letterSpacing: 0.5 }}>新增标签</span>}
+          title={<span style={{ fontSize: 17, fontWeight: 600, color: COLORS.textDark, letterSpacing: 0.5 }}>新增标签</span>}
           open={addModalOpen}
           onCancel={() => setAddModalOpen(false)}
           destroyOnHidden
@@ -389,7 +389,7 @@ const TagManagement: React.FC = () => {
 
       {/* 删除确认弹窗 */}
       <Modal
-        title={<span style={{ fontSize: 17, fontWeight: 600, color: '#0d1b2a', letterSpacing: 0.5 }}>删除标签</span>}
+        title={<span style={{ fontSize: 17, fontWeight: 600, color: COLORS.textDark, letterSpacing: 0.5 }}>删除标签</span>}
         open={!!deleteTarget}
         onCancel={() => setDeleteTarget(null)}
         width={460}
@@ -406,10 +406,10 @@ const TagManagement: React.FC = () => {
       >
         {deleteTarget && (
           <div style={{ textAlign: 'center', padding: '4px 0 0' }}>
-            <div style={{ fontSize: 14, color: '#0d1b2a', fontWeight: 600, marginBottom: 6 }}>
+            <div style={{ fontSize: 14, color: COLORS.textDark, fontWeight: 600, marginBottom: 6 }}>
               确定删除"{deleteTarget.name}"？
             </div>
-            <div style={{ fontSize: 13, color: '#8892a4' }}>物料上引用该标签的信息不会自动清除。</div>
+            <div style={{ fontSize: 13, color: COLORS.textMuted }}>物料上引用该标签的信息不会自动清除。</div>
           </div>
         )}
       </Modal>

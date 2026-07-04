@@ -21,7 +21,7 @@ const ClientNameCell: React.FC<{
       {open && (
         <div style={{
           position: 'absolute', top: '100%', left: 0, zIndex: 50,
-          background: '#fff', border: '1px solid #d9d9d9', borderRadius: 4,
+          background: '#fff', border: `1px solid ${COLORS.borderInput}`, borderRadius: 4,
           minWidth: 180, maxHeight: 240, boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
         }}>
           <input type="text" value={search}
@@ -37,14 +37,14 @@ const ClientNameCell: React.FC<{
           />
           <div style={{ maxHeight: 190, overflowY: 'auto' }}>
             {filtered.length === 0 ? (
-              <div style={{ padding: '10px', fontSize: 12, color: '#999', textAlign: 'center' }}>无匹配客户</div>
+              <div style={{ padding: '10px', fontSize: 12, color: COLORS.textLight, textAlign: 'center' }}>无匹配客户</div>
             ) : filtered.map(name => (
               <div key={name}
                 onClick={() => { onSelect(name); setOpen(false); setSearch(''); }}
                 style={{
                   padding: '6px 10px', cursor: 'pointer', fontSize: 13,
-                  background: name === value ? '#f0f6ff' : '#fff', color: name === value ? COLORS.primary : '#333',
-                  borderBottom: '1px solid #f5f5f5',
+                  background: name === value ? '#f0f6ff' : '#fff', color: name === value ? COLORS.primary : COLORS.textPrimary,
+                  borderBottom: `1px solid ${COLORS.bgTag}`,
                 }}
                 onMouseEnter={e => e.currentTarget.style.background = '#f5f8ff'}
                 onMouseLeave={e => e.currentTarget.style.background = name === value ? '#f0f6ff' : '#fff'}

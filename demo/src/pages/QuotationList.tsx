@@ -10,8 +10,8 @@ import type { QuotationSummary } from '../types';
 import { COLORS } from '../styles/constants';
 
 const statusConfig: Record<string, { label: string; color: string }> = {
-  draft:    { label: '草稿',   color: '#666' },
-  pending:  { label: '待审批', color: '#e65100' },
+  draft:    { label: '草稿',   color: COLORS.textSecondary },
+  pending:  { label: '待审批', color: COLORS.warning },
   approved: { label: '已通过', color: '#2e7d32' },
   rejected: { label: '已驳回', color: COLORS.danger },
 };
@@ -57,7 +57,7 @@ const QuotationList: React.FC = () => {
     {
       title: '状态', dataIndex: 'status', width: 80, align: 'center' as const,
       render: (v: string) => {
-        const cfg = statusConfig[v] || { label: v, color: '#999' };
+        const cfg = statusConfig[v] || { label: v, color: COLORS.textLight };
         return <Tag color={cfg.color}>{cfg.label}</Tag>;
       },
     },
@@ -99,32 +99,32 @@ const QuotationList: React.FC = () => {
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <span style={{ fontSize: 17, fontWeight: 700, color: '#0d1b2a' }}>报价列表</span>
+        <span style={{ fontSize: 17, fontWeight: 700, color: COLORS.textDark }}>报价列表</span>
         <FYSelector value={fySelect} onChange={setFySelect} />
       </div>
 
-      <div style={{ display: 'flex', gap: 0, marginBottom: 16, borderBottom: '2px solid #e8e8e8' }}>
+      <div style={{ display: 'flex', gap: 0, marginBottom: 16, borderBottom: `2px solid ${COLORS.border}` }}>
         <div onClick={() => setStatusTab('all')}
           style={{
             padding: '8px 20px', cursor: 'pointer', fontSize: 14,
             borderBottom: statusTab === 'all' ? '2px solid COLORS.primary' : '2px solid transparent',
-            color: statusTab === 'all' ? COLORS.primary : '#666', fontWeight: statusTab === 'all' ? 600 : 400,
+            color: statusTab === 'all' ? COLORS.primary : COLORS.textSecondary, fontWeight: statusTab === 'all' ? 600 : 400,
             marginBottom: -2, transition: 'all 0.15s',
           }}>全部({getCount()})
         </div>
         <div onClick={() => setStatusTab('draft')}
           style={{
             padding: '8px 20px', cursor: 'pointer', fontSize: 14,
-            borderBottom: statusTab === 'draft' ? '2px solid #666' : '2px solid transparent',
-            color: statusTab === 'draft' ? '#666' : '#999', fontWeight: statusTab === 'draft' ? 600 : 400,
+            borderBottom: statusTab === 'draft' ? `2px solid ${COLORS.textSecondary}` : '2px solid transparent',
+            color: statusTab === 'draft' ? COLORS.textSecondary : COLORS.textLight, fontWeight: statusTab === 'draft' ? 600 : 400,
             marginBottom: -2, transition: 'all 0.15s',
           }}>草稿({getCount('draft')})
         </div>
         <div onClick={() => setStatusTab('pending')}
           style={{
             padding: '8px 20px', cursor: 'pointer', fontSize: 14,
-            borderBottom: statusTab === 'pending' ? '2px solid #e65100' : '2px solid transparent',
-            color: statusTab === 'pending' ? '#e65100' : '#999', fontWeight: statusTab === 'pending' ? 600 : 400,
+            borderBottom: statusTab === 'pending' ? `2px solid ${COLORS.warning}` : '2px solid transparent',
+            color: statusTab === 'pending' ? COLORS.warning : COLORS.textLight, fontWeight: statusTab === 'pending' ? 600 : 400,
             marginBottom: -2, transition: 'all 0.15s',
           }}>待审批({getCount('pending')})
         </div>
@@ -132,7 +132,7 @@ const QuotationList: React.FC = () => {
           style={{
             padding: '8px 20px', cursor: 'pointer', fontSize: 14,
             borderBottom: statusTab === 'approved' ? '2px solid #2e7d32' : '2px solid transparent',
-            color: statusTab === 'approved' ? '#2e7d32' : '#999', fontWeight: statusTab === 'approved' ? 600 : 400,
+            color: statusTab === 'approved' ? '#2e7d32' : COLORS.textLight, fontWeight: statusTab === 'approved' ? 600 : 400,
             marginBottom: -2, transition: 'all 0.15s',
           }}>已通过({getCount('approved')})
         </div>
@@ -140,7 +140,7 @@ const QuotationList: React.FC = () => {
           style={{
             padding: '8px 20px', cursor: 'pointer', fontSize: 14,
             borderBottom: statusTab === 'rejected' ? '2px solid COLORS.danger' : '2px solid transparent',
-            color: statusTab === 'rejected' ? COLORS.danger : '#999', fontWeight: statusTab === 'rejected' ? 600 : 400,
+            color: statusTab === 'rejected' ? COLORS.danger : COLORS.textLight, fontWeight: statusTab === 'rejected' ? 600 : 400,
             marginBottom: -2, transition: 'all 0.15s',
           }}>已驳回({getCount('rejected')})
         </div>

@@ -30,7 +30,7 @@ const IconButton: React.FC<IconButtonProps> = ({
       style={{
         width: size, height: size, borderRadius: '50%', flexShrink: 0,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        color: disabled ? '#d9d9d9' : color,
+        color: disabled ? COLORS.borderInput : color,
         fontSize: size * 0.61, cursor: disabled ? 'default' : 'pointer',
         userSelect: 'none', transition: 'all 0.2s',
         opacity: disabled ? 0.5 : 1,

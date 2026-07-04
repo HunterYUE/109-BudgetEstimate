@@ -362,7 +362,7 @@ const ItemCostTable: React.FC<Props> = ({ groups, actualCosts, onActualCostChang
         if (rec._type === 'header') {
           const isEquip = !['集成开发', '人工成本', '项目费用', '风险费用', '质保费用'].includes(rec.category);
           return (
-            <span style={{ color: isEquip ? COLORS.primary : '#333', fontWeight: 700, fontSize: 13 }}>
+            <span style={{ color: isEquip ? COLORS.primary : COLORS.textPrimary, fontWeight: 700, fontSize: 13 }}>
               {rec.category}
             </span>
           );
@@ -371,7 +371,7 @@ const ItemCostTable: React.FC<Props> = ({ groups, actualCosts, onActualCostChang
         return (
           <span style={{
             paddingLeft: 16, fontSize: 13,
-            color: isComputed ? '#666' : '#333',
+            color: isComputed ? COLORS.textSecondary : COLORS.textPrimary,
             fontStyle: isComputed ? 'italic' : 'normal',
           }}>
             {rec.code}
@@ -394,7 +394,7 @@ const ItemCostTable: React.FC<Props> = ({ groups, actualCosts, onActualCostChang
     {
       title: '概算成本', width: 120, align: 'right' as const,
       render: (_text: unknown, rec: FlatRow) => (
-        <span style={{ fontWeight: rec._type === 'header' ? 700 : 600, fontSize: 13, color: '#666' }}>
+        <span style={{ fontWeight: rec._type === 'header' ? 700 : 600, fontSize: 13, color: COLORS.textSecondary }}>
           ¥{formatMoney(rec.estimated)}
         </span>
       ),
@@ -460,12 +460,12 @@ const ItemCostTable: React.FC<Props> = ({ groups, actualCosts, onActualCostChang
         scroll={{ x: 850 }}
         onRow={rec => ({
           style: rec._type === 'header'
-            ? { background: '#fafafa' }
-            : rec._warrantyItem ? { background: '#f5f5f5', color: '#999' } : {},
+            ? { background: COLORS.bgLight }
+            : rec._warrantyItem ? { background: COLORS.bgTag, color: COLORS.textLight } : {},
         })}
         summary={() => (
           <Table.Summary>
-            <Table.Summary.Row style={{ background: '#fafafa' }}>
+            <Table.Summary.Row style={{ background: COLORS.bgLight }}>
               <Table.Summary.Cell index={0}><strong style={{ fontSize: 13 }}>合计</strong></Table.Summary.Cell>
               <Table.Summary.Cell index={1} />
               <Table.Summary.Cell index={2} align="right">

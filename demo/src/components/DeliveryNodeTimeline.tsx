@@ -54,7 +54,7 @@ const cellStyle: React.CSSProperties = {
 };
 const labelStyle: React.CSSProperties = {
   ...cellStyle,
-  fontWeight: 600, background: COLORS.bgLight, whiteSpace: 'nowrap', color: '#1a2744',
+  fontWeight: 600, background: COLORS.bgLight, whiteSpace: 'nowrap', color: COLORS.labelDark,
 };
 
 const DeliveryNodeTimeline: React.FC<Props> = ({
@@ -90,15 +90,15 @@ const DeliveryNodeTimeline: React.FC<Props> = ({
       width: 480,
       content: (
         <div style={{ position: 'relative', paddingLeft: 24 }}>
-          <div style={{ position: 'absolute', left: 11, top: 4, bottom: 4, width: 2, background: '#e8e8e8' }} />
+          <div style={{ position: 'absolute', left: 11, top: 4, bottom: 4, width: 2, background: COLORS.border }} />
           {[...node.history].reverse().map(h => (
             <div key={h.id} style={{ position: 'relative', paddingBottom: 10 }}>
               <div style={{ position: 'absolute', left: -20, top: 4, width: 12, height: 12, borderRadius: '50%', background: COLORS.primary, border: '2px solid #fff' }} />
-              <div style={{ fontSize: 13, color: '#0d1b2a', fontWeight: 600 }}>
+              <div style={{ fontSize: 13, color: COLORS.textDark, fontWeight: 600 }}>
                 {h.field === 'status' ? '状态变更' : '计划日期变更'}
               </div>
-              <div style={{ fontSize: 12, color: '#999' }}>{h.changedAt}</div>
-              <div style={{ fontSize: 13, color: '#666', marginTop: 2 }}>
+              <div style={{ fontSize: 12, color: COLORS.textLight }}>{h.changedAt}</div>
+              <div style={{ fontSize: 13, color: COLORS.textSecondary, marginTop: 2 }}>
                 {h.oldValue || '—'} → {h.newValue}
               </div>
             </div>
@@ -138,7 +138,7 @@ const DeliveryNodeTimeline: React.FC<Props> = ({
           <col />
         </colgroup>
         <thead>
-          <tr style={{ background: '#fafafa' }}>
+          <tr style={{ background: COLORS.bgLight }}>
             <th style={{ ...labelStyle, textAlign: 'center' }} />
             <th style={labelStyle}>节点名称</th>
             <th style={{ ...labelStyle, textAlign: 'center' }}>延期天数</th>
@@ -158,11 +158,11 @@ const DeliveryNodeTimeline: React.FC<Props> = ({
               ? workDays(startEntry.changedAt, node.actualDate) : 0;
 
             return (
-              <tr key={node.id} style={{ background: node.status === 'completed' ? '#fafafa' : '#fff' }}>
+              <tr key={node.id} style={{ background: node.status === 'completed' ? COLORS.bgLight : '#fff' }}>
                 <td style={{ ...cellStyle, textAlign: 'center', padding: '4px 2px', verticalAlign: 'middle', position: 'relative' }}>
                     <div style={{
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: node.status === 'completed' ? 14 : 10, fontWeight: 700, color: node.status === 'completed' ? COLORS.primary : node.status === 'in_progress' ? COLORS.primary : '#999',
+                      fontSize: node.status === 'completed' ? 14 : 10, fontWeight: 700, color: node.status === 'completed' ? COLORS.primary : node.status === 'in_progress' ? COLORS.primary : COLORS.textLight,
                       cursor: onNodeStatusClick ? 'pointer' : 'default', userSelect: 'none',
                     }}
                       onClick={() => { if (onNodeStatusClick) setStatusDropdown(statusDropdown === node.id ? null : node.id); }}
@@ -172,7 +172,7 @@ const DeliveryNodeTimeline: React.FC<Props> = ({
                     {statusDropdown === node.id && (
                       <div style={{
                         position: 'absolute', left: '50%', transform: 'translateX(-50%)', top: 28, zIndex: 50,
-                        background: '#fff', border: '1px solid #d9d9d9', borderRadius: 4,
+                        background: '#fff', border: `1px solid ${COLORS.borderInput}`, borderRadius: 4,
                         minWidth: 72, boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
                       }}>
                         {['pending', 'in_progress', 'completed'].map(st => (
@@ -180,8 +180,8 @@ const DeliveryNodeTimeline: React.FC<Props> = ({
                             style={{
                               padding: '4px 12px', cursor: 'pointer', fontSize: 12,
                               background: node.status === st ? '#f0f6ff' : '#fff',
-                              color: node.status === st ? COLORS.primary : '#333',
-                              borderBottom: '1px solid #f5f5f5',
+                              color: node.status === st ? COLORS.primary : COLORS.textPrimary,
+                              borderBottom: `1px solid ${COLORS.bgTag}`,
                             }}
                             onMouseEnter={e => e.currentTarget.style.background = '#f5f8ff'}
                             onMouseLeave={e => e.currentTarget.style.background = node.status === st ? '#f0f6ff' : '#fff'}
@@ -203,7 +203,7 @@ const DeliveryNodeTimeline: React.FC<Props> = ({
                   )}
                 </td>
                 <td style={cellStyle}>
-                  <span style={{ fontSize: 12, color: '#666' }}>
+                  <span style={{ fontSize: 12, color: COLORS.textSecondary }}>
                     {editing?.id === node.id && editing?.field === 'plannedStartDate' ? (
                       <input ref={inputRef} type="date" value={editVal} className="dt-hide"
                         onChange={e => setEditVal(e.target.value)}
@@ -237,14 +237,14 @@ const DeliveryNodeTimeline: React.FC<Props> = ({
                     </span>
                   )}
                 </td>
-                <td style={{ ...cellStyle, textAlign: 'center', fontSize: 11, color: '#8892a4' }}>{planDays}天</td>
-                <td style={{ ...cellStyle, textAlign: 'center', fontSize: 12, color: node.status === 'completed' ? COLORS.primary : '#ccc' }}>
+                <td style={{ ...cellStyle, textAlign: 'center', fontSize: 11, color: COLORS.textMuted }}>{planDays}天</td>
+                <td style={{ ...cellStyle, textAlign: 'center', fontSize: 12, color: node.status === 'completed' ? COLORS.primary : COLORS.textDisabled }}>
                   {node.status === 'completed' && node.actualDate ? (() => {
                     const startH = node.history.find(h => h.field === 'status' && h.newValue === 'in_progress');
                     return <span>{startH ? shortDate(startH.changedAt) : '—'}~{shortDate(node.actualDate)}</span>;
                   })() : '—'}
                 </td>
-                <td style={{ ...cellStyle, textAlign: 'center', fontSize: 11, color: '#8892a4' }}>
+                <td style={{ ...cellStyle, textAlign: 'center', fontSize: 11, color: COLORS.textMuted }}>
                   {actualDays > 0 ? <span style={{ color: COLORS.primary, fontWeight: 600 }}>{actualDays}天</span> : '—'}
                 </td>
                 <td style={cellStyle}>
@@ -267,7 +267,7 @@ const DeliveryNodeTimeline: React.FC<Props> = ({
                           {node.comments}
                         </Tag>
                       ) : (
-                        <span style={{ fontSize: 12, color: '#ccc' }}>点击添加</span>
+                        <span style={{ fontSize: 12, color: COLORS.textDisabled }}>点击添加</span>
                       )}
                     </span>
                   )}
@@ -287,12 +287,12 @@ const DeliveryNodeTimeline: React.FC<Props> = ({
         )}
         {!!onSubmitPlan && (
           <IconButton icon={<SendOutlined style={{ fontWeight: 700 }} />}
-            onClick={onSubmitPlan} color="#00509e" hoverBg="#e6f0fa" title="提交审批"
+            onClick={onSubmitPlan} color={COLORS.primary} hoverBg="#e6f0fa" title="提交审批"
             disabled={locked || !hasChanges} />
         )}
         {!!onExportPlan && (
           <IconButton icon={<DownloadOutlined style={{ fontWeight: 700 }} />}
-            onClick={onExportPlan} color="#1a6b3c" hoverBg="#e8f5e9" title="导出" />
+            onClick={onExportPlan} color={COLORS.success} hoverBg="#e8f5e9" title="导出" />
         )}
       </div>
     </div>

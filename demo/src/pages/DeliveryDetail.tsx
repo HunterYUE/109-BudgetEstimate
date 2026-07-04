@@ -13,8 +13,8 @@ import { COLORS } from '../styles/constants';
 
 const STATUS_CYCLE: DeliveryNode['status'][] = ['pending', 'in_progress', 'completed', 'delayed'];
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
-  draft: { label: '草稿', color: '#666' },
-  pending: { label: '待审批', color: '#e65100' },
+  draft: { label: '草稿', color: COLORS.textSecondary },
+  pending: { label: '待审批', color: COLORS.warning },
   approved: { label: '已通过', color: '#2e7d32' },
   rejected: { label: '已驳回', color: COLORS.danger },
 };
@@ -228,7 +228,7 @@ const DeliveryDetail: React.FC = () => {
 
   if (!project) {
     return (
-      <div style={{ padding: 40, textAlign: 'center', color: '#999' }}>
+      <div style={{ padding: 40, textAlign: 'center', color: COLORS.textLight }}>
         项目未找到
         <div style={{ marginTop: 16 }}>
           <Button onClick={() => navigate('/delivery')}>返回交付管理</Button>
@@ -267,12 +267,12 @@ const DeliveryDetail: React.FC = () => {
     return (
       <div style={{
         display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px',
-        background: '#fafafa', borderRadius: 4, marginBottom: 12, flexWrap: 'wrap',
+        background: COLORS.bgLight, borderRadius: 4, marginBottom: 12, flexWrap: 'wrap',
       }}>
-        <span style={{ fontWeight: 600, fontSize: 13, color: '#333' }}>{label}</span>
+        <span style={{ fontWeight: 600, fontSize: 13, color: COLORS.textPrimary }}>{label}</span>
         {cfg && <Tag color={cfg.color} style={{ margin: 0, fontSize: 12, lineHeight: '20px', borderRadius: 3, border: 'none' }}>{cfg.label}</Tag>}
         {status === 'approved' && approval && (
-          <span style={{ fontSize: 12, color: '#666' }}>
+          <span style={{ fontSize: 12, color: COLORS.textSecondary }}>
             {approval.reviewer} 于 {approval.createdAt} 通过
             {approval.comment ? `：「${approval.comment}」` : ''}
           </span>
@@ -287,7 +287,7 @@ const DeliveryDetail: React.FC = () => {
           <span style={{ fontSize: 12, color: COLORS.danger }}>已驳回，可修改后重新提交</span>
         )}
         {status === 'approved' && type === 'cost' && (
-          <span style={{ fontSize: 12, color: '#999' }}>数据已锁定</span>
+          <span style={{ fontSize: 12, color: COLORS.textLight }}>数据已锁定</span>
         )}
       </div>
     );
@@ -301,7 +301,7 @@ const DeliveryDetail: React.FC = () => {
       {/* 返回按钮 + 标题 */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 16, marginBottom: 16,
-        background: '#fff', borderRadius: 4, border: '1px solid #e8e8e8',
+        background: '#fff', borderRadius: 4, border: `1px solid ${COLORS.border}`,
         padding: '14px 20px',
       }}>
         <div onClick={() => navigate('/delivery')}
@@ -319,17 +319,17 @@ const DeliveryDetail: React.FC = () => {
         </div>
         <div style={{ flex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={{ fontSize: 17, fontWeight: 700, color: '#0d1b2a', letterSpacing: 1 }}>{project.clientName}</span>
+            <span style={{ fontSize: 17, fontWeight: 700, color: COLORS.textDark, letterSpacing: 1 }}>{project.clientName}</span>
             <Tag color={project.status === '已完成' ? 'green' : project.status === '已延期' ? 'red' : 'blue'}
               style={{ margin: 0, fontSize: 12, lineHeight: '20px', borderRadius: 3, border: 'none' }}>
               {project.status}
             </Tag>
           </div>
-          <div style={{ fontSize: 13, color: '#999', marginTop: 4, display: 'flex', gap: 16 }}>
+          <div style={{ fontSize: 13, color: COLORS.textLight, marginTop: 4, display: 'flex', gap: 16 }}>
             <span>{project.projectName}</span>
-            <span style={{ color: '#d9d9d9' }}>|</span>
+            <span style={{ color: COLORS.borderInput }}>|</span>
             <span>{project.salesNo}</span>
-            <span style={{ color: '#d9d9d9' }}>|</span>
+            <span style={{ color: COLORS.borderInput }}>|</span>
             <span>节点进度 <strong style={{ color: COLORS.primary, fontWeight: 700 }}>{completedNodeCount}</strong>/{project.nodes.length}</span>
           </div>
         </div>
@@ -338,7 +338,7 @@ const DeliveryDetail: React.FC = () => {
       {/* 概览条 */}
       <div style={{
         display: 'flex', alignItems: 'center', marginBottom: 16,
-        background: '#fff', borderRadius: 4, border: '1px solid #e8e8e8', padding: '14px 0',
+        background: '#fff', borderRadius: 4, border: `1px solid ${COLORS.border}`, padding: '14px 0',
       }}>
         <div style={{
           display: 'flex', alignItems: 'stretch', flex: 1,
@@ -349,7 +349,7 @@ const DeliveryDetail: React.FC = () => {
             flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center',
             padding: '0 20px', borderRight: '1px solid #d4e3f7',
           }}>
-            <div style={{ fontSize: 12, color: '#666', marginBottom: 2 }}>合同金额</div>
+            <div style={{ fontSize: 12, color: COLORS.textSecondary, marginBottom: 2 }}>合同金额</div>
             <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.primary }}>&yen;{formatMoney(contractExTax)}</div>
           </div>
 
@@ -358,8 +358,8 @@ const DeliveryDetail: React.FC = () => {
             flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center',
             borderRight: '1px solid #d4e3f7',
           }}>
-            <div style={{ fontSize: 12, color: '#999', marginBottom: 4 }}>总成本</div>
-            <div style={{ fontSize: 14, fontWeight: 600, color: '#999' }}>&yen;{formatMoney(grandEstimated)}</div>
+            <div style={{ fontSize: 12, color: COLORS.textLight, marginBottom: 4 }}>总成本</div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.textLight }}>&yen;{formatMoney(grandEstimated)}</div>
             <div style={{ fontSize: 14, fontWeight: 600, marginTop: 2, color: grandActual < grandEstimated ? COLORS.success : COLORS.danger }}>
               &yen;{formatMoney(grandActual)}
             </div>
@@ -370,8 +370,8 @@ const DeliveryDetail: React.FC = () => {
             flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center',
             borderRight: '1px solid #d4e3f7',
           }}>
-            <div style={{ fontSize: 12, color: '#999', marginBottom: 4 }}>利润</div>
-            <div style={{ fontSize: 14, fontWeight: 600, color: '#999' }}>&yen;{formatMoney(estProfit)}</div>
+            <div style={{ fontSize: 12, color: COLORS.textLight, marginBottom: 4 }}>利润</div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.textLight }}>&yen;{formatMoney(estProfit)}</div>
             <div style={{ fontSize: 14, fontWeight: 600, marginTop: 2, color: actProfit >= estProfit ? COLORS.success : COLORS.danger }}>
               &yen;{formatMoney(actProfit)}
             </div>
@@ -381,8 +381,8 @@ const DeliveryDetail: React.FC = () => {
           <div style={{
             flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center',
           }}>
-            <div style={{ fontSize: 12, color: '#999', marginBottom: 4 }}>GP3</div>
-            <div style={{ fontSize: 14, fontWeight: 600, color: '#999' }}>{(estGP3 * 100).toFixed(1)}%</div>
+            <div style={{ fontSize: 12, color: COLORS.textLight, marginBottom: 4 }}>GP3</div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.textLight }}>{(estGP3 * 100).toFixed(1)}%</div>
             <div style={{ fontSize: 14, fontWeight: 600, marginTop: 2, color: actGP3 >= estGP3 ? COLORS.success : COLORS.danger }}>
               {(actGP3 * 100).toFixed(1)}%
             </div>
@@ -391,12 +391,12 @@ const DeliveryDetail: React.FC = () => {
       </div>
 
       {/* 标签切换 — 多 Tab 风格 */}
-      <div style={{ display: 'flex', gap: 0, marginBottom: 16, borderBottom: '2px solid #e8e8e8' }}>
+      <div style={{ display: 'flex', gap: 0, marginBottom: 16, borderBottom: `2px solid ${COLORS.border}` }}>
         <div onClick={() => setTab('plan')}
           style={{
             padding: '8px 20px', cursor: 'pointer', fontSize: 14,
             borderBottom: tab === 'plan' ? `2px solid ${COLORS.primary}` : '2px solid transparent',
-            color: tab === 'plan' ? COLORS.primary : '#666', fontWeight: tab === 'plan' ? 600 : 400,
+            color: tab === 'plan' ? COLORS.primary : COLORS.textSecondary, fontWeight: tab === 'plan' ? 600 : 400,
             marginBottom: -2, transition: 'all 0.15s',
           }}>
           <ScheduleOutlined style={{ color: COLORS.primary, marginRight: 6 }} />实施计划
@@ -405,7 +405,7 @@ const DeliveryDetail: React.FC = () => {
           style={{
             padding: '8px 20px', cursor: 'pointer', fontSize: 14,
             borderBottom: tab === 'cost' ? `2px solid ${COLORS.success}` : '2px solid transparent',
-            color: tab === 'cost' ? COLORS.success : '#666', fontWeight: tab === 'cost' ? 600 : 400,
+            color: tab === 'cost' ? COLORS.success : COLORS.textSecondary, fontWeight: tab === 'cost' ? 600 : 400,
             marginBottom: -2, transition: 'all 0.15s',
           }}>
           <AuditOutlined style={{ color: COLORS.success, marginRight: 6 }} />成本对比
@@ -415,7 +415,7 @@ const DeliveryDetail: React.FC = () => {
       {tab === 'plan' ? (
         <div>
           {renderApprovalBar('plan')}
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginBottom: 12, fontSize: 12, color: '#666' }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginBottom: 12, fontSize: 12, color: COLORS.textSecondary }}>
             <span>项目延期：
               <strong style={{ color: COLORS.danger }}>
                 {(() => {
@@ -455,7 +455,7 @@ const DeliveryDetail: React.FC = () => {
             <div style={{
               padding: '10px 16px', marginBottom: 12, borderRadius: 4,
               background: '#fff3e0', border: '1px solid #ffcc02',
-              fontSize: 13, color: '#e65100', fontWeight: 600,
+              fontSize: 13, color: COLORS.warning, fontWeight: 600,
             }}>
               ⚠ 实际总成本已达 &yen;{formatMoney(grandActual)}，超过预警阈值 &yen;{formatMoney(costWarningThreshold)}（概算总成本-风险费用-质保费用）×95%，需要审批
             </div>
@@ -477,10 +477,10 @@ const DeliveryDetail: React.FC = () => {
               disabled={!costDirty} />
             <IconButton icon={<SendOutlined style={{ fontWeight: 700 }} />}
               onClick={handleSubmitCost}
-              color="#00509e" hoverBg="#e6f0fa" title="提交审批"
+              color={COLORS.primary} hoverBg="#e6f0fa" title="提交审批"
               disabled={!costDirty} />
             <IconButton icon={<DownloadOutlined style={{ fontWeight: 700 }} />}
-              onClick={handleExportCost} color="#1a6b3c" hoverBg="#e8f5e9" title="导出" />
+              onClick={handleExportCost} color={COLORS.success} hoverBg="#e8f5e9" title="导出" />
           </div>
           )}
         </div>

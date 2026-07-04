@@ -2,7 +2,7 @@ import React from 'react';
 import { Card } from 'antd';
 import { COLORS } from '../../styles/constants';
 
-const TOP_COLORS = [COLORS.primary, '#5a2d82', COLORS.primary, '#5a2d82'];
+const TOP_COLORS = [COLORS.primary, COLORS.purple, COLORS.primary, COLORS.purple];
 
 export interface BarItem {
   name: string;
@@ -57,11 +57,11 @@ const VerticalBarChart: React.FC<Props> = ({
 
   return (
     <Card size="small"
-      style={{ borderRadius: noBorder ? 0 : 8, border: noBorder ? 'none' : '1px solid #f0f0f0', height: '100%', position: 'relative' }}
+      style={{ borderRadius: noBorder ? 0 : 8, border: noBorder ? 'none' : `1px solid ${COLORS.borderLight}`, height: '100%', position: 'relative' }}
       styles={{ body: { padding: `${contentOffset}px 0 0`, height: '100%' } }}
     >
       {title && (
-        <span style={{ position: 'absolute', top: 6, right: 10, fontSize: 11, color: '#888', zIndex: 1 }}>
+        <span style={{ position: 'absolute', top: 6, right: 10, fontSize: 11, color: COLORS.chartGray, zIndex: 1 }}>
           {title}
         </span>
       )}
@@ -70,7 +70,7 @@ const VerticalBarChart: React.FC<Props> = ({
           const y = pad.top + (i * chartH) / 4;
           return (
             <g key={`g-${i}`}>
-              <line x1={pad.left} y1={y} x2={W - pad.right} y2={y} stroke="#f0f0f0" strokeWidth={1} />
+              <line x1={pad.left} y1={y} x2={W - pad.right} y2={y} stroke={COLORS.borderLight} strokeWidth={1} />
               <text x={pad.left - 4} y={y + 3} textAnchor="end" fontSize={9} fill="#aaa">
                 {fmtAxis(gv)}
               </text>
@@ -94,13 +94,13 @@ const VerticalBarChart: React.FC<Props> = ({
                 fill={color} fontWeight={600}>{label}</text>
               {profit !== undefined && profit > 0 && (
                 <text x={cx} y={barTop - 8} textAnchor="middle" fontSize={9}
-                  fill="#5a2d82" fontWeight={500}>({fmtAxis(profit)})</text>
+                  fill={COLORS.purple} fontWeight={500}>({fmtAxis(profit)})</text>
               )}
               {!isZero && (
                 <rect x={cx - barW / 2} y={barTop} width={barW} height={barH}
                   fill="none" stroke={color} strokeWidth={3} rx={0} ry={0} />
               )}
-              <text x={cx} y={height - 6 + labelOffset} textAnchor="middle" fontSize={10} fill="#666">
+              <text x={cx} y={height - 6 + labelOffset} textAnchor="middle" fontSize={10} fill={COLORS.textSecondary}>
                 {item.name.length > 4 ? <tspan x={cx} dy={0}>{item.name.slice(0, 4)}</tspan> : item.name}
                 {item.name.length > 4 && <tspan x={cx} dy={10}>{item.name.slice(4)}</tspan>}
               </text>

@@ -37,8 +37,8 @@ class ErrorBoundary extends React.Component<Props, State> {
             boxShadow: '0 2px 12px rgba(0,0,0,0.06)', textAlign: 'center',
           }}>
             <div style={{ fontSize: 40, marginBottom: 16 }}>⚠️</div>
-            <h2 style={{ fontSize: 18, fontWeight: 700, color: '#0d1b2a', margin: '0 0 8px' }}>页面出现异常</h2>
-            <p style={{ fontSize: 13, color: '#888', lineHeight: 1.6, margin: '0 0 20px' }}>
+            <h2 style={{ fontSize: 18, fontWeight: 700, color: COLORS.textDark, margin: '0 0 8px' }}>页面出现异常</h2>
+            <p style={{ fontSize: 13, color: COLORS.chartGray, lineHeight: 1.6, margin: '0 0 20px' }}>
               系统遇到了一个意外错误，请尝试刷新页面。
             </p>
             <pre style={{

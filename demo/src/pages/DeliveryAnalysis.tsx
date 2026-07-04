@@ -39,7 +39,7 @@ const FYSelector: React.FC<{ value: string; onChange: (v: string) => void }> =
       style={{
         fontSize: 13, padding: '4px 12px', borderRadius: 4,
         border: 'none', background: 'transparent',
-        cursor: 'pointer', outline: 'none', color: '#333',
+        cursor: 'pointer', outline: 'none', color: COLORS.textPrimary,
       }}>
       {FY_OPTIONS.map(fy => <option key={fy} value={fy}>{fy}</option>)}
     </select>
@@ -57,14 +57,14 @@ const OverviewCards: React.FC<{ items: KpiCard[] }> = ({ items }) => (
     {items.map(item => (
       <Card key={item.label} size="small"
         style={{
-          flex: 1, borderRadius: 8, border: '1px solid #f0f0f0',
+          flex: 1, borderRadius: 8, border: `1px solid ${COLORS.borderLight}`,
           transition: 'box-shadow 0.2s, transform 0.15s',
         }}
         styles={{ body: { padding: '16px 12px', textAlign: 'center' as const } }}
         hoverable
       >
         <div style={{ fontSize: 20, marginBottom: 2 }}>{item.icon}</div>
-        <div style={{ fontSize: 12, color: '#999', marginBottom: 4, letterSpacing: 0.3 }}>
+        <div style={{ fontSize: 12, color: COLORS.textLight, marginBottom: 4, letterSpacing: 0.3 }}>
           {item.label}
         </div>
         <div style={{ fontSize: 26, fontWeight: 700, color: item.color, lineHeight: 1.2 }}>
@@ -138,13 +138,13 @@ const VerticalBarChart: React.FC<{
 
   const chart = (
     <>
-      {title && <span style={{ position: 'absolute', top: 6, right: 10, fontSize: 11, color: '#888', zIndex: 1 }}>{title}</span>}
+      {title && <span style={{ position: 'absolute', top: 6, right: 10, fontSize: 11, color: COLORS.chartGray, zIndex: 1 }}>{title}</span>}
       <svg width="100%" height={height} viewBox={`0 0 ${W} ${height}`} style={{ display: 'block' }}>
         {gridVals.map((gv, i) => {
           const y = pad.top + (1 - gv / effectiveMax) * chartH;
           return (
             <g key={`g-${i}`}>
-              <line x1={pad.left} y1={y} x2={W - pad.right} y2={y} stroke="#f0f0f0" strokeWidth={1} />
+              <line x1={pad.left} y1={y} x2={W - pad.right} y2={y} stroke={COLORS.borderLight} strokeWidth={1} />
               <text x={pad.left - 4} y={y + 3} textAnchor="end" fontSize={9} fill="#aaa">
                 {fmtAxis(gv)}
               </text>
@@ -157,9 +157,9 @@ const VerticalBarChart: React.FC<{
           return (
             <g>
               <line x1={pad.left} y1={tgtY} x2={W - pad.right} y2={tgtY}
-                stroke="#e65100" strokeWidth={1} strokeDasharray="5,3" />
+                stroke={COLORS.warning} strokeWidth={1} strokeDasharray="5,3" />
               <text x={W - pad.right - 8} y={tgtY + 3}
-                textAnchor="start" fontSize={9} fill="#e65100">{targetLabel || fmtAxis(targetValue)}</text>
+                textAnchor="start" fontSize={9} fill={COLORS.warning}>{targetLabel || fmtAxis(targetValue)}</text>
             </g>
           );
         })() : (!hideAvgLine && avg > 0 && data.some(d => d.value > 0) && (() => {
@@ -167,9 +167,9 @@ const VerticalBarChart: React.FC<{
           return (
             <g>
               <line x1={pad.left} y1={avgY} x2={W - pad.right} y2={avgY}
-                stroke="#e65100" strokeWidth={1} strokeDasharray="5,3" />
+                stroke={COLORS.warning} strokeWidth={1} strokeDasharray="5,3" />
               <text x={W - pad.right - 8} y={avgY + 3}
-                textAnchor="start" fontSize={9} fill="#e65100">{(() => {
+                textAnchor="start" fontSize={9} fill={COLORS.warning}>{(() => {
                 if (format === 'K') return fmtAxis(avg);
                 if (format === '%') return avg.toFixed(1) + '%';
                 return String(Math.round(avg));
@@ -230,7 +230,7 @@ const VerticalBarChart: React.FC<{
 
   return (
     <Card size="small"
-      style={{ borderRadius: 8, border: cardBorder ? '1px solid #f0f0f0' : 'none', background: cardBorder ? '#fff' : 'transparent', height: '100%', position: 'relative', boxShadow: 'none', width: '100%' }}
+      style={{ borderRadius: 8, border: cardBorder ? `1px solid ${COLORS.borderLight}` : 'none', background: cardBorder ? '#fff' : 'transparent', height: '100%', position: 'relative', boxShadow: 'none', width: '100%' }}
       styles={{ body: { padding: `${contentOffset}px 0 0 0`, height: '100%' } }}
     >
       {chart}
@@ -285,16 +285,16 @@ const ProfitChart: React.FC<{
 
   return (
     <Card size="small"
-      style={{ borderRadius: 8, border: '1px solid #f0f0f0', background: '#fff', position: 'relative', width: '100%' }}
+      style={{ borderRadius: 8, border: `1px solid ${COLORS.borderLight}`, background: '#fff', position: 'relative', width: '100%' }}
       styles={{ body: { padding: `${contentOffset}px 0 0 0` } }}
     >
-      <span style={{ position: 'absolute', top: 6, right: 10, fontSize: 10, color: '#888', zIndex: 1 }}>利润分析</span>
+      <span style={{ position: 'absolute', top: 6, right: 10, fontSize: 10, color: COLORS.chartGray, zIndex: 1 }}>利润分析</span>
       <svg width="100%" height={height} viewBox={`0 0 ${W} ${height}`} style={{ display: 'block' }}>
         {gridVals.map((gv, i) => {
           const y = pad.top + (1 - gv / effectiveMax) * chartH;
           return (
             <g key={`g-${i}`}>
-              <line x1={pad.left} y1={y} x2={W - pad.right} y2={y} stroke="#f0f0f0" strokeWidth={1} />
+              <line x1={pad.left} y1={y} x2={W - pad.right} y2={y} stroke={COLORS.borderLight} strokeWidth={1} />
               <text x={pad.left - 4} y={y + 3} textAnchor="end" fontSize={9} fill="#aaa">{fmtK(gv)}</text>
             </g>
           );
@@ -485,21 +485,21 @@ const GanttTooltip: React.FC<{
   return (
     <g>
       <rect x={ttx} y={tty} width={tooltipW} height={tooltipH} rx={5} ry={5}
-        fill="#fff" stroke="#e8e8e8" strokeWidth={1} filter="url(#bubble-shadow)" />
+        fill="#fff" stroke={COLORS.border} strokeWidth={1} filter="url(#bubble-shadow)" />
       <polygon
         points={tty < cy
           ? `${ttx + 8},${tty + tooltipH} ${ttx + 4},${tty + tooltipH - 6} ${ttx + 12},${tty + tooltipH - 6}`
           : `${ttx + 8},${tty} ${ttx + 4},${tty + 6} ${ttx + 12},${tty + 6}`}
-        fill="#fff" stroke="#e8e8e8" strokeWidth={1} />
-      <text x={ttx + 12} y={tty + 20} fontSize={12} fontWeight={700} fill="#0d1b2a">{slot.name.replace('\n', '')}</text>
-      <line x1={ttx + 12} y1={tty + 27} x2={ttx + tooltipW - 12} y2={tty + 27} stroke="#f0f0f0" strokeWidth={1} />
+        fill="#fff" stroke={COLORS.border} strokeWidth={1} />
+      <text x={ttx + 12} y={tty + 20} fontSize={12} fontWeight={700} fill={COLORS.textDark}>{slot.name.replace('\n', '')}</text>
+      <line x1={ttx + 12} y1={tty + 27} x2={ttx + tooltipW - 12} y2={tty + 27} stroke={COLORS.borderLight} strokeWidth={1} />
       {/* 初始计划 */}
-      <text x={ttx + 12} y={tty + 46} fontSize={11} fill="#999">初始计划</text>
+      <text x={ttx + 12} y={tty + 46} fontSize={11} fill={COLORS.textLight}>初始计划</text>
       <text x={ttx + tooltipW - 12} y={tty + 46} fontSize={11} fill="#444" textAnchor="end">
         {fmtShort(slot.initStartDate)} → {fmtShort(slot.initEndDate)}
       </text>
       {/* 更新计划 / 完成时间 */}
-      <text x={ttx + 12} y={tty + 68} fontSize={11} fill="#999">
+      <text x={ttx + 12} y={tty + 68} fontSize={11} fill={COLORS.textLight}>
         {slot.status === 'completed' ? '完成时间' : '更新计划'}
       </text>
       <text x={ttx + tooltipW - 12} y={tty + 68} fontSize={11} fill="#444" textAnchor="end">
@@ -510,7 +510,7 @@ const GanttTooltip: React.FC<{
       {/* 延期天数 */}
       {delayDays > 0 && (
         <>
-          <text x={ttx + 12} y={tty + 90} fontSize={11} fill="#999">延期天数</text>
+          <text x={ttx + 12} y={tty + 90} fontSize={11} fill={COLORS.textLight}>延期天数</text>
           <text x={ttx + tooltipW - 12} y={tty + 90} fontSize={11} fill={COLORS.danger} textAnchor="end" fontWeight={600}>
             +{delayDays} 天
           </text>
@@ -572,8 +572,8 @@ const ProjectGantt: React.FC<{
   };
 
   return (
-    <Card size="small" style={{ borderRadius: 8, border: '1px solid #f0f0f0', height: '100%' }} styles={{ body: { padding: '12px 0 0', height: '100%' } }}>
-      <span style={{ position: 'absolute', top: 6, right: 10, fontSize: 11, color: '#888', zIndex: 1 }}>项目节点</span>
+    <Card size="small" style={{ borderRadius: 8, border: `1px solid ${COLORS.borderLight}`, height: '100%' }} styles={{ body: { padding: '12px 0 0', height: '100%' } }}>
+      <span style={{ position: 'absolute', top: 6, right: 10, fontSize: 11, color: COLORS.chartGray, zIndex: 1 }}>项目节点</span>
       <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} style={{ display: 'block', userSelect: 'none' }}
         onMouseDown={(e) => {
           const x = svgToX(e.clientX, e.currentTarget);
@@ -591,7 +591,7 @@ const ProjectGantt: React.FC<{
           const x = labelW + i / 12 * chartW;
           return (
             <g key={`m-${i}`}>
-              <line x1={x} y1={42} x2={x} y2={H - 4} stroke="#f0f0f0" strokeWidth={1} />
+              <line x1={x} y1={42} x2={x} y2={H - 4} stroke={COLORS.borderLight} strokeWidth={1} />
               {i < 12 && <text x={x + chartW / 24 - 20} y={21} textAnchor="middle" fontSize={10} fill="#444">{months[i]}</text>}
             </g>
           );
@@ -709,35 +709,35 @@ const BubbleTooltip: React.FC<{
   if (tty + tooltipH > CH - 6) tty = CH - 6 - tooltipH;
 
   const colorLabel =
-    item.costDeviation > 0 ? COLORS.danger : item.costDeviation < 0 ? COLORS.success : '#666';
+    item.costDeviation > 0 ? COLORS.danger : item.costDeviation < 0 ? COLORS.success : COLORS.textSecondary;
   const delayLabel = item.delayDays > 0 ? `${item.delayDays} 天` : '0 天';
 
   return (
     <g>
       <rect x={ttx} y={tty} width={tooltipW} height={tooltipH} rx={5} ry={5}
-        fill="#fff" stroke="#e8e8e8" strokeWidth={1} filter="url(#bubble-shadow)" />
+        fill="#fff" stroke={COLORS.border} strokeWidth={1} filter="url(#bubble-shadow)" />
       <polygon
         points={ttx > cx
           ? `${ttx + 6},${tty + 16} ${ttx},${tty + 10} ${ttx + 6},${tty + 4}`
           : `${ttx + tooltipW - 6},${tty + 16} ${ttx + tooltipW},${tty + 10} ${ttx + tooltipW - 6},${tty + 4}`}
-        fill="#fff" stroke="#e8e8e8" strokeWidth={1} />
-      <text x={ttx + 12} y={tty + 21} fontSize={12} fontWeight={700} fill="#0d1b2a">
+        fill="#fff" stroke={COLORS.border} strokeWidth={1} />
+      <text x={ttx + 12} y={tty + 21} fontSize={12} fontWeight={700} fill={COLORS.textDark}>
         {item.name.length > 12 ? item.name.slice(0, 12) + '…' : item.name}
       </text>
-      <line x1={ttx + 12} y1={tty + 29} x2={ttx + tooltipW - 12} y2={tty + 29} stroke="#f0f0f0" strokeWidth={1} />
-      <text x={ttx + 12} y={tty + 49} fontSize={11} fill="#999">合同金额</text>
+      <line x1={ttx + 12} y1={tty + 29} x2={ttx + tooltipW - 12} y2={tty + 29} stroke={COLORS.borderLight} strokeWidth={1} />
+      <text x={ttx + 12} y={tty + 49} fontSize={11} fill={COLORS.textLight}>合同金额</text>
       <text x={ttx + tooltipW - 12} y={tty + 49} fontSize={12} fill="#222" textAnchor="end" fontWeight={600}>
         {fmtWan(item.contractAmount)}
       </text>
-      <text x={ttx + 12} y={tty + 72} fontSize={11} fill="#999">延期天数</text>
+      <text x={ttx + 12} y={tty + 72} fontSize={11} fill={COLORS.textLight}>延期天数</text>
       <text x={ttx + tooltipW - 12} y={tty + 72} fontSize={12} fill={item.delayDays > 0 ? COLORS.danger : COLORS.success} textAnchor="end" fontWeight={600}>
         {delayLabel}
       </text>
-      <text x={ttx + 12} y={tty + 95} fontSize={11} fill="#999">成本偏差率</text>
+      <text x={ttx + 12} y={tty + 95} fontSize={11} fill={COLORS.textLight}>成本偏差率</text>
       <text x={ttx + tooltipW - 12} y={tty + 95} fontSize={12} fill={colorLabel} textAnchor="end" fontWeight={600}>
         {item.costDeviation > 0 ? '+' : ''}{item.costDeviation.toFixed(1)}%
       </text>
-      <text x={ttx + 12} y={tty + 118} fontSize={11} fill="#999">产能压力</text>
+      <text x={ttx + 12} y={tty + 118} fontSize={11} fill={COLORS.textLight}>产能压力</text>
       <text x={ttx + tooltipW - 12} y={tty + 118} fontSize={12} fill={COLORS.purple} textAnchor="end" fontWeight={600}>
         {Math.round(item.capacityPressure).toLocaleString()}
       </text>
@@ -769,8 +769,8 @@ const BubbleChart: React.FC<{
   const maxTick = Math.ceil(maxDelay / step) * step;
 
   return (
-    <Card size="small" style={{ borderRadius: 8, border: '1px solid #f0f0f0' }} styles={{ body: { padding: `${bodyPadTop}px 0 ${bodyPadBottom}px` } }}>
-      <span style={{ position: 'absolute', top: 6, right: 10, fontSize: 11, color: '#888', zIndex: 1 }}>健康矩阵</span>
+    <Card size="small" style={{ borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }} styles={{ body: { padding: `${bodyPadTop}px 0 ${bodyPadBottom}px` } }}>
+      <span style={{ position: 'absolute', top: 6, right: 10, fontSize: 11, color: COLORS.chartGray, zIndex: 1 }}>健康矩阵</span>
       <svg width="100%" height={H} viewBox={`0 0 ${W} ${CH}`} style={{ display: 'block' }}>
         <defs>
           <filter id="bubble-shadow" x="-10%" y="-10%" width="130%" height="130%">
@@ -783,9 +783,9 @@ const BubbleChart: React.FC<{
           const y = pad.top + (1 - (r + 1) / 2) * chartH;
           return (
             <g key={`g-${t}`}>
-              <line x1={pad.left} y1={y} x2={W - pad.right} y2={y} stroke={t === 0 ? '#e0e0e0' : '#f0f0f0'} strokeWidth={t === 0 ? 1.5 : 1} />
+              <line x1={pad.left} y1={y} x2={W - pad.right} y2={y} stroke={t === 0 ? '#e0e0e0' : COLORS.borderLight} strokeWidth={t === 0 ? 1.5 : 1} />
               <text x={pad.left - 4} y={y + 3} textAnchor="end" fontSize={9} fill="#aaa">{t > 0 ? '+' : ''}{Math.round(t * maxCost / maxTick)}%</text>
-              <line x1={x} y1={pad.top} x2={x} y2={pad.top + chartH} stroke={t === 0 ? '#e0e0e0' : '#f0f0f0'} strokeWidth={t === 0 ? 1.5 : 1} />
+              <line x1={x} y1={pad.top} x2={x} y2={pad.top + chartH} stroke={t === 0 ? '#e0e0e0' : COLORS.borderLight} strokeWidth={t === 0 ? 1.5 : 1} />
               <text x={x} y={H - 4} textAnchor="middle" fontSize={9} fill="#aaa">{t === 0 ? '0' : t}</text>
             </g>
           );
@@ -807,7 +807,7 @@ const BubbleChart: React.FC<{
               item={d}
               cx={cx} cy={cy} r={r}
               fillOpacity={fillOpacity}
-              color={statusColors[d.status] || '#999'}
+              color={statusColors[d.status] || COLORS.textLight}
               hovered={hoveredBubble?.item.name === d.name}
               onHover={setHoveredBubble} />
           );
@@ -915,7 +915,7 @@ const DeliveryAnalysis: React.FC = () => {
       tooltip: delayed[i] > 0 && delayedProjects[i].length > 0
         ? `${name}：${delayed[i]}/${reached[i]} 个项目\n${[...new Set(delayedProjects[i])].join('、')}`
         : undefined,
-      color: delayed[i] > 0 ? (delayed[i] >= 2 ? COLORS.danger : '#e65100') : '#ccc',
+      color: delayed[i] > 0 ? (delayed[i] >= 2 ? COLORS.danger : COLORS.warning) : '#ccc',
     }));
   }, [fyFiltered]);
 
@@ -988,7 +988,7 @@ const DeliveryAnalysis: React.FC = () => {
       { label: '已完成项目', value: completedCount + '/' + fmtK(completedAmt), color: COLORS.success, icon: '✅' },
       { label: '延期项目', value: delayedCount + '/' + fmtK(delayedAmt), color: delayedCount > 0 ? COLORS.danger : COLORS.success, icon: '🚨' },
       { label: '加权延期天数', value: `${avgDelay}天`, color: avgDelay > 0 ? COLORS.danger : COLORS.success, icon: '📅' },
-      { label: '节点按时率', value: `${onTimeRate}%`, color: onTimeRate >= 80 ? COLORS.success : onTimeRate >= 50 ? '#e65100' : COLORS.danger, icon: '🎯' },
+      { label: '节点按时率', value: `${onTimeRate}%`, color: onTimeRate >= 80 ? COLORS.success : onTimeRate >= 50 ? COLORS.warning : COLORS.danger, icon: '🎯' },
       { label: '成本偏差率', value: costDevDenominator > 0 ? `${costDevRate > 0 ? '+' : ''}${costDevRate.toFixed(1)}%` : '—', color: costDevRate <= 0 ? COLORS.success : COLORS.danger, icon: '💰' },
     ];
   }, [fyFiltered, fyRange]);
@@ -1152,12 +1152,12 @@ const DeliveryAnalysis: React.FC = () => {
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-        <span style={{ fontSize: 17, fontWeight: 700, color: '#0d1b2a' }}>交付分析</span>
+        <span style={{ fontSize: 17, fontWeight: 700, color: COLORS.textDark }}>交付分析</span>
         <FYSelector value={fySelect} onChange={setFySelect} />
       </div>
 
       {fyFiltered.length === 0 ? (
-        <div style={{ padding: 60, textAlign: 'center', color: '#999', fontSize: 14 }}>
+        <div style={{ padding: 60, textAlign: 'center', color: COLORS.textLight, fontSize: 14 }}>
           当前财年暂无交付项目
         </div>
       ) : (

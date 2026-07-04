@@ -17,12 +17,34 @@ export const COLORS = {
   textLight: '#999',
   /** 深色文字 */
   textDark: '#0d1b2a',
+  /** 主文字色 */
+  textPrimary: '#333',
+  /** 禁用/占位文字 */
+  textDisabled: '#ccc',
+  /** 表头/辅助文字 */
+  textMuted: '#8892a4',
+  /** 表单/详情标签文字 */
+  textFormLabel: '#667085',
+  /** 表格标签单元格深色 */
+  labelDark: '#1a2744',
   /** 边框色 */
   border: '#e8e8e8',
+  /** 卡片/网格线边框 */
+  borderLight: '#f0f0f0',
+  /** 详情卡片边框 */
+  borderCard: '#e8edf4',
+  /** 内部分隔线 */
+  borderInner: '#eef2f6',
+  /** 输入框边框 */
+  borderInput: '#d9d9d9',
   /** 浅色背景 */
   bgLight: '#fafafa',
   /** 选中/悬停背景（蓝色调） */
   bgSelected: '#f0f6ff',
+  /** 详情卡片背景 */
+  bgCard: '#fafcff',
+  /** 标签/徽标背景 */
+  bgTag: '#f5f5f5',
   /** 紫色（机会阶段/标注用） */
   purple: '#5a2d82',
   /** 琥珀色（甘特图项目色） */

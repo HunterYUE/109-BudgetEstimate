@@ -4,7 +4,7 @@ import { mockTagTree } from '../mockData';
 import { flattenTree, collectTagPaths } from '../utils/tagHelpers';
 import { COLORS } from '../styles/constants';
 
-const LEVEL_COLORS = ['#1a2744', COLORS.primary, '#5a2d82', '#008080', '#d46b08'];
+const LEVEL_COLORS = [COLORS.labelDark, COLORS.primary, COLORS.purple, '#008080', '#d46b08'];
 
 interface Props {
   value: string[];
@@ -74,22 +74,22 @@ const MaterialTagSelector: React.FC<Props> = ({ value, onChange }) => {
           <span key={value[i]} style={{
             display: 'inline-flex', alignItems: 'center', gap: 2,
             fontSize: 11, lineHeight: '20px', maxWidth: 180,
-            background: '#f5f5f5', borderRadius: 4, padding: '0 4px',
+            background: COLORS.bgTag, borderRadius: 4, padding: '0 4px',
           }}>
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 150 }}>{label}</span>
             <span onClick={() => onChange(value.filter((_, j) => j !== i))}
-              style={{ cursor: 'pointer', color: '#999', fontSize: 10, lineHeight: 1, flexShrink: 0 }}>✕</span>
+              style={{ cursor: 'pointer', color: COLORS.textLight, fontSize: 10, lineHeight: 1, flexShrink: 0 }}>✕</span>
           </span>
         ))
       )}
-      <span style={{ fontSize: 10, color: '#999', marginLeft: 'auto' }}>▾</span>
+      <span style={{ fontSize: 10, color: COLORS.textLight, marginLeft: 'auto' }}>▾</span>
     </div>
   );
 
   const treeContent = (
     <div style={{ width: 260, maxHeight: 320, overflow: 'auto', padding: '4px 0' }}>
       {visibleRows.length === 0 ? (
-        <div style={{ padding: 16, textAlign: 'center', color: '#ccc', fontSize: 13 }}>暂无标签</div>
+        <div style={{ padding: 16, textAlign: 'center', color: COLORS.textDisabled, fontSize: 13 }}>暂无标签</div>
       ) : visibleRows.map(({ node, level, connector }) => {
         const hasChildren = node.children && node.children.length > 0;
         const isExpanded = expandedIds.has(node.id);

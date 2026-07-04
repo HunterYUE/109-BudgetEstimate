@@ -2,7 +2,7 @@ import React from 'react';
 import { Card } from 'antd';
 import { COLORS } from '../../styles/constants';
 
-const TOP_COLORS = [COLORS.primary, '#5a2d82', COLORS.primary, '#5a2d82'];
+const TOP_COLORS = [COLORS.primary, COLORS.purple, COLORS.primary, COLORS.purple];
 
 export interface StackedBarItem {
   name: string;
@@ -43,10 +43,10 @@ const VerticalStackedBarChart: React.FC<Props> = ({
 
   return (
     <Card size="small"
-      style={{ borderRadius: 8, border: '1px solid #f0f0f0', height: '100%', position: 'relative' }}
+      style={{ borderRadius: 8, border: `1px solid ${COLORS.borderLight}`, height: '100%', position: 'relative' }}
       styles={{ body: { padding: `${contentOffset}px 0 0`, height: '100%' } }}
     >
-      <span style={{ position: 'absolute', top: 6, right: 10, fontSize: 11, color: '#888', zIndex: 1 }}>
+      <span style={{ position: 'absolute', top: 6, right: 10, fontSize: 11, color: COLORS.chartGray, zIndex: 1 }}>
         {title}
       </span>
       <svg width="100%" height={height} viewBox={`0 0 ${W} ${height}`} style={{ display: 'block' }}>
@@ -54,7 +54,7 @@ const VerticalStackedBarChart: React.FC<Props> = ({
           const y = pad.top + (i * chartH) / 4;
           return (
             <g key={`g-${i}`}>
-              <line x1={pad.left} y1={y} x2={W - pad.right} y2={y} stroke="#f0f0f0" strokeWidth={1} />
+              <line x1={pad.left} y1={y} x2={W - pad.right} y2={y} stroke={COLORS.borderLight} strokeWidth={1} />
               <text x={pad.left - 4} y={y + 3} textAnchor="end" fontSize={9} fill="#aaa">
                 {String(Math.round(gv))}
               </text>
@@ -80,19 +80,19 @@ const VerticalStackedBarChart: React.FC<Props> = ({
               )}
               {topH > 0 && (
                 <rect x={cx - barW / 2} y={cy + bottomH}
-                  width={barW} height={topH} fill="none" stroke="#5a2d82" strokeWidth={3} />
+                  width={barW} height={topH} fill="none" stroke={COLORS.purple} strokeWidth={3} />
               )}
-              <text x={cx} y={height - 6 + labelOffset} textAnchor="middle" fontSize={10} fill="#666">
+              <text x={cx} y={height - 6 + labelOffset} textAnchor="middle" fontSize={10} fill={COLORS.textSecondary}>
                 {item.name.length > 4 ? <tspan x={cx} dy={0}>{item.name.slice(0, 4)}</tspan> : item.name}
                 {item.name.length > 4 && <tspan x={cx} dy={10}>{item.name.slice(4)}</tspan>}
               </text>
               {bottomH > 8 && (
                 <text x={cx} y={cy + bottomH / 2 + 4}
-                  textAnchor="middle" fontSize={9} fill="#5a2d82" fontWeight={600}>{item.bottom}</text>
+                  textAnchor="middle" fontSize={9} fill={COLORS.purple} fontWeight={600}>{item.bottom}</text>
               )}
               {topH > 8 && (
                 <text x={cx} y={cy + bottomH + topH / 2 + 4}
-                  textAnchor="middle" fontSize={9} fill="#5a2d82" fontWeight={600}>{item.top}</text>
+                  textAnchor="middle" fontSize={9} fill={COLORS.purple} fontWeight={600}>{item.top}</text>
               )}
             </g>
           );
