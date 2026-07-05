@@ -5,6 +5,7 @@ import { ConfigProvider } from 'antd'
 import zhCN from 'antd/locale/zh_CN'
 import './index.css'
 import './App.css'
+import './styles/table-global.css'
 import App from './App.tsx'
 
 createRoot(document.getElementById('root')!).render(
