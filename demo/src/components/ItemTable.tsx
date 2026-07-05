@@ -34,6 +34,35 @@ const typeColors: Record<string, string> = {
 };
 
 
+/** 毛利率输入框：独立管理编辑状态，用户可自由输入 */
+const MarginInput: React.FC<{ value: number; onCommit: (val: number) => void }> = ({ value, onCommit }) => {
+  const [text, setText] = React.useState(String(Math.round(value * 100)));
+
+  // Sync when value changes from outside (e.g. item type switch recalculates prices)
+  React.useEffect(() => {
+    setText(String(Math.round(value * 100)));
+  }, [value]);
+
+  const commit = () => {
+    const cleaned = text.replace(/\D/g, '');
+    const val = parseInt(cleaned, 10);
+    if (!isNaN(val)) {
+      onCommit(val / 100);
+    } else {
+      setText(String(Math.round(value * 100)));
+    }
+  };
+
+  return (
+    <input type="text" inputMode="numeric" value={text}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => { if (e.key === 'Enter') commit(); }}
+      style={{ width: 60, textAlign: 'center', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, MozAppearance: 'textfield' }}
+    />
+  );
+};
+
 const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem, groupType, editing = true }) => {
   const cfg = getColumnConfig(groupType);
 
@@ -193,17 +222,7 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
     title: '毛利率', dataIndex: 'margin_rate', width: 55, align: 'center' as const,
     onCell: onCellLock(55),
     render: (v: number, _record: GroupItem, idx: number) => editing ? (
-      <input type="text" inputMode="numeric"
-        defaultValue={String(Math.round(v * 100))}
-        onBlur={(e) => {
-          const cleaned = e.target.value.replace(/\D/g, '');
-          const val = parseInt(cleaned, 10);
-          if (!isNaN(val) && val !== Math.round(v * 100)) {
-            updateItem(idx, { margin_rate: val / 100 });
-          }
-        }}
-        onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-        style={{ width: 60, textAlign: 'center', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, MozAppearance: 'textfield' }} />
+      <MarginInput value={v} onCommit={(val) => updateItem(idx, { margin_rate: val })} />
     ) : <span style={{ display: 'block', textAlign: 'center' }}>{(v * 100).toFixed(0) + '%'}</span>,
   }];
 
