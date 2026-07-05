@@ -1,9 +1,11 @@
 import React, { useState, useMemo } from 'react';
 import { Card } from 'antd';
-import { mockDeliveryProjects, mockProject } from '../mockData';
+import { mockDeliveryProjects } from '../mockData';
 import { useMockVersion } from '../utils/mockStore';
 import { COLORS } from '../styles/constants';
 import { computeDeliveryEstGP3 } from '../utils/calculations';
+import { parseFY } from '../utils/fiscalYear';
+import { fmtK, loadQuotationGroups } from '../utils/analysisShared';
 
 /* ============================================================
    常量
@@ -23,12 +25,6 @@ function splitLabel(name: string): string {
   const mid = Math.ceil(s.length / 2);
   return s.slice(0, mid) + '\n' + s.slice(mid);
 }
-
-const parseFY = (fy: string) => {
-  const y1 = 2000 + parseInt(fy.slice(2, 4));
-  const y2 = 2000 + parseInt(fy.slice(4, 6));
-  return { start: new Date(y1, 6, 1), end: new Date(y2, 6, 0) };
-};
 
 /* ============================================================
    子组件 — 财年选择器
@@ -90,8 +86,6 @@ interface BarItem {
   color?: string;
   tooltip?: string;
 }
-
-const fmtK = (v: number) => Math.round(v / 1000).toLocaleString() + 'K';
 
 const VerticalBarChart: React.FC<{
   title: string;
@@ -818,18 +812,6 @@ const BubbleChart: React.FC<{
     </Card>
   );
 };
-
-/* ============================================================
-   报价数据加载（匹配 DeliveryDetail.tsx 逻辑）
-   TODO: 数据库就绪后替换为 API 查询，硬编码 mock ID 需移除
-   ============================================================ */
-function loadQuotationGroups(quotationId: string) {
-  const knownIds = ['proj-003', 'proj-001', 'proj-005'];
-  if (knownIds.includes(quotationId)) {
-    return { groups: mockProject.groups.map(g => ({ ...g, items: g.items.map(i => ({ ...i })) })), version: { warranty_rate: mockProject.current_version.warranty_rate, risk_rate: mockProject.current_version.risk_rate } };
-  }
-  return { groups: [], version: undefined };
-}
 
 /* ============================================================
    主组件

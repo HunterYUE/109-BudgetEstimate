@@ -1,12 +1,13 @@
 import React, { useState, useMemo } from 'react';
 import { Card } from 'antd';
-import { mockOpportunities, mockQuotationSummaries, mockDeliveryProjects, mockProject } from '../mockData';
+import { mockOpportunities, mockQuotationSummaries, mockDeliveryProjects } from '../mockData';
 import type { SalesOpportunity } from '../types';
 import { parseReasons, REASON_TAXONOMY } from '../reasonTaxonomy';
 import { useMockVersion } from '../utils/mockStore';
 import { COLORS } from '../styles/constants';
 import { computeDeliveryEstGP3 } from '../utils/calculations';
-const fmtK = (v: number) => Math.round(v / 1000).toLocaleString() + 'K';
+import { parseFY } from '../utils/fiscalYear';
+import { fmtK, loadQuotationGroups } from '../utils/analysisShared';
 
 /* ============================================================
    常量
@@ -24,23 +25,7 @@ const safeParseInt = (val: string | undefined | null): number => {
   return isNaN(n) ? 0 : n;
 };
 
-/* ============================================================
-   财年工具函数
-   ============================================================ */
-const parseFY = (fy: string) => {
-  const y1 = 2000 + parseInt(fy.slice(2, 4));
-  const y2 = 2000 + parseInt(fy.slice(4, 6));
-  return { start: new Date(y1, 6, 1), end: new Date(y2, 6, 0) };
-};
 const stageIdx = (s: string) => STAGES.indexOf(s as typeof STAGES[number]);
-
-/** 加载报价编制数据（匹配交付详情页逻辑） */
-function loadQuotationGroups(quotationId: string) {
-  if (quotationId === 'proj-003' || quotationId === 'proj-001' || quotationId === 'proj-005') {
-    return { groups: mockProject.groups.map(g => ({ ...g, items: g.items.map(i => ({ ...i })) })), version: { warranty_rate: mockProject.current_version.warranty_rate, risk_rate: mockProject.current_version.risk_rate } };
-  }
-  return { groups: [], version: undefined };
-}
 
 /** 根据财年过滤机会列表 */
 function useFyFiltered(allOpps: SalesOpportunity[], fy: string) {
