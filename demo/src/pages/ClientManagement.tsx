@@ -627,6 +627,7 @@ const ClientManagement: React.FC = () => {
         bordered
         style={{ background: '#fff', borderRadius: 8 }}
       />
+      </div>
 
       {/* ── 编辑模态框 ── */}
       <Modal
