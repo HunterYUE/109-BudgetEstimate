@@ -193,11 +193,16 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
     title: '毛利率', dataIndex: 'margin_rate', width: 55, align: 'center' as const,
     onCell: onCellLock(55),
     render: (v: number, _record: GroupItem, idx: number) => editing ? (
-      <input type="text" inputMode="numeric" value={String(Math.round(v * 100))}
-        onChange={(e) => {
+      <input type="text" inputMode="numeric"
+        defaultValue={String(Math.round(v * 100))}
+        onBlur={(e) => {
           const cleaned = e.target.value.replace(/\D/g, '');
-          updateItem(idx, { margin_rate: (parseInt(cleaned, 10) || 0) / 100 });
+          const val = parseInt(cleaned, 10);
+          if (!isNaN(val) && val !== Math.round(v * 100)) {
+            updateItem(idx, { margin_rate: val / 100 });
+          }
         }}
+        onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
         style={{ width: 60, textAlign: 'center', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, MozAppearance: 'textfield' }} />
     ) : <span style={{ display: 'block', textAlign: 'center' }}>{(v * 100).toFixed(0) + '%'}</span>,
   }];
