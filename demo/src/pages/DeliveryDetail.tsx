@@ -1,7 +1,7 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Tag, Card, Button, message, Modal, ConfigProvider } from 'antd';
-import { ScheduleOutlined, AuditOutlined, SendOutlined, SaveOutlined, ArrowLeftOutlined, DownloadOutlined } from '@ant-design/icons';
+import { ScheduleOutlined, AuditOutlined, SendOutlined, SaveOutlined, ArrowLeftOutlined, DownloadOutlined, UploadOutlined } from '@ant-design/icons';
 import { mockDeliveryProjects, mockProject, mockApprovalRequests } from '../mockData';
 import { formatMoney } from '../utils/calculations';
 import { notifyMockUpdate } from '../utils/mockStore';
@@ -24,8 +24,8 @@ const DeliveryDetail: React.FC = () => {
   const navigate = useNavigate();
   const [msg, ctx] = message.useMessage();
   const location = useLocation();
-  const initTab = (location.state as { tab?: 'plan' | 'cost' })?.tab || 'plan';
-  const [tab, setTab] = useState<'plan' | 'cost'>(initTab);
+  const initTab = (location.state as { tab?: 'plan' | 'cost' | 'files' })?.tab || 'plan';
+  const [tab, setTab] = useState<'plan' | 'cost' | 'files'>(initTab);
 
   const [project, setProject] = useState<DeliveryProject | null>(() => {
     const p = mockDeliveryProjects.find(d => d.id === id);
@@ -41,6 +41,38 @@ const DeliveryDetail: React.FC = () => {
   const [actualCosts, setActualCosts] = useState<Record<string, number>>({});
   const [costDirty, setCostDirty] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
+
+  // ---- Attachment management ----
+  const attachmentTypes = [
+    { key: 'rfq', label: '客户需求书（原始RFQ）' },
+    { key: 'techPlan', label: '技术方案' },
+    { key: 'techAgreement', label: '技术协议' },
+    { key: 'contract', label: '商务合同' },
+  ];
+  const [files, setFiles] = useState<Record<string, string>>({});
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [activeFileKey, setActiveFileKey] = useState<string>('');
+
+  const handleUploadClick = (key: string) => {
+    setActiveFileKey(key);
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && activeFileKey) {
+      setFiles(prev => ({ ...prev, [activeFileKey]: file.name }));
+    }
+    e.target.value = '';
+  };
+
+  const handleRemoveFile = (key: string) => {
+    setFiles(prev => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  };
 
   const quotationGroups: Group[] = useMemo(() => {
     if (!project) return [];
@@ -432,6 +464,15 @@ const DeliveryDetail: React.FC = () => {
           }}>
           <AuditOutlined style={{ color: COLORS.success, marginRight: 6 }} />成本对比
         </div>
+        <div onClick={() => setTab('files')}
+          style={{
+            padding: '8px 20px', cursor: 'pointer', fontSize: 14,
+            borderBottom: tab === 'files' ? '2px solid #722ed1' : '2px solid transparent',
+            color: tab === 'files' ? '#722ed1' : COLORS.textSecondary, fontWeight: tab === 'files' ? 600 : 400,
+            marginBottom: -2, transition: 'all 0.15s',
+          }}>
+          <UploadOutlined style={{ color: '#722ed1', marginRight: 6 }} />附件管理
+        </div>
       </div>
 
       {tab === 'plan' ? (
@@ -468,6 +509,44 @@ const DeliveryDetail: React.FC = () => {
               onExportPlan={handleExportPlan}
             />
           </Card>
+        </div>
+      ) : tab === 'files' ? (
+        <div>
+          <Card size="small" styles={{ body: { padding: '16px 20px' } }} style={{ borderRadius: 4, border: `1px solid ${COLORS.border}`, boxShadow: 'none', background: '#fff' }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.textDark, marginBottom: 16, paddingBottom: 12, borderBottom: `1px solid ${COLORS.border}` }}>
+              附件管理
+            </div>
+            {attachmentTypes.map(at => {
+              const uploaded = !!files[at.key];
+              return (
+                <div key={at.key} style={{
+                  display: 'flex', alignItems: 'center', gap: 12,
+                  padding: '10px 0', borderBottom: `1px solid ${COLORS.border}`,
+                }}>
+                  <span style={{ flex: 1, fontSize: 13, color: COLORS.textPrimary, fontWeight: 500 }}>{at.label}</span>
+                  {!uploaded ? (
+                    <Button size="small" icon={<UploadOutlined />} onClick={() => handleUploadClick(at.key)}
+                      style={{ fontSize: 12, borderRadius: 3 }}>
+                      上传
+                    </Button>
+                  ) : (
+                    <>
+                      <span style={{ fontSize: 13, color: COLORS.primary }}>{files[at.key]}</span>
+                      <span onClick={() => handleRemoveFile(at.key)}
+                        style={{
+                          width: 20, height: 20, borderRadius: '50%', display: 'inline-flex',
+                          alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+                          fontSize: 14, color: COLORS.textLight, background: COLORS.bgLight,
+                          lineHeight: 1, userSelect: 'none',
+                        }}
+                        title="删除">×</span>
+                    </>
+                  )}
+                </div>
+              );
+            })}
+          </Card>
+          <input ref={fileInputRef} type="file" style={{ display: 'none' }} onChange={handleFileChange} accept=".pdf,.doc,.docx,.xls,.xlsx,.zip,.rar" />
         </div>
       ) : (
         <ConfigProvider theme={{ token: { colorPrimary: COLORS.primary } }}>

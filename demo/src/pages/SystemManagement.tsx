@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Table, Button, Modal, Input, message, Switch } from 'antd';
+import { Table, Button, Modal, Input, InputNumber, message, Switch } from 'antd';
 import { PlusOutlined, EditOutlined, KeyOutlined, CheckOutlined, CloseOutlined, SettingOutlined, DeleteOutlined } from '@ant-design/icons';
 import { COLORS } from '../styles/constants';
 import type { TableProps } from 'antd';
@@ -63,11 +63,12 @@ const MOCK_LOGS: MockLog[] = [
   { key: 'l12', time: '2026-06-29 09:30:00', user: '孙经理', action: '提交计划', module: '交付管理', detail: '项目"挖掘机智能产线" 实施计划提交审批' },
 ];
 
-type TabKey = 'users' | 'logs';
+type TabKey = 'users' | 'logs' | 'config';
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'users', label: '用户管理' },
   { key: 'logs', label: '操作日志' },
+  { key: 'config', label: '基础配置' },
 ];
 
 /* ============================================================
@@ -115,6 +116,48 @@ const SystemManagement: React.FC = () => {
 
   // 操作日志筛选
   const [logModuleFilter, setLogModuleFilter] = useState<string | null>(null);
+
+  /* ---- 基础配置 ---- */
+
+  const [eurRate, setEurRate] = useState<number>(() => {
+    const v = localStorage.getItem('sys_eur_rate');
+    return v ? parseFloat(v) : 8.15;
+  });
+
+  const [vatRate, setVatRate] = useState<number>(() => {
+    const v = localStorage.getItem('sys_vat_rate');
+    return v ? parseFloat(v) : 13;
+  });
+
+  const [designRate, setDesignRate] = useState<number>(() => {
+    const v = localStorage.getItem('sys_design_rate');
+    return v ? parseFloat(v) : 174;
+  });
+
+  const [assemblyRate, setAssemblyRate] = useState<number>(() => {
+    const v = localStorage.getItem('sys_assembly_rate');
+    return v ? parseFloat(v) : 70;
+  });
+
+  const saveEurRate = () => {
+    localStorage.setItem('sys_eur_rate', String(eurRate));
+    messageApi.success('EUR/CNY 汇率已保存');
+  };
+
+  const saveVatRate = () => {
+    localStorage.setItem('sys_vat_rate', String(vatRate));
+    messageApi.success('增值税率已保存');
+  };
+
+  const saveDesignRate = () => {
+    localStorage.setItem('sys_design_rate', String(designRate));
+    messageApi.success('设计工时费率已保存');
+  };
+
+  const saveAssemblyRate = () => {
+    localStorage.setItem('sys_assembly_rate', String(assemblyRate));
+    messageApi.success('装配工时费率已保存');
+  };
 
   /* ---- 用户管理 ---- */
 
@@ -563,6 +606,122 @@ const SystemManagement: React.FC = () => {
             size="small"
             style={{ fontSize: 13, background: '#fff', borderRadius: 8 }}
           />
+          </div>
+
+        </div>
+      )}
+
+      {/* ================================================================
+          基础配置
+          ================================================================ */}
+      {tab === 'config' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+          {/* 汇率配置 */}
+          <div style={{
+            borderRadius: 10, border: `1px solid ${COLORS.borderLight}`,
+            boxShadow: '0 2px 8px rgba(0,0,0,0.04)', padding: 16, background: '#fff',
+          }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.textDark, marginBottom: 12 }}>汇率配置</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <span style={{ fontSize: 13, color: COLORS.textSecondary, width: 100, flexShrink: 0 }}>EUR/CNY</span>
+              <InputNumber
+                value={eurRate}
+                onChange={v => setEurRate(v ?? 8.15)}
+                min={0} step={0.01}
+                style={{ width: 120, borderRadius: 6, fontSize: 13 }}
+                precision={2}
+              />
+              <Button type="primary" ghost size="small" icon={<CheckOutlined />}
+                onClick={saveEurRate}
+                style={{ borderColor: COLORS.primary, color: COLORS.primary, borderRadius: 6, fontSize: 13 }}>
+                保存
+              </Button>
+            </div>
+          </div>
+
+          {/* 增值税率 */}
+          <div style={{
+            borderRadius: 10, border: `1px solid ${COLORS.borderLight}`,
+            boxShadow: '0 2px 8px rgba(0,0,0,0.04)', padding: 16, background: '#fff',
+          }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.textDark, marginBottom: 12 }}>增值税率</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <span style={{ fontSize: 13, color: COLORS.textSecondary, width: 100, flexShrink: 0 }}>VAT 税率</span>
+              <InputNumber
+                value={vatRate}
+                onChange={v => setVatRate(v ?? 13)}
+                min={0} max={100} step={0.5}
+                style={{ width: 140, borderRadius: 6, fontSize: 13 }}
+                precision={1}
+                addonAfter="%"
+              />
+              <Button type="primary" ghost size="small" icon={<CheckOutlined />}
+                onClick={saveVatRate}
+                style={{ borderColor: COLORS.primary, color: COLORS.primary, borderRadius: 6, fontSize: 13 }}>
+                保存
+              </Button>
+            </div>
+          </div>
+
+          {/* 工时费率 */}
+          <div style={{
+            borderRadius: 10, border: `1px solid ${COLORS.borderLight}`,
+            boxShadow: '0 2px 8px rgba(0,0,0,0.04)', padding: 16, background: '#fff',
+          }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.textDark, marginBottom: 12 }}>工时费率</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <span style={{ fontSize: 13, color: COLORS.textSecondary, width: 100, flexShrink: 0 }}>设计工时费率</span>
+                <InputNumber
+                  value={designRate}
+                  onChange={v => setDesignRate(v ?? 174)}
+                  min={0} step={1}
+                  style={{ width: 140, borderRadius: 6, fontSize: 13 }}
+                  precision={0}
+                  addonAfter="元/h"
+                />
+                <Button type="primary" ghost size="small" icon={<CheckOutlined />}
+                  onClick={saveDesignRate}
+                  style={{ borderColor: COLORS.primary, color: COLORS.primary, borderRadius: 6, fontSize: 13 }}>
+                  保存
+                </Button>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <span style={{ fontSize: 13, color: COLORS.textSecondary, width: 100, flexShrink: 0 }}>装配工时费率</span>
+                <InputNumber
+                  value={assemblyRate}
+                  onChange={v => setAssemblyRate(v ?? 70)}
+                  min={0} step={1}
+                  style={{ width: 140, borderRadius: 6, fontSize: 13 }}
+                  precision={0}
+                  addonAfter="元/h"
+                />
+                <Button type="primary" ghost size="small" icon={<CheckOutlined />}
+                  onClick={saveAssemblyRate}
+                  style={{ borderColor: COLORS.primary, color: COLORS.primary, borderRadius: 6, fontSize: 13 }}>
+                  保存
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          {/* 编码规则 */}
+          <div style={{
+            borderRadius: 10, border: `1px solid ${COLORS.borderLight}`,
+            boxShadow: '0 2px 8px rgba(0,0,0,0.04)', padding: 16, background: '#fff',
+          }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.textDark, marginBottom: 12 }}>编码规则</div>
+            <div style={{ fontSize: 13, color: COLORS.textPrimary, lineHeight: 1.8 }}>
+              <div style={{ marginBottom: 8 }}>
+                <code style={{ background: COLORS.bgLight, padding: '2px 8px', borderRadius: 4, fontSize: 13 }}>
+                  {'{类型缩写}-{名称}-{型号}-V{版本}'}
+                </code>
+              </div>
+              <div style={{ color: COLORS.textSecondary, fontSize: 12 }}>
+                成套(COMPLETE_SET)=M, 组件(COMPONENT)=C, 零件(PART)=P, 软件(SOFTWARE)=S, 服务(SERVICE)=H
+              </div>
+            </div>
           </div>
 
         </div>
