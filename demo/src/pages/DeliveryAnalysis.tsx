@@ -336,7 +336,7 @@ const ProfitChart: React.FC<{
             <g key={item.name + '-' + i}>
               {/* 概算柱（蓝色虚线框） */}
               <rect x={cx - barW / 2} y={estTop} width={barW} height={estH}
-                fill="none" stroke={COLORS.primary} strokeWidth={1.5} strokeDasharray="4,3" rx={0} ry={0} />
+                fill="none" stroke={COLORS.primary} strokeWidth={3} strokeDasharray="4,3" rx={0} ry={0} />
 
               {/* 概算标签：高柱外侧/低柱内侧 */}
               {estH >= actH ? (
@@ -359,7 +359,7 @@ const ProfitChart: React.FC<{
               {hasAct && (
                 <>
                   <rect x={cx - barW / 2} y={pad.top + chartH - actH} width={barW} height={actH}
-                    fill="none" stroke={COLORS.purple} strokeWidth={2} rx={0} ry={0} />
+                    fill="none" stroke={COLORS.purple} strokeWidth={3} rx={0} ry={0} />
                   {/* 实际标签：高柱外侧/低柱内侧 */}
                   {actH >= estH ? (
                     <>
@@ -460,7 +460,7 @@ const GanttNode: React.FC<{
       <rect x={sx} y={cy - 4} width={w} height={barH + 8} fill="transparent" stroke="none" />
       {/* 可见条 */}
       <rect x={sx} y={cy} width={w} height={barH} rx={0} ry={0}
-        fill="none" stroke={color} strokeWidth={hovered ? 2.5 : 1.5} opacity={hovered ? 1 : opacity} />
+        fill="none" stroke={color} strokeWidth={3} opacity={hovered ? 1 : opacity} />
       {w > 16 && (
         <text x={sx + w / 2} y={cy + barH / 2 + 2.5} textAnchor="middle" fontSize={7}
           fill={color} opacity={opacity} fontWeight={600}>{slot.nodeNo}</text>
@@ -682,7 +682,7 @@ const BubbleNode: React.FC<{
       <circle cx={cx} cy={cy} r={r + 10} fill="transparent" stroke="none" />
       {/* 气泡本体 */}
       <circle cx={cx} cy={cy} r={r} fill={color} fillOpacity={fillOpacity}
-        stroke={color} strokeWidth={hovered ? 3 : 2} opacity={hovered ? 1 : 0.85}
+        stroke={color} strokeWidth={3} opacity={hovered ? 1 : 0.85}
         style={{ transition: 'opacity 0.15s, stroke-width 0.15s' }} />
       {/* 标签始终显示 */}
       <text x={cx} y={cy - r - 4} textAnchor="middle" fontSize={9} fill="#222">
