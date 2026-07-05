@@ -983,10 +983,10 @@ const DeliveryAnalysis: React.FC = () => {
     const costDevRate = costDevDenominator > 0 ? (costDevNumerator / costDevDenominator * 100) : 0;
 
     return [
-      { label: '项目总数', value: fmtK(totalAmt) + '/' + totalCount, color: COLORS.primary, icon: '📊' },
-      { label: '进行中项目', value: fmtK(activeAmt) + '/' + activeCount, color: COLORS.primary, icon: '🚧' },
-      { label: '已完成项目', value: fmtK(completedAmt) + '/' + completedCount, color: COLORS.success, icon: '✅' },
-      { label: '延期项目', value: fmtK(delayedAmt) + '/' + delayedCount, color: delayedCount > 0 ? COLORS.danger : COLORS.success, icon: '🚨' },
+      { label: '项目总数', value: fmtK(totalAmt) + ' / ' + totalCount, color: COLORS.primary, icon: '📊' },
+      { label: '进行中项目', value: fmtK(activeAmt) + ' / ' + activeCount, color: COLORS.primary, icon: '🚧' },
+      { label: '已完成项目', value: fmtK(completedAmt) + ' / ' + completedCount, color: COLORS.success, icon: '✅' },
+      { label: '延期项目', value: fmtK(delayedAmt) + ' / ' + delayedCount, color: delayedCount > 0 ? COLORS.danger : COLORS.success, icon: '🚨' },
       { label: '加权延期天数', value: `${avgDelay}天`, color: avgDelay > 0 ? COLORS.danger : COLORS.success, icon: '📅' },
       { label: '节点按时率', value: `${onTimeRate}%`, color: onTimeRate >= 80 ? COLORS.success : onTimeRate >= 50 ? COLORS.warning : COLORS.danger, icon: '🎯' },
       { label: '成本偏差率', value: costDevDenominator > 0 ? `${costDevRate > 0 ? '+' : ''}${costDevRate.toFixed(1)}%` : '—', color: costDevRate <= 0 ? COLORS.success : COLORS.danger, icon: '💰' },
