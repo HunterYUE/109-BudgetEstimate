@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Table, Button, Modal, Input, message, Switch } from 'antd';
-import { PlusOutlined, EditOutlined, KeyOutlined, CheckOutlined, CloseOutlined, SettingOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, KeyOutlined, CheckOutlined, CloseOutlined, SettingOutlined, DeleteOutlined } from '@ant-design/icons';
 import { COLORS } from '../styles/constants';
 import type { TableProps } from 'antd';
 
@@ -209,7 +209,7 @@ const SystemManagement: React.FC = () => {
       title: '状态', dataIndex: 'active', key: 'active', width: 70,
       render: (v: boolean, rec: MockUser) => (
         <Switch checked={v} size="small" onChange={() => toggleUserActive(rec.key)}
-          style={{ background: v ? COLORS.success : COLORS.textDisabled }} />
+          style={{ background: v ? COLORS.success : COLORS.borderInput }} />
       ),
     },
     {
@@ -236,7 +236,7 @@ const SystemManagement: React.FC = () => {
             messageApi.success('用户已移除（演示数据，刷新后恢复）');
           }}
             style={{ color: COLORS.danger, cursor: 'pointer', fontSize: 13, whiteSpace: 'nowrap' }}>
-            移除
+            <DeleteOutlined style={{ marginRight: 2 }} />移除
           </span>
         </div>
       ),
@@ -279,7 +279,7 @@ const SystemManagement: React.FC = () => {
               borderBottom: tab === t.key ? `2px solid ${COLORS.primary}` : '2px solid transparent',
               color: tab === t.key ? COLORS.primary : COLORS.textSecondary,
               fontWeight: tab === t.key ? 600 : 400,
-              marginBottom: -2, transition: 'all 0.15s',
+              marginBottom: -2, transition: 'all 0.15s', userSelect: 'none',
             }}>{t.label}</div>
         ))}
       </div>
@@ -301,7 +301,7 @@ const SystemManagement: React.FC = () => {
             pagination={false}
             size="small"
             bordered
-            style={{ fontSize: 13, background: '#fff', borderRadius: 6 }}
+            style={{ fontSize: 13, background: '#fff', borderRadius: 8 }}
             rowClassName={() => 'system-table-row'}
           />
 
@@ -353,7 +353,7 @@ const SystemManagement: React.FC = () => {
                         border: `1.5px solid ${newRole === r ? ROLE_COLORS[r] || COLORS.primary : '#d0d0d0'}`,
                         color: newRole === r ? '#fff' : '#555',
                         background: newRole === r ? (ROLE_COLORS[r] || COLORS.primary) : '#fff',
-                        transition: 'all 0.15s',
+                        transition: 'all 0.15s', userSelect: 'none',
                       }}>{r}</div>
                   ))}
                 </div>
@@ -475,7 +475,7 @@ const SystemManagement: React.FC = () => {
                           border: `1.5px solid ${permRole === r ? ROLE_COLORS[r] || COLORS.primary : '#d0d0d0'}`,
                           color: permRole === r ? '#fff' : '#555',
                           background: permRole === r ? (ROLE_COLORS[r] || COLORS.primary) : '#fff',
-                          transition: 'all 0.15s',
+                          transition: 'all 0.15s', userSelect: 'none',
                         }}>{r}</div>
                     ))}
                   </div>
@@ -502,7 +502,7 @@ const SystemManagement: React.FC = () => {
                           border: `2px solid ${checkedPerms.includes(p) ? COLORS.primary : '#d0d0d0'}`,
                           background: checkedPerms.includes(p) ? COLORS.primary : 'transparent',
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          transition: 'all 0.15s',
+                          transition: 'all 0.15s', userSelect: 'none',
                         }}>
                           {checkedPerms.includes(p) && <span style={{ color: '#fff', fontSize: 11, lineHeight: 1 }}>✓</span>}
                         </div>
@@ -527,14 +527,14 @@ const SystemManagement: React.FC = () => {
       {tab === 'logs' && (
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-            <span style={{ fontSize: 13, color: '#555' }}>模块筛选：</span>
+            <span style={{ fontSize: 13, color: COLORS.textSecondary }}>模块筛选：</span>
             {logModules.map(m => (
               <div key={m} onClick={() => setLogModuleFilter(m === '全部' ? null : m)}
                 style={{
-                  padding: '3px 12px', borderRadius: 12, cursor: 'pointer', fontSize: 12,
+                  padding: '3px 14px', borderRadius: 12, cursor: 'pointer', fontSize: 12,
                   background: (m === '全部' && !logModuleFilter) || logModuleFilter === m ? COLORS.primary : COLORS.borderLight,
-                  color: (m === '全部' && !logModuleFilter) || logModuleFilter === m ? '#fff' : '#555',
-                  transition: 'all 0.15s',
+                  color: (m === '全部' && !logModuleFilter) || logModuleFilter === m ? '#fff' : COLORS.textPrimary,
+                  transition: 'all 0.15s', userSelect: 'none',
                 }}>
                 {m}
               </div>
@@ -546,7 +546,7 @@ const SystemManagement: React.FC = () => {
             columns={logColumns}
             pagination={false}
             size="small"
-            style={{ fontSize: 13, background: '#fff', borderRadius: 6 }}
+            style={{ fontSize: 13, background: '#fff', borderRadius: 8 }}
             rowClassName={() => 'system-table-row'}
           />
 
@@ -558,7 +558,7 @@ const SystemManagement: React.FC = () => {
       <style>{`
         .system-table-row:hover { background: ${COLORS.bgSelected} !important; }
         .ant-table-wrapper .ant-table-thead > tr > th {
-          background: #f5f7fa !important; font-size: 13px !important; font-weight: 600 !important; color: #333 !important;
+          background: ${COLORS.borderLight} !important; font-size: 13px !important; font-weight: 600 !important; color: ${COLORS.textPrimary} !important;
         }
         .ant-table-wrapper .ant-table-tbody > tr > td { font-size: 13px !important; }
       `}</style>
