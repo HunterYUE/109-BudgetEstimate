@@ -81,7 +81,7 @@ const PctBadge: React.FC<{ value: number; label: string; onClick: () => void }> 
   );
 
 const SummarySection: React.FC<Props> = ({ groups, version, onDiscountChange, onVersionUpdate }) => {
-  const summary = calcProjectSummary(groups, version, version.discounted_price);
+  const summary = calcProjectSummary(groups, version, version.discounted_price || undefined);
   const { materialCost, laborCost, projectExpense } = calcCostBreakdown(groups);
   const directCost = materialCost + laborCost + projectExpense;
   const warnPct = Math.round(version.warranty_rate * 100);
@@ -217,12 +217,16 @@ const SummarySection: React.FC<Props> = ({ groups, version, onDiscountChange, on
             </div>
             <div style={{ marginTop: 8, fontSize: 12 }}>
               <span style={{ color: COLORS.textSecondary }}>折扣率 </span>
-              <span style={{
-                fontWeight: 700,
-                color: summary.discount_rate > 0 ? '#f5222d' : COLORS.success,
-              }}>
-                {summary.discount_rate > 0 ? '-' : '+'}{(summary.discount_rate * 100).toFixed(2)}%
-              </span>
+              {Math.abs(summary.discount_rate) < 0.001 ? (
+                <span style={{ fontWeight: 700, color: COLORS.textLight }}>—</span>
+              ) : (
+                <span style={{
+                  fontWeight: 700,
+                  color: summary.discount_rate > 0 ? '#f5222d' : COLORS.success,
+                }}>
+                  {summary.discount_rate > 0 ? '-' : '+'}{(summary.discount_rate * 100).toFixed(2)}%
+                </span>
+              )}
             </div>
           </div>
         </Col>
