@@ -360,13 +360,22 @@ const DeliveryDetail: React.FC = () => {
             </Tag>
             {project.status !== '已完成' && project.nodes.find(n => n.nodeNo === 15)?.status === 'completed' && project.costStatus === 'approved' && (
               <span onClick={() => {
-                if (!window.confirm('确认完成此项目？节点15已完成且成本对比已审批通过。')) return;
-                setProject(prev => {
-                  if (!prev) return prev;
-                  const updated = { ...prev, status: '已完成' as const };
-                  const mockProj = mockDeliveryProjects.find(p => p.id === prev.id);
-                  if (mockProj) mockProj.status = '已完成';
-                  return updated;
+                Modal.confirm({
+                  title: '确认完成项目',
+                  content: '节点15已完成且成本对比已审批通过。确认将此项目标记为已完成？',
+                  okText: '确认完成',
+                  cancelText: '取消',
+                  okButtonProps: { style: { background: COLORS.success, borderColor: COLORS.success } },
+                  onOk: () => {
+                    setProject(prev => {
+                      if (!prev) return prev;
+                      const updated = { ...prev, status: '已完成' as const };
+                      const mockProj = mockDeliveryProjects.find(p => p.id === prev.id);
+                      if (mockProj) mockProj.status = '已完成';
+                      msg.success('项目已标记为已完成');
+                      return updated;
+                    });
+                  },
                 });
               }}
                 style={{

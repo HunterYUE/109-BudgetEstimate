@@ -349,8 +349,7 @@ const QuotationPage: React.FC = () => {
     [project]
   );
 
-  const printStyle = useMemo(() => ({
-    __html: `
+  const printStyle = `
       @media print {
         body * { visibility: hidden; }
         #export-print-area, #export-print-area * { visibility: visible; }
@@ -360,8 +359,7 @@ const QuotationPage: React.FC = () => {
         tr { page-break-inside: avoid; page-break-after: auto; }
         thead { display: table-header-group; }
       }
-    `
-  }), []);
+    `;
 
   return (
     <ConfigProvider
@@ -497,7 +495,7 @@ const QuotationPage: React.FC = () => {
           }
         >
           {/* 打印专用 CSS */}
-          <style dangerouslySetInnerHTML={printStyle} />
+          <style>{printStyle}</style>
           <div id="export-print-area">
             {/* 顶部信息 */}
             <div style={{ marginBottom: 16 }}>
