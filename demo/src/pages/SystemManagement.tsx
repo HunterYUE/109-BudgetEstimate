@@ -546,6 +546,10 @@ const SystemManagement: React.FC = () => {
             ))}
           </div>
 
+          <div style={{
+            borderRadius: 10, border: `1px solid ${COLORS.borderLight}`,
+            boxShadow: '0 2px 8px rgba(0,0,0,0.04)', overflow: 'hidden',
+          }}>
           <Table<MockLog>
             dataSource={filteredLogs}
             columns={logColumns}
