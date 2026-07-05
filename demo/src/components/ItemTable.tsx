@@ -1,5 +1,5 @@
 import React from 'react';
-import { Table, Checkbox, Tag, Select, Tooltip, Button, ConfigProvider } from 'antd';
+import { Table, Tooltip, Button } from 'antd';
 import { DeleteOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import type { GroupItem, SourcingType, GroupType } from '../types';
@@ -141,20 +141,27 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
   const colSourcing: ColumnsType<GroupItem> = cfg.showSourcing ? [{
     title: '外购', dataIndex: 'sourcing_type', width: 52, align: 'center' as const,
     onCell: onCellLock(52),
-    render: (v: SourcingType, _record: GroupItem, idx: number) => editing ? (
-      <Select size="small" variant="borderless" value={v}
-        onChange={(val) => updateItem(idx, { sourcing_type: val })}
-        style={{ width: 56, fontSize: 13 }}
-        options={[
-          { value: 'SELF_MANUFACTURED', label: '否' },
-          { value: 'PURCHASED', label: '是' },
-        ]}
-      />
-    ) : (
-      <Tag color={v === 'PURCHASED' ? 'orange' : COLORS.success} style={{ margin: 0, fontSize: 13 }}>
-        {v === 'PURCHASED' ? '是' : '否'}
-      </Tag>
-    ),
+    render: (v: SourcingType, _record: GroupItem, idx: number) => {
+      const purchased = v === 'PURCHASED';
+      const box = (
+        <span style={{
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          width: 16, height: 16, borderRadius: 3, border: `2px solid ${purchased ? COLORS.primary : '#d0d0d0'}`,
+          background: purchased ? COLORS.primary : 'transparent',
+          color: '#fff', fontSize: 11, lineHeight: 1,
+          transition: 'all 0.15s', userSelect: 'none',
+        }}>
+          {purchased ? '✓' : ''}
+        </span>
+      );
+      if (!editing) return box;
+      return (
+        <span onClick={() => updateItem(idx, { sourcing_type: purchased ? 'SELF_MANUFACTURED' : 'PURCHASED' })}
+          style={{ cursor: 'pointer', display: 'inline-block' }}>
+          {box}
+        </span>
+      );
+    },
   }] : [];
 
   const colQty: ColumnsType<GroupItem> = cfg.hideQty ? [] : [{
@@ -211,11 +218,26 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
   const colWarranty: ColumnsType<GroupItem> = cfg.showWarranty ? [{
     title: '质保', dataIndex: 'has_warranty', width: 44, align: 'center' as const,
     onCell: onCellLock(44),
-    render: (v: boolean, _record: GroupItem, idx: number) => editing ? (
-      <ConfigProvider theme={{ components: { Checkbox: { colorPrimary: COLORS.primary } } }}>
-        <Checkbox checked={v} onChange={(e) => updateItem(idx, { has_warranty: e.target.checked })} />
-      </ConfigProvider>
-    ) : v ? '✓' : '✗',
+    render: (v: boolean, _record: GroupItem, idx: number) => {
+      const box = (
+        <span style={{
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          width: 16, height: 16, borderRadius: 3, border: `2px solid ${v ? COLORS.primary : '#d0d0d0'}`,
+          background: v ? COLORS.primary : 'transparent',
+          color: '#fff', fontSize: 11, lineHeight: 1,
+          transition: 'all 0.15s', userSelect: 'none',
+        }}>
+          {v ? '✓' : ''}
+        </span>
+      );
+      if (!editing) return box;
+      return (
+        <span onClick={() => updateItem(idx, { has_warranty: !v })}
+          style={{ cursor: 'pointer', display: 'inline-block' }}>
+          {box}
+        </span>
+      );
+    },
   }] : [];
 
   const colDelete: ColumnsType<GroupItem> = [{
@@ -247,10 +269,7 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
   return (
     <>
       <style>{`
-        .ant-checkbox-checked .ant-checkbox-inner {
-          background-color: COLORS.primary !important;
-        }
-        .ant-table-tbody .ant-select-selector .ant-select-selection-item,
+.ant-table-tbody .ant-select-selector .ant-select-selection-item,
         .ant-table-tbody .ant-select-item-option-content {
 
         }
