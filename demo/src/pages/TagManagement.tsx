@@ -16,7 +16,6 @@ const TagManagement: React.FC = () => {
   const [descEditId, setDescEditId] = useState<string | null>(null);
   const [descEditValue, setDescEditValue] = useState('');
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
-  const expandView: 'expand' | 'collapse' = expandedIds.size >= flatRows.length ? 'expand' : 'collapse';
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [addModalName, setAddModalName] = useState('');
   const [addModalParentId, setAddModalParentId] = useState<string | null>(null);
@@ -25,6 +24,7 @@ const TagManagement: React.FC = () => {
   const editRef = React.useRef<HTMLInputElement>(null);
 
   const flatRows = flattenTree(tree);
+  const expandView: 'expand' | 'collapse' = expandedIds.size >= flatRows.length ? 'expand' : 'collapse';
   // Only show expanded rows
   const visibleRows = flatRows.filter((row, index) => {
     if (row.level === 0) return true;
