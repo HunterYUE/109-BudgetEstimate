@@ -217,12 +217,12 @@ const TagManagement: React.FC = () => {
               <col style={{ width: 500 }} />
             </colgroup>
             <thead>
-              <tr style={{ background: '#e0f0fa' }}>
-                <th style={{ width: 36, minWidth: 36, maxWidth: 36, padding: '10px 4px', fontSize: 11, fontWeight: 600, color: COLORS.textMuted, textAlign: 'center', letterSpacing: 0.3, borderBottom: '1px solid #e4e9f0' }} />
-                <th style={{ padding: '10px 4px', fontSize: 11, fontWeight: 600, color: COLORS.textMuted, textAlign: 'left', letterSpacing: 0.3, borderBottom: '1px solid #e4e9f0' }}>标签名称</th>
-                <th style={{ width: 56, minWidth: 56, maxWidth: 56, padding: '10px 4px', fontSize: 11, fontWeight: 600, color: COLORS.textMuted, textAlign: 'center', letterSpacing: 0.3, borderBottom: '1px solid #e4e9f0', borderLeft: `1px solid ${COLORS.borderInner}`, borderRight: `1px solid ${COLORS.borderInner}` }}>子级</th>
-                <th style={{ width: 236, minWidth: 236, maxWidth: 236, padding: '10px 4px', fontSize: 11, fontWeight: 600, color: COLORS.textMuted, textAlign: 'center', letterSpacing: 0.3, borderBottom: '1px solid #e4e9f0' }}>操作</th>
-                <th style={{ width: 500, minWidth: 500, maxWidth: 500, padding: '10px 4px', fontSize: 11, fontWeight: 600, color: COLORS.textMuted, textAlign: 'left', letterSpacing: 0.3, borderBottom: '1px solid #e4e9f0', borderLeft: `1px solid ${COLORS.borderInner}`, background: '#e0f0fa' }}>说明</th>
+              <tr style={{ background: '#f0f4ff' }}>
+                <th style={{ width: 36, minWidth: 36, maxWidth: 36, padding: '10px 4px', fontSize: 11, fontWeight: 600, color: '#2c3e6b', textAlign: 'center', letterSpacing: 0.5, borderBottom: '2px solid #d6e0f0' }} />
+                <th style={{ padding: '10px 4px', fontSize: 11, fontWeight: 600, color: '#2c3e6b', textAlign: 'left', letterSpacing: 0.5, borderBottom: '2px solid #d6e0f0' }}>标签名称</th>
+                <th style={{ width: 56, minWidth: 56, maxWidth: 56, padding: '10px 4px', fontSize: 11, fontWeight: 600, color: '#2c3e6b', textAlign: 'center', letterSpacing: 0.5, borderBottom: '2px solid #d6e0f0', borderLeft: `1px solid ${COLORS.borderInner}`, borderRight: `1px solid ${COLORS.borderInner}` }}>子级</th>
+                <th style={{ width: 236, minWidth: 236, maxWidth: 236, padding: '10px 4px', fontSize: 11, fontWeight: 600, color: '#2c3e6b', textAlign: 'center', letterSpacing: 0.5, borderBottom: '2px solid #d6e0f0' }}>操作</th>
+                <th style={{ width: 500, minWidth: 500, maxWidth: 500, padding: '10px 4px', fontSize: 11, fontWeight: 600, color: '#2c3e6b', textAlign: 'left', letterSpacing: 0.5, borderBottom: '2px solid #d6e0f0', borderLeft: `1px solid ${COLORS.borderInner}`, background: '#f0f4ff' }}>说明</th>
               </tr>
             </thead>
             <tbody>
