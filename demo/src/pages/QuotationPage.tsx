@@ -5,7 +5,7 @@ import { useParams } from 'react-router-dom';
 import ProjectHeader from '../components/ProjectHeader';
 import GroupCard from '../components/GroupCard';
 import SummarySection from '../components/SummarySection';
-import { mockProject, mockComponentDB, mockOpportunities, mockQuotationSummaries, mockApprovalRequests } from '../mockData';
+import { mockProject, mockComponentDB, mockOpportunities, mockQuotationSummaries, mockApprovalRequests, mockDeliveryProjects } from '../mockData';
 import type { Group, GroupItem, Project, QuotationSummary } from '../types';
 import { calcProjectSummary, formatMoney } from '../utils/calculations';
 import { notifyMockUpdate } from '../utils/mockStore';
@@ -90,7 +90,11 @@ const QuotationPage: React.FC = () => {
   const [deleteGroupId, setDeleteGroupId] = useState<string | null>(null);
   const [messageApi, contextHolder] = message.useMessage();
   const { id: quoteId } = useParams<{ id: string }>();
-  const isLocked = useMemo(() => mockQuotationSummaries.some(q => q.id === quoteId && q.locked), [quoteId]);
+  const isLocked = useMemo(() => {
+    // 已明确锁定 或 已转交付的报价不可编辑、不可提交
+    if (mockQuotationSummaries.some(q => q.id === quoteId && q.locked)) return true;
+    return mockDeliveryProjects.some(p => p.quotationId === quoteId);
+  }, [quoteId]);
 
   const handleGroupChange = useCallback((groupId: string, items: GroupItem[]) => {
     setProject(prev => ({

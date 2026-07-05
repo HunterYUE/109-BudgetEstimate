@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Table, Tag, Button } from 'antd';
-import { EyeOutlined, EditOutlined } from '@ant-design/icons';
+import { EyeOutlined } from '@ant-design/icons';
 import { mockQuotationSummaries } from '../mockData';
 import { formatMoney } from '../utils/calculations';
 import { parseFY, FYSelector } from '../utils/fiscalYear';
@@ -81,16 +81,9 @@ const QuotationList: React.FC = () => {
       title: '', key: 'action', width: 70, align: 'center' as const,
       render: (_: unknown, record: QuotationSummary) => {
         return (
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-            <Button type="text" size="small" icon={<EyeOutlined style={{ fontSize: 18 }} />}
-              onClick={() => navigate(`/quotations/${record.id}`)}
-              style={{ color: COLORS.primary }} />
-            {(record.status === 'rejected' || record.status === 'draft') && (
-              <Button type="text" size="small" icon={<EditOutlined style={{ fontSize: 18 }} />}
-                onClick={() => navigate(`/quotations/${record.id}`)}
-                style={{ color: COLORS.primary }} />
-            )}
-          </span>
+          <Button type="text" size="small" icon={<EyeOutlined style={{ fontSize: 18 }} />}
+            onClick={() => navigate(`/quotations/${record.id}`)}
+            style={{ color: COLORS.primary }} />
         );
       },
     },
