@@ -172,7 +172,7 @@ const SummarySection: React.FC<Props> = ({ groups, version, onDiscountChange, on
             }}
             onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
             style={{
-              fontWeight: 700, fontSize: 16, color: COLORS.textDark,
+              fontWeight: 700, fontSize: 16, color: COLORS.purple,
               border: 'none', borderBottom: `1px dashed ${COLORS.borderLight}`,
               outline: 'none', width: 140, background: 'transparent',
               fontFamily: 'inherit', padding: 0,
@@ -236,7 +236,7 @@ const SummarySection: React.FC<Props> = ({ groups, version, onDiscountChange, on
                   fontWeight: 700,
                   color: summary.discount_rate > 0 ? '#f5222d' : COLORS.success,
                 }}>
-                  {summary.discount_rate > 0 ? '-' : '+'}{(summary.discount_rate * 100).toFixed(1)}%
+                  {summary.discount_rate > 0 ? '-' : '+'}{(Math.abs(summary.discount_rate) * 100).toFixed(1)}%
                 </span>
               )}
             </div>
