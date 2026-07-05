@@ -291,8 +291,15 @@ const SystemManagement: React.FC = () => {
         <div>
           {/* 新增按钮 — 与销售管理页面新增信息/线索/机会按钮一致 */}
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
-            <Button type="default" icon={<PlusOutlined />} onClick={openAddModal}
-              style={{ color: COLORS.primary, borderColor: COLORS.primary }} />
+            <Button type="default" ghost icon={<PlusOutlined />} onClick={openAddModal}
+              style={{
+                borderRadius: 8, border: `1.5px dashed ${COLORS.borderLight}`,
+                color: COLORS.primary, fontSize: 13, fontWeight: 600, height: 32,
+                transition: 'all 0.2s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.border = `1.5px dashed ${COLORS.primary}`; e.currentTarget.style.background = COLORS.bgSelected; }}
+              onMouseLeave={e => { e.currentTarget.style.border = `1.5px dashed ${COLORS.borderLight}`; e.currentTarget.style.background = 'transparent'; }}
+            >新增用户</Button>
           </div>
 
           <div style={{

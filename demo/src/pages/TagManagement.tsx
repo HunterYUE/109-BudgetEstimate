@@ -203,9 +203,16 @@ const TagManagement: React.FC = () => {
                 marginBottom: -2, transition: 'all 0.15s',
               }}>全部折叠</div>
             </div>
-            <Button type="text" icon={<PlusOutlined />}
+            <Button type="default" ghost icon={<PlusOutlined />}
               onClick={() => addChild(null)}
-              style={{ color: COLORS.primary, fontSize: 13 }}>新增一级标签</Button>
+              style={{
+                borderRadius: 8, border: `1.5px dashed ${COLORS.borderLight}`,
+                color: COLORS.primary, fontSize: 13, fontWeight: 600, height: 32,
+                transition: 'all 0.2s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.border = `1.5px dashed ${COLORS.primary}`; e.currentTarget.style.background = COLORS.bgSelected; }}
+              onMouseLeave={e => { e.currentTarget.style.border = `1.5px dashed ${COLORS.borderLight}`; e.currentTarget.style.background = 'transparent'; }}
+            >新增一级标签</Button>
           </div>
           <div style={{ border: `1px solid ${COLORS.borderCard}`, borderRadius: 6, overflow: 'auto', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
           <table style={{ width: '100%', minWidth: 600, borderCollapse: 'collapse', tableLayout: 'fixed' }}>
