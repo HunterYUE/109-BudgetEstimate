@@ -22,7 +22,7 @@ const App: React.FC = () => {
     <style>{`
       /* ── 全局表格深色科技感表头 ── */
       .ant-table-wrapper .ant-table-thead > tr > th {
-        background: linear-gradient(135deg, #1a2744, #2a3f6a) !important;
+        background: linear-gradient(135deg, #2c3e6b, #3d5a99) !important;
         color: #fff !important;
         font-weight: 600 !important;
         font-size: 13px !important;
@@ -34,7 +34,8 @@ const App: React.FC = () => {
       .ant-table-wrapper .ant-table-tbody > tr > td {
         padding: 8px 12px !important;
         font-size: 13px !important;
-        border-bottom: 1px solid #f0f2f5 !important;
+        color: #333 !important;
+        border-bottom: 1px solid #eef2f7 !important;
         transition: background 0.12s !important;
       }
       .ant-table-wrapper .ant-table-tbody > tr:nth-child(even) > td {
@@ -48,6 +49,10 @@ const App: React.FC = () => {
       }
       .ant-table-summary { background: #f0f4ff !important; }
       .ant-table-summary td { border-bottom: none !important; }
+      .ant-table-wrapper .ant-table-tbody .ant-tag {
+        font-size: 12px !important; padding: 1px 8px !important; border: none !important;
+        line-height: 22px !important; border-radius: 4px !important;
+      }
     `}</style>
     <Routes>
       <Route element={<AppLayout />}>
