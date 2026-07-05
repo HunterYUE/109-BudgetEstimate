@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useMemo } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Tag, Card, Button, message, Modal, ConfigProvider } from 'antd';
 import { ScheduleOutlined, AuditOutlined, SendOutlined, SaveOutlined, ArrowLeftOutlined, DownloadOutlined } from '@ant-design/icons';
 import { mockDeliveryProjects, mockProject, mockApprovalRequests } from '../mockData';
@@ -23,7 +23,9 @@ const DeliveryDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [msg, ctx] = message.useMessage();
-  const [tab, setTab] = useState<'plan' | 'cost'>('plan');
+  const location = useLocation();
+  const initTab = (location.state as { tab?: 'plan' | 'cost' })?.tab || 'plan';
+  const [tab, setTab] = useState<'plan' | 'cost'>(initTab);
 
   const [project, setProject] = useState<DeliveryProject | null>(() => {
     const p = mockDeliveryProjects.find(d => d.id === id);

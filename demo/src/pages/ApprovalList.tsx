@@ -150,7 +150,7 @@ const ApprovalList: React.FC = () => {
                 </div>
                 <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginLeft: 16, flexShrink: 0 }}>
                   <Button type="text" size="small" icon={<EyeOutlined style={{ fontSize: 18 }} />}
-                    onClick={() => item.deliveryId ? navigate('/delivery/' + item.deliveryId) : navigate('/quotations/' + item.quotationId)}
+                    onClick={() => item.deliveryId ? navigate('/delivery/' + item.deliveryId, { state: { tab: item.approvalType === 'cost' ? 'cost' : 'plan' } }) : navigate('/quotations/' + item.quotationId)}
                     style={{ color: COLORS.primary }} />
                 </div>
               </div>
@@ -199,7 +199,7 @@ const ApprovalList: React.FC = () => {
 
                 <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginLeft: 16, flexShrink: 0 }}>
                   <Button type="text" size="small" icon={<EyeOutlined style={{ fontSize: 18 }} />}
-                    onClick={() => req.deliveryId ? navigate('/delivery/' + req.deliveryId) : navigate('/quotations/' + req.quotationId)}
+                    onClick={() => req.deliveryId ? navigate('/delivery/' + req.deliveryId, { state: { tab: req.approvalType === 'cost' ? 'cost' : 'plan' } }) : navigate('/quotations/' + req.quotationId)}
                     style={{ color: COLORS.primary }} />
                   {req.records.length > 0 && (
                     <Button type="text" size="small" icon={<HistoryOutlined />}
