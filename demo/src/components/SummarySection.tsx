@@ -160,21 +160,23 @@ const SummarySection: React.FC<Props> = ({ groups, version, onDiscountChange, on
         }}>
           <span style={{ fontSize: 13, color: COLORS.textSecondary, whiteSpace: 'nowrap' }}>商业费用</span>
           <input type="text" inputMode="numeric"
-            defaultValue={String(version.commercial_cost)}
+            defaultValue={'¥' + formatMoney(version.commercial_cost)}
+            onInput={(e) => {
+              const input = e.currentTarget;
+              const raw = input.value.replace(/[^0-9]/g, '');
+              input.value = raw ? '¥' + parseInt(raw, 10).toLocaleString() : '¥';
+            }}
             onBlur={(e) => {
               const val = parseInt(e.target.value.replace(/[^0-9]/g, ''), 10) || 0;
               onVersionUpdate?.('commercial_cost', val);
             }}
             onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
             style={{
-              flex: 1, minWidth: 60, maxWidth: 140, padding: '4px 8px',
-              border: `1px solid ${COLORS.border}`, borderRadius: 4,
-              fontSize: 14, fontWeight: 600, color: COLORS.textDark, outline: 'none', textAlign: 'right',
-              background: '#fff', fontFamily: 'inherit',
+              fontWeight: 700, fontSize: 16, color: COLORS.textDark,
+              border: 'none', borderBottom: `1px dashed ${COLORS.borderLight}`,
+              outline: 'none', width: 140, background: 'transparent',
+              fontFamily: 'inherit', padding: 0,
             }} />
-          <span style={{ fontWeight: 700, fontSize: 16, color: COLORS.textDark, whiteSpace: 'nowrap' }}>
-            ¥{formatMoney(version.commercial_cost)}
-          </span>
         </div>
       </div>
 
