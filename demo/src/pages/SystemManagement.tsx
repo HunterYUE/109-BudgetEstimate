@@ -306,7 +306,6 @@ const SystemManagement: React.FC = () => {
             size="small"
             bordered
             style={{ fontSize: 13, background: '#fff', borderRadius: 8 }}
-            rowClassName={() => 'system-table-row'}
           />
           </div>
 
@@ -556,7 +555,6 @@ const SystemManagement: React.FC = () => {
             pagination={false}
             size="small"
             style={{ fontSize: 13, background: '#fff', borderRadius: 8 }}
-            rowClassName={() => 'system-table-row'}
           />
           </div>
 
@@ -564,13 +562,7 @@ const SystemManagement: React.FC = () => {
       )}
 
       {/* 全局表格行样式 */}
-      <style>{`
-        .system-table-row:hover { background: ${COLORS.bgSelected} !important; }
-        .ant-table-wrapper .ant-table-thead > tr > th {
-          background: ${COLORS.borderLight} !important; font-size: 13px !important; font-weight: 600 !important; color: ${COLORS.textPrimary} !important;
-        }
-        .ant-table-wrapper .ant-table-tbody > tr > td { font-size: 13px !important; }
-      `}</style>
+
     </div>
   );
 };

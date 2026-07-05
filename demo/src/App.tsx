@@ -19,6 +19,36 @@ const SystemManagement = lazy(() => import('./pages/SystemManagement'));
 const App: React.FC = () => {
   return (
     <Suspense fallback={<div style={{ padding: 40, textAlign: 'center', color: '#999' }}>加载中...</div>}>
+    <style>{`
+      /* ── 全局表格深色科技感表头 ── */
+      .ant-table-wrapper .ant-table-thead > tr > th {
+        background: linear-gradient(135deg, #1a2744, #2a3f6a) !important;
+        color: #fff !important;
+        font-weight: 600 !important;
+        font-size: 13px !important;
+        padding: 10px 12px !important;
+        border-bottom: none !important;
+        letter-spacing: 0.3px !important;
+      }
+      .ant-table-wrapper .ant-table-thead > tr > th::before { display: none !important; }
+      .ant-table-wrapper .ant-table-tbody > tr > td {
+        padding: 8px 12px !important;
+        font-size: 13px !important;
+        border-bottom: 1px solid #f0f2f5 !important;
+        transition: background 0.12s !important;
+      }
+      .ant-table-wrapper .ant-table-tbody > tr:nth-child(even) > td {
+        background: #f8f9fb !important;
+      }
+      .ant-table-wrapper .ant-table-tbody > tr:hover > td {
+        background: #eef4ff !important;
+      }
+      .ant-table-wrapper .ant-table-tbody > tr:last-child > td {
+        border-bottom: none !important;
+      }
+      .ant-table-summary { background: #f0f4ff !important; }
+      .ant-table-summary td { border-bottom: none !important; }
+    `}</style>
     <Routes>
       <Route element={<AppLayout />}>
         <Route path="/" element={<Dashboard />} />
