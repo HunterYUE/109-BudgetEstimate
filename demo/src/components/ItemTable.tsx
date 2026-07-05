@@ -141,24 +141,18 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
   const colSourcing: ColumnsType<GroupItem> = cfg.showSourcing ? [{
     title: '外购', dataIndex: 'sourcing_type', width: 52, align: 'center' as const,
     onCell: onCellLock(52),
-    render: (v: SourcingType, _record: GroupItem, idx: number) => {
-      const purchased = v === 'PURCHASED';
-      const box = (
+    render: (v: SourcingType) => {
+      const on = v === 'PURCHASED';
+      return (
         <span style={{
           display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-          width: 16, height: 16, borderRadius: 3, border: `2px solid ${purchased ? COLORS.primary : '#d0d0d0'}`,
-          background: purchased ? COLORS.primary : 'transparent',
-          color: '#fff', fontSize: 11, lineHeight: 1,
-          transition: 'all 0.15s', userSelect: 'none',
+          width: 16, height: 16, borderRadius: 3,
+          border: `2px solid ${on ? COLORS.primary : '#d0d0d0'}`,
+          background: on ? COLORS.primary : 'transparent',
+          color: '#fff', fontSize: 11, fontWeight: 700, lineHeight: 1,
+          userSelect: 'none',
         }}>
-          {purchased ? '✓' : ''}
-        </span>
-      );
-      if (!editing) return box;
-      return (
-        <span onClick={() => updateItem(idx, { sourcing_type: purchased ? 'SELF_MANUFACTURED' : 'PURCHASED' })}
-          style={{ cursor: 'pointer', display: 'inline-block' }}>
-          {box}
+          {on ? '✓' : '✗'}
         </span>
       );
     },
@@ -218,26 +212,18 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
   const colWarranty: ColumnsType<GroupItem> = cfg.showWarranty ? [{
     title: '质保', dataIndex: 'has_warranty', width: 44, align: 'center' as const,
     onCell: onCellLock(44),
-    render: (v: boolean, _record: GroupItem, idx: number) => {
-      const box = (
-        <span style={{
-          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-          width: 16, height: 16, borderRadius: 3, border: `2px solid ${v ? COLORS.primary : '#d0d0d0'}`,
-          background: v ? COLORS.primary : 'transparent',
-          color: '#fff', fontSize: 11, lineHeight: 1,
-          transition: 'all 0.15s', userSelect: 'none',
-        }}>
-          {v ? '✓' : ''}
-        </span>
-      );
-      if (!editing) return box;
-      return (
-        <span onClick={() => updateItem(idx, { has_warranty: !v })}
-          style={{ cursor: 'pointer', display: 'inline-block' }}>
-          {box}
-        </span>
-      );
-    },
+    render: (v: boolean) => (
+      <span style={{
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        width: 16, height: 16, borderRadius: 3,
+        border: `2px solid ${v ? COLORS.primary : '#d0d0d0'}`,
+        background: v ? COLORS.primary : 'transparent',
+        color: '#fff', fontSize: 11, fontWeight: 700, lineHeight: 1,
+        userSelect: 'none',
+      }}>
+        {v ? '✓' : '✗'}
+      </span>
+    ),
   }] : [];
 
   const colDelete: ColumnsType<GroupItem> = [{
