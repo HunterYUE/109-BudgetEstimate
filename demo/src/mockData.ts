@@ -271,7 +271,7 @@ export const mockProject: Project = {
     commercial_cost: 0,
     total_direct_cost: 0,
     total_accounting_price: 0,
-    discounted_price: 11800000,
+    discounted_price: 0,
     discount_rate: 0,
     rp1_profit_rate: 0,
     gp3_profit_rate: 0,
