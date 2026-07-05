@@ -326,6 +326,26 @@ const DeliveryDetail: React.FC = () => {
               style={{ margin: 0, fontSize: 12, lineHeight: '20px', borderRadius: 3, border: 'none' }}>
               {project.status}
             </Tag>
+            {project.status !== '已完成' && project.nodes.find(n => n.nodeNo === 15)?.status === 'completed' && project.costStatus === 'approved' && (
+              <span onClick={() => {
+                if (!window.confirm('确认完成此项目？节点15已完成且成本对比已审批通过。')) return;
+                setProject(prev => {
+                  if (!prev) return prev;
+                  const updated = { ...prev, status: '已完成' as const };
+                  const mockProj = mockDeliveryProjects.find(p => p.id === prev.id);
+                  if (mockProj) mockProj.status = '已完成';
+                  return updated;
+                });
+              }}
+                style={{
+                  marginLeft: 8, padding: '4px 12px', borderRadius: 4, cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                  color: '#fff', background: COLORS.success, border: 'none', userSelect: 'none',
+                  transition: 'opacity 0.15s',
+                }}
+                onMouseEnter={e => e.currentTarget.style.opacity = '0.8'}
+                onMouseLeave={e => e.currentTarget.style.opacity = '1'}
+              >✓ 完成项目</span>
+            )}
           </div>
           <div style={{ fontSize: 13, color: COLORS.textLight, marginTop: 4, display: 'flex', gap: 16 }}>
             <span>{project.projectName}</span>

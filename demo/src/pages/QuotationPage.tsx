@@ -338,61 +338,30 @@ const QuotationPage: React.FC = () => {
     messageApi.success('已提交审核，版本已更新为待审批状态');
   }, [validateCodes, messageApi, versionBump, project, isLocked]);
 
+  const [showExportModal, setShowExportModal] = useState(false);
+
   const handleExport = useCallback(() => {
-    const summary = calcProjectSummary(project.groups, project.current_version, project.current_version.discounted_price);
-    Modal.info({
-      title: '报价表预览（不含成本信息）',
-      width: 700,
-      content: (
-        <div>
-          <p>客户：{project.client_name}</p>
-          <p>报价编号：{project.sales_no} | 版本：{project.current_version.version_no}</p>
-          <Divider />
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ background: COLORS.bgLight }}>
-                <th style={thStyle}>序号</th>
-                <th style={thStyle}>项目</th>
-                <th style={thStyle}>数量</th>
-                <th style={thStyle}>单价(未税)</th>
-                <th style={thStyle}>总价(未税)</th>
-              </tr>
-            </thead>
-            <tbody>
-              {project.groups.map(g => {
-                const groupTotal = g.items.reduce((s, i) => s + i.accounting_price, 0);
-                return (
-                  <React.Fragment key={g.id}>
-                    <tr>
-                      <td style={tdStyle}><strong>{g.group_no}</strong></td>
-                      <td style={tdStyle}><strong>{g.name}</strong></td>
-                      <td style={tdStyle}>1</td>
-                      <td style={tdStyle}></td>
-                      <td style={tdStyle}><strong>¥{formatMoney(groupTotal)}</strong></td>
-                    </tr>
-                    {g.items.filter(i => i.accounting_price > 0).map(i => (
-                      <tr key={i.id}>
-                        <td style={tdStyle}>{g.group_no}.{i.item_no}</td>
-                        <td style={tdStyle}>{i.code || i.description}</td>
-                        <td style={tdStyle}>{i.qty_total}</td>
-                        <td style={tdStyle}>¥{formatMoney(i.accounting_price / (i.qty_total || 1))}</td>
-                        <td style={tdStyle}>¥{formatMoney(i.accounting_price)}</td>
-                      </tr>
-                    ))}
-                  </React.Fragment>
-                );
-              })}
-            </tbody>
-          </table>
-          <Divider />
-          <p>预期总价（未税）：¥{formatMoney(summary.total_accounting_price)}</p>
-          <p>折扣后报价：¥{formatMoney(summary.discounted_price)}</p>
-        </div>
-      ),
-      okText: '关闭',
-      okButtonProps: { style: { background: COLORS.primary, borderColor: COLORS.primary, borderRadius: 4 } },
-    });
-  }, [project]);
+    setShowExportModal(true);
+  }, []);
+
+  const summary = useMemo(() =>
+    calcProjectSummary(project.groups, project.current_version, project.current_version.discounted_price),
+    [project]
+  );
+
+  const printStyle = useMemo(() => ({
+    __html: `
+      @media print {
+        body * { visibility: hidden; }
+        #export-print-area, #export-print-area * { visibility: visible; }
+        #export-print-area { position: absolute; left: 0; top: 0; width: 100%; }
+        .no-print { display: none !important; }
+        table { page-break-inside: auto; }
+        tr { page-break-inside: avoid; page-break-after: auto; }
+        thead { display: table-header-group; }
+      }
+    `
+  }), []);
 
   return (
     <ConfigProvider
@@ -501,6 +470,113 @@ const QuotationPage: React.FC = () => {
           }
         >
           <div style={{ fontSize: 13, color: '#555' }}>删除后不可恢复</div>
+        </Modal>
+
+        {/* 报价表预览/导出弹窗 */}
+        <Modal
+          title={<span style={{ fontSize: 17, fontWeight: 600, color: COLORS.textDark, letterSpacing: 0.5 }}>报价表预览（不含成本信息）</span>}
+          open={showExportModal}
+          onCancel={() => setShowExportModal(false)}
+          width={750}
+          destroyOnHidden
+          styles={{ body: { padding: '24px 28px 12px', maxHeight: 500, overflowY: 'auto' } }}
+          footer={
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <Button type="primary" icon={<DownloadOutlined />}
+                onClick={() => { window.print(); }}
+                style={{ background: COLORS.primary, borderColor: COLORS.primary, borderRadius: 4 }}
+              >
+                打印/导出
+              </Button>
+              <Button onClick={() => setShowExportModal(false)}
+                style={{ borderRadius: 4 }}
+              >
+                关闭
+              </Button>
+            </div>
+          }
+        >
+          {/* 打印专用 CSS */}
+          <style dangerouslySetInnerHTML={printStyle} />
+          <div id="export-print-area">
+            {/* 顶部信息 */}
+            <div style={{ marginBottom: 16 }}>
+              <h2 style={{ margin: 0, color: COLORS.textDark, fontSize: 18, fontWeight: 700, textAlign: 'center' }}>
+                报价表
+              </h2>
+              <div style={{
+                display: 'flex', justifyContent: 'space-between', marginTop: 12,
+                fontSize: 13, color: COLORS.textDark, flexWrap: 'wrap', gap: 8,
+              }}>
+                <span>客户：<strong>{project.client_name}</strong></span>
+                <span>报价编号：<strong>{project.sales_no}</strong></span>
+                <span>版本：<strong>{project.current_version.version_no}</strong></span>
+                <span>审批状态：<strong>{{
+                  draft: '草稿', pending: '待审批', approved: '已通过', rejected: '已驳回',
+                }[project.current_version.review_status]}</strong></span>
+              </div>
+              <Divider style={{ margin: '12px 0' }} />
+            </div>
+
+            {/* 明细表格 */}
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: COLORS.bgLight }}>
+                  <th style={thStyle}>序号</th>
+                  <th style={thStyle}>项目</th>
+                  <th style={thStyle}>数量</th>
+                  <th style={thStyle}>单价(未税)</th>
+                  <th style={thStyle}>总价(未税)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {project.groups.map(g => {
+                  const groupTotal = g.items.reduce((s, i) => s + i.accounting_price, 0);
+                  return (
+                    <React.Fragment key={g.id}>
+                      <tr>
+                        <td style={tdStyle}><strong>{g.group_no}</strong></td>
+                        <td style={tdStyle}><strong>{g.name}</strong></td>
+                        <td style={tdStyle}>1</td>
+                        <td style={tdStyle}></td>
+                        <td style={tdStyle}><strong>¥{formatMoney(groupTotal)}</strong></td>
+                      </tr>
+                      {g.items.filter(i => i.accounting_price > 0).map(i => (
+                        <tr key={i.id}>
+                          <td style={tdStyle}>{g.group_no}.{i.item_no}</td>
+                          <td style={tdStyle}>{i.code || i.description}</td>
+                          <td style={tdStyle}>{i.qty_total}</td>
+                          <td style={tdStyle}>¥{formatMoney(i.accounting_price / (i.qty_total || 1))}</td>
+                          <td style={tdStyle}>¥{formatMoney(i.accounting_price)}</td>
+                        </tr>
+                      ))}
+                    </React.Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+
+            <Divider style={{ margin: '12px 0' }} />
+
+            {/* 汇总信息 */}
+            <div style={{ fontSize: 13, color: COLORS.textDark, lineHeight: 1.8 }}>
+              <p style={{ margin: 0 }}>
+                预期总价（未税）：<strong>¥{formatMoney(summary.total_accounting_price)}</strong>
+              </p>
+              {project.current_version.discount_rate != null && project.current_version.discount_rate !== 1 && (
+                <p style={{ margin: '4px 0 0' }}>
+                  折扣率：<strong>{(project.current_version.discount_rate * 100).toFixed(1)}%</strong>
+                  &nbsp;&nbsp;|&nbsp;&nbsp;
+                  折扣后报价：<strong>¥{formatMoney(summary.discounted_price)}</strong>
+                </p>
+              )}
+              <p style={{ margin: '4px 0 0', fontSize: 12, color: COLORS.textLight }}>
+                生成日期：{new Date().toLocaleDateString('zh-CN')}
+                &nbsp;&nbsp;|&nbsp;&nbsp;
+                所有价格为不含税价格
+              </p>
+            </div>
+          </div>
         </Modal>
 
         <div style={{
