@@ -51,6 +51,8 @@ export const COLORS = {
   amber: '#c76a00',
   /** 灰色（甘特图项目色） */
   chartGray: '#888',
+  /** 甘特图未执行节点 */
+  barPending: '#bbb',
 } as const;
 
 /** 标签背景色候选项（15 色深色系） */
