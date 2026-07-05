@@ -107,7 +107,7 @@ const QuotationList: React.FC = () => {
         <div onClick={() => setStatusTab('all')}
           style={{
             padding: '8px 20px', cursor: 'pointer', fontSize: 14,
-            borderBottom: statusTab === 'all' ? '2px solid COLORS.primary' : '2px solid transparent',
+            borderBottom: statusTab === 'all' ? `2px solid ${COLORS.primary}` : '2px solid transparent',
             color: statusTab === 'all' ? COLORS.primary : COLORS.textSecondary, fontWeight: statusTab === 'all' ? 600 : 400,
             marginBottom: -2, transition: 'all 0.15s',
           }}>全部({getCount()})
@@ -139,13 +139,17 @@ const QuotationList: React.FC = () => {
         <div onClick={() => setStatusTab('rejected')}
           style={{
             padding: '8px 20px', cursor: 'pointer', fontSize: 14,
-            borderBottom: statusTab === 'rejected' ? '2px solid COLORS.danger' : '2px solid transparent',
+            borderBottom: statusTab === 'rejected' ? `2px solid ${COLORS.danger}` : '2px solid transparent',
             color: statusTab === 'rejected' ? COLORS.danger : COLORS.textLight, fontWeight: statusTab === 'rejected' ? 600 : 400,
             marginBottom: -2, transition: 'all 0.15s',
           }}>已驳回({getCount('rejected')})
         </div>
       </div>
 
+      <div style={{
+        borderRadius: 10, border: `1px solid ${COLORS.borderLight}`,
+        boxShadow: '0 2px 8px rgba(0,0,0,0.04)', overflow: 'hidden',
+      }}>
       <Table
         dataSource={filtered}
         columns={columns}
@@ -153,8 +157,9 @@ const QuotationList: React.FC = () => {
         pagination={false}
         size="small"
         bordered
-        style={{ background: '#fff', borderRadius: 6 }}
+        style={{ background: '#fff', borderRadius: 8 }}
       />
+      </div>
     </div>
   );
 };
