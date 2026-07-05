@@ -11,6 +11,8 @@ import { calcProjectSummary, formatMoney } from '../utils/calculations';
 import { notifyMockUpdate } from '../utils/mockStore';
 import IconButton from '../components/IconButton';
 import { COLORS } from '../styles/constants';
+import { exportHtmlTable } from '../utils/exportToExcel';
+import { exportHtmlTable } from '../utils/exportToExcel';
 
 /** 生成销售编号：A{年份}-{月份}-{三位流水} */
 function generateSalesNo(): string {
@@ -338,28 +340,50 @@ const QuotationPage: React.FC = () => {
     messageApi.success('已提交审核，版本已更新为待审批状态');
   }, [validateCodes, messageApi, versionBump, project, isLocked]);
 
-  const [showExportModal, setShowExportModal] = useState(false);
-
-  const handleExport = useCallback(() => {
-    setShowExportModal(true);
-  }, []);
-
   const summary = useMemo(() =>
     calcProjectSummary(project.groups, project.current_version, project.current_version.discounted_price),
     [project]
   );
 
-  const printStyle = `
-      @media print {
-        body * { visibility: hidden; }
-        #export-print-area, #export-print-area * { visibility: visible; }
-        #export-print-area { position: absolute; left: 0; top: 0; width: 100%; }
-        .no-print { display: none !important; }
-        table { page-break-inside: auto; }
-        tr { page-break-inside: avoid; page-break-after: auto; }
-        thead { display: table-header-group; }
+  const handleExport = useCallback(() => {
+    let groupsHtml = '';
+    for (let gi = 0; gi < project.groups.length; gi++) {
+      const g = project.groups[gi];
+      let groupTotal = 0;
+      for (let ii = 0; ii < g.items.length; ii++) {
+        groupTotal += g.items[ii].accounting_price;
       }
-    `;
+      groupsHtml += '<tr style="font-weight:700;background:#f5f7fa">' +
+        '<td style="text-align:center">' + g.group_no + '</td>' +
+        '<td>' + g.name + '</td>' +
+        '<td style="text-align:center">1</td>' +
+        '<td class="amount"></td>' +
+        '<td class="amount">¥' + Math.round(groupTotal).toLocaleString() + '</td></tr>';
+      for (let ii = 0; ii < g.items.length; ii++) {
+        const item = g.items[ii];
+        if (item.accounting_price <= 0) continue;
+        groupsHtml += '<tr><td style="text-align:center">' + g.group_no + '.' + item.item_no + '</td>' +
+          '<td>' + (item.code || item.description || '—') + '</td>' +
+          '<td style="text-align:center">' + item.qty_total + '</td>' +
+          '<td class="amount">¥' + Math.round(item.accounting_price / (item.qty_total || 1)).toLocaleString() + '</td>' +
+          '<td class="amount">¥' + Math.round(item.accounting_price).toLocaleString() + '</td></tr>';
+      }
+    }
+
+    let html = '<h2 style="text-align:center;margin-bottom:16px">报价表</h2>';
+    html += '<table style="width:100%;border-collapse:collapse;margin-bottom:16px">';
+    html += '<tr><td style="border:none;padding:2px 8px;font-size:12px"><b>客户：</b>' + project.client_name + '</td>';
+    html += '<td style="border:none;padding:2px 8px;font-size:12px"><b>报价编号：</b>' + project.sales_no + '</td></tr>';
+    html += '<tr><td style="border:none;padding:2px 8px;font-size:12px"><b>版本：</b>' + project.current_version.version_no + '</td>';
+    html += '<td style="border:none;padding:2px 8px;font-size:12px"><b>日期：</b>' + new Date().toISOString().slice(0, 10) + '</td></tr></table>';
+    html += '<table style="width:100%;border-collapse:collapse"><thead><tr><th style="width:44px">序号</th><th>项目</th><th style="width:52px">数量</th><th style="width:120px">单价(未税)</th><th style="width:130px">总价(未税)</th></tr></thead><tbody>' + groupsHtml + '</tbody></table>';
+    html += '<table style="width:100%;border-collapse:collapse;margin-top:12px">';
+    html += '<tr><td style="border:none;text-align:right;padding:4px 10px;font-size:13px"><b>预期总价（未税）：</b>¥' + Math.round(summary.total_accounting_price).toLocaleString() + '</td></tr>';
+    html += '<tr><td style="border:none;text-align:right;padding:4px 10px;font-size:13px"><b>折后报价（未税）：</b>¥' + Math.round(summary.discounted_price).toLocaleString() + '</td></tr></table>';
+    html += '<p style="font-size:11px;color:#999;margin-top:16px">所有价格为不含税价格</p>';
+
+    exportHtmlTable('报价表_' + project.client_name + '_' + project.sales_no, html);
+  }, [project, summary]);
 
   return (
     <ConfigProvider

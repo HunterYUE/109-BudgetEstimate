@@ -10,6 +10,7 @@ import IconButton from '../components/IconButton';
 import ItemCostTable from '../components/ItemCostTable';
 import type { DeliveryProject, DeliveryNode, Group } from '../types';
 import { COLORS } from '../styles/constants';
+import { exportHtmlTable } from '../utils/exportToExcel';
 
 const STATUS_CYCLE: DeliveryNode['status'][] = ['pending', 'in_progress', 'completed', 'delayed'];
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
@@ -223,41 +224,62 @@ const DeliveryDetail: React.FC = () => {
 
   const handleExportPlan = useCallback(() => {
     if (!project) return;
-    const TAX_RATE = 0.13;
-    const exTax = Math.round(project.contractAmount / (1 + TAX_RATE));
-    const doneCount = project.nodes.filter(n => n.status === 'completed' || n.status === 'delayed').length;
-    Modal.info({
-      title: '实施计划概览',
-      width: 560,
-      content: (
-        <div style={{ fontSize: 13, lineHeight: 2 }}>
-          <p>项目：{project.projectName}</p>
-          <p>客户：{project.clientName}</p>
-          <p>合同金额：&yen;{formatMoney(exTax)}</p>
-          <p>节点进度：{doneCount}/{project.nodes.length}</p>
-        </div>
-      ),
-      okText: '关闭',
-    });
+    let rows = '';
+    for (let i = 0; i < project.nodes.length; i++) {
+      const n = project.nodes[i];
+      const statusMap = { pending: '未开始', in_progress: '进行中', completed: '已完成', delayed: '延期中' };
+      const delay = n.status === 'completed' || n.status === 'delayed'
+        ? Math.max(0, Math.round((new Date(n.actualDate || n.plannedEndDate).getTime() - new Date(n.plannedEndDate).getTime()) / 86400000))
+        : n.status === 'in_progress'
+        ? Math.max(0, Math.round((Date.now() - new Date(n.plannedEndDate).getTime()) / 86400000))
+        : 0;
+      rows += '<tr>' +
+        '<td style="text-align:center">' + n.nodeNo + '</td>' +
+        '<td>' + n.name + '</td>' +
+        '<td style="text-align:center">' + (statusMap[n.status] || n.status) + '</td>' +
+        '<td style="text-align:center">' + n.plannedStartDate + '</td>' +
+        '<td style="text-align:center">' + n.plannedEndDate + '</td>' +
+        '<td style="text-align:center">' + (n.actualDate || '—') + '</td>' +
+        '<td style="text-align:center">' + (delay > 0 ? '+' + delay + '天' : '—') + '</td></tr>';
+    }
+    const html = '<h2 style="text-align:center;margin-bottom:16px">实施计划</h2>' +
+      '<table style="width:100%;border-collapse:collapse;margin-bottom:8px">' +
+      '<tr><td style="border:none;padding:2px 8px"><b>项目：</b>' + project.projectName + '</td>' +
+      '<td style="border:none;padding:2px 8px"><b>客户：</b>' + project.clientName + '</td></tr></table>' +
+      '<table style="width:100%;border-collapse:collapse"><thead><tr><th>节点</th><th>名称</th><th>状态</th><th>计划开始</th><th>计划结束</th><th>实际日期</th><th>延期</th></tr></thead><tbody>' + rows + '</tbody></table>';
+    exportHtmlTable('实施计划_' + project.clientName, html);
   }, [project]);
 
   const handleExportCost = useCallback(() => {
     if (!project) return;
-    const totalAct = Object.values(actualCosts).reduce((s, v) => s + v, 0);
-    const totEst = quotationGroups.reduce((s, g) => s + g.items.reduce((si, i) => si + i.direct_cost, 0), 0);
-    Modal.info({
-      title: '成本对比概览',
-      width: 560,
-      content: (
-        <div style={{ fontSize: 13, lineHeight: 2 }}>
-          <p>项目：{project.projectName}</p>
-          <p>客户：{project.clientName}</p>
-          <p>概算总成本：&yen;{formatMoney(totEst)}</p>
-          <p>实际总成本：&yen;{formatMoney(totalAct)}</p>
-        </div>
-      ),
-      okText: '关闭',
-    });
+    let totalAct = 0;
+    let totEst = 0;
+    let rows = '';
+    for (let gi = 0; gi < quotationGroups.length; gi++) {
+      const g = quotationGroups[gi];
+      for (let ii = 0; ii < g.items.length; ii++) {
+        const item = g.items[ii];
+        const act = actualCosts[item.id] || 0;
+        const est = item.direct_cost;
+        totalAct += act;
+        totEst += est;
+        const varAmt = act - est;
+        rows += '<tr><td>' + g.name + '</td><td>' + (item.code || item.description || '—') + '</td>' +
+          '<td class="amount">' + Math.round(est).toLocaleString() + '</td>' +
+          '<td class="amount">' + Math.round(act).toLocaleString() + '</td>' +
+          '<td class="amount" style="color:' + (varAmt > 0 ? 'red' : 'green') + '">' + (varAmt >= 0 ? '+' : '') + Math.round(varAmt).toLocaleString() + '</td>' +
+          '<td class="amount" style="color:' + (varAmt > 0 ? 'red' : 'green') + '">' + (est > 0 ? (varAmt / est * 100).toFixed(1) + '%' : '—') + '</td></tr>';
+      }
+    }
+    const html = '<h2 style="text-align:center;margin-bottom:16px">成本对比表</h2>' +
+      '<table style="width:100%;border-collapse:collapse;margin-bottom:8px">' +
+      '<tr><td style="border:none;padding:2px 8px"><b>项目：</b>' + project.projectName + '</td>' +
+      '<td style="border:none;padding:2px 8px"><b>客户：</b>' + project.clientName + '</td></tr></table>' +
+      '<table style="width:100%;border-collapse:collapse"><thead><tr><th>组</th><th>项次</th><th>概算</th><th>实际</th><th>偏差</th><th>偏差率</th></tr></thead><tbody>' + rows + '</tbody></table>' +
+      '<table style="width:100%;border-collapse:collapse;margin-top:8px">' +
+      '<tr><td style="border:none;text-align:right;font-size:13px"><b>概算总成本：</b>¥' + Math.round(totEst).toLocaleString() + '</td></tr>' +
+      '<tr><td style="border:none;text-align:right;font-size:13px"><b>实际总成本：</b>¥' + Math.round(totalAct).toLocaleString() + '</td></tr></table>';
+    exportHtmlTable('成本对比_' + project.clientName, html);
   }, [project, quotationGroups, actualCosts]);
 
   if (!project) {
