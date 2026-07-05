@@ -1,6 +1,6 @@
 import React from 'react';
 // eslint-disable-next-line react-refresh/only-export-components
-export { parseFY } from './fiscalYear';
+export { parseFY } from './parseFY';
 
 /** 财年选择器组件：减号 − 当前财年 + 增号 */
 export const FYSelector: React.FC<{
