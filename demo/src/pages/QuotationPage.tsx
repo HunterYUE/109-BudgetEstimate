@@ -91,9 +91,10 @@ const QuotationPage: React.FC = () => {
   const [messageApi, contextHolder] = message.useMessage();
   const { id: quoteId } = useParams<{ id: string }>();
   const isLocked = useMemo(() => {
-    // 已明确锁定 或 已转交付的报价不可编辑、不可提交
+    // 明确锁定
     if (mockQuotationSummaries.some(q => q.id === quoteId && q.locked)) return true;
-    return mockDeliveryProjects.some(p => p.quotationId === quoteId);
+    // 已转交付的报价（含所有版本）不可编辑
+    return mockDeliveryProjects.some(p => p.quotationId && quoteId?.startsWith(p.quotationId));
   }, [quoteId]);
 
   const handleGroupChange = useCallback((groupId: string, items: GroupItem[]) => {
