@@ -38,11 +38,6 @@ const typeColors: Record<string, string> = {
 const MarginInput: React.FC<{ value: number; onCommit: (val: number) => void }> = ({ value, onCommit }) => {
   const [text, setText] = React.useState(String(Math.round(value * 100)));
 
-  // Sync when value changes from outside (e.g. item type switch recalculates prices)
-  React.useEffect(() => {
-    setText(String(Math.round(value * 100)));
-  }, [value]);
-
   const commit = () => {
     const cleaned = text.replace(/\D/g, '');
     const val = parseInt(cleaned, 10);
