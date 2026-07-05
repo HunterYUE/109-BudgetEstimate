@@ -147,7 +147,7 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
         width: 16, height: 16, borderRadius: 3,
         border: `2px solid #ccc`,
         background: 'transparent',
-        color: '#999', fontSize: 11, fontWeight: 700, lineHeight: 1,
+        color: COLORS.primary, fontSize: 11, fontWeight: 700, lineHeight: 1,
         userSelect: 'none',
       }}>
         {v === 'PURCHASED' ? '✓' : '✗'}
@@ -215,7 +215,7 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
         width: 16, height: 16, borderRadius: 3,
         border: `2px solid #ccc`,
         background: 'transparent',
-        color: '#999', fontSize: 11, fontWeight: 700, lineHeight: 1,
+        color: COLORS.primary, fontSize: 11, fontWeight: 700, lineHeight: 1,
         userSelect: 'none',
       }}>
         {v ? '✓' : '✗'}
