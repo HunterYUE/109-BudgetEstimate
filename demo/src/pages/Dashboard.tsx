@@ -9,12 +9,12 @@ const fmtK = (v: number) => Math.round(v / 1000).toLocaleString() + 'K';
 
 /* ── KPI 卡片（现代风格） ── */
 const KpiCard: React.FC<{
-  label: string; value: string; color: string; icon: string; subValue?: string; gradient?: string;
-}> = ({ label, value, color, icon, subValue, gradient }) => (
+  label: string; value: string; color: string; icon: string; subValue?: string;
+}> = ({ label, value, color, icon, subValue }) => (
   <Card size="small" hoverable
     style={{
       flex: 1, borderRadius: 12, border: 'none', overflow: 'hidden',
-      background: gradient || '#fff',
+      background: '#fff',
       boxShadow: '0 2px 12px rgba(0,0,0,0.06)',
       transition: 'transform 0.2s, box-shadow 0.2s',
     }}
@@ -22,10 +22,10 @@ const KpiCard: React.FC<{
     onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(0,0,0,0.1)'; }}
     onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 2px 12px rgba(0,0,0,0.06)'; }}
   >
-    <div style={{ fontSize: 24, marginBottom: 6, opacity: gradient ? 0.9 : 1 }}>{icon}</div>
-    <div style={{ fontSize: 12, color: gradient ? 'rgba(255,255,255,0.7)' : COLORS.textLight, marginBottom: 4, fontWeight: 500, letterSpacing: 0.5 }}>{label}</div>
-    <div style={{ fontSize: 26, fontWeight: 700, color: gradient ? '#fff' : color, lineHeight: 1.15 }}>{value}</div>
-    {subValue && <div style={{ fontSize: 13, fontWeight: 600, color: gradient ? 'rgba(255,255,255,0.6)' : COLORS.textSecondary, marginTop: 4 }}>{subValue}</div>}
+    <div style={{ fontSize: 24, marginBottom: 2 }}>{icon}</div>
+    <div style={{ fontSize: 12, color: COLORS.textLight, marginBottom: 4, fontWeight: 500, letterSpacing: 0.5 }}>{label}</div>
+    <div style={{ fontSize: 22, fontWeight: 700, color: color, lineHeight: 1.2 }}>{value}</div>
+    {subValue && <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.textSecondary, marginTop: 4 }}>{subValue}</div>}
   </Card>
 );
 
@@ -109,20 +109,18 @@ const Dashboard: React.FC = () => {
       {/* ── KPI 卡片行 ── */}
       <div style={{ display: 'flex', gap: 16, marginBottom: 28 }}>
         <KpiCard label="销售机会" value={String(kpi.totalOpps)} color={COLORS.primary} icon="📊"
-          subValue={`管道 ¥${fmtK(kpi.pipelineAmount)}`}
-          gradient="linear-gradient(135deg, #eef4ff, #fff)" />
+          subValue={`管道 ¥${fmtK(kpi.pipelineAmount)}`} />
         <KpiCard label="本月赢单" value={`${kpi.monthWinCount} 个`} color={COLORS.success} icon="🏆"
-          subValue={`¥${fmtK(kpi.monthWinAmount)}`}
-          gradient="linear-gradient(135deg, #e8f5e9, #fff)" />
-        <KpiCard label="待审批" value={String(kpi.pendingApprovals)} color={COLORS.warning} icon="📋"
-          gradient="linear-gradient(135deg, #fff3e0, #fff)" />
+          subValue={`¥${fmtK(kpi.monthWinAmount)}`} />
+        <KpiCard label="待审批" value={String(kpi.pendingApprovals)} color={COLORS.warning} icon="📋" />
+        <KpiCard label="进行中交付" value={String(kpi.activeDeliveries)} color={COLORS.purple} icon="🚧" />
         <KpiCard label="进行中交付" value={String(kpi.activeDeliveries)} color={COLORS.purple} icon="🚧"
-          gradient="linear-gradient(135deg, #f0e6ff, #fff)" />
+           />
       </div>
 
       {/* ── 中栏：近期赢单 + 待审批 ── */}
       <div style={{ display: 'flex', gap: 20, marginBottom: 28 }}>
-        <Card size="small" style={{ flex: 1, borderRadius: 12, border: `1px solid ${COLORS.borderLight}`, boxShadow: '0 2px 10px rgba(0,0,0,0.04)' }}
+        <Card size="small" style={{ flex: 1, borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
           styles={{ body: { padding: '18px 20px' } }}>
           <SectionTitle title="近期赢单" />
           {recentWins.length === 0 ? (
@@ -147,7 +145,7 @@ const Dashboard: React.FC = () => {
           )}
         </Card>
 
-        <Card size="small" style={{ flex: 1, borderRadius: 12, border: `1px solid ${COLORS.borderLight}`, boxShadow: '0 2px 10px rgba(0,0,0,0.04)' }}
+        <Card size="small" style={{ flex: 1, borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
           styles={{ body: { padding: '18px 20px' } }}>
           <SectionTitle title="待审批项" />
           {pendingItems.length === 0 ? (
@@ -178,7 +176,7 @@ const Dashboard: React.FC = () => {
 
       {/* ── 底栏：管道分布 + 近期动态 ── */}
       <div style={{ display: 'flex', gap: 20 }}>
-        <Card size="small" style={{ flex: 1, borderRadius: 12, border: `1px solid ${COLORS.borderLight}`, boxShadow: '0 2px 10px rgba(0,0,0,0.04)' }}
+        <Card size="small" style={{ flex: 1, borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
           styles={{ body: { padding: '18px 20px' } }}>
           <SectionTitle title="管道阶段分布" />
           <div style={{ padding: '4px 0' }}>
@@ -189,7 +187,7 @@ const Dashboard: React.FC = () => {
           </div>
         </Card>
 
-        <Card size="small" style={{ flex: 1, borderRadius: 12, border: `1px solid ${COLORS.borderLight}`, boxShadow: '0 2px 10px rgba(0,0,0,0.04)' }}
+        <Card size="small" style={{ flex: 1, borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
           styles={{ body: { padding: '18px 20px' } }}>
           <SectionTitle title="近期动态" />
           {activities.length === 0 ? (
