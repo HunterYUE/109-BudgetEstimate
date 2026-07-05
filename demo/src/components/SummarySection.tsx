@@ -159,8 +159,13 @@ const SummarySection: React.FC<Props> = ({ groups, version, onDiscountChange, on
           border: `1px solid ${COLORS.borderLight}`, background: COLORS.bgLight,
         }}>
           <span style={{ fontSize: 13, color: COLORS.textSecondary, whiteSpace: 'nowrap' }}>商业费用</span>
-          <input type="number" min={0} value={version.commercial_cost}
-            onChange={(e) => onVersionUpdate?.('commercial_cost', parseInt(e.target.value) || 0)}
+          <input type="text" inputMode="numeric"
+            defaultValue={String(version.commercial_cost)}
+            onBlur={(e) => {
+              const val = parseInt(e.target.value.replace(/[^0-9]/g, ''), 10) || 0;
+              onVersionUpdate?.('commercial_cost', val);
+            }}
+            onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
             style={{
               flex: 1, minWidth: 60, maxWidth: 140, padding: '4px 8px',
               border: `1px solid ${COLORS.border}`, borderRadius: 4,
@@ -229,7 +234,7 @@ const SummarySection: React.FC<Props> = ({ groups, version, onDiscountChange, on
                   fontWeight: 700,
                   color: summary.discount_rate > 0 ? '#f5222d' : COLORS.success,
                 }}>
-                  {summary.discount_rate > 0 ? '-' : '+'}{(summary.discount_rate * 100).toFixed(2)}%
+                  {summary.discount_rate > 0 ? '-' : '+'}{(summary.discount_rate * 100).toFixed(1)}%
                 </span>
               )}
             </div>
