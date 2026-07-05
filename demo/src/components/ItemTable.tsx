@@ -141,21 +141,18 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
   const colSourcing: ColumnsType<GroupItem> = cfg.showSourcing ? [{
     title: '外购', dataIndex: 'sourcing_type', width: 52, align: 'center' as const,
     onCell: onCellLock(52),
-    render: (v: SourcingType) => {
-      const on = v === 'PURCHASED';
-      return (
-        <span style={{
-          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-          width: 16, height: 16, borderRadius: 3,
-          border: `2px solid ${on ? COLORS.primary : '#d0d0d0'}`,
-          background: on ? COLORS.primary : 'transparent',
-          color: on ? '#fff' : '#999', fontSize: 11, fontWeight: 700, lineHeight: 1,
-          userSelect: 'none',
-        }}>
-          {on ? '✓' : '✗'}
-        </span>
-      );
-    },
+    render: (v: SourcingType) => (
+      <span style={{
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        width: 16, height: 16, borderRadius: 3,
+        border: `2px solid #ccc`,
+        background: 'transparent',
+        color: '#999', fontSize: 11, fontWeight: 700, lineHeight: 1,
+        userSelect: 'none',
+      }}>
+        {v === 'PURCHASED' ? '✓' : '✗'}
+      </span>
+    ),
   }] : [];
 
   const colQty: ColumnsType<GroupItem> = cfg.hideQty ? [] : [{
@@ -216,9 +213,9 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
       <span style={{
         display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
         width: 16, height: 16, borderRadius: 3,
-        border: `2px solid ${v ? COLORS.primary : '#d0d0d0'}`,
-        background: v ? COLORS.primary : 'transparent',
-        color: v ? '#fff' : '#999', fontSize: 11, fontWeight: 700, lineHeight: 1,
+        border: `2px solid #ccc`,
+        background: 'transparent',
+        color: '#999', fontSize: 11, fontWeight: 700, lineHeight: 1,
         userSelect: 'none',
       }}>
         {v ? '✓' : '✗'}
