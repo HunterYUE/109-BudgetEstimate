@@ -416,7 +416,7 @@ const fmtShort = (d: Date) => `${d.getMonth() + 1}/${d.getDate()}`;
 
 /** 节点状态标签 & 条颜色（三类：未开始/进行中/已完成） */
 const GANTT_STATUS_COLOR: Record<string, string> = {
-  pending: COLORS.primary, in_progress: COLORS.warning, delayed: COLORS.warning, completed: COLORS.success,
+  pending: COLORS.labelDark, in_progress: '#c24200', delayed: '#c24200', completed: COLORS.success,
 };
 
 /** 计算某节点的延期天数（与初始计划完成时间比） */
