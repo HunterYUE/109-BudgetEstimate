@@ -162,19 +162,14 @@ const SummarySection: React.FC<Props> = ({ groups, version, onDiscountChange, on
           <input type="number" min={0} value={version.commercial_cost}
             onChange={(e) => onVersionUpdate?.('commercial_cost', parseInt(e.target.value) || 0)}
             style={{
-              width: 120, padding: '4px 8px', border: `1px solid ${COLORS.border}`, borderRadius: 4,
+              flex: 1, minWidth: 60, maxWidth: 140, padding: '4px 8px',
+              border: `1px solid ${COLORS.border}`, borderRadius: 4,
               fontSize: 14, fontWeight: 600, color: COLORS.textDark, outline: 'none', textAlign: 'right',
               background: '#fff', fontFamily: 'inherit',
             }} />
           <span style={{ fontWeight: 700, fontSize: 16, color: COLORS.textDark, whiteSpace: 'nowrap' }}>
             ¥{formatMoney(version.commercial_cost)}
           </span>
-        </div>
-            <span style={{ color: COLORS.textLight, fontSize: 12 }}>=</span>
-            <span style={{ fontWeight: 700, fontSize: 16, color: COLORS.warning }}>
-              ¥{formatMoney(summary.risk_cost)}
-            </span>
-          </div>
         </div>
       </div>
 
