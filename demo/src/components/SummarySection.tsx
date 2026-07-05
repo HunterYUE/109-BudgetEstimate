@@ -204,15 +204,25 @@ const SummarySection: React.FC<Props> = ({ groups, version, onDiscountChange, on
               折后报价 <span style={{ fontSize: 10, color: COLORS.textLight }}>(含税)</span>
             </div>
             <input type="text" inputMode="numeric"
-              defaultValue={String(Math.round(summary.discounted_price * (1 + version.tax_rate)))}
+              defaultValue={Math.round(summary.discounted_price * (1 + version.tax_rate)).toLocaleString()}
+              onInput={(e) => {
+                const input = e.currentTarget;
+                const cursor = input.selectionStart;
+                const raw = input.value.replace(/[^0-9]/g, '');
+                if (raw === '') { input.value = ''; return; }
+                const formatted = parseInt(raw, 10).toLocaleString();
+                const diff = formatted.length - input.value.length;
+                input.value = formatted;
+                if (cursor != null) input.setSelectionRange(cursor + diff, cursor + diff);
+              }}
               onBlur={(e) => {
-                const val = parseFloat(e.target.value.replace(/[^0-9]/g, '')) || 0;
+                const val = parseInt(e.target.value.replace(/[^0-9]/g, ''), 10) || 0;
                 onDiscountChange(Math.round(val / (1 + version.tax_rate)));
               }}
               onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
               style={{ fontWeight: 700, fontSize: 24, color: COLORS.textDark, lineHeight: 1.2,
                 border: 'none', borderBottom: `2px dashed ${COLORS.borderLight}`, outline: 'none',
-                width: '100%', background: 'transparent', fontFamily: 'inherit', padding: 0,
+                width: '100%', background: 'transparent', fontFamily: 'inherit', padding: 0, textAlign: 'right',
               }}
             />
             <div style={{ marginTop: 8, fontSize: 12 }}>
