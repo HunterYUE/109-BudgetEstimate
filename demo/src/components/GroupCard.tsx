@@ -48,7 +48,11 @@ const GroupCard: React.FC<Props> = ({ group, onGroupChange, onAddItem, onDeleteI
   return (
     <Card
       size="small"
-      style={{ marginBottom: 16, borderRadius: 4, borderLeft: `4px solid ${group.is_fixed ? COLORS.primary : COLORS.success}` }}
+      style={{
+        marginBottom: 16, borderRadius: 10, border: `1px solid ${COLORS.borderLight}`,
+        boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
+        borderTop: `3px solid ${group.is_fixed ? COLORS.primary : COLORS.success}`,
+      }}
       title={
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
           <Tag color={gtype.color} style={{ minWidth: 64, textAlign: 'center' }}>{gtype.label}</Tag>
@@ -60,7 +64,7 @@ const GroupCard: React.FC<Props> = ({ group, onGroupChange, onAddItem, onDeleteI
                 onKeyDown={e => { if (e.key === 'Enter') saveName(); if (e.key === 'Escape') setEditingName(false); }}
                 onClick={e => e.stopPropagation()}
                 style={{
-                  border: '1px solid COLORS.primary', borderRadius: 3, padding: '2px 8px',
+                  border: `1px solid ${COLORS.primary}`, borderRadius: 3, padding: '2px 8px',
                   fontSize: 13, outline: 'none', fontFamily: 'inherit', width: 160,
                 }} />
             ) : (

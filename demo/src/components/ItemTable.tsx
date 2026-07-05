@@ -272,6 +272,7 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
         }
       `}</style>
       <Table
+      style={{ borderRadius: 8 }}
       dataSource={items.map((item, idx) => ({ ...item, key: item.id || idx }))}
       columns={columns}
       pagination={false}

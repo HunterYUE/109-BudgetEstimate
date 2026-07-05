@@ -74,7 +74,10 @@ const ProjectHeader: React.FC<Props> = ({ project, onUpdate, versionBump, onVers
 
   return (
     <div style={{ marginBottom: 32 }}>
-
+      <div style={{
+        borderRadius: 10, border: `1px solid ${COLORS.borderLight}`,
+        boxShadow: '0 2px 8px rgba(0,0,0,0.04)', overflow: 'hidden',
+      }}>
       <table className="proj-header" style={{
         width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed',
         pointerEvents: readOnly ? 'none' as const : undefined,
@@ -190,6 +193,7 @@ const ProjectHeader: React.FC<Props> = ({ project, onUpdate, versionBump, onVers
           </tr>
         </tbody>
       </table>
+      </div>
     </div>
   );
 };
