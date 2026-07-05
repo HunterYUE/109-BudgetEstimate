@@ -405,6 +405,7 @@ interface GanttSlot {
   plannedStartDate: Date;
   plannedEndDate: Date;
   actualDate?: Date;
+  wasStarted: boolean;
   /** 初始计划时间（第一次制定时的计划，从 history 推算，无变更时=当前计划） */
   initStartDate: Date;
   initEndDate: Date;
@@ -443,8 +444,10 @@ const GanttNode: React.FC<{
   hovered: boolean;
   onHover: (info: GanttHoverInfo | null) => void;
 }> = ({ slot, sx, ex, w, cy, barH, hovered, onHover }) => {
-  const color = GANTT_STATUS_COLOR[slot.status] || '#bbb';
-  const active = slot.status === 'in_progress' || slot.status === 'delayed';
+  const color = slot.status === 'delayed' && !slot.wasStarted
+    ? GANTT_STATUS_COLOR.pending
+    : GANTT_STATUS_COLOR[slot.status] || '#bbb';
+  const active = slot.status === 'in_progress' || (slot.status === 'delayed' && slot.wasStarted);
   const opacity = slot.status === 'completed' ? 1 : active ? 0.7 : 0.35;
   return (
     <g style={{ cursor: 'pointer' }}
@@ -1010,7 +1013,8 @@ const DeliveryAnalysis: React.FC = () => {
           end = new Date(n.plannedEndDate);
         }
         // 初始计划时间：从 history 中找最早的 plannedDate 变更前的值
-        const planChanges = n.history.filter(h => h.field === 'plannedDate')
+        const wasStarted = !!startH;
+              const planChanges = n.history.filter(h => h.field === 'plannedDate')
           .sort((a, b) => new Date(a.changedAt).getTime() - new Date(b.changedAt).getTime());
         const initStart = planChanges.length > 0
           ? new Date(planChanges[0].oldValue)
@@ -1021,7 +1025,7 @@ const DeliveryAnalysis: React.FC = () => {
         return { nodeNo: n.nodeNo, startDate: start, endDate: end, status: n.status,
           name: n.name, plannedStartDate: new Date(n.plannedStartDate),
           plannedEndDate: new Date(n.plannedEndDate), actualDate: n.actualDate ? new Date(n.actualDate) : undefined,
-          initStartDate: initStart, initEndDate: initEnd };
+          initStartDate: initStart, initEndDate: initEnd, wasStarted };
       });
       return { name: p.clientName, slots };
     });
