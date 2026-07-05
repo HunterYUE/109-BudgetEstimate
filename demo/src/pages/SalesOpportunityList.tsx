@@ -667,17 +667,18 @@ const SalesOpportunityList: React.FC = () => {
 
       </div>
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
-        <Button type="default" ghost icon={<PlusOutlined />}
+        <Button type="default" ghost
           onClick={() => openCreateModal(tabFilter === 'info' ? '信息' : tabFilter === 'lead' ? '线索' : '投标')}
           style={{
-            borderRadius: 8, border: `1.5px dashed ${COLORS.borderLight}`,
-            color: COLORS.primary, fontSize: 14, fontWeight: 600, height: 36,
+            width: '100%', height: 48, borderRadius: 10,
+            border: `1.5px dashed ${COLORS.borderLight}`,
+            color: COLORS.primary, fontSize: 14, fontWeight: 600,
             transition: 'all 0.2s',
           }}
           onMouseEnter={e => { e.currentTarget.style.border = `1.5px dashed ${COLORS.primary}`; e.currentTarget.style.background = COLORS.bgSelected; }}
           onMouseLeave={e => { e.currentTarget.style.border = `1.5px dashed ${COLORS.borderLight}`; e.currentTarget.style.background = 'transparent'; }}
         >
-          新增{tabFilter === 'info' ? '信息' : tabFilter === 'lead' ? '线索' : '机会'}
+          <PlusOutlined /> 新增{tabFilter === 'info' ? '信息' : tabFilter === 'lead' ? '线索' : '机会'}
         </Button>
       </div>
 
