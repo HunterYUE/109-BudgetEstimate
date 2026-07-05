@@ -11,19 +11,8 @@ interface Props {
   onVersionUpdate?: (field: string, value: number) => void;
 }
 
-const cellStyle: React.CSSProperties = {
-  padding: '8px 14px', fontSize: 14, border: `1px solid ${COLORS.border}`,
-};
-const labelStyle: React.CSSProperties = {
-  ...cellStyle,
-  fontWeight: 600, background: COLORS.bgLight, whiteSpace: 'nowrap',
-  color: COLORS.labelDark,
-};
-
-const moneyStyle: React.CSSProperties = { fontWeight: 600, color: COLORS.primary };
 const WARNS = Array.from({ length: 11 }, (_, i) => i);
 
-/** Calculate material cost and labor cost from groups */
 function calcCostBreakdown(groups: Group[]): { materialCost: number; laborCost: number; projectExpense: number } {
   let materialCost = 0;
   let laborCost = 0;
@@ -39,13 +28,10 @@ function calcCostBreakdown(groups: Group[]): { materialCost: number; laborCost: 
       );
 
       if (g.group_type === 'PROJECT_DELIVERY') {
-        // Pure labor → labor cost
         laborCost += mat + lab;
       } else if (g.group_type === 'PACKAGING_TRANSPORT' || g.group_type === 'IMPLEMENTATION_EXPENSE' || g.group_type === 'OTHER') {
-        // Project expense: packaging, travel/management, other
         projectExpense += mat + lab;
       } else {
-        // Equipment / Integration: split
         if (mat > 0) materialCost += mat;
         if (lab > 0) laborCost += lab;
       }
@@ -53,6 +39,46 @@ function calcCostBreakdown(groups: Group[]): { materialCost: number; laborCost: 
   }
   return { materialCost, laborCost, projectExpense };
 }
+
+/** 单个成本项卡片 */
+const CostCard: React.FC<{ label: string; value: number; unit?: string; highlight?: boolean; accent?: string }> =
+  ({ label, value, unit = '¥', highlight, accent }) => (
+    <div style={{
+      flex: 1, minWidth: 0, padding: '12px 16px',
+      background: highlight ? `linear-gradient(135deg, ${COLORS.primary}, #003d7a)` : COLORS.bgLight,
+      borderRadius: 8, border: `1px solid ${highlight ? 'transparent' : COLORS.borderLight}`,
+    }}>
+      <div style={{ fontSize: 12, color: highlight ? 'rgba(255,255,255,0.7)' : COLORS.textSecondary, marginBottom: 4, letterSpacing: 0.3 }}>
+        {label}
+      </div>
+      <div style={{
+        fontSize: highlight ? 20 : 18, fontWeight: 700,
+        color: highlight ? '#fff' : (accent || COLORS.textDark),
+        fontFamily: 'inherit', lineHeight: 1.2,
+      }}>
+        {unit}{formatMoney(value)}
+      </div>
+    </div>
+  );
+
+/** 行内可点击百分比 */
+const PctBadge: React.FC<{ value: number; label: string; onClick: () => void }> =
+  ({ value, label, onClick }) => (
+    <span onClick={onClick} title="点击切换"
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 4,
+        cursor: 'pointer', padding: '2px 8px', borderRadius: 4,
+        background: COLORS.bgSelected, color: COLORS.primary,
+        fontSize: 12, fontWeight: 600, userSelect: 'none',
+        transition: 'background 0.12s',
+      }}
+      onMouseEnter={e => e.currentTarget.style.background = '#dce6f5'}
+      onMouseLeave={e => e.currentTarget.style.background = COLORS.bgSelected}
+    >
+      <span style={{ fontSize: 10, opacity: 0.6 }}>{label}</span>
+      {value}%
+    </span>
+  );
 
 const SummarySection: React.FC<Props> = ({ groups, version, onDiscountChange, onVersionUpdate }) => {
   const summary = calcProjectSummary(groups, version, version.discounted_price);
@@ -62,103 +88,153 @@ const SummarySection: React.FC<Props> = ({ groups, version, onDiscountChange, on
   const riskPct = Math.round(version.risk_rate * 100);
 
   return (
-    <Card size="small" title={<span style={{ fontSize: 16 }}>概算汇总</span>}
-      style={{ marginTop: 16, borderTop: `3px ${COLORS.primary}`, background: '#d4c5f0', borderRadius: 4 }}>
+    <Card size="small"
+      style={{
+        marginTop: 16, borderRadius: 10, border: `1px solid ${COLORS.borderLight}`,
+        boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
+      }}
+      styles={{ body: { padding: '20px 24px' } }}
+    >
+      {/* 标题 */}
+      <div style={{
+        fontSize: 15, fontWeight: 700, color: COLORS.textDark,
+        marginBottom: 20, letterSpacing: 0.5,
+        display: 'flex', alignItems: 'center', gap: 10,
+      }}>
+        <span style={{
+          display: 'inline-block', width: 3, height: 18, borderRadius: 2,
+          background: `linear-gradient(${COLORS.primary}, ${COLORS.purple})`,
+        }} />
+        概算汇总
+      </div>
 
-      {/* 成本汇总 */}
-      <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 16 }}>
-        <colgroup>
-          <col width="100" /><col width="155" /><col width="90" /><col width="155" /><col width="90" /><col width="155" /><col width="90" /><col width="155" />
-        </colgroup>
-        <tbody>
-          <tr>
-            <td style={labelStyle}>物料成本</td>
-            <td style={cellStyle}><span style={moneyStyle}>¥{formatMoney(materialCost)}</span></td>
-            <td style={labelStyle}>人工成本</td>
-            <td style={cellStyle}><span style={moneyStyle}>¥{formatMoney(laborCost)}</span></td>
-            <td style={labelStyle}>项目费用</td>
-            <td style={cellStyle}><span style={moneyStyle}>¥{formatMoney(projectExpense)}</span></td>
-            <td style={labelStyle}>直接成本</td>
-            <td style={cellStyle}><span style={moneyStyle}>¥{formatMoney(directCost)}</span></td>
-          </tr>
-          <tr>
-            <td style={labelStyle}>质保基数</td>
-            <td style={cellStyle}><span style={moneyStyle}>¥{formatMoney(summary.warranty_base)}</span></td>
-            <td style={labelStyle}>质保系数</td>
-            <td style={cellStyle}>
-              <span style={{ cursor: 'pointer', color: COLORS.primary, fontWeight: 600 }}
-                onClick={() => { const n = WARNS[(warnPct + 1) % WARNS.length]; onVersionUpdate?.('warranty_rate', n / 100); }}
-                title="点击切换">{warnPct}%</span>
-            </td>
-            <td colSpan={2} style={{ border: 'none' }}></td>
-            <td style={labelStyle}>质保费用</td>
-            <td style={cellStyle}><span style={moneyStyle}>¥{formatMoney(summary.warranty_cost)}</span></td>
-          </tr>
-          <tr>
-            <td style={labelStyle}>风险基数</td>
-            <td style={cellStyle}><span style={moneyStyle}>¥{formatMoney(directCost)}</span></td>
-            <td style={labelStyle}>风险系数</td>
-            <td style={cellStyle}>
-              <span style={{ cursor: 'pointer', color: COLORS.primary, fontWeight: 600 }}
-                onClick={() => { const n = WARNS[(riskPct + 1) % WARNS.length]; onVersionUpdate?.('risk_rate', n / 100); }}
-                title="点击切换">{riskPct}%</span>
-            </td>
-            <td colSpan={2} style={{ border: 'none' }}></td>
-            <td style={labelStyle}>风险费用</td>
-            <td style={cellStyle}><span style={moneyStyle}>¥{formatMoney(summary.risk_cost)}</span></td>
-          </tr>
-          <tr>
-            <td style={labelStyle}>全部成本合计</td>
-            <td style={cellStyle} colSpan={7}><span style={{ fontWeight: 700, fontSize: 16 }}>¥{formatMoney(summary.total_cost)}</span></td>
-          </tr>
-        </tbody>
-      </table>
+      {/* ── 成本构成卡片行 ── */}
+      <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
+        <CostCard label="物料成本" value={materialCost} />
+        <CostCard label="人工成本" value={laborCost} />
+        <CostCard label="项目费用" value={projectExpense} />
+        <CostCard label="直接成本" value={directCost} highlight />
+      </div>
 
-      {/* 报价与折扣 */}
-      <Row gutter={24}>
+      {/* ── 质保 & 风险 ── */}
+      <div style={{ display: 'flex', gap: 16, marginBottom: 20 }}>
+        <div style={{
+          flex: 1, display: 'flex', alignItems: 'center', gap: 12,
+          padding: '10px 14px', borderRadius: 8,
+          border: `1px solid ${COLORS.borderLight}`, background: COLORS.bgLight,
+        }}>
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span style={{ fontSize: 13, color: COLORS.textSecondary, whiteSpace: 'nowrap' }}>质保</span>
+            <span style={{ fontWeight: 700, fontSize: 15, color: COLORS.textDark }}>¥{formatMoney(summary.warranty_base)}</span>
+            <span style={{ color: COLORS.textLight, fontSize: 12 }}>×</span>
+            <PctBadge value={warnPct} label="系数"
+              onClick={() => { const n = WARNS[(warnPct + 1) % WARNS.length]; onVersionUpdate?.('warranty_rate', n / 100); }} />
+            <span style={{ color: COLORS.textLight, fontSize: 12 }}>=</span>
+            <span style={{ fontWeight: 700, fontSize: 16, color: COLORS.primary }}>
+              ¥{formatMoney(summary.warranty_cost)}
+            </span>
+          </div>
+        </div>
+
+        <div style={{
+          flex: 1, display: 'flex', alignItems: 'center', gap: 12,
+          padding: '10px 14px', borderRadius: 8,
+          border: `1px solid ${COLORS.borderLight}`, background: COLORS.bgLight,
+        }}>
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span style={{ fontSize: 13, color: COLORS.textSecondary, whiteSpace: 'nowrap' }}>风险</span>
+            <span style={{ fontWeight: 700, fontSize: 15, color: COLORS.textDark }}>¥{formatMoney(directCost)}</span>
+            <span style={{ color: COLORS.textLight, fontSize: 12 }}>×</span>
+            <PctBadge value={riskPct} label="系数"
+              onClick={() => { const n = WARNS[(riskPct + 1) % WARNS.length]; onVersionUpdate?.('risk_rate', n / 100); }} />
+            <span style={{ color: COLORS.textLight, fontSize: 12 }}>=</span>
+            <span style={{ fontWeight: 700, fontSize: 16, color: COLORS.warning }}>
+              ¥{formatMoney(summary.risk_cost)}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* ── 三卡片：预期总价 / 折后报价 / 项目利润 ── */}
+      <Row gutter={16}>
         <Col span={8}>
-          <Card size="small" variant="outlined" style={{ height: 116, borderRadius: 4, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-            <div style={{ color: COLORS.textSecondary, fontSize: 16, marginBottom: 4, textAlign: 'left' }}>预期总价</div>
-            <div style={{ fontWeight: 600, fontSize: 22, color: COLORS.primary, textAlign: 'left', fontFamily: 'inherit' }}>¥{formatMoney(Math.round(summary.total_accounting_price * (1 + version.tax_rate)))}</div>
-            <div style={{ marginTop: 8, textAlign: 'left', color: COLORS.textSecondary }}>欧元：<strong>€{formatMoney(Math.round(summary.total_accounting_price / version.eur_rate))}</strong></div>
-          </Card>
+          <div style={{
+            padding: '18px 20px', borderRadius: 10,
+            border: `1px solid ${COLORS.borderLight}`,
+            background: '#fff', height: '100%',
+            transition: 'box-shadow 0.2s',
+          }}>
+            <div style={{ fontSize: 12, color: COLORS.textSecondary, marginBottom: 6, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+              预期总价 <span style={{ fontSize: 10, color: COLORS.textLight }}>(含税)</span>
+            </div>
+            <div style={{ fontWeight: 700, fontSize: 24, color: COLORS.primary, lineHeight: 1.2 }}>
+              ¥{formatMoney(Math.round(summary.total_accounting_price * (1 + version.tax_rate)))}
+            </div>
+            <div style={{ marginTop: 8, fontSize: 12, color: COLORS.textSecondary }}>
+              欧元 <span style={{ fontWeight: 600, color: COLORS.textDark }}>€{formatMoney(Math.round(summary.total_accounting_price / version.eur_rate))}</span>
+            </div>
+          </div>
         </Col>
         <Col span={8}>
-          <Card size="small" variant="outlined" style={{ height: 116, borderRadius: 4, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-            <div style={{ color: COLORS.textSecondary, fontSize: 16, marginBottom: 4, textAlign: 'left' }}>折后报价</div>
-            <div style={{ fontWeight: 600, fontSize: 22, color: COLORS.primary, textAlign: 'left', fontFamily: 'inherit' }}
+          <div style={{
+            padding: '18px 20px', borderRadius: 10,
+            border: `1px solid ${COLORS.borderLight}`,
+            background: '#fff', height: '100%',
+            transition: 'box-shadow 0.2s',
+          }}>
+            <div style={{ fontSize: 12, color: COLORS.textSecondary, marginBottom: 6, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+              折后报价 <span style={{ fontSize: 10, color: COLORS.textLight }}>(含税)</span>
+            </div>
+            <div
               contentEditable suppressContentEditableWarning
               onBlur={(e) => {
                 const val = parseFloat(e.currentTarget.textContent?.replace(/[^0-9.-]/g, '')) || 0;
                 onDiscountChange(val);
-              }}>{'¥' + formatMoney(Math.round(summary.discounted_price * (1 + version.tax_rate)))}</div>
-            <div style={{ marginTop: 8, color: summary.discount_rate > 0 ? '#f5222d' : COLORS.success, textAlign: 'left' }}>
-              折扣率：<span style={{ fontWeight: 600 }}>
-                {summary.discount_rate > 0 ? '-' : '+'}
-                {(summary.discount_rate * 100).toFixed(2) + '%'}
+              }}
+              style={{ fontWeight: 700, fontSize: 24, color: COLORS.textDark, lineHeight: 1.2, outline: 'none',
+                borderBottom: `2px dashed ${COLORS.borderLight}`, paddingBottom: 2, cursor: 'text',
+              }}
+            >
+              ¥{formatMoney(Math.round(summary.discounted_price * (1 + version.tax_rate)))}
+            </div>
+            <div style={{ marginTop: 8, fontSize: 12 }}>
+              <span style={{ color: COLORS.textSecondary }}>折扣率 </span>
+              <span style={{
+                fontWeight: 700,
+                color: summary.discount_rate > 0 ? '#f5222d' : COLORS.success,
+              }}>
+                {summary.discount_rate > 0 ? '-' : '+'}{(summary.discount_rate * 100).toFixed(2)}%
               </span>
             </div>
-          </Card>
+          </div>
         </Col>
         <Col span={8}>
-          <Card size="small" variant="outlined" style={{ height: 116, borderRadius: 4, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-            <div style={{ color: COLORS.textSecondary, fontSize: 16, marginBottom: 4, textAlign: 'left' }}>项目利润</div>
-            <div style={{ fontWeight: 600, fontSize: 22, color: COLORS.primary, textAlign: 'left', fontFamily: 'inherit' }}>¥{formatMoney(Math.round(summary.discounted_price * (1 + version.tax_rate) - summary.total_cost))}</div>
-            <div style={{ marginTop: 8, textAlign: 'left', color: COLORS.textSecondary }}>
-              GP3 毛利率：<TextGauge value={summary.gp3} />
+          <div style={{
+            padding: '18px 20px', borderRadius: 10,
+            background: `linear-gradient(135deg, ${COLORS.primary}, #003d7a)`,
+            height: '100%', color: '#fff',
+          }}>
+            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.65)', marginBottom: 6, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+              项目利润 <span style={{ fontSize: 10 }}>(含税)</span>
             </div>
-          </Card>
+            <div style={{ fontWeight: 700, fontSize: 24, lineHeight: 1.2 }}>
+              ¥{formatMoney(Math.round(summary.discounted_price * (1 + version.tax_rate) - summary.total_cost))}
+            </div>
+            <div style={{ marginTop: 8, fontSize: 13 }}>
+              <span style={{ opacity: 0.7 }}>GP3 毛利率 </span>
+              <TextGauge value={summary.gp3} />
+            </div>
+          </div>
         </Col>
       </Row>
-
     </Card>
   );
 };
 
 const TextGauge: React.FC<{ value: number }> = ({ value }) => {
   const pct = (value * 100).toFixed(1);
-  const color = value >= 0.2 ? COLORS.success : value >= 0.1 ? '#fa8c16' : '#f5222d';
-  return <span style={{ fontWeight: 600, color }}>{pct}%</span>;
+  const color = value >= 0.2 ? '#4caf50' : value >= 0.1 ? '#ff9800' : '#f44336';
+  return <span style={{ fontWeight: 700, color }}>{pct}%</span>;
 };
 
 export default SummarySection;
