@@ -456,7 +456,7 @@ const QuotationPage: React.FC = () => {
           ))}
         </div>
 
-        <Button type="default" ghost icon={<PlusOutlined />}
+        <Button type="default" ghost
           onClick={handleAddGroup}
           style={{
             width: '100%', height: 48, marginTop: 16,
