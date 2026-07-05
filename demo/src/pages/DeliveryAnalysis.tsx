@@ -444,10 +444,16 @@ const GanttNode: React.FC<{
   hovered: boolean;
   onHover: (info: GanttHoverInfo | null) => void;
 }> = ({ slot, sx, ex, w, cy, barH, hovered, onHover }) => {
-  const color = slot.status === 'delayed' && !slot.wasStarted
-    ? GANTT_STATUS_COLOR.pending
-    : GANTT_STATUS_COLOR[slot.status] || '#bbb';
-  const active = slot.status === 'in_progress' || (slot.status === 'delayed' && slot.wasStarted);
+  // 进行中但已逾期 → 视为延期中（橘红色）
+  const isOverdue = (slot.status === 'in_progress' || slot.status === 'pending')
+    && new Date() > slot.plannedEndDate;
+  const effectiveDelayed = slot.status === 'delayed' || isOverdue;
+  const color = effectiveDelayed && slot.wasStarted
+    ? GANTT_STATUS_COLOR.delayed
+    : slot.status === 'completed' ? GANTT_STATUS_COLOR.completed
+    : slot.status === 'in_progress' && !isOverdue ? GANTT_STATUS_COLOR.in_progress
+    : GANTT_STATUS_COLOR.pending;
+  const active = slot.status === 'in_progress' || (effectiveDelayed && slot.wasStarted);
   const opacity = slot.status === 'completed' ? 1 : active ? 0.7 : 0.35;
   return (
     <g style={{ cursor: 'pointer' }}
