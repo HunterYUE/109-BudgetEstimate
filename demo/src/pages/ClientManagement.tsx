@@ -614,6 +614,10 @@ const ClientManagement: React.FC = () => {
       <div style={{ fontSize: 12, color: '#888', marginBottom: 8 }}>&nbsp;</div>
 
       {/* 树形表格 */}
+      <div style={{
+        borderRadius: 10, border: `1px solid ${COLORS.borderLight}`,
+        boxShadow: '0 2px 8px rgba(0,0,0,0.04)', overflow: 'hidden',
+      }}>
       <Table
         dataSource={treeData}
         columns={columns}
@@ -621,7 +625,7 @@ const ClientManagement: React.FC = () => {
         pagination={false}
         size="small"
         bordered
-        style={{ background: '#fff', borderRadius: 3 }}
+        style={{ background: '#fff', borderRadius: 8 }}
       />
 
       {/* ── 编辑模态框 ── */}

@@ -295,6 +295,10 @@ const SystemManagement: React.FC = () => {
               style={{ color: COLORS.primary, borderColor: COLORS.primary }} />
           </div>
 
+          <div style={{
+            borderRadius: 10, border: `1px solid ${COLORS.borderLight}`,
+            boxShadow: '0 2px 8px rgba(0,0,0,0.04)', overflow: 'hidden',
+          }}>
           <Table<MockUser>
             dataSource={users}
             columns={userColumns}
@@ -304,6 +308,7 @@ const SystemManagement: React.FC = () => {
             style={{ fontSize: 13, background: '#fff', borderRadius: 8 }}
             rowClassName={() => 'system-table-row'}
           />
+          </div>
 
           {/* ---------- 新增用户弹窗（参考审批管理弹窗样式） ---------- */}
           <Modal
@@ -549,7 +554,7 @@ const SystemManagement: React.FC = () => {
             style={{ fontSize: 13, background: '#fff', borderRadius: 8 }}
             rowClassName={() => 'system-table-row'}
           />
-
+          </div>
 
         </div>
       )}

@@ -623,6 +623,10 @@ const MaterialManagement: React.FC = () => {
 
       {/* 表格 */}
       {/* Style injected via useEffect */}
+      <div style={{
+        borderRadius: 10, border: `1px solid ${COLORS.borderLight}`,
+        boxShadow: '0 2px 8px rgba(0,0,0,0.04)', overflow: 'hidden',
+      }}>
       <Table
         className="mat-table"
         dataSource={displayData}
@@ -632,8 +636,9 @@ const MaterialManagement: React.FC = () => {
         size="small"
         bordered
         scroll={{ x: 1400 }}
-        style={{ background: '#fff', borderRadius: 3 }}
+        style={{ background: '#fff', borderRadius: 8 }}
       />
+      </div>
 
       {/* ── 编辑模态框 ── */}
       <Modal
