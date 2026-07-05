@@ -203,18 +203,18 @@ const SummarySection: React.FC<Props> = ({ groups, version, onDiscountChange, on
             <div style={{ fontSize: 12, color: COLORS.textSecondary, marginBottom: 6, letterSpacing: 0.5, textTransform: 'uppercase' }}>
               折后报价 <span style={{ fontSize: 10, color: COLORS.textLight }}>(含税)</span>
             </div>
-            <div
-              contentEditable suppressContentEditableWarning
+            <input type="text" inputMode="numeric"
+              defaultValue={String(Math.round(summary.discounted_price * (1 + version.tax_rate)))}
               onBlur={(e) => {
-                const val = parseFloat(e.currentTarget.textContent?.replace(/[^0-9.-]/g, '')) || 0;
-                onDiscountChange(val);
+                const val = parseFloat(e.target.value.replace(/[^0-9]/g, '')) || 0;
+                onDiscountChange(Math.round(val / (1 + version.tax_rate)));
               }}
-              style={{ fontWeight: 700, fontSize: 24, color: COLORS.textDark, lineHeight: 1.2, outline: 'none',
-                borderBottom: `2px dashed ${COLORS.borderLight}`, paddingBottom: 2, cursor: 'text',
+              onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+              style={{ fontWeight: 700, fontSize: 24, color: COLORS.textDark, lineHeight: 1.2,
+                border: 'none', borderBottom: `2px dashed ${COLORS.borderLight}`, outline: 'none',
+                width: '100%', background: 'transparent', fontFamily: 'inherit', padding: 0,
               }}
-            >
-              ¥{formatMoney(Math.round(summary.discounted_price * (1 + version.tax_rate)))}
-            </div>
+            />
             <div style={{ marginTop: 8, fontSize: 12 }}>
               <span style={{ color: COLORS.textSecondary }}>折扣率 </span>
               {Math.abs(summary.discount_rate) < 0.001 ? (
