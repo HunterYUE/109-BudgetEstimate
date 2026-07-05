@@ -451,6 +451,10 @@ const ItemCostTable: React.FC<Props> = ({ groups, actualCosts, onActualCostChang
 
   return (
     <>
+      <div style={{
+        borderRadius: 10, border: `1px solid ${COLORS.borderLight}`,
+        boxShadow: '0 2px 8px rgba(0,0,0,0.04)', overflow: 'hidden',
+      }}>
       <Table
         dataSource={rows}
         columns={columns}
@@ -488,6 +492,7 @@ const ItemCostTable: React.FC<Props> = ({ groups, actualCosts, onActualCostChang
           </Table.Summary>
         )}
       />
+      </div>
     </>
   );
 };
