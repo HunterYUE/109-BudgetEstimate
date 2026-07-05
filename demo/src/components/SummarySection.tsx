@@ -116,37 +116,55 @@ const SummarySection: React.FC<Props> = ({ groups, version, onDiscountChange, on
         <CostCard label="直接成本" value={directCost} highlight />
       </div>
 
-      {/* ── 质保 & 风险 ── */}
-      <div style={{ display: 'flex', gap: 16, marginBottom: 20 }}>
+      {/* ── 质保 & 商业费用 & 风险 ── */}
+      <div style={{ display: 'flex', gap: 12, marginBottom: 20 }}>
+        {/* 质保 */}
         <div style={{
-          flex: 1, display: 'flex', alignItems: 'center', gap: 12,
+          flex: 1, display: 'flex', alignItems: 'center', gap: 10,
           padding: '10px 14px', borderRadius: 8,
           border: `1px solid ${COLORS.borderLight}`, background: COLORS.bgLight,
         }}>
-          <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 12 }}>
-            <span style={{ fontSize: 13, color: COLORS.textSecondary, whiteSpace: 'nowrap' }}>质保</span>
-            <span style={{ fontWeight: 700, fontSize: 15, color: COLORS.textDark }}>¥{formatMoney(summary.warranty_base)}</span>
-            <span style={{ color: COLORS.textLight, fontSize: 12 }}>×</span>
-            <PctBadge value={warnPct} label="系数"
-              onClick={() => { const n = WARNS[(warnPct + 1) % WARNS.length]; onVersionUpdate?.('warranty_rate', n / 100); }} />
-            <span style={{ color: COLORS.textLight, fontSize: 12 }}>=</span>
-            <span style={{ fontWeight: 700, fontSize: 16, color: COLORS.primary }}>
-              ¥{formatMoney(summary.warranty_cost)}
-            </span>
-          </div>
+          <span style={{ fontSize: 13, color: COLORS.textSecondary, whiteSpace: 'nowrap' }}>质保</span>
+          <span style={{ fontWeight: 700, fontSize: 15, color: COLORS.textDark }}>¥{formatMoney(summary.warranty_base)}</span>
+          <span style={{ color: COLORS.textLight, fontSize: 12 }}>×</span>
+          <PctBadge value={warnPct} label="系数"
+            onClick={() => { const n = WARNS[(warnPct + 1) % WARNS.length]; onVersionUpdate?.('warranty_rate', n / 100); }} />
+          <span style={{ color: COLORS.textLight, fontSize: 12 }}>=</span>
+          <span style={{ fontWeight: 700, fontSize: 16, color: COLORS.primary, whiteSpace: 'nowrap' }}>
+            ¥{formatMoney(summary.warranty_cost)}
+          </span>
         </div>
 
+        {/* 商业费用 */}
         <div style={{
-          flex: 1, display: 'flex', alignItems: 'center', gap: 12,
+          flex: 1, display: 'flex', alignItems: 'center', gap: 10,
           padding: '10px 14px', borderRadius: 8,
           border: `1px solid ${COLORS.borderLight}`, background: COLORS.bgLight,
         }}>
-          <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 12 }}>
-            <span style={{ fontSize: 13, color: COLORS.textSecondary, whiteSpace: 'nowrap' }}>风险</span>
-            <span style={{ fontWeight: 700, fontSize: 15, color: COLORS.textDark }}>¥{formatMoney(directCost)}</span>
-            <span style={{ color: COLORS.textLight, fontSize: 12 }}>×</span>
-            <PctBadge value={riskPct} label="系数"
-              onClick={() => { const n = WARNS[(riskPct + 1) % WARNS.length]; onVersionUpdate?.('risk_rate', n / 100); }} />
+          <span style={{ fontSize: 13, color: COLORS.textSecondary, whiteSpace: 'nowrap' }}>商业费用</span>
+          <input type="number" min={0} value={version.commercial_cost}
+            onChange={(e) => onVersionUpdate?.('commercial_cost', parseInt(e.target.value) || 0)}
+            style={{
+              width: 120, padding: '4px 8px', border: `1px solid ${COLORS.border}`, borderRadius: 4,
+              fontSize: 14, fontWeight: 600, color: COLORS.textDark, outline: 'none', textAlign: 'right',
+              background: '#fff', fontFamily: 'inherit',
+            }} />
+          <span style={{ fontWeight: 700, fontSize: 16, color: COLORS.textDark, whiteSpace: 'nowrap' }}>
+            ¥{formatMoney(version.commercial_cost)}
+          </span>
+        </div>
+
+        {/* 风险 */}
+        <div style={{
+          flex: 1, display: 'flex', alignItems: 'center', gap: 10,
+          padding: '10px 14px', borderRadius: 8,
+          border: `1px solid ${COLORS.borderLight}`, background: COLORS.bgLight,
+        }}>
+          <span style={{ fontSize: 13, color: COLORS.textSecondary, whiteSpace: 'nowrap' }}>风险</span>
+          <span style={{ fontWeight: 700, fontSize: 15, color: COLORS.textDark }}>¥{formatMoney(directCost)}</span>
+          <span style={{ color: COLORS.textLight, fontSize: 12 }}>×</span>
+          <PctBadge value={riskPct} label="系数"
+            onClick={() => { const n = WARNS[(riskPct + 1) % WARNS.length]; onVersionUpdate?.('risk_rate', n / 100); }} />
             <span style={{ color: COLORS.textLight, fontSize: 12 }}>=</span>
             <span style={{ fontWeight: 700, fontSize: 16, color: COLORS.warning }}>
               ¥{formatMoney(summary.risk_cost)}
