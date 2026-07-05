@@ -615,7 +615,7 @@ const SalesOpportunityList: React.FC = () => {
 
 
 
-      <div style={{ display: 'flex', gap: 0, marginBottom: 16, borderBottom: '1.5px solid #eee' }}>
+      <div style={{ display: 'flex', gap: 0, marginBottom: 16, borderBottom: `1.5px solid ${COLORS.borderLight}` }}>
 
         <div onClick={() => setTabFilter('info')}
 
@@ -674,6 +674,10 @@ const SalesOpportunityList: React.FC = () => {
 
 
 
+      <div style={{
+        borderRadius: 10, border: `1px solid ${COLORS.borderLight}`,
+        boxShadow: '0 2px 8px rgba(0,0,0,0.04)', overflow: 'hidden',
+      }}>
       <Table
         dataSource={filtered}
         columns={columns}
@@ -682,8 +686,9 @@ const SalesOpportunityList: React.FC = () => {
         size="small"
         bordered
         locale={{ emptyText: '暂无匹配的销售机会' }}
-        style={{ background: '#fff', borderRadius: 6 }}
+        style={{ background: '#fff', borderRadius: 8 }}
       />
+      </div>
 
       <div style={{
         display: 'flex', gap: 24, marginTop: 12, padding: '10px 16px',
@@ -949,7 +954,7 @@ const SalesOpportunityList: React.FC = () => {
             <div>
               {/* 大类切换标签（下划线样式） */}
               {groups.length > 1 && (
-                <div style={{ display: 'flex', gap: 0, marginBottom: 14, borderBottom: '1.5px solid #eee' }}>
+                <div style={{ display: 'flex', gap: 0, marginBottom: 14, borderBottom: `1.5px solid ${COLORS.borderLight}` }}>
                   {groups.map(g => (
                     <span key={g.groupLabel}
                       onClick={() => setReasonModal(p => ({ ...p, selectedGroup: g.groupLabel, selections: {} }))}
