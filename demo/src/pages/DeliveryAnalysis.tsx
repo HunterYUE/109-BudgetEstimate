@@ -405,7 +405,6 @@ interface GanttSlot {
   plannedStartDate: Date;
   plannedEndDate: Date;
   actualDate?: Date;
-  wasStarted: boolean;
   /** 初始计划时间（第一次制定时的计划，从 history 推算，无变更时=当前计划） */
   initStartDate: Date;
   initEndDate: Date;
@@ -416,7 +415,7 @@ const fmtShort = (d: Date) => `${d.getMonth() + 1}/${d.getDate()}`;
 
 /** 节点状态标签 & 条颜色（三类：未开始/进行中/已完成） */
 const GANTT_STATUS_COLOR: Record<string, string> = {
-  pending: COLORS.labelDark, in_progress: '#c24200', delayed: '#c24200', completed: COLORS.success,
+  pending: COLORS.barPending, in_progress: COLORS.purple, delayed: COLORS.purple, completed: COLORS.success,
 };
 
 /** 计算某节点的延期天数（与初始计划完成时间比） */
@@ -1015,8 +1014,7 @@ const DeliveryAnalysis: React.FC = () => {
           end = new Date(n.plannedEndDate);
         }
         // 初始计划时间：从 history 中找最早的 plannedDate 变更前的值
-        const wasStarted = !!startH;
-              const planChanges = n.history.filter(h => h.field === 'plannedDate')
+        const planChanges = n.history.filter(h => h.field === 'plannedDate')
           .sort((a, b) => new Date(a.changedAt).getTime() - new Date(b.changedAt).getTime());
         const initStart = planChanges.length > 0
           ? new Date(planChanges[0].oldValue)
@@ -1027,7 +1025,7 @@ const DeliveryAnalysis: React.FC = () => {
         return { nodeNo: n.nodeNo, startDate: start, endDate: end, status: n.status,
           name: n.name, plannedStartDate: new Date(n.plannedStartDate),
           plannedEndDate: new Date(n.plannedEndDate), actualDate: n.actualDate ? new Date(n.actualDate) : undefined,
-          initStartDate: initStart, initEndDate: initEnd, wasStarted };
+          initStartDate: initStart, initEndDate: initEnd };
       });
       return { name: p.clientName, slots };
     });
