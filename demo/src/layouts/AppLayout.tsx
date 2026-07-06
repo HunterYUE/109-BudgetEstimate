@@ -1,23 +1,23 @@
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { Layout, Tooltip } from 'antd';
 import ErrorBoundary from '../components/ErrorBoundary';
-import { MdOutlineDashboard, MdOutlineSell, MdOutlineDescription, MdOutlineFactCheck,
-  MdOutlinePeople, MdOutlineInventory, MdOutlineLocalShipping, MdOutlineBarChart, MdOutlineSettings,
-  MdOutlinePerson, MdOutlineNotificationsNone, MdOutlineLabel, MdOutlineAssessment } from 'react-icons/md';
+import { MdOutlineDashboard, MdOutlineSell, MdOutlineRequestQuote, MdOutlineFactCheck,
+  MdOutlinePeople, MdOutlineCategory, MdOutlineFactory, MdOutlineBarChart, MdOutlineSettings,
+  MdOutlinePerson, MdOutlineNotificationsNone, MdOutlineLabel, MdOutlineAssessment, MdOutlineBusinessCenter } from 'react-icons/md';
 
 const { Header, Content } = Layout;
 
 const MENU_ITEMS = [
   { key: '/',             icon: MdOutlineDashboard,  label: '仪表盘' },
-  { key: '/opportunities', icon: MdOutlineSell,     label: '销售管理' },
-  { key: '/quotations',    icon: MdOutlineDescription, label: '报价列表' },
-  { key: '/approval',     icon: MdOutlineFactCheck,  label: '审批管理' },
   { key: '/analysis',     icon: MdOutlineBarChart,   label: '销售分析' },
-  { key: '/delivery',     icon: MdOutlineLocalShipping, label: '交付管理' },
+  { key: '/opportunities', icon: MdOutlineSell,     label: '销售管理' },
+  { key: '/quotations',    icon: MdOutlineRequestQuote,   label: '报价列表' },
   { key: '/delivery-analysis', icon: MdOutlineAssessment,  label: '交付分析' },
+  { key: '/delivery',     icon: MdOutlineFactory,    label: '交付管理' },
+  { key: '/approval',     icon: MdOutlineFactCheck,  label: '审批管理' },
   { key: '/tags',         icon: MdOutlineLabel,     label: '标签管理' },
-  { key: '/materials',    icon: MdOutlineInventory,   label: '物料管理' },
-  { key: '/clients',      icon: MdOutlinePeople,     label: '客户管理' },
+  { key: '/materials',    icon: MdOutlineCategory,   label: '物料管理' },
+  { key: '/clients',      icon: MdOutlineBusinessCenter, label: '客户管理' },
   { key: '/settings',     icon: MdOutlineSettings,   label: '系统管理' },
 ];
 

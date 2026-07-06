@@ -1,10 +1,10 @@
-import React, { useState, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Tag, Card, Button, message, Modal, ConfigProvider } from 'antd';
-import { ScheduleOutlined, AuditOutlined, SendOutlined, SaveOutlined, ArrowLeftOutlined, DownloadOutlined, UploadOutlined } from '@ant-design/icons';
+import { ScheduleOutlined, AuditOutlined, SendOutlined, SaveOutlined, ArrowLeftOutlined, DownloadOutlined, UploadOutlined, EyeOutlined, DeleteOutlined } from '@ant-design/icons';
 import { mockDeliveryProjects, mockProject, mockApprovalRequests } from '../mockData';
 import { formatMoney } from '../utils/calculations';
-import { notifyMockUpdate } from '../utils/mockStore';
+import { notifyMockUpdate, useMockVersion } from '../utils/mockStore';
 import DeliveryNodeTimeline from '../components/DeliveryNodeTimeline';
 import IconButton from '../components/IconButton';
 import ItemCostTable from '../components/ItemCostTable';
@@ -16,7 +16,7 @@ const STATUS_CYCLE: DeliveryNode['status'][] = ['pending', 'in_progress', 'compl
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   draft: { label: '草稿', color: COLORS.textSecondary },
   pending: { label: '待审批', color: COLORS.warning },
-  approved: { label: '已通过', color: '#2e7d32' },
+  approved: { label: '已通过', color: COLORS.success },
   rejected: { label: '已驳回', color: COLORS.danger },
 };
 
@@ -27,6 +27,16 @@ const DeliveryDetail: React.FC = () => {
   const location = useLocation();
   const initTab = (location.state as { tab?: 'plan' | 'cost' | 'files' })?.tab || 'plan';
   const [tab, setTab] = useState<'plan' | 'cost' | 'files'>(initTab);
+  const mockVer = useMockVersion();
+  useEffect(() => {
+    const p = mockDeliveryProjects.find(d => d.id === id);
+    if (p) setProject({
+      ...p,
+      nodes: p.nodes.map(n => ({ ...n, history: n.history.map(h => ({ ...h })) })),
+      planApproval: p.planApproval ? { ...p.planApproval } : undefined,
+      costApproval: p.costApproval ? { ...p.costApproval } : undefined,
+    });
+  }, [mockVer]);
 
   const [project, setProject] = useState<DeliveryProject | null>(() => {
     const p = mockDeliveryProjects.find(d => d.id === id);
@@ -45,12 +55,15 @@ const DeliveryDetail: React.FC = () => {
 
   // ---- Attachment management ----
   const attachmentTypes = [
-    { key: 'rfq', label: '客户需求书（原始RFQ）' },
+    { key: 'rfq', label: '客户需求书' },
     { key: 'techPlan', label: '技术方案' },
     { key: 'techAgreement', label: '技术协议' },
     { key: 'contract', label: '商务合同' },
   ];
-  const [files, setFiles] = useState<Record<string, string>>({});
+  const [files, setFiles] = useState<Record<string, string>>({
+    rfq: '客户需求书_v1.0.pdf',
+    techPlan: '技术方案_v2.1.pdf',
+  });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [activeFileKey, setActiveFileKey] = useState<string>('');
 
@@ -77,19 +90,13 @@ const DeliveryDetail: React.FC = () => {
 
   const quotationGroups: Group[] = useMemo(() => {
     if (!project) return [];
-    if (project.quotationId === 'proj-003' || project.quotationId === 'proj-001' || project.quotationId === 'proj-005') {
-      return mockProject.groups.map(g => ({ ...g, items: g.items.map(i => ({ ...i })) }));
-    }
-    return [];
+    return mockProject.groups.map(g => ({ ...g, items: g.items.map(i => ({ ...i })) }));
   }, [project]);
 
   const quotationVersion = useMemo(() => {
     if (!project) return undefined;
-    if (project.quotationId === 'proj-003' || project.quotationId === 'proj-001' || project.quotationId === 'proj-005') {
-      const v = mockProject.current_version;
-      return { warranty_rate: v.warranty_rate, risk_rate: v.risk_rate, commercial_cost: v.commercial_cost };
-    }
-    return undefined;
+    const v = mockProject.current_version;
+    return { warranty_rate: v.warranty_rate, risk_rate: v.risk_rate, commercial_cost: v.commercial_cost };
   }, [project]);
 
   // 实施计划：仅待审批时锁定（通过后可继续修改无需再审批，驳回后可修改重新提交）
@@ -99,15 +106,14 @@ const DeliveryDetail: React.FC = () => {
   const costCanEdit = project?.costStatus !== 'pending';
 
   // ---- Node handlers ----
-  const handleNodeStatusClick = useCallback((nodeId: string) => {
+  const handleNodeStatusClick = useCallback((nodeId: string, newStatus?: string) => {
     if (!project) return;
     const now = new Date().toISOString().slice(0, 10);
     setProject(prev => {
       if (!prev) return prev;
       const newNodes = prev.nodes.map(n => {
         if (n.id !== nodeId) return n;
-        const idx = STATUS_CYCLE.indexOf(n.status);
-        const nextStatus = STATUS_CYCLE[(idx + 1) % STATUS_CYCLE.length];
+        const nextStatus = newStatus || STATUS_CYCLE[(STATUS_CYCLE.indexOf(n.status) + 1) % STATUS_CYCLE.length];
         // 切到"已完成"时记录实际完成日期，切离"已完成"时清除
         const updated: DeliveryNode = { ...n, status: nextStatus as DeliveryNode['status'] };
         if (nextStatus === 'completed') {
@@ -178,24 +184,30 @@ const DeliveryDetail: React.FC = () => {
       msg.warning(`请先填写所有节点的计划开始和结束时间（${emptyDates.map(n => n.name).join('、')}）`);
       return;
     }
-    // 提交审批：写入共享审批列表
-    const existing = mockApprovalRequests.find(r => r.deliveryId === project.id && r.approvalType === 'plan' && r.status === 'pending');
-    if (!existing) {
-      mockApprovalRequests.push({
-        id: 'apr-plan-' + crypto.randomUUID().slice(0, 6),
-        approvalType: 'plan', quotationId: project.quotationId, deliveryId: project.id,
-        salesNo: project.salesNo, clientName: project.clientName,
-        projectName: project.projectName,
-        amount: project.contractAmount, totalCost: 0, profitRate: 0, gp3: 0,
-        submitter: '方案经理', submitTime: new Date().toISOString().slice(0, 10),
-        status: 'pending', records: [],
-      });
-    }
-    setProject(prev => prev ? { ...prev, planStatus: 'pending' } : prev);
-    setHasChanges(false);
-    notifyMockUpdate();
-    msg.success('实施计划已提交审批，请前往审批管理模块查看');
-  }, [project, msg]);
+    Modal.confirm({
+      title: '确认提交审批',
+      content: '确定提交实施计划进行审批吗？',
+      okText: '提交', cancelText: '取消',
+      onOk: () => {
+        const existing = mockApprovalRequests.find(r => r.deliveryId === project.id && r.approvalType === 'plan' && r.status === 'pending');
+        if (!existing) {
+          mockApprovalRequests.push({
+            id: 'apr-plan-' + crypto.randomUUID().slice(0, 6),
+            approvalType: 'plan', quotationId: project.quotationId, deliveryId: project.id,
+            salesNo: project.salesNo, clientName: project.clientName,
+            projectName: project.projectName,
+            amount: project.contractAmount, totalCost: 0, profitRate: 0, gp3: 0,
+            submitter: '方案经理', submitTime: new Date().toISOString().slice(0, 10),
+            status: 'pending', records: [],
+          });
+        }
+        setProject(prev => prev ? { ...prev, planStatus: 'pending' } : prev);
+        setHasChanges(false);
+        notifyMockUpdate();
+        msg.success('实施计划已提交审批');
+      },
+    });
+  }, [project, msg, Modal]);
 
   const handleSubmitCost = useCallback(() => {
     if (!project) return;
@@ -394,6 +406,7 @@ const DeliveryDetail: React.FC = () => {
                       const updated = { ...prev, status: '已完成' as const };
                       const mockProj = mockDeliveryProjects.find(p => p.id === prev.id);
                       if (mockProj) mockProj.status = '已完成';
+                      notifyMockUpdate();
                       msg.success('项目已标记为已完成');
                       return updated;
                     });
@@ -498,11 +511,11 @@ const DeliveryDetail: React.FC = () => {
         <div onClick={() => setTab('files')}
           style={{
             padding: '8px 20px', cursor: 'pointer', fontSize: 14,
-            borderBottom: tab === 'files' ? '2px solid #722ed1' : '2px solid transparent',
-            color: tab === 'files' ? '#722ed1' : COLORS.textSecondary, fontWeight: tab === 'files' ? 600 : 400,
+            borderBottom: tab === 'files' ? `2px solid ${COLORS.purple}` : '2px solid transparent',
+            color: tab === 'files' ? COLORS.purple : COLORS.textSecondary, fontWeight: tab === 'files' ? 600 : 400,
             marginBottom: -2, transition: 'all 0.15s',
           }}>
-          <UploadOutlined style={{ color: '#722ed1', marginRight: 6 }} />附件管理
+          <UploadOutlined style={{ color: COLORS.purple, marginRight: 6 }} />附件管理
         </div>
       </div>
 
@@ -543,39 +556,85 @@ const DeliveryDetail: React.FC = () => {
         </div>
       ) : tab === 'files' ? (
         <div>
-          <Card size="small" styles={{ body: { padding: '16px 20px' } }} style={{ borderRadius: 4, border: `1px solid ${COLORS.border}`, boxShadow: 'none', background: '#fff' }}>
-            <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.textDark, marginBottom: 16, paddingBottom: 12, borderBottom: `1px solid ${COLORS.border}` }}>
-              附件管理
+          <Card size="small" styles={{ body: { padding: 0 } }} style={{ borderRadius: 8, border: `1px solid ${COLORS.borderLight}`, boxShadow: '0 2px 12px rgba(0,0,0,0.04)', background: '#fff', overflow: 'hidden' }}>
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 12, padding: '14px 20px',
+              background: 'linear-gradient(90deg, #f8faff, #f0f4ff)',
+              borderBottom: `1px solid ${COLORS.borderLight}`,
+            }}>
+              <UploadOutlined style={{ color: COLORS.purple, fontSize: 16 }} />
+              <span style={{ fontSize: 14, fontWeight: 700, color: COLORS.textDark, letterSpacing: 0.5 }}>附件管理</span>
             </div>
-            {attachmentTypes.map(at => {
-              const uploaded = !!files[at.key];
-              return (
-                <div key={at.key} style={{
-                  display: 'flex', alignItems: 'center', gap: 12,
-                  padding: '10px 0', borderBottom: `1px solid ${COLORS.border}`,
-                }}>
-                  <span style={{ flex: 1, fontSize: 13, color: COLORS.textPrimary, fontWeight: 500 }}>{at.label}</span>
-                  {!uploaded ? (
-                    <Button size="small" icon={<UploadOutlined />} onClick={() => handleUploadClick(at.key)}
-                      style={{ fontSize: 12, borderRadius: 3 }}>
-                      上传
-                    </Button>
-                  ) : (
-                    <>
-                      <span style={{ fontSize: 13, color: COLORS.primary }}>{files[at.key]}</span>
-                      <span onClick={() => handleRemoveFile(at.key)}
+            <div style={{ padding: '4px 0' }}>
+              {attachmentTypes.map(at => {
+                const uploaded = !!files[at.key];
+                const typeColors: Record<string, string> = {
+                  rfq: '#4a6fa5', techPlan: '#5b8c5a', techAgreement: '#7b6f9e', contract: '#9e7b5a',
+                };
+                const typeLabels: Record<string, string> = {
+                  rfq: 'RFQ', techPlan: '方案', techAgreement: '协议', contract: '合同',
+                };
+                return (
+                  <div key={at.key} style={{
+                    display: 'flex', alignItems: 'center', gap: 14,
+                    padding: '12px 20px', transition: 'background 0.15s',
+                    borderBottom: `1px solid ${COLORS.borderLight}`,
+                  }}
+                    onMouseEnter={e => e.currentTarget.style.background = COLORS.bgSelected}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                  >
+                    <span style={{
+                      width: 32, height: 32, borderRadius: 8, display: 'inline-flex',
+                      alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                      fontSize: 11, fontWeight: 700, color: '#fff',
+                      background: typeColors[at.key], letterSpacing: 0.5,
+                    }}>{typeLabels[at.key]}</span>
+                    <span style={{ flex: 1, fontSize: 13, color: COLORS.textDark, fontWeight: 500, letterSpacing: 0.3 }}>{at.label}</span>
+                    {!uploaded ? (
+                      <span onClick={() => handleUploadClick(at.key)}
                         style={{
-                          width: 20, height: 20, borderRadius: '50%', display: 'inline-flex',
+                          width: 28, height: 28, borderRadius: 6, display: 'inline-flex',
                           alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
-                          fontSize: 14, color: COLORS.textLight, background: COLORS.bgLight,
-                          lineHeight: 1, userSelect: 'none',
+                          fontSize: 14, color: COLORS.primary, background: '#e6f0fa',
+                          lineHeight: 1, userSelect: 'none', transition: 'all 0.15s',
                         }}
-                        title="删除">×</span>
-                    </>
-                  )}
-                </div>
-              );
-            })}
+                        onMouseEnter={e => { e.currentTarget.style.background = '#d0e4f7'; }}
+                        onMouseLeave={e => { e.currentTarget.style.background = '#e6f0fa'; }}
+                        title="上传文件">
+                        <UploadOutlined />
+                      </span>
+                    ) : (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{
+                          fontSize: 12, color: COLORS.primary, fontWeight: 500,
+                          maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        }}>{files[at.key]}</span>
+                        <span onClick={() => message.info('文件: ' + files[at.key] + '（模拟查看）')}
+                          style={{
+                            width: 28, height: 28, borderRadius: 6, display: 'inline-flex',
+                            alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+                          fontSize: 14, color: COLORS.primary, background: '#e6f0fa',
+                          lineHeight: 1, userSelect: 'none', transition: 'all 0.15s',
+                        }}
+                          onMouseEnter={e => { e.currentTarget.style.background = '#d0e4f7'; }}
+                          onMouseLeave={e => { e.currentTarget.style.background = '#e6f0fa'; }}
+                          title="查看文件"><EyeOutlined /></span>
+                        <span onClick={() => handleRemoveFile(at.key)}
+                          style={{
+                            width: 28, height: 28, borderRadius: 6, display: 'inline-flex',
+                            alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+                            fontSize: 14, color: COLORS.primary, background: '#e6f0fa',
+                            lineHeight: 1, userSelect: 'none', transition: 'all 0.15s',
+                          }}
+                          onMouseEnter={e => { e.currentTarget.style.background = '#fee'; e.currentTarget.style.color = COLORS.danger; }}
+                          onMouseLeave={e => { e.currentTarget.style.background = '#e6f0fa'; e.currentTarget.style.color = COLORS.primary; }}
+                          title="删除文件"><DeleteOutlined /></span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </Card>
           <input ref={fileInputRef} type="file" style={{ display: 'none' }} onChange={handleFileChange} accept=".pdf,.doc,.docx,.xls,.xlsx,.zip,.rar" />
         </div>
@@ -605,7 +664,7 @@ const DeliveryDetail: React.FC = () => {
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 16, marginTop: 16 }}>
             <IconButton icon={<SaveOutlined style={{ fontWeight: 700 }} />}
               onClick={() => { setCostDirty(false); msg.success('成本对比已保存'); }}
-              color="#d46b08" hoverBg="#fff7e6" title="保存"
+              color={COLORS.amber} hoverBg="#fff7e6" title="保存"
               disabled={!costDirty} />
             <IconButton icon={<SendOutlined style={{ fontWeight: 700 }} />}
               onClick={handleSubmitCost}

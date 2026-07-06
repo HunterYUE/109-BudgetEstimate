@@ -1,5 +1,5 @@
-import React from 'react';
-import { Table, Tooltip, Button } from 'antd';
+import React, { useState } from 'react';
+import { Table, Tooltip, Button, Input, Popover } from 'antd';
 import { DeleteOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import type { GroupItem, SourcingType, GroupType } from '../types';
@@ -55,6 +55,45 @@ const MarginInput: React.FC<{ value: number; onCommit: (val: number) => void }> 
       onKeyDown={(e) => { if (e.key === 'Enter') commit(); }}
       style={{ width: 60, textAlign: 'center', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, MozAppearance: 'textfield' }}
     />
+  );
+};
+
+
+/** 可编辑的编码单元格，支持模糊搜索物料编码、名称和标签 */
+const CodeCell: React.FC<{ value: string; onSelect: (item: typeof mockComponentDB[0]) => void }> = ({ value, onSelect }) => {
+  const [open, setOpen] = React.useState(false);
+  const [search, setSearch] = React.useState('');
+  const results = search.trim()
+    ? mockComponentDB.filter(c => c.code.toLowerCase().includes(search.toLowerCase()) || c.name_cn.toLowerCase().includes(search.toLowerCase()) || (c.tags || []).some(t => t.includes(search)))
+    : [];
+  return (
+    <Popover
+      open={open}
+      onOpenChange={setOpen}
+      trigger="click" placement="bottomLeft"
+      content={
+        <div style={{ width: 300, maxHeight: 200, overflowY: 'auto' }}>
+          <Input size="small" placeholder="搜索编码 / 名称 / 标签"
+            value={search} onChange={e => setSearch(e.target.value)} autoFocus
+            style={{ marginBottom: 4, fontSize: 12 }} />
+          {results.length === 0 && search.trim() && (
+            <div style={{ padding: '8px 4px', fontSize: 12, color: COLORS.textLight }}>无匹配物料，可继续手动输入</div>
+          )}
+          {results.slice(0, 20).map(item => (
+            <div key={item.id} onClick={() => { onSelect(item); setOpen(false); setSearch(''); }}
+              style={{ padding: '6px 8px', cursor: 'pointer', fontSize: 12, borderRadius: 4, borderBottom: '1px solid #f0f0f0' }}
+              onMouseEnter={e => e.currentTarget.style.background = COLORS.bgSelected}
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+              <div style={{ fontWeight: 600, color: COLORS.primary }}>{item.code}</div>
+              <div style={{ color: COLORS.textSecondary, fontSize: 11 }}>{item.name_cn}</div>
+            </div>
+          ))}
+        </div>
+      }>
+      <span style={{ cursor: 'pointer', display: 'block', minHeight: 22 }}>
+        {value ? <span style={{ fontSize: 13, color: COLORS.primary }}>{value}</span> : <span style={{ color: COLORS.textLight }}>点击选择编码</span>}
+      </span>
+    </Popover>
   );
 };
 
@@ -128,26 +167,26 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
     },
   }] : [];
 
-  const colCode: ColumnsType<GroupItem> = [{
+    const colCode: ColumnsType<GroupItem> = [{
     title: '编码', dataIndex: 'code', width: 200,
     onCell: () => ({ style: { width: 200, minWidth: 200, maxWidth: 200 } }),
-    render: (v: string) => {
-      const matched = isInDB(v);
-      return (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <span style={{
-            fontSize: 13,
-            color: matched ? (parseVersion(v)?.isTemp ? '#fa8c16' : COLORS.primary) : COLORS.textLight
-          }}>{v}</span>
-          {v && !matched && (
-            <Tooltip title="此编码不在组件数据库中，请先注册">
-              <span style={{ color: 'red', fontWeight: 700, fontSize: 16, lineHeight: 1 }}>!</span>
-            </Tooltip>
-          )}
-        </div>
-      );
+    render: (v: string, _rec: GroupItem, idx: number) => {
+      if (!editing) {
+        const matched = isInDB(v);
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ fontSize: 13, color: matched ? (parseVersion(v)?.isTemp ? '#fa8c16' : COLORS.primary) : COLORS.textLight }}>{v}</span>
+            {v && !matched && (
+              <Tooltip title="此编码不在组件数据库中，请先注册">
+                <span style={{ color: 'red', fontWeight: 700, fontSize: 16, lineHeight: 1 }}>!</span>
+              </Tooltip>
+            )}
+          </div>
+        );
+      }
+      return <CodeCell value={v} onSelect={(item) => updateItem(idx, { code: item.code, description: item.name_cn, unit_cost: item.unit_cost, sourcing_type: item.sourcing_type, design_hours: item.design_hours, assembly_hours: item.assembly_hours })} />;
     },
-  }];
+  }];;
 
   const colDesc: ColumnsType<GroupItem> = [{
     title: '描述', dataIndex: 'description', width: 280,
@@ -184,7 +223,7 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
     onCell: onCellLock(52),
     render: (v: number, _record: GroupItem, idx: number) => editing ? (
       <input type="number" min={0} value={v}
-        onChange={(e) => updateItem(idx, { qty_total: parseInt(e.target.value) || 0 })}
+        onChange={(e) => updateItem(idx, { qty_total: parseInt(e.target.value, 10) || 0 })}
         style={{ width: '100%', textAlign: 'center', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, MozAppearance: 'textfield' }} />
     ) : <span style={{ display: 'block', textAlign: 'center' }}>{v}</span>,
   }];
@@ -274,10 +313,6 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
   return (
     <>
       <style>{`
-.ant-table-tbody .ant-select-selector .ant-select-selection-item,
-        .ant-table-tbody .ant-select-item-option-content {
-
-        }
         .ant-table-tbody .ant-tag {
 
           font-size: 13px !important;
@@ -300,7 +335,7 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
       pagination={false}
       size="small"
       bordered
-      scroll={{ x: 1300 }}
+      scroll={{ x: 900 }}
     />
     </>
   );

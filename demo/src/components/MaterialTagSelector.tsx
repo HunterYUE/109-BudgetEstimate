@@ -150,7 +150,7 @@ const MaterialTagSelector: React.FC<Props> = ({ value, onChange }) => {
             <div style={{
               width: 14, height: 14, borderRadius: 3, flexShrink: 0,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              border: sel ? '1.5px solid COLORS.primary' : '1.5px solid #c0c8d4',
+              border: sel ? `1.5px solid ${COLORS.primary}` : '1.5px solid #c0c8d4',
               background: sel ? COLORS.primary : 'transparent',
               transition: 'all 0.15s',
             }}>

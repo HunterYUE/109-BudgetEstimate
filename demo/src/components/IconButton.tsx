@@ -27,13 +27,17 @@ const IconButton: React.FC<IconButtonProps> = ({
   return (
     <div
       onClick={disabled ? undefined : onClick}
+      role="button"
+      tabIndex={disabled ? -1 : 0}
+      aria-label={title}
+      onKeyDown={disabled ? undefined : (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick?.(); } }}
       style={{
         width: size, height: size, borderRadius: '50%', flexShrink: 0,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         color: disabled ? COLORS.borderInput : color,
         fontSize: size * 0.61, cursor: disabled ? 'default' : 'pointer',
         userSelect: 'none', transition: 'all 0.2s',
-        opacity: disabled ? 0.5 : 1,
+        opacity: disabled ? 0.5 : 1, outline: 'none',
       }}
       onMouseEnter={e => {
         if (!disabled) e.currentTarget.style.background = bg;

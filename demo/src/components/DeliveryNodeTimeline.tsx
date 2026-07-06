@@ -18,7 +18,7 @@ interface Props {
 }
 
 const STATUS_LABELS: Record<string, string> = {
-  pending: '未开始', in_progress: '进行中', completed: '已完成',
+  pending: '未开始', in_progress: '进行中', completed: '已完成', delayed: '已延期',
 };
 
 /** 说明标签颜色表（深色系，按 nodeNo 轮转） */
@@ -165,7 +165,7 @@ const DeliveryNodeTimeline: React.FC<Props> = ({
                       fontSize: node.status === 'completed' ? 14 : 10, fontWeight: 700, color: node.status === 'completed' ? COLORS.primary : node.status === 'in_progress' ? COLORS.primary : COLORS.textLight,
                       cursor: onNodeStatusClick ? 'pointer' : 'default', userSelect: 'none',
                     }}
-                      onClick={() => { if (onNodeStatusClick) setStatusDropdown(statusDropdown === node.id ? null : node.id); }}
+                      onClick={() => { if (onNodeStatusClick && !locked) setStatusDropdown(statusDropdown === node.id ? null : node.id); }}
                       title="点击选择状态">
                       <span style={{ marginLeft: 1 }}>{node.status === 'completed' ? '⚑' : node.status === 'in_progress' ? '▶' : node.nodeNo}</span>
                     </div>
@@ -175,7 +175,7 @@ const DeliveryNodeTimeline: React.FC<Props> = ({
                         background: '#fff', border: `1px solid ${COLORS.borderInput}`, borderRadius: 4,
                         minWidth: 72, boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
                       }}>
-                        {['pending', 'in_progress', 'completed'].map(st => (
+                        {['pending', 'in_progress', 'completed', 'delayed'].map(st => (
                           <div key={st} onClick={() => { onNodeStatusClick?.(node.id, st); setStatusDropdown(null); }}
                             style={{
                               padding: '4px 12px', cursor: 'pointer', fontSize: 12,
@@ -211,8 +211,8 @@ const DeliveryNodeTimeline: React.FC<Props> = ({
                         onKeyDown={e => { if (e.key === 'Enter') commitEdit(); if (e.key === 'Escape') setEditing(null); }}
                         style={{ width: 95, fontSize: 12, border: 'none', borderBottom: `1px solid ${COLORS.primary}`, outline: 'none', padding: 0, background: 'transparent', color: COLORS.primary }} />
                     ) : (
-                      <span onClick={() => node.status !== 'completed' && (setEditing({ id: node.id, field: 'plannedStartDate' }), setEditVal(node.plannedStartDate))}
-                        style={{ cursor: node.status !== 'completed' ? 'pointer' : 'default', color: COLORS.primary }}>
+                      <span onClick={() => !locked && node.status !== 'completed' && (setEditing({ id: node.id, field: 'plannedStartDate' }), setEditVal(node.plannedStartDate))}
+                        style={{ cursor: !locked && node.status !== 'completed' ? 'pointer' : 'default', color: COLORS.primary }}>
                         {shortDate(node.plannedStartDate)}
                       </span>
                     )}
@@ -224,8 +224,8 @@ const DeliveryNodeTimeline: React.FC<Props> = ({
                         onKeyDown={e => { if (e.key === 'Enter') commitEdit(); if (e.key === 'Escape') setEditing(null); }}
                         style={{ width: 95, fontSize: 12, border: 'none', borderBottom: `1px solid ${COLORS.primary}`, outline: 'none', padding: 0, background: 'transparent', color: COLORS.primary }} />
                     ) : (
-                      <span onClick={() => node.status !== 'completed' && (setEditing({ id: node.id, field: 'plannedEndDate' }), setEditVal(node.plannedEndDate))}
-                        style={{ cursor: node.status !== 'completed' ? 'pointer' : 'default', color: COLORS.primary }}>
+                      <span onClick={() => !locked && node.status !== 'completed' && (setEditing({ id: node.id, field: 'plannedEndDate' }), setEditVal(node.plannedEndDate))}
+                        style={{ cursor: !locked && node.status !== 'completed' ? 'pointer' : 'default', color: COLORS.primary }}>
                         {shortDate(node.plannedEndDate)}
                       </span>
                     )}

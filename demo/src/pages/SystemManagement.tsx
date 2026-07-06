@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Table, Button, Modal, Input, InputNumber, message, Switch } from 'antd';
+import { Table, Button, Modal, Input, message, Switch } from 'antd';
 import { PlusOutlined, EditOutlined, KeyOutlined, CheckOutlined, CloseOutlined, SettingOutlined, DeleteOutlined } from '@ant-design/icons';
 import { COLORS } from '../styles/constants';
 import type { TableProps } from 'antd';
@@ -26,14 +26,14 @@ const MOCK_USERS: MockUser[] = [
   { key: 'u6', name: '钱工', role: '方案经理', phone: '13800002002', email: 'qiangong@example.com', password: '123456', active: false },
   { key: 'u7', name: '孙经理', role: '交付经理', phone: '13800003001', email: 'sunjingli@example.com', password: '123456', active: true },
   { key: 'u8', name: '周经理', role: '交付经理', phone: '13800003002', email: 'zhoujingli@example.com', password: '123456', active: true },
-  { key: 'u9', name: '刘总监', role: '总监', phone: '13800009001', email: 'liu@example.com', password: '123456', active: true },
+  { key: 'u9', name: '刘总监', role: '部门总监', phone: '13800009001', email: 'liu@example.com', password: '123456', active: true },
 ];
 
 const ROLE_COLORS: Record<string, string> = {
   '销售经理': COLORS.primary,
   '方案经理': COLORS.success,
   '交付经理': COLORS.warning,
-  '总监': COLORS.purple,
+  '部门总监': COLORS.purple,
 };
 
 /* ============================================================
@@ -63,12 +63,11 @@ const MOCK_LOGS: MockLog[] = [
   { key: 'l12', time: '2026-06-29 09:30:00', user: '孙经理', action: '提交计划', module: '交付管理', detail: '项目"挖掘机智能产线" 实施计划提交审批' },
 ];
 
-type TabKey = 'users' | 'logs' | 'config';
+type TabKey = 'users' | 'logs';
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'users', label: '用户管理' },
   { key: 'logs', label: '操作日志' },
-  { key: 'config', label: '基础配置' },
 ];
 
 /* ============================================================
@@ -78,7 +77,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
   '销售经理': ['销售机会管理', '报价列表查看', '销售分析', '客户管理'],
   '方案经理': ['物料管理', '报价编制', '标签管理', '物料审核提交'],
   '交付经理': ['交付管理', '交付分析', '成本录入'],
-  '总监': ['审批管理', '用户管理', '系统配置', '全部查看权限'],
+  '部门总监': ['审批管理', '用户管理', '系统配置', '全部查看权限'],
 };
 
 /* ============================================================
@@ -116,48 +115,7 @@ const SystemManagement: React.FC = () => {
 
   // 操作日志筛选
   const [logModuleFilter, setLogModuleFilter] = useState<string | null>(null);
-
-  /* ---- 基础配置 ---- */
-
-  const [eurRate, setEurRate] = useState<number>(() => {
-    const v = localStorage.getItem('sys_eur_rate');
-    return v ? parseFloat(v) : 8.15;
-  });
-
-  const [vatRate, setVatRate] = useState<number>(() => {
-    const v = localStorage.getItem('sys_vat_rate');
-    return v ? parseFloat(v) : 13;
-  });
-
-  const [designRate, setDesignRate] = useState<number>(() => {
-    const v = localStorage.getItem('sys_design_rate');
-    return v ? parseFloat(v) : 174;
-  });
-
-  const [assemblyRate, setAssemblyRate] = useState<number>(() => {
-    const v = localStorage.getItem('sys_assembly_rate');
-    return v ? parseFloat(v) : 70;
-  });
-
-  const saveEurRate = () => {
-    localStorage.setItem('sys_eur_rate', String(eurRate));
-    messageApi.success('EUR/CNY 汇率已保存');
-  };
-
-  const saveVatRate = () => {
-    localStorage.setItem('sys_vat_rate', String(vatRate));
-    messageApi.success('增值税率已保存');
-  };
-
-  const saveDesignRate = () => {
-    localStorage.setItem('sys_design_rate', String(designRate));
-    messageApi.success('设计工时费率已保存');
-  };
-
-  const saveAssemblyRate = () => {
-    localStorage.setItem('sys_assembly_rate', String(assemblyRate));
-    messageApi.success('装配工时费率已保存');
-  };
+  const [deleteUser, setDeleteUser] = useState<MockUser | null>(null);
 
   /* ---- 用户管理 ---- */
 
@@ -234,6 +192,13 @@ const SystemManagement: React.FC = () => {
     setEditTarget(null);
   };
 
+  const confirmDeleteUser = () => {
+    if (!deleteUser) return;
+    setUsers(prev => prev.filter(u => u.key !== deleteUser.key));
+    messageApi.success('用户已移除（演示数据，刷新后恢复）');
+    setDeleteUser(null);
+  };
+
   /* ---- 表格列 ---- */
   const userColumns: TableProps<MockUser>['columns'] = [
     { title: '姓名', dataIndex: 'name', key: 'name', width: 80 },
@@ -274,10 +239,7 @@ const SystemManagement: React.FC = () => {
             <SettingOutlined style={{ marginRight: 2 }} />权限
           </span>
           <span style={{ color: '#d0d0d0' }}>|</span>
-          <span onClick={() => {
-            setUsers(prev => prev.filter(u => u.key !== rec.key));
-            messageApi.success('用户已移除（演示数据，刷新后恢复）');
-          }}
+          <span onClick={() => setDeleteUser(rec)}
             style={{ color: COLORS.danger, cursor: 'pointer', fontSize: 13, whiteSpace: 'nowrap' }}>
             <DeleteOutlined style={{ marginRight: 2 }} />移除
           </span>
@@ -400,7 +362,7 @@ const SystemManagement: React.FC = () => {
               <div>
                 <div style={{ fontSize: 13, color: COLORS.textSecondary, marginBottom: 4 }}>角色 <span style={{ color: COLORS.danger }}>*</span></div>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  {['销售经理', '方案经理', '交付经理', '总监'].map(r => (
+                  {['销售经理', '方案经理', '交付经理', '部门总监'].map(r => (
                     <div key={r} onClick={() => setNewRole(r)}
                       style={{
                         padding: '4px 14px', borderRadius: 4, cursor: 'pointer', fontSize: 13,
@@ -519,7 +481,7 @@ const SystemManagement: React.FC = () => {
                 <div>
                   <div style={{ fontSize: 13, color: COLORS.textSecondary, marginBottom: 8 }}>角色：</div>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    {['销售经理', '方案经理', '交付经理', '总监'].map(r => (
+                    {['销售经理', '方案经理', '交付经理', '部门总监'].map(r => (
                       <div key={r} onClick={() => {
                         setPermRole(r);
                         setCheckedPerms([...(ROLE_PERMISSIONS[r] || [])]);
@@ -565,9 +527,6 @@ const SystemManagement: React.FC = () => {
                     ))}
                   </div>
                 </div>
-                <div style={{ fontSize: 12, color: COLORS.textLight }}>
-                  💡 Demo 阶段权限为静态展示，角色切换后自动加载该角色的默认权限
-                </div>
               </div>
             )}
           </Modal>
@@ -611,121 +570,28 @@ const SystemManagement: React.FC = () => {
         </div>
       )}
 
-      {/* ================================================================
-          基础配置
-          ================================================================ */}
-      {tab === 'config' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-
-          {/* 汇率配置 */}
-          <div style={{
-            borderRadius: 10, border: `1px solid ${COLORS.borderLight}`,
-            boxShadow: '0 2px 8px rgba(0,0,0,0.04)', padding: 16, background: '#fff',
-          }}>
-            <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.textDark, marginBottom: 12 }}>汇率配置</div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <span style={{ fontSize: 13, color: COLORS.textSecondary, width: 100, flexShrink: 0 }}>EUR/CNY</span>
-              <InputNumber
-                value={eurRate}
-                onChange={v => setEurRate(v ?? 8.15)}
-                min={0} step={0.01}
-                style={{ width: 120, borderRadius: 6, fontSize: 13 }}
-                precision={2}
-              />
-              <Button type="primary" ghost size="small" icon={<CheckOutlined />}
-                onClick={saveEurRate}
-                style={{ borderColor: COLORS.primary, color: COLORS.primary, borderRadius: 6, fontSize: 13 }}>
-                保存
-              </Button>
-            </div>
+      {/* 删除确认弹窗 */}
+      <Modal
+        title={<span style={{ fontSize: 17, fontWeight: 600, color: COLORS.textDark, letterSpacing: 0.5 }}>删除用户</span>}
+        open={!!deleteUser}
+        onCancel={() => setDeleteUser(null)}
+        width={420}
+        destroyOnHidden
+        styles={{ body: { padding: '24px 28px 12px' } }}
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+            <Button icon={<CloseOutlined />} onClick={() => setDeleteUser(null)}
+              style={{ borderRadius: 3, width: 36, height: 36 }} />
+            <Button type="primary" ghost icon={<CheckOutlined />} onClick={confirmDeleteUser}
+              style={{ borderColor: COLORS.danger, color: COLORS.danger, borderRadius: 3, width: 36, height: 36 }} />
           </div>
-
-          {/* 增值税率 */}
-          <div style={{
-            borderRadius: 10, border: `1px solid ${COLORS.borderLight}`,
-            boxShadow: '0 2px 8px rgba(0,0,0,0.04)', padding: 16, background: '#fff',
-          }}>
-            <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.textDark, marginBottom: 12 }}>增值税率</div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <span style={{ fontSize: 13, color: COLORS.textSecondary, width: 100, flexShrink: 0 }}>VAT 税率</span>
-              <InputNumber
-                value={vatRate}
-                onChange={v => setVatRate(v ?? 13)}
-                min={0} max={100} step={0.5}
-                style={{ width: 140, borderRadius: 6, fontSize: 13 }}
-                precision={1}
-                addonAfter="%"
-              />
-              <Button type="primary" ghost size="small" icon={<CheckOutlined />}
-                onClick={saveVatRate}
-                style={{ borderColor: COLORS.primary, color: COLORS.primary, borderRadius: 6, fontSize: 13 }}>
-                保存
-              </Button>
-            </div>
-          </div>
-
-          {/* 工时费率 */}
-          <div style={{
-            borderRadius: 10, border: `1px solid ${COLORS.borderLight}`,
-            boxShadow: '0 2px 8px rgba(0,0,0,0.04)', padding: 16, background: '#fff',
-          }}>
-            <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.textDark, marginBottom: 12 }}>工时费率</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <span style={{ fontSize: 13, color: COLORS.textSecondary, width: 100, flexShrink: 0 }}>设计工时费率</span>
-                <InputNumber
-                  value={designRate}
-                  onChange={v => setDesignRate(v ?? 174)}
-                  min={0} step={1}
-                  style={{ width: 140, borderRadius: 6, fontSize: 13 }}
-                  precision={0}
-                  addonAfter="元/h"
-                />
-                <Button type="primary" ghost size="small" icon={<CheckOutlined />}
-                  onClick={saveDesignRate}
-                  style={{ borderColor: COLORS.primary, color: COLORS.primary, borderRadius: 6, fontSize: 13 }}>
-                  保存
-                </Button>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <span style={{ fontSize: 13, color: COLORS.textSecondary, width: 100, flexShrink: 0 }}>装配工时费率</span>
-                <InputNumber
-                  value={assemblyRate}
-                  onChange={v => setAssemblyRate(v ?? 70)}
-                  min={0} step={1}
-                  style={{ width: 140, borderRadius: 6, fontSize: 13 }}
-                  precision={0}
-                  addonAfter="元/h"
-                />
-                <Button type="primary" ghost size="small" icon={<CheckOutlined />}
-                  onClick={saveAssemblyRate}
-                  style={{ borderColor: COLORS.primary, color: COLORS.primary, borderRadius: 6, fontSize: 13 }}>
-                  保存
-                </Button>
-              </div>
-            </div>
-          </div>
-
-          {/* 编码规则 */}
-          <div style={{
-            borderRadius: 10, border: `1px solid ${COLORS.borderLight}`,
-            boxShadow: '0 2px 8px rgba(0,0,0,0.04)', padding: 16, background: '#fff',
-          }}>
-            <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.textDark, marginBottom: 12 }}>编码规则</div>
-            <div style={{ fontSize: 13, color: COLORS.textPrimary, lineHeight: 1.8 }}>
-              <div style={{ marginBottom: 8 }}>
-                <code style={{ background: COLORS.bgLight, padding: '2px 8px', borderRadius: 4, fontSize: 13 }}>
-                  {'{类型缩写}-{名称}-{型号}-V{版本}'}
-                </code>
-              </div>
-              <div style={{ color: COLORS.textSecondary, fontSize: 12 }}>
-                成套(COMPLETE_SET)=M, 组件(COMPONENT)=C, 零件(PART)=P, 软件(SOFTWARE)=S, 服务(SERVICE)=H
-              </div>
-            </div>
-          </div>
-
+        }
+      >
+        <div style={{ textAlign: 'center', padding: '16px 0' }}>
+          <div style={{ fontSize: 40, marginBottom: 12 }}>🗑️</div>
+          <div style={{ fontSize: 14, color: COLORS.textSecondary }}>确定移除用户「{deleteUser?.name}」吗？</div>
         </div>
-      )}
+      </Modal>
 
       {/* 全局表格行样式 */}
 

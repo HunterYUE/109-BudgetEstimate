@@ -126,25 +126,20 @@ const SalesOpportunityList: React.FC = () => {
 
 
   const handleStageClick = useCallback((opp: SalesOpportunity) => {
-
     const idx = STAGE_OPTIONS.indexOf(opp.stage);
-
-    if (idx >= STAGE_OPTIONS.length - 1) return; // 已到最后阶段，不再循环
-
+    if (idx >= STAGE_OPTIONS.length - 1) return;
     const nextStage = STAGE_OPTIONS[idx + 1];
-
-    const updates: Partial<SalesOpportunity> = { stage: nextStage };
-
-    if (nextStage === '中标') {
-
-      updates.status = '赢';
-
-      updates.winRate = 100;
-
-    }
-
-    setOpportunities(prev => prev.map(o => o.id === opp.id && !o.terminated ? { ...o, ...updates, updatedAt: now() } : o));
-
+    const target = nextStage === '中标' ? '赢单' : '晋升到「' + nextStage + '」';
+    Modal.confirm({
+      title: '确认阶段晋升',
+      content: '将「' + opp.projectName + '」' + target + '？',
+      okText: '确认', cancelText: '取消',
+      onOk: () => {
+        const updates: Partial<SalesOpportunity> = { stage: nextStage };
+        if (nextStage === '中标') { updates.status = '赢'; updates.winRate = 100; }
+        setOpportunities(prev => prev.map(o => o.id === opp.id && !o.terminated ? { ...o, ...updates, updatedAt: now() } : o));
+      },
+    });
   }, []);
 
 
@@ -244,18 +239,17 @@ const SalesOpportunityList: React.FC = () => {
       pe.setDate(pe.getDate() + (name === '制造采购' ? 28 : 10));
       return {
         id: 'node-' + delId + '-' + i,
-        projectId: delId, name, sortOrder: i + 1,
+        nodeNo: i + 1,
         status: 'pending' as const,
         plannedStartDate: ps.toISOString().slice(0, 10),
         plannedEndDate: pe.toISOString().slice(0, 10),
-        actualDate: undefined, actualCost: 0,
         comments: '', history: [],
       };
     });
 
     const newDel: DeliveryProject = {
       id: delId, opportunityId: opp.id,
-      salesNo: opp.salesNo, clientName: opp.clientName, projectName: opp.projectName,
+      salesNo: opp.salesNo.replace(/-S$/, "-E"), clientName: opp.clientName, projectName: opp.projectName,
       contractAmount: opp.amount,
       quotationId: bestQuote ? bestQuote.id : (opp.quotationId || ''),
       status: '进行中', nodes,
@@ -263,6 +257,8 @@ const SalesOpportunityList: React.FC = () => {
       createdAt: d, updatedAt: d,
     };
     mockDeliveryProjects.push(newDel);
+    const oppIdx = mockOpportunities.findIndex(o => o.id === opp.id);
+    if (oppIdx >= 0) mockOpportunities.splice(oppIdx, 1);
     notifyMockUpdate();
     setOpportunities(prev => prev.filter(o => o.id !== opp.id));
     setDeliveryOpp(null);
@@ -280,7 +276,7 @@ const SalesOpportunityList: React.FC = () => {
     if (!promoteReason.trim()) { msg.warning('请填写原因'); return; }
     touch(promoteOpp.opp.id, { stage: promoteOpp.targetStage });
     setPromoteOpp(null);
-    msg.success('已提交审批，通过后自动转入' + promoteOpp.targetStage);
+    msg.success('已晋升至 ' + promoteOpp.targetStage);
   }, [promoteOpp, promoteReason, msg, touch]);
 
   const handleConfirmTerminate = useCallback((opp: SalesOpportunity) => {
@@ -424,7 +420,7 @@ const SalesOpportunityList: React.FC = () => {
           onClick={rec.terminated ? undefined : () => {
             const input = prompt('输入金额（元）：', String(v));
             if (input !== null) {
-              const val = parseInt(input.replace(/[^0-9-]/g, '')) || 0;
+              const val = parseInt(input.replace(/[^0-9-]/g, ''), 10) || 0;
               touch(rec.id, { amount: val });
             }
           }}>&yen;{Math.round(v).toLocaleString()}</span>
@@ -447,6 +443,20 @@ const SalesOpportunityList: React.FC = () => {
         }]
       : []),
     { title: '赢率', dataIndex: 'winRate', width: 30, align: 'center' as const,
+      filters: [
+        { text: '全部', value: '__all__' },
+        { text: '0-25%', value: [0, 25] },
+        { text: '26-50%', value: [26, 50] },
+        { text: '51-75%', value: [51, 75] },
+        { text: '76-100%', value: [76, 100] },
+      ],
+      filterSearch: true,
+      filterDropdownProps: { minOverlayWidthMatchTrigger: false },
+      onFilter: (value, record: SalesOpportunity) => {
+        if (value === '__all__') return true;
+        const range = value as number[];
+        return record.winRate >= range[0] && record.winRate <= range[1];
+      },
       render: (v: number, rec: SalesOpportunity) => (
         <span style={{ cursor: rec.terminated ? 'default' : 'pointer', color: rec.terminated ? COLORS.textLight : COLORS.primary, fontWeight: 600 }}
           onClick={rec.terminated ? undefined : () => { const next = v >= 100 ? 0 : Math.min(v + 10, 100); touch(rec.id, { winRate: next }); }}>{v}%</span>
@@ -781,7 +791,7 @@ const SalesOpportunityList: React.FC = () => {
 
               <div style={labelStyle}>预计金额</div>
 
-              <Input type="number" value={formData.amount} onChange={e => setFormData(p => ({ ...p, amount: parseInt(e.target.value) || 0 }))} />
+              <Input type="number" value={formData.amount} onChange={e => setFormData(p => ({ ...p, amount: parseInt(e.target.value, 10) || 0 }))} />
 
             </div>
 
@@ -803,7 +813,7 @@ const SalesOpportunityList: React.FC = () => {
 
               <div style={labelStyle}>赢率 (%)</div>
 
-              <Input type="number" min={0} max={100} value={formData.winRate} onChange={e => setFormData(p => ({ ...p, winRate: parseInt(e.target.value) || 0 }))} />
+              <Input type="number" min={0} max={100} value={formData.winRate} onChange={e => setFormData(p => ({ ...p, winRate: parseInt(e.target.value, 10) || 0 }))} />
 
             </div>
 

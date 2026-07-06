@@ -7,8 +7,8 @@ export const FYSelector: React.FC<{
   value: string;
   onChange: (v: string) => void;
 }> = ({ value, onChange }) => {
-  const y1 = parseInt(value.slice(2, 4));
-  const y2 = parseInt(value.slice(4, 6));
+  const y1 = parseInt(value.slice(2, 4), 10);
+  const y2 = parseInt(value.slice(4, 6), 10);
   return (
     <span
       style={{

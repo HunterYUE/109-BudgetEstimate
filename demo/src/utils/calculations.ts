@@ -59,7 +59,7 @@ export function calcProjectSummary(
       total_direct_cost += item.direct_cost;
       total_accounting_price += item.accounting_price;
       if (!item.has_warranty) {
-        warranty_base += item.accounting_price;
+        warranty_base += item.direct_cost;
       }
     }
   }
@@ -69,9 +69,8 @@ export function calcProjectSummary(
     ? (total_accounting_price - discounted_price) / total_accounting_price
     : 0;
 
-  // 质保基数按折扣率调整后×质保费率
-  const warranty_base_discounted = Math.round(warranty_base * (1 - discount_rate));
-  const warranty_cost = Math.round(warranty_base_discounted * version.warranty_rate);
+  // 质保基数 = 标"✕"（不含质保）项次的直接成本之和 × 质保费率
+  const warranty_cost = Math.round(warranty_base * version.warranty_rate);
   const risk_cost = Math.round(total_direct_cost * version.risk_rate);
   const commercial_cost = version.commercial_cost;
   const total_cost = total_direct_cost + warranty_cost + risk_cost + commercial_cost;
@@ -81,7 +80,7 @@ export function calcProjectSummary(
 
   return {
     total_direct_cost,
-    warranty_base: warranty_base_discounted,
+    warranty_base,
     warranty_cost,
     risk_cost,
     commercial_cost,
@@ -95,8 +94,8 @@ export function calcProjectSummary(
 }
 
 /** 格式化金额（整数） */
-export function formatMoney(value: number): string {
-  return Math.round(value).toLocaleString('zh-CN');
+export function formatMoney(value: number, locale = 'zh-CN'): string {
+  return Math.round(value).toLocaleString(locale);
 }
 
 /**
@@ -104,7 +103,7 @@ export function formatMoney(value: number): string {
  * 公式与 DeliveryDetail 保持一致：
  *   exTax = contractAmount / 1.13
  *   totalEstimated = Σ direct_cost
- *   warrantyCost = Σ(warranty items' unit_cost * qty_total) * warranty_rate
+ *   warrantyCost = Σ(items WITHOUT warranty × direct_cost) × warranty_rate
  *   riskCost = totalEstimated * risk_rate
  *   grandEstimated = totalEstimated + riskCost + warrantyCost
  *   estGP3 = (exTax - grandEstimated) / exTax
@@ -119,13 +118,11 @@ export function computeDeliveryEstGP3(
 
   const totalEstimated = groups.reduce((s, g) => s + g.items.reduce((si, i) => si + i.direct_cost, 0), 0);
 
-  const warrantyCost = version
-    ? Math.round(
-        groups.reduce((s, g) =>
-          s + g.items.filter(i => i.has_warranty).reduce((si, i) => si + Math.round(i.unit_cost * i.qty_total), 0), 0
-        ) * version.warranty_rate
-      )
-    : 0;
+  // 质保基数 = 标"✕"（不含质保）项次的直接成本之和 × 质保费率
+  const warrantyBase = version ? groups.reduce((s, g) =>
+    s + g.items.filter(i => !i.has_warranty).reduce((si, i) => si + i.direct_cost, 0), 0
+  ) : 0;
+  const warrantyCost = version ? Math.round(warrantyBase * version.warranty_rate) : 0;
 
   const riskCost = version ? Math.round(totalEstimated * version.risk_rate) : 0;
 

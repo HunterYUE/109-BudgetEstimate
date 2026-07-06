@@ -5,12 +5,11 @@ import { useMockVersion } from '../utils/mockStore';
 import { COLORS } from '../styles/constants';
 import { computeDeliveryEstGP3 } from '../utils/calculations';
 import { parseFY } from '../utils/fiscalYear';
-import { fmtK, loadQuotationGroups } from '../utils/analysisShared';
+import { fmtK, loadQuotationGroups, FY_OPTIONS } from '../utils/analysisShared';
 
 /* ============================================================
    常量
    ============================================================ */
-const FY_OPTIONS = ['FY2425', 'FY2526', 'FY2627'] as const;
 const NODE_NAMES = ['资料\n交接', '合同\n签订', '项目\n启动', '方案\n细化', '技术\n会签',
   '详细\n设计', '设计\n评审', '制造\n采购', '组装\n调试', '出厂\n验收',
   '包装\n发货', '现场\n安调', '验收\n整改', '终\n验收', '项目\n总结'];
@@ -47,6 +46,7 @@ const FYSelector: React.FC<{ value: string; onChange: (v: string) => void }> =
 interface KpiCard {
   label: string; value: string; color: string; icon: string;
   subValue?: string;
+  prevValues?: { value: string; color: string }[];
 }
 const OverviewCards: React.FC<{ items: KpiCard[] }> = ({ items }) => (
   <div style={{ display: 'flex', gap: 16, marginBottom: 24 }}>
@@ -69,6 +69,13 @@ const OverviewCards: React.FC<{ items: KpiCard[] }> = ({ items }) => (
         {item.subValue && (
           <div style={{ fontSize: 13, fontWeight: 600, color: item.color, marginTop: 2 }}>
             {item.subValue}
+          </div>
+        )}
+        {item.prevValues && item.prevValues.length === 2 && (
+          <div style={{ fontSize: 11, fontWeight: 600, lineHeight: 1.3, marginTop: 3, opacity: 0.7 }}>
+            <span style={{ color: item.prevValues[0].color }}>{item.prevValues[0].value}</span>
+            <span style={{ color: COLORS.textLight, margin: '0 4px' }}>|</span>
+            <span style={{ color: item.prevValues[1].color }}>{item.prevValues[1].value}</span>
           </div>
         )}
       </Card>
@@ -979,6 +986,33 @@ const DeliveryAnalysis: React.FC = () => {
     ];
   }, [fyFiltered, fyRange]);
 
+  // ── 按月交付 KPI（最近3个完整月） ──
+  const monthlyDelKpi = useMemo(() => {
+    const now = new Date();
+    const calcMonth = (offset: number) => {
+      const d = new Date(now.getFullYear(), now.getMonth() - offset, 1);
+      const mEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+      const mp = mockDeliveryProjects.filter(p => new Date(p.createdAt) <= mEnd);
+      let tAmt = 0, aAmt = 0, cAmt = 0, dAmt = 0, tDelay = 0, dCnt = 0, onT = 0, tN = 0;
+      let active = 0, completed = 0, delayed = 0;
+      for (const p of mp) {
+        const ex = Math.round(p.contractAmount / 1.13);
+        tAmt += ex;
+        const n15 = p.nodes.find(n => n.nodeNo === 15);
+        const n15done = n15?.status === 'completed' && !!n15.actualDate && new Date(n15.actualDate) <= mEnd;
+        if (n15done) { completed++; cAmt += ex; } else { active++; aAmt += ex; }
+        if (p.status === '已延期') { delayed++; dAmt += ex; }
+        const md = calcMaxDelay(p, mEnd);
+        if (md > 0) { tDelay += md; dCnt++; }
+        for (const n of p.nodes) {
+          if (n.status === 'completed' || n.status === 'delayed') { tN++; if (n.actualDate && new Date(n.actualDate) <= new Date(n.plannedEndDate)) onT++; }
+        }
+      }
+      return { total: mp.length, tAmt, active, aAmt, completed, cAmt, delayed, dAmt, avgDelay: dCnt > 0 ? Math.round(tDelay / dCnt) : 0, onTimeRate: tN > 0 ? Math.round(onT / tN * 100) : 100 };
+    };
+    return [calcMonth(1), calcMonth(2), calcMonth(3)];
+  }, []);
+
   // ── 甘特图数据（12个月时间线，仅显示在时间范围内的节点）──
   const ganttData = useMemo(() => {
     const now = new Date();
@@ -1036,7 +1070,8 @@ const DeliveryAnalysis: React.FC = () => {
   const projectLifecycles = useMemo(() => {
     const now = new Date();
     return fyFiltered.map(p => {
-      const node1 = p.nodes.find(n => n.nodeNo === 1)!;
+      const node1 = p.nodes.find(n => n.nodeNo === 1);
+      if (!node1) return null;
       const node15 = p.nodes.find(n => n.nodeNo === 15);
       const start = new Date(node1.plannedStartDate);
       // 已完成项目用实际完成日，未完成项目取 updatedAt / 末节点计划完成日 / now 三者最晚
@@ -1066,7 +1101,8 @@ const DeliveryAnalysis: React.FC = () => {
     // 构建所有 fyFiltered 项目的实际生命周期（回顾性分析用实际完成时间）
     const lifecycles = new Map<string, { start: Date; end: Date; exTax: number }>();
     for (const p of fyFiltered) {
-      const node1 = p.nodes.find(n => n.nodeNo === 1)!;
+      const node1 = p.nodes.find(n => n.nodeNo === 1);
+      if (!node1) continue;
       const node15 = p.nodes.find(n => n.nodeNo === 15);
       // 实际开始 = 节点1计划开始（无实际开始日期字段时的最佳近似）
       const start = new Date(node1.plannedStartDate);
@@ -1079,8 +1115,8 @@ const DeliveryAnalysis: React.FC = () => {
       lifecycles.set(p.id, { start, end, exTax });
     }
 
-    return completed.map(p => {
-      const lc = lifecycles.get(p.id)!;
+    return completed.filter(p => {const n1 = p.nodes.find(n => n.nodeNo === 1); return n1 != null;}).map(p => {
+      const lc = lifecycles.get(p.id); if (!lc) return null;
       const projDuration = lc.end.getTime() - lc.start.getTime();
 
       const maxDelay = calcMaxDelay(p, now);
@@ -1148,7 +1184,12 @@ const DeliveryAnalysis: React.FC = () => {
         </div>
       ) : (
         <>
-          <OverviewCards items={overviewItems} />
+          <OverviewCards items={overviewItems.map((item, i) => {
+            const mk = monthlyDelKpi;
+            const v1 = [`${fmtK(mk[1].tAmt)} / ${mk[1].total}`, `${fmtK(mk[1].aAmt)} / ${mk[1].active}`, `${fmtK(mk[1].cAmt)} / ${mk[1].completed}`, `${fmtK(mk[1].dAmt)} / ${mk[1].delayed}`, `${mk[1].avgDelay}天`, `${mk[1].onTimeRate}%`, ''];
+            const v2 = [`${fmtK(mk[2].tAmt)} / ${mk[2].total}`, `${fmtK(mk[2].aAmt)} / ${mk[2].active}`, `${fmtK(mk[2].cAmt)} / ${mk[2].completed}`, `${fmtK(mk[2].dAmt)} / ${mk[2].delayed}`, `${mk[2].avgDelay}天`, `${mk[2].onTimeRate}%`, ''];
+            return { ...item, prevValues: [{ value: v1[i] || '', color: item.color }, { value: v2[i] || '', color: item.color }] };
+          })} />
 
           <div style={{ display: 'flex', gap: 16, marginTop: 16, alignItems: 'stretch' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16, flex: '0 0 calc(3 / 7 * (100% - 96px) + 32px)' }}>

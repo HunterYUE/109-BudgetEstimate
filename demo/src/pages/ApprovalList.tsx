@@ -4,12 +4,13 @@ import { Card, Tag, Button, Modal, Input, message, Empty } from 'antd';
 import { CheckCircleOutlined, CloseCircleOutlined, HistoryOutlined, EyeOutlined, CheckOutlined, CloseOutlined } from '@ant-design/icons';
 import { mockApprovalRequests, mockDeliveryProjects, mockQuotationSummaries } from '../mockData';
 import { formatMoney } from '../utils/calculations';
+import { notifyMockUpdate, useMockVersion } from '../utils/mockStore';
 import type { ApprovalRequest, ReviewRecord } from '../types';
 import { COLORS } from '../styles/constants';
 
 const statusConfig: Record<string, { label: string; color: string }> = {
   pending:  { label: '待审批', color: COLORS.warning },
-  approved: { label: '已通过', color: '#2e7d32' },
+  approved: { label: '已通过', color: COLORS.success },
   rejected: { label: '已驳回', color: COLORS.danger },
 };
 
@@ -34,6 +35,7 @@ const ApprovalList: React.FC = () => {
     return requests;
   }, [requests, filter]);
 
+  const mockVer = useMockVersion();
   const draftItems = useMemo(() => {
     const items = [];
     for (const q of mockQuotationSummaries) {
@@ -44,7 +46,7 @@ const ApprovalList: React.FC = () => {
       if (p.costStatus === 'draft') items.push({ id: 'dc-' + p.id, approvalType: 'cost', clientName: p.clientName, projectName: p.projectName, salesNo: p.salesNo, amount: p.contractAmount, submitter: '交付经理', deliveryId: p.id, quotationId: p.quotationId });
     }
     return items;
-  }, []);
+  }, [mockVer]);
 
   const [approvalModal, setApprovalModal] = useState<{ req: ApprovalRequest; action: 'approved' | 'rejected' } | null>(null);
   const [approvalComment, setApprovalComment] = useState('');
@@ -73,7 +75,14 @@ const ApprovalList: React.FC = () => {
       comment: approvalComment,
       createdAt: new Date().toISOString().slice(0, 10),
     };
+    const req = mockApprovalRequests.find(r => r.id === modal.req.id);
+    if (req) { req.status = modal.action === 'approved' ? 'approved' : 'rejected'; req.records = [...req.records, record]; }
     setRequests(prev => prev.map(r => r.id === modal.req.id ? { ...r, status: modal.action === 'approved' ? 'approved' : 'rejected', records: [...r.records, record] } : r));
+    // 报价审批同步回 QuotationSummary
+    if (modal.req.approvalType === 'quotation') {
+      const qs = mockQuotationSummaries.find(q => q.id === modal.req.quotationId);
+      if (qs) qs.status = modal.action === 'approved' ? 'approved' : 'rejected';
+    }
     // 交付审批同步回 DeliveryProject
     if (modal.req.deliveryId) {
       const proj = mockDeliveryProjects.find(p => p.id === modal.req.deliveryId);
@@ -83,6 +92,7 @@ const ApprovalList: React.FC = () => {
         else if (modal.req.approvalType === 'cost') { proj.costStatus = modal.action; proj.costApproval = appraisal; }
       }
     }
+    notifyMockUpdate();
     if (modal.action === 'approved') msg.success('已通过');
     else msg.warning('已驳回');
     setApprovalModal(null);
@@ -107,8 +117,8 @@ const ApprovalList: React.FC = () => {
         <div onClick={() => setFilter('done')}
           style={{
             padding: '8px 20px', cursor: 'pointer', fontSize: 14,
-            borderBottom: filter === 'done' ? '2px solid #2e7d32' : '2px solid transparent',
-            color: filter === 'done' ? '#2e7d32' : COLORS.textSecondary, fontWeight: filter === 'done' ? 600 : 400,
+            borderBottom: filter === 'done' ? `2px solid ${COLORS.success}` : '2px solid transparent',
+            color: filter === 'done' ? COLORS.success : COLORS.textSecondary, fontWeight: filter === 'done' ? 600 : 400,
             marginBottom: -2, transition: 'all 0.15s',
           }}>已审批({requests.filter(r => r.status !== 'pending').length})
         </div>
@@ -171,7 +181,7 @@ const ApprovalList: React.FC = () => {
                 borderRadius: 4,
                 borderLeft: `4px solid ${
                   req.status === 'pending' ? COLORS.warning :
-                  req.status === 'approved' ? '#2e7d32' : COLORS.danger
+                  req.status === 'approved' ? COLORS.success : COLORS.danger
                 }`,
               }}
             >
@@ -296,7 +306,7 @@ const ApprovalList: React.FC = () => {
               <div key={rec.id} style={{ position: 'relative', paddingBottom: 16 }}>
                 <div style={{
                   position: 'absolute', left: -20, top: 4, width: 12, height: 12, borderRadius: '50%',
-                  background: rec.action === 'approved' ? '#2e7d32' : COLORS.danger,
+                  background: rec.action === 'approved' ? COLORS.success : COLORS.danger,
                   border: '2px solid #fff',
                 }} />
                 <div style={{ fontSize: 13, color: COLORS.textDark, fontWeight: 600 }}>
@@ -316,7 +326,7 @@ const ApprovalList: React.FC = () => {
 };
 
 const Gauge: React.FC<{ value: number }> = ({ value }) => {
-  const color = value >= 20 ? COLORS.success : value >= 15 ? '#d46b08' : COLORS.danger;
+  const color = value >= 20 ? COLORS.success : value >= 15 ? COLORS.amber : COLORS.danger;
   return <span style={{ fontWeight: 600, color }}>{value.toFixed(1)}</span>;
 };
 

@@ -73,7 +73,7 @@ const TagManagement: React.FC = () => {
   };
 
   // Level colors
-  const LEVEL_COLORS = [COLORS.labelDark, COLORS.primary, COLORS.purple, '#008080', '#d46b08'];
+  const LEVEL_COLORS = [COLORS.labelDark, COLORS.primary, COLORS.purple, '#008080', COLORS.amber];
   const LEVEL_BG = ['#e8ecf0', '#e0ecfa', '#ede6f5', '#dceeea', '#f5ede4'];
 
   const toggleExpand = (id: string) => {

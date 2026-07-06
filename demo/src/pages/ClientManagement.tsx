@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Table, Tag, Button, Drawer, Modal, Space, message, Popover } from 'antd';
+import { Table, Tag, Button, Drawer, Modal, Space, message, Popover, Empty } from 'antd';
+import type { ColumnsType } from 'antd/es/table';
 import {
   PlusOutlined, EyeOutlined, EditOutlined,
   PhoneOutlined, MailOutlined, DeleteOutlined, CheckOutlined, CloseOutlined,
@@ -15,13 +16,13 @@ const LABEL_CELL_STYLE = { padding: '6px 12px', fontSize: 12, border: `1px solid
 
 const gradeConfig: Record<ClientGrade, { label: string; color: string }> = {
   A: { label: 'A 类', color: COLORS.success },
-  B: { label: 'B 类', color: '#d46b08' },
+  B: { label: 'B 类', color: COLORS.amber },
   C: { label: 'C 类', color: COLORS.danger },
 };
 
 const creditConfig: Record<string, { label: string; color: string }> = {
   A: { label: '优', color: COLORS.success },
-  B: { label: '良', color: '#d46b08' },
+  B: { label: '良', color: COLORS.amber },
   C: { label: '差', color: COLORS.danger },
 };
 
@@ -329,7 +330,7 @@ const ClientManagement: React.FC = () => {
 
   // ── Column definitions ──
 
-  const columns: any[] = [  // eslint-disable-line @typescript-eslint/no-explicit-any
+  const columns: ColumnsType<Client> = [
     {
       title: '客户名称', dataIndex: 'name', width: 280,
       render: (v: string, record: Client) => {
@@ -542,7 +543,7 @@ const ClientManagement: React.FC = () => {
                     {h.status === '赢' ? (
                       <Tag color={COLORS.success} style={{ borderRadius: 1, fontSize: 11, lineHeight: '20px' }}>赢单</Tag>
                     ) : h.status === '冻结' ? (
-                      <Tag color="#d46b08" style={{ borderRadius: 1, fontSize: 11, lineHeight: '20px' }}>冻结</Tag>
+                      <Tag color={COLORS.amber} style={{ borderRadius: 1, fontSize: 11, lineHeight: '20px' }}>冻结</Tag>
                     ) : (
                       <Tag color={COLORS.danger} style={{ borderRadius: 1, fontSize: 11, lineHeight: '20px' }}>输单</Tag>
                     )}
@@ -758,6 +759,7 @@ const ClientManagement: React.FC = () => {
             size="small"
             bordered
             scroll={{ x: 705 }}
+            locale={{ emptyText: <Empty description="暂无匹配的客户" /> }}
             style={{ background: '#fff', borderRadius: 3 }}
             columns={[
               {

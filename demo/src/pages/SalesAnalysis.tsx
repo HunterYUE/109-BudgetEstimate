@@ -7,7 +7,7 @@ import { useMockVersion } from '../utils/mockStore';
 import { COLORS } from '../styles/constants';
 import { computeDeliveryEstGP3 } from '../utils/calculations';
 import { parseFY } from '../utils/fiscalYear';
-import { fmtK, loadQuotationGroups } from '../utils/analysisShared';
+import { fmtK, loadQuotationGroups, FY_OPTIONS } from '../utils/analysisShared';
 
 /* ============================================================
    常量
@@ -17,7 +17,6 @@ const stageColors: Record<string, string> = {
   投标: COLORS.warning, 议价: COLORS.amber, 中标: COLORS.success,
 };
 const STAGES = ['信息', '线索', '机会', '投标', '议价', '中标'] as const;
-const FY_OPTIONS = ['FY2425', 'FY2526', 'FY2627'] as const;
 
 // localStorage 输入的 parseInt 保护
 const safeParseInt = (val: string | undefined | null): number => {
@@ -61,6 +60,7 @@ const FYSelector: React.FC<{ value: string; onChange: (v: string) => void }> =
    ============================================================ */
 interface KpiCard {
   label: string; value: string; color: string; icon: string;
+  prevValues?: { value: string; color: string }[];
 }
 const OverviewCards: React.FC<{ items: KpiCard[] }> = ({ items }) => (
   <div style={{ display: 'flex', gap: 16, marginBottom: 24 }}>
@@ -80,6 +80,13 @@ const OverviewCards: React.FC<{ items: KpiCard[] }> = ({ items }) => (
         <div style={{ fontSize: 22, fontWeight: 700, color: item.color, lineHeight: 1.2 }}>
           {item.value}
         </div>
+        {item.prevValues && item.prevValues.length === 2 && (
+          <div style={{ fontSize: 11, fontWeight: 600, lineHeight: 1.3, marginTop: 3, opacity: 0.7 }}>
+            <span style={{ color: item.prevValues[0].color }}>{item.prevValues[0].value}</span>
+            <span style={{ color: COLORS.textLight, margin: '0 4px' }}>|</span>
+            <span style={{ color: item.prevValues[1].color }}>{item.prevValues[1].value}</span>
+          </div>
+        )}
       </Card>
     ))}
   </div>
@@ -391,23 +398,23 @@ const SalesAnalysis: React.FC = () => {
   useMockVersion();
 
   // ── 年度订单指标 + 目标GP3 ──
-  const [annualTargetInput, setAnnualTargetInput] = useState(() => localStorage.getItem('sa_annualTarget') || '');
+  const [annualTargetInput, setAnnualTargetInput] = useState(() => { try { return localStorage.getItem('sa_annualTarget') || ''; } catch { return ''; } });
   const [targetEditing, setTargetEditing] = useState(false);
   const targetRef = React.useRef<HTMLInputElement>(null);
-  const [gp3Input, setGp3Input] = useState(() => localStorage.getItem('sa_targetGP3') || '');
+  const [gp3Input, setGp3Input] = useState(() => { try { return localStorage.getItem('sa_targetGP3') || ''; } catch { return ''; } });
   const [orderGp3Editing, setOrderGp3Editing] = useState(false);
   const orderGp3Ref = React.useRef<HTMLInputElement>(null);
   const [salesGp3Editing, setSalesGp3Editing] = useState(false);
   const salesGp3Ref = React.useRef<HTMLInputElement>(null);
   // ── 月度销售指标 ──
-  const [annualSalesTarget, setAnnualSalesTarget] = useState(() => localStorage.getItem('sa_annualSalesTarget') || '');
+  const [annualSalesTarget, setAnnualSalesTarget] = useState(() => { try { return localStorage.getItem('sa_annualSalesTarget') || ''; } catch { return ''; } });
   const [salesTargetEditing, setSalesTargetEditing] = useState(false);
   const salesTargetRef = React.useRef<HTMLInputElement>(null);
-  const saveSalesTarget = (v: string) => { setAnnualSalesTarget(v); localStorage.setItem('sa_annualSalesTarget', v); };
+  const saveSalesTarget = (v: string) => { setAnnualSalesTarget(v); try { localStorage.setItem('sa_annualSalesTarget', v); } catch {}; };
 
   // 保存到 localStorage
-  const saveAnnualTarget = (v: string) => { setAnnualTargetInput(v); localStorage.setItem('sa_annualTarget', v); };
-  const saveGp3 = (v: string) => { setGp3Input(v); localStorage.setItem('sa_targetGP3', v); };
+  const saveAnnualTarget = (v: string) => { setAnnualTargetInput(v); try { localStorage.setItem('sa_annualTarget', v); } catch {}; };
+  const saveGp3 = (v: string) => { setGp3Input(v); try { localStorage.setItem('sa_targetGP3', v); } catch {}; };
 
   // ── 月度订单数据（当月转交付项目的合同金额之和，按财年月汇总）──
   const monthlyOrderData = useMemo(() => {
@@ -511,6 +518,7 @@ const SalesAnalysis: React.FC = () => {
     const end = new Date(now.getFullYear(), now.getMonth(), 0);
     const start = new Date(end);
     start.setFullYear(start.getFullYear() - 1);
+    start.setMonth(start.getMonth() + 1);
     start.setDate(1);
     return { start, end };
   }, []);
@@ -679,6 +687,38 @@ const SalesAnalysis: React.FC = () => {
     return { weightedPipeline, weightedProfit, weightedProfitRate, salesCycle, leadToWonRate };
   }, [currentPipeline, past12mOpps, p12mOpp, p12mWon]);
 
+  // ── 按月 KPI（最近3个完整月） ──
+  const monthlyKpi = useMemo(() => {
+    const now = new Date();
+    const calcMonth = (offset: number) => {
+      const d = new Date(now.getFullYear(), now.getMonth() - offset, 1);
+      const monthStart = new Date(d.getFullYear(), d.getMonth(), 1);
+      const monthEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+      const activeOpps = fyFiltered.filter(o => {
+        const created = new Date(o.createdAt);
+        const effectiveEnd = (o.status === '过程中' || o.status === '冻结') ? new Date() : new Date(o.updatedAt);
+        return created <= monthEnd && effectiveEnd >= monthStart;
+      });
+      const wonOpps = activeOpps.filter(o => o.status === '赢' && new Date(o.updatedAt) >= monthStart && new Date(o.updatedAt) <= monthEnd);
+      const lostOpps = activeOpps.filter(o => o.status === '输' && new Date(o.updatedAt) >= monthStart && new Date(o.updatedAt) <= monthEnd);
+      const pipelineOpps = activeOpps.filter(o => (o.status === '过程中' || o.status === '冻结') && stageIdx(o.stage) >= stageIdx('机会'));
+      let weighted = 0, profit = 0;
+      for (const o of pipelineOpps) {
+        const w = Math.round(o.amount * o.winRate / 100);
+        weighted += w;
+        const q = o.quotationId ? mockQuotationSummaries.find(q => q.id === o.quotationId) : undefined;
+        profit += Math.round(w * (q ? q.profitRate / 100 : 0.15));
+      }
+      const cycle = wonOpps.length > 0 ? Math.round(wonOpps.reduce((s, o) => {
+        return s + Math.round((new Date(o.updatedAt).getTime() - new Date(o.createdAt).getTime()) / (1000 * 60 * 60 * 24));
+      }, 0) / wonOpps.length) : 0;
+      const total = wonOpps.length + lostOpps.length;
+      const convRate = total > 0 ? wonOpps.length / total * 100 : 0;
+      return { weightedPipeline: weighted, weightedProfit: profit, weightedProfitRate: weighted > 0 ? profit / weighted * 100 : 0, salesCycle: cycle, leadToWonRate: convRate };
+    };
+    return [calcMonth(1), calcMonth(2), calcMonth(3)];
+  }, [fyFiltered]);
+
   // ── 输单原因柱状图（按输单时间归入财年）──
   const dimLossReasons: BarItem[] = useMemo(() => {
     const lossCompGroup = REASON_TAXONOMY.loss.groups.find(g => g.groupLabel === '竞对');
@@ -753,6 +793,11 @@ const SalesAnalysis: React.FC = () => {
       if (!s) { s = { name: o.salesman, wins: 0, orderAmount: 0, totalAmount: 0, pipelinePotential: 0, profitTotal: 0 }; map.set(o.salesman, s); }
       s.wins++;
       s.orderAmount += o.amount;
+    }
+    for (const o of fyFiltered) {
+      if (!o.salesman) continue;
+      let s = map.get(o.salesman);
+      if (!s) { s = { name: o.salesman, wins: 0, orderAmount: 0, totalAmount: 0, pipelinePotential: 0, profitTotal: 0 }; map.set(o.salesman, s); }
       s.totalAmount += o.amount;
       // 利润
       let profitRate = 0.15;
@@ -785,16 +830,38 @@ const SalesAnalysis: React.FC = () => {
   const dimPipeline: BarItem[] = salesmenStats.map(s => ({ name: s.name, value: s.pipelinePotential }));
   const dimProfit: BarItem[] = salesmenStats.map(s => ({ name: s.name, value: s.profitTotal }));
 
-  // 概览卡片
+  // 概览卡片（按月数据）
   const overviewItems = [
-    { label: '加权管道', value: `¥${fmtK(kpi.weightedPipeline)}`, color: COLORS.primary, icon: '📊' },
-    { label: '加权利润', value: `¥${fmtK(kpi.weightedProfit)}`, color: COLORS.purple, icon: '💰' },
-    { label: '加权利润率', value: `${kpi.weightedProfitRate.toFixed(1)}%`,
-      color: kpi.weightedProfitRate >= 15 ? COLORS.success : COLORS.warning, icon: '📈' },
-    { label: '销售周期', value: `${kpi.salesCycle} 天`,
-      color: kpi.salesCycle > 0 && kpi.salesCycle <= 120 ? COLORS.success : COLORS.warning, icon: '⏱️' },
-    { label: '赢单转化率', value: `${kpi.leadToWonRate.toFixed(1)}%`,
-      color: kpi.leadToWonRate >= 20 ? COLORS.success : COLORS.warning, icon: '🎯' },
+    { label: '加权管道', value: `¥${fmtK(monthlyKpi[0].weightedPipeline)}`,
+      color: COLORS.primary, icon: '📊',
+      prevValues: [
+        { value: `¥${fmtK(monthlyKpi[1].weightedPipeline)}`, color: COLORS.primary },
+        { value: `¥${fmtK(monthlyKpi[2].weightedPipeline)}`, color: COLORS.primary },
+      ] },
+    { label: '加权利润', value: `¥${fmtK(monthlyKpi[0].weightedProfit)}`,
+      color: COLORS.purple, icon: '💰',
+      prevValues: [
+        { value: `¥${fmtK(monthlyKpi[1].weightedProfit)}`, color: COLORS.purple },
+        { value: `¥${fmtK(monthlyKpi[2].weightedProfit)}`, color: COLORS.purple },
+      ] },
+    { label: '加权利润率', value: `${monthlyKpi[0].weightedProfitRate.toFixed(1)}%`,
+      color: monthlyKpi[0].weightedProfitRate >= 15 ? COLORS.success : COLORS.warning, icon: '📈',
+      prevValues: [
+        { value: `${monthlyKpi[1].weightedProfitRate.toFixed(1)}%`, color: monthlyKpi[1].weightedProfitRate >= 15 ? COLORS.success : COLORS.warning },
+        { value: `${monthlyKpi[2].weightedProfitRate.toFixed(1)}%`, color: monthlyKpi[2].weightedProfitRate >= 15 ? COLORS.success : COLORS.warning },
+      ] },
+    { label: '销售周期', value: `${monthlyKpi[0].salesCycle} 天`,
+      color: monthlyKpi[0].salesCycle > 0 && monthlyKpi[0].salesCycle <= 120 ? COLORS.success : COLORS.warning, icon: '⏱️',
+      prevValues: [
+        { value: `${monthlyKpi[1].salesCycle} 天`, color: monthlyKpi[1].salesCycle > 0 && monthlyKpi[1].salesCycle <= 120 ? COLORS.success : COLORS.warning },
+        { value: `${monthlyKpi[2].salesCycle} 天`, color: monthlyKpi[2].salesCycle > 0 && monthlyKpi[2].salesCycle <= 120 ? COLORS.success : COLORS.warning },
+      ] },
+    { label: '赢单转化率', value: `${monthlyKpi[0].leadToWonRate.toFixed(1)}%`,
+      color: monthlyKpi[0].leadToWonRate >= 20 ? COLORS.success : COLORS.warning, icon: '🎯',
+      prevValues: [
+        { value: `${monthlyKpi[1].leadToWonRate.toFixed(1)}%`, color: monthlyKpi[1].leadToWonRate >= 20 ? COLORS.success : COLORS.warning },
+        { value: `${monthlyKpi[2].leadToWonRate.toFixed(1)}%`, color: monthlyKpi[2].leadToWonRate >= 20 ? COLORS.success : COLORS.warning },
+      ] },
   ];
 
   return (
@@ -821,7 +888,7 @@ const SalesAnalysis: React.FC = () => {
                 value={annualTargetInput}
                 onChange={e => saveAnnualTarget(e.target.value.replace(/\D/g, '').slice(0, 10))}
                 onBlur={() => setTargetEditing(false)}
-                onKeyDown={e => {{ if (e.key === 'Enter') setTargetEditing(false); }}}
+                onKeyDown={e => { if (e.key === 'Enter') setTargetEditing(false); }}
                 style={{
                   width: `${Math.max(annualTargetInput.length || 1, 1)}ch`,
                   minWidth: '14ch', height: 18,
@@ -835,7 +902,7 @@ const SalesAnalysis: React.FC = () => {
               />
             ) : (
               <span style={{ fontSize: 10, cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: 700 }}
-                onClick={() => {{ setTargetEditing(true); setTimeout(() => targetRef.current?.focus(), 0); }}}>
+                onClick={() => { setTargetEditing(true); setTimeout(() => targetRef.current?.focus(), 0); }}>
                 <span style={{ color: COLORS.primary }}>{annualTargetInput ? `${safeParseInt(annualTargetInput).toLocaleString()}K` : '—'}</span>
                 {annualTargetInput ? (
                   <span style={{ color: monthlyCumulative.cumulative >= monthlyCumulative.expectedCumulative ? COLORS.primary : COLORS.danger, fontSize: 10 }}>
@@ -848,7 +915,7 @@ const SalesAnalysis: React.FC = () => {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginBottom: 2, minHeight: 18 }}>
             <span style={{ fontSize: 10, whiteSpace: 'nowrap', fontWeight: 700 }}>
               <span style={{ color: COLORS.purple }}>
-                {annualTargetInput && gp3Input ? `${monthlyCumulative.annualProfitTarget.toLocaleString()}K` : '—'}
+                {annualTargetInput && gp3Input ? `${monthlyCumulative.annualProfitTarget.toLocaleString()}` : '—'}
               </span>
               {annualTargetInput && gp3Input ? (
                 <span style={{ color: monthlyCumulative.profitCumulative >= monthlyCumulative.expectedProfitCumulative ? COLORS.purple : COLORS.danger, fontSize: 10 }}>
@@ -863,7 +930,7 @@ const SalesAnalysis: React.FC = () => {
                 value={gp3Input}
                 onChange={e => saveGp3(e.target.value.replace(/[^\d.]/g, '').replace(/(\.\d).*/, '$1').slice(0, 5))}
                 onBlur={() => setOrderGp3Editing(false)}
-                onKeyDown={e => {{ if (e.key === 'Enter') setOrderGp3Editing(false); }}}
+                onKeyDown={e => { if (e.key === 'Enter') setOrderGp3Editing(false); }}
                 style={{
                   width: `${Math.max(gp3Input.length || 1, 1)}ch`,
                   minWidth: '4ch', height: 18,
@@ -877,7 +944,7 @@ const SalesAnalysis: React.FC = () => {
               />
             ) : (
               <span style={{ fontSize: 10, cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: 700 }}
-                onClick={() => {{ setOrderGp3Editing(true); setTimeout(() => orderGp3Ref.current?.focus(), 0); }}}>
+                onClick={() => { setOrderGp3Editing(true); setTimeout(() => orderGp3Ref.current?.focus(), 0); }}>
                 <span style={{ color: COLORS.purple }}>
                   {gp3Input || '—'}
                 </span>
@@ -917,7 +984,7 @@ const SalesAnalysis: React.FC = () => {
                 value={annualSalesTarget}
                 onChange={e => saveSalesTarget(e.target.value.replace(/\D/g, '').slice(0, 10))}
                 onBlur={() => setSalesTargetEditing(false)}
-                onKeyDown={e => {{ if (e.key === 'Enter') setSalesTargetEditing(false); }}}
+                onKeyDown={e => { if (e.key === 'Enter') setSalesTargetEditing(false); }}
                 style={{
                   width: `${Math.max(annualSalesTarget.length || 1, 1)}ch`,
                   minWidth: '14ch', height: 18,
@@ -931,7 +998,7 @@ const SalesAnalysis: React.FC = () => {
               />
             ) : (
               <span style={{ fontSize: 10, cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: 700 }}
-                onClick={() => {{ setSalesTargetEditing(true); setTimeout(() => salesTargetRef.current?.focus(), 0); }}}>
+                onClick={() => { setSalesTargetEditing(true); setTimeout(() => salesTargetRef.current?.focus(), 0); }}>
                 <span style={{ color: COLORS.success }}>{annualSalesTarget ? `${safeParseInt(annualSalesTarget).toLocaleString()}K` : '—'}</span>
                 {annualSalesTarget ? (
                   <span style={{ color: salesCumulative.cumulative >= salesCumulative.expectedCumulative ? COLORS.success : COLORS.danger, fontSize: 10 }}>
@@ -944,7 +1011,7 @@ const SalesAnalysis: React.FC = () => {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginBottom: 2, minHeight: 18 }}>
             <span style={{ fontSize: 10, whiteSpace: 'nowrap', fontWeight: 700 }}>
               <span style={{ color: COLORS.purple }}>
-                {annualSalesTarget && gp3Input ? `${salesCumulative.annualProfitTarget.toLocaleString()}K` : '—'}
+                {annualSalesTarget && gp3Input ? `${salesCumulative.annualProfitTarget.toLocaleString()}` : '—'}
               </span>
               {annualSalesTarget && gp3Input ? (
                 <span style={{ color: salesCumulative.profitCumulative >= salesCumulative.expectedProfitCumulative ? COLORS.purple : COLORS.danger, fontSize: 10 }}>
@@ -959,7 +1026,7 @@ const SalesAnalysis: React.FC = () => {
                 value={gp3Input}
                 onChange={e => saveGp3(e.target.value.replace(/[^\d.]/g, '').replace(/(\.\d).*/, '$1').slice(0, 5))}
                 onBlur={() => setSalesGp3Editing(false)}
-                onKeyDown={e => {{ if (e.key === 'Enter') setSalesGp3Editing(false); }}}
+                onKeyDown={e => { if (e.key === 'Enter') setSalesGp3Editing(false); }}
                 style={{
                   width: `${Math.max(gp3Input.length || 1, 1)}ch`,
                   minWidth: '4ch', height: 18,
@@ -973,7 +1040,7 @@ const SalesAnalysis: React.FC = () => {
               />
             ) : (
               <span style={{ fontSize: 10, cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: 700 }}
-                onClick={() => {{ setSalesGp3Editing(true); setTimeout(() => salesGp3Ref.current?.focus(), 0); }}}>
+                onClick={() => { setSalesGp3Editing(true); setTimeout(() => salesGp3Ref.current?.focus(), 0); }}>
                 <span style={{ color: COLORS.danger }}>
                   {gp3Input || '—'}
                 </span>

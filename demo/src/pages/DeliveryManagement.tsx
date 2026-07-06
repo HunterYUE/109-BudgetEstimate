@@ -94,7 +94,7 @@ const DeliveryManagement: React.FC = () => {
         <div onClick={() => setFilter('active')}
           style={{
             padding: '8px 20px', cursor: 'pointer', fontSize: 14,
-            borderBottom: filter === 'active' ? '2px solid COLORS.primary' : '2px solid transparent',
+            borderBottom: filter === 'active' ? `2px solid ${COLORS.primary}` : '2px solid transparent',
             color: filter === 'active' ? COLORS.primary : COLORS.textSecondary, fontWeight: filter === 'active' ? 600 : 400,
             marginBottom: -2, transition: 'all 0.15s',
           }}>
@@ -103,7 +103,7 @@ const DeliveryManagement: React.FC = () => {
         <div onClick={() => setFilter('completed')}
           style={{
             padding: '8px 20px', cursor: 'pointer', fontSize: 14,
-            borderBottom: filter === 'completed' ? '2px solid COLORS.success' : '2px solid transparent',
+            borderBottom: filter === 'completed' ? `2px solid ${COLORS.success}` : '2px solid transparent',
             color: filter === 'completed' ? COLORS.success : COLORS.textSecondary, fontWeight: filter === 'completed' ? 600 : 400,
             marginBottom: -2, transition: 'all 0.15s',
           }}>

@@ -91,9 +91,9 @@ const GroupCard: React.FC<Props> = ({ group, onGroupChange, onAddItem, onDeleteI
               <Button size="small" type="text" danger icon={<DeleteOutlined />} onClick={() => onDeleteGroup(group.id)} />
             </Tooltip>
           )}
-          <Tooltip title="添加组件">
+          {editable && <Tooltip title="添加组件">
             <Button size="small" type="text" icon={<PlusOutlined />} onClick={() => onAddItem(group.id)} />
-          </Tooltip>
+          </Tooltip>}
         </div>
       }
     >

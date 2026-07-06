@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import { Button, message, Modal, ConfigProvider } from 'antd';
-import { PlusOutlined, DownloadOutlined, SaveOutlined, SendOutlined, CheckOutlined, CloseOutlined } from '@ant-design/icons';
-import { useParams } from 'react-router-dom';
+import { PlusOutlined, DownloadOutlined, SaveOutlined, SendOutlined, CheckOutlined, CloseOutlined, ArrowLeftOutlined } from '@ant-design/icons';
+import { useParams, useNavigate } from 'react-router-dom';
 import ProjectHeader from '../components/ProjectHeader';
 import GroupCard from '../components/GroupCard';
 import SummarySection from '../components/SummarySection';
@@ -90,8 +90,11 @@ const QuotationPage: React.FC = () => {
   const [project, setProject] = useState<Project>(initProject);
   const [versionBump, setVersionBump] = useState<'minor' | 'major'>('minor');
   const [deleteGroupId, setDeleteGroupId] = useState<string | null>(null);
+  const [deleteItemId, setDeleteItemId] = useState<{ groupId: string; itemId: string } | null>(null);
   const [messageApi, contextHolder] = message.useMessage();
   const { id: quoteId } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const invalidQuote = quoteId && !mockQuotationSummaries.some(q => q.id === quoteId);
   const isLocked = useMemo(() => {
     // 明确锁定
     if (mockQuotationSummaries.some(q => q.id === quoteId && q.locked)) return true;
@@ -143,15 +146,22 @@ const QuotationPage: React.FC = () => {
   }, []);
 
   const handleDeleteItem = useCallback((groupId: string, itemId: string) => {
+    setDeleteItemId({ groupId, itemId });
+  }, []);
+
+  const confirmDeleteItem = useCallback(() => {
+    if (!deleteItemId) return;
     setProject(prev => ({
       ...prev,
       groups: prev.groups.map(g => {
-        if (g.id !== groupId) return g;
-        const items = g.items.filter(i => i.id !== itemId);
+        if (g.id !== deleteItemId.groupId) return g;
+        const items = g.items.filter(i => i.id !== deleteItemId.itemId);
         return { ...g, items: items.map((i, idx) => ({ ...i, item_no: idx + 1 })) };
       }),
     }));
-  }, []);
+    setDeleteItemId(null);
+    messageApi.success('物料条目已删除');
+  }, [deleteItemId, messageApi]);
 
   const handleDeleteGroup = useCallback((groupId: string) => {
     setDeleteGroupId(groupId);
@@ -225,6 +235,10 @@ const QuotationPage: React.FC = () => {
 
   const handleSave = useCallback(() => {
     if (isLocked) { messageApi.warning('此报价已锁定，无法修改'); return; }
+    if (!project.client_name.trim()) { messageApi.warning('请输入客户名称'); return; }
+    if (!project.project_scope.trim()) { messageApi.warning('请输入项目范围'); return; }
+    const totalItems = project.groups.reduce((s, g) => s + g.items.length, 0);
+    if (totalItems === 0) { messageApi.warning('请至少添加一个物料条目'); return; }
     const badCodes = validateCodes();
     if (badCodes.length > 0) {
       messageApi.warning('以下编码不在组件数据库中，请先注册再保存：' + badCodes.join(', '));
@@ -236,6 +250,7 @@ const QuotationPage: React.FC = () => {
     if (oppId && project.groups.length > 0) {
       const existing = mockQuotationSummaries.find(q => q.id === project.id);
       if (!existing) {
+        const calcSummary = calcProjectSummary(project.groups, project.current_version, project.current_version.discounted_price);
         const summary: QuotationSummary = {
           id: project.id,
           salesNo: project.sales_no,
@@ -243,9 +258,9 @@ const QuotationPage: React.FC = () => {
           projectName: project.project_scope,
           versionNo: project.current_version.version_no,
           status: 'draft',
-          amount: project.current_version.total_accounting_price,
-          totalCost: 0,
-          profitRate: 0,
+          amount: calcSummary.discounted_price || calcSummary.total_accounting_price,
+          totalCost: calcSummary.total_cost,
+          profitRate: Math.round(calcSummary.gp3 * 10000) / 100,
           updatedAt: new Date().toISOString().slice(0, 10),
         };
         mockQuotationSummaries.push(summary);
@@ -253,9 +268,11 @@ const QuotationPage: React.FC = () => {
         const opp = mockOpportunities.find(o => o.id === oppId);
         if (opp) opp.quotationId = project.id;
       }
+      notifyMockUpdate();
+      messageApi.success('概算表已保存');
+    } else {
+      messageApi.warning('当前报价为临时编辑，请绑定销售机会后保存');
     }
-    notifyMockUpdate();
-    messageApi.success('概算表已保存');
   }, [validateCodes, messageApi, project, isLocked]);
 
   const handleSubmit = useCallback(() => {
@@ -287,8 +304,8 @@ const QuotationPage: React.FC = () => {
       const m = v.match(/^V(\d+)\.(\d+)$/);
       const newVer = m
         ? (versionBump === 'major'
-          ? `V${parseInt(m[1]) + 1}.0`
-          : `V${m[1]}.${parseInt(m[2]) + 1}`)
+          ? `V${parseInt(m[1], 10) + 1}.0`
+          : `V${m[1]}.${parseInt(m[2], 10) + 1}`)
         : 'V1.1';
 
       // 创建/更新审批请求
@@ -346,6 +363,10 @@ const QuotationPage: React.FC = () => {
   );
 
   const handleExport = useCallback(() => {
+    if (project.current_version.review_status !== 'approved') {
+      messageApi.warning('报价需审批通过后方可导出');
+      return;
+    }
     let groupsHtml = '';
     for (let gi = 0; gi < project.groups.length; gi++) {
       const g = project.groups[gi];
@@ -394,16 +415,22 @@ const QuotationPage: React.FC = () => {
       }}
     >
       {contextHolder}
-      <div>
+      {invalidQuote && <div style={{ padding: 60, textAlign: 'center', color: COLORS.textLight }}>
+        <div style={{ fontSize: 40, marginBottom: 12 }}>📄</div>
+        <div style={{ fontSize: 14, marginBottom: 20 }}>报价不存在或已被删除</div>
+        <Button onClick={() => navigate('/quotations')}>返回报价列表</Button>
+      </div>}
+      {!invalidQuote && <div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <ArrowLeftOutlined style={{ fontSize: 18, color: COLORS.primary, cursor: 'pointer' }} onClick={() => navigate('/quotations')} />
             <span style={{ fontSize: 17, fontWeight: 700, color: COLORS.textDark }}>报价编制</span>
             <span style={{
               fontSize: 12, fontWeight: 600, padding: '2px 10px', borderRadius: 4,
               background: project.current_version.review_status === 'approved' ? '#e8f5e9' :
                           project.current_version.review_status === 'pending' ? '#fff3e0' :
                           project.current_version.review_status === 'rejected' ? '#ffebee' : COLORS.bgTag,
-              color: project.current_version.review_status === 'approved' ? '#2e7d32' :
+              color: project.current_version.review_status === 'approved' ? COLORS.success :
                      project.current_version.review_status === 'pending' ? COLORS.warning :
                      project.current_version.review_status === 'rejected' ? COLORS.danger : COLORS.textSecondary,
             }}>
@@ -431,7 +458,7 @@ const QuotationPage: React.FC = () => {
         }}>
           <strong style={{ color: COLORS.primary }}>说明：</strong>
           ① 所有价格默认不含税 &nbsp;② 直接成本=物料成本+人工成本+项目费用（物料=设备组/集成开发物料，人工=设计工时+装配工时+项目交付，项目费用=包装运输+差旅管理+其他）
-          &nbsp;③ 毛利率=1−成本÷售价 &nbsp;④ 质保基数=标"✕"项次的预期售价之和×(1−折扣率)，标"✕"表示物料本身不含质保需项目集成时统筹
+          &nbsp;③ 毛利率=1−成本÷售价 &nbsp;④ 质保基数=标"✕"项次的直接成本之和，标"✕"表示物料本身不含质保，需项目集成时统筹
           &nbsp;⑤ 风险基数=直接成本=物料成本+人工成本+项目费用
           &nbsp;⑥ 编码不在数据库将显示红色<strong style={{color:'red'}}>!</strong>示警
           &nbsp;⑦ 实际成本与概算对比：分项 -5%~+10%、总成本 -2.5%~+5% 为正常，超出此范围标红，<strong style={{color:COLORS.primary}}>目标不是做多也不是做少，而是越来越准</strong>
@@ -452,7 +479,7 @@ const QuotationPage: React.FC = () => {
           ))}
         </div>
 
-        <Button type="default" ghost
+        {!isLocked && <Button type="default" ghost
           onClick={handleAddGroup}
           style={{
             width: '100%', height: 48, marginTop: 16,
@@ -464,7 +491,7 @@ const QuotationPage: React.FC = () => {
           onMouseLeave={e => { e.currentTarget.style.border = `1.5px dashed ${COLORS.borderLight}`; e.currentTarget.style.background = 'transparent'; }}
         >
           <PlusOutlined /> 添加设备组
-        </Button>
+        </Button>}
 
         <SummarySection
           groups={project.groups}
@@ -491,7 +518,33 @@ const QuotationPage: React.FC = () => {
             </div>
           }
         >
-          <div style={{ fontSize: 13, color: '#555' }}>删除后不可恢复</div>
+          <div style={{ textAlign: 'center', padding: '16px 0' }}>
+            <div style={{ fontSize: 40, marginBottom: 12 }}>🗑️</div>
+            <div style={{ fontSize: 14, color: COLORS.textSecondary }}>删除后所有物料将丢失，设备组编号将重新排列。</div>
+          </div>
+        </Modal>
+
+        {/* 删除物料条目弹窗 */}
+        <Modal
+          title={<span style={{ fontSize: 17, fontWeight: 600, color: COLORS.textDark, letterSpacing: 0.5 }}>确认删除此物料？</span>}
+          open={!!deleteItemId}
+          onCancel={() => setDeleteItemId(null)}
+          width={420}
+          destroyOnHidden
+          styles={{ body: { padding: '24px 28px 12px' } }}
+          footer={
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <Button icon={<CloseOutlined />} onClick={() => setDeleteItemId(null)}
+                style={{ borderRadius: 3, width: 36, height: 36 }} />
+              <Button type="primary" ghost icon={<CheckOutlined />} onClick={confirmDeleteItem}
+                style={{ borderColor: COLORS.danger, color: COLORS.danger, borderRadius: 3, width: 36, height: 36 }} />
+            </div>
+          }
+        >
+          <div style={{ textAlign: 'center', padding: '16px 0' }}>
+            <div style={{ fontSize: 40, marginBottom: 12 }}>🗑️</div>
+            <div style={{ fontSize: 14, color: COLORS.textSecondary }}>删除后不可恢复，物料编号将重新排列。</div>
+          </div>
         </Modal>
 
 
@@ -502,14 +555,14 @@ const QuotationPage: React.FC = () => {
         }}>
           <div style={{ display: 'flex', gap: 16 }}>
             <IconButton icon={<SaveOutlined style={{ fontWeight: 700 }} />}
-              onClick={handleSave} color="#d46b08" hoverBg="#fff7e6" title="保存" />
+              onClick={handleSave} color={COLORS.amber} hoverBg="#fff7e6" title="保存" />
             <IconButton icon={<SendOutlined style={{ fontWeight: 700 }} />}
               onClick={handleSubmit} color={COLORS.primary} hoverBg="#e6f0fa" title="提交" />
             <IconButton icon={<DownloadOutlined style={{ fontWeight: 700 }} />}
               onClick={handleExport} color={COLORS.success} hoverBg="#e8f5e9" title="生成报价" />
           </div>
         </div>
-      </div>
+      </div>}
     </ConfigProvider>
   );
 };

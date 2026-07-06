@@ -45,7 +45,7 @@ function formatPayment(vals: number[]): string {
 const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1);
 function parseDelivery(val: string): { x: number; y: number } {
   const nums = val.match(/\d+/g);
-  return { x: nums ? parseInt(nums[0]) : 5, y: nums && nums[1] ? parseInt(nums[1]) : 3 };
+  return { x: nums ? parseInt(nums[0], 10) : 5, y: nums && nums[1] ? parseInt(nums[1], 10) : 3 };
 }
 function formatDelivery(x: number, y: number): string {
   return `合同生效后${x}个月发货，货到现场后${y}个月安调完毕，具备试生产条件`;
@@ -122,7 +122,7 @@ const ProjectHeader: React.FC<Props> = ({ project, onUpdate, versionBump, onVers
             <td style={cellStyle} colSpan={2}>
               <span style={{ cursor: 'pointer', ...inputStyle, fontWeight: 600, color: COLORS.primary }}
                 onClick={() => {
-                  const cur = parseInt(project.postfix?.replace('EC', '')) || 0;
+                  const cur = parseInt(project.postfix?.replace('EC', '') || '', 10) || 0;
                   const next = (cur + 1) % 10;
                   onUpdate?.('postfix', 'EC' + next);
                 }}

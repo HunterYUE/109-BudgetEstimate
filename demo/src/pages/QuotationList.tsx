@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Table, Tag, Button } from 'antd';
+import { Table, Tag, Button, Empty } from 'antd';
 import { EyeOutlined } from '@ant-design/icons';
 import { mockQuotationSummaries } from '../mockData';
 import { formatMoney } from '../utils/calculations';
@@ -12,7 +12,7 @@ import { COLORS } from '../styles/constants';
 const statusConfig: Record<string, { label: string; color: string }> = {
   draft:    { label: '草稿',   color: COLORS.textSecondary },
   pending:  { label: '待审批', color: COLORS.warning },
-  approved: { label: '已通过', color: '#2e7d32' },
+  approved: { label: '已通过', color: COLORS.success },
   rejected: { label: '已驳回', color: COLORS.danger },
 };
 
@@ -72,7 +72,7 @@ const QuotationList: React.FC = () => {
     {
       title: '利润率', dataIndex: 'profitRate', width: 70, align: 'center' as const,
       render: (v: number) => {
-        const color = v >= 20 ? COLORS.success : v >= 15 ? '#d46b08' : COLORS.danger;
+        const color = v >= 20 ? COLORS.success : v >= 15 ? COLORS.amber : COLORS.danger;
         return <span style={{ fontWeight: 600, color }}>{v.toFixed(1)}%</span>;
       },
     },
@@ -124,8 +124,8 @@ const QuotationList: React.FC = () => {
         <div onClick={() => setStatusTab('approved')}
           style={{
             padding: '8px 20px', cursor: 'pointer', fontSize: 14,
-            borderBottom: statusTab === 'approved' ? '2px solid #2e7d32' : '2px solid transparent',
-            color: statusTab === 'approved' ? '#2e7d32' : COLORS.textLight, fontWeight: statusTab === 'approved' ? 600 : 400,
+            borderBottom: statusTab === 'approved' ? `2px solid ${COLORS.success}` : '2px solid transparent',
+            color: statusTab === 'approved' ? COLORS.success : COLORS.textLight, fontWeight: statusTab === 'approved' ? 600 : 400,
             marginBottom: -2, transition: 'all 0.15s',
           }}>已通过({getCount('approved')})
         </div>
@@ -150,6 +150,7 @@ const QuotationList: React.FC = () => {
         pagination={false}
         size="small"
         bordered
+        locale={{ emptyText: <Empty description="暂无符合条件的报价" /> }}
         style={{ background: '#fff', borderRadius: 8 }}
       />
       </div>

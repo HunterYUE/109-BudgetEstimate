@@ -1,3 +1,5 @@
+import React from 'react';
+
 /**
  * 轻量级 Mock 数据响应式存储
  * 解决多个页面直接修改模块级数组导致的数据不一致问题
@@ -27,5 +29,3 @@ export function useMockVersion(): number {
   }, []);
   return v;
 }
-
-import React from 'react';

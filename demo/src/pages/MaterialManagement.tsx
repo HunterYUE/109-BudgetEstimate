@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { Table, Tag, Button, Drawer, Modal, Space, message } from 'antd';
+import { Table, Tag, Button, Drawer, Modal, Space, message, Empty } from 'antd';
+import type { ColumnsType } from 'antd/es/table';
 import {
   PlusOutlined, EyeOutlined, EditOutlined, DeleteOutlined,
   CheckOutlined, CloseOutlined,
@@ -34,7 +35,7 @@ const SOURCES: { value: SourcingType; label: string }[] = [
 ];
 
 const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
-  approved: { label: '已通过', color: '#2e7d32' },
+  approved: { label: '已通过', color: COLORS.success },
   pending:  { label: '待审核', color: COLORS.warning },
   draft:    { label: '草稿',   color: COLORS.textLight },
   rejected: { label: '已驳回', color: COLORS.danger },
@@ -78,6 +79,7 @@ const MaterialManagement: React.FC = () => {
 
   // 详情 Drawer
   const [drawerItem, setDrawerItem] = useState<Component | null>(null);
+  const [deleteModalItem, setDeleteModalItem] = useState<Component | null>(null);
 
   // ── 筛选逻辑 ──
 
@@ -232,20 +234,21 @@ const MaterialManagement: React.FC = () => {
   };
 
   const deleteItem = (item: Component) => {
-    Modal.confirm({
-      title: '提交删除申请',
-      content: `物料"${item.name_cn}"（${item.code}）的删除操作需总监审批，确认提交？`,
-      okText: '提交审批',
-      cancelText: '取消',
-      okButtonProps: { style: { background: COLORS.primary, borderColor: COLORS.primary, borderRadius: 4 } },
-      cancelButtonProps: { style: { borderRadius: 4 } },
-      onOk: () => {
-        setMaterials(prev => prev.map(c =>
-          c.id === item.id ? { ...c, reviewStatus: 'pending' as ReviewStatus, note: '[删除]' } : c
-        ));
-        messageApi.success('删除申请已提交，待总监审批');
-      },
-    });
+    setDeleteModalItem(item);
+  };
+
+  const confirmDeleteItem = () => {
+    if (!deleteModalItem) return;
+    if (deleteModalItem.note?.startsWith('[删除]')) {
+      setMaterials(prev => prev.filter(c => c.id !== deleteModalItem.id));
+      messageApi.success('物料已永久删除');
+    } else {
+      setMaterials(prev => prev.map(c =>
+        c.id === deleteModalItem.id ? { ...c, reviewStatus: 'pending' as ReviewStatus, note: '[删除]' } : c
+      ));
+      messageApi.success('删除申请已提交，待总监审批');
+    }
+    setDeleteModalItem(null);
   };
 
   // ── 审核操作 ──
@@ -280,7 +283,7 @@ const MaterialManagement: React.FC = () => {
 
   const onCellLock = (w: number) => () => ({ style: { width: w, minWidth: w, maxWidth: w } });
 
-  const columns: any[] = [  // eslint-disable-line @typescript-eslint/no-explicit-any
+  const columns: ColumnsType<Component> = [
     {
       title: '编码', dataIndex: 'code', width: 150,
       onCell: onCellLock(150),
@@ -593,6 +596,13 @@ const MaterialManagement: React.FC = () => {
         </tbody>
       </table>
 
+      <div style={{ marginBottom: 12, fontSize: 12, fontWeight: 600, color: '#3a4a6a', lineHeight: 1.8 }}>
+        <strong style={{ color: COLORS.primary }}>说明：</strong>
+        物料的编码格式，&nbsp;<code style={{ background: '#fff', padding: '1px 4px', borderRadius: 3, fontSize: 12 }}>{'{类型缩写}-{名称}-{型号}-V{版本}'}</code>
+        &nbsp;|&nbsp; 类型缩写：成套=M，组件=C，零件=P，软件=S，服务=H
+        &nbsp;|&nbsp; 版本 V1.0+ 为正式版，V0.x 为临时版
+      </div>
+
       {/* 状态标签 */}
       <div style={{ display: 'flex', gap: 0, marginBottom: 16, borderBottom: `2px solid ${COLORS.border}` }}>
         <div onClick={() => setStatusTab('all')}
@@ -606,8 +616,8 @@ const MaterialManagement: React.FC = () => {
         <div onClick={() => setStatusTab('approved')}
           style={{
             padding: '8px 20px', cursor: 'pointer', fontSize: 14,
-            borderBottom: statusTab === 'approved' ? '2px solid #2e7d32' : '2px solid transparent',
-            color: statusTab === 'approved' ? '#2e7d32' : COLORS.textSecondary, fontWeight: statusTab === 'approved' ? 600 : 400,
+            borderBottom: statusTab === 'approved' ? `2px solid ${COLORS.success}` : '2px solid transparent',
+            color: statusTab === 'approved' ? COLORS.success : COLORS.textSecondary, fontWeight: statusTab === 'approved' ? 600 : 400,
             marginBottom: -2, transition: 'all 0.15s',
           }}>已通过({tabCounts.approved})
         </div>
@@ -636,6 +646,7 @@ const MaterialManagement: React.FC = () => {
         size="small"
         bordered
         scroll={{ x: 1400 }}
+        locale={{ emptyText: <Empty description="暂无匹配的物料" /> }}
         style={{ background: '#fff', borderRadius: 8 }}
       />
       </div>
@@ -777,7 +788,7 @@ const MaterialManagement: React.FC = () => {
                 <td style={LABEL_CELL_STYLE}>单位成本</td>
                 <td style={{ padding: '7px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>
                   <input type="number" min={0} value={editForm.unit_cost ?? 0}
-                    onChange={e => setEditForm(p => ({ ...p, unit_cost: parseInt(e.target.value) || 0 }))}
+                    onChange={e => setEditForm(p => ({ ...p, unit_cost: parseInt(e.target.value, 10) || 0 }))}
                     style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, padding: '2px 0', margin: 0, display: 'block', boxSizing: 'border-box', lineHeight: 1.3 }} />
                 </td>
               </tr>
@@ -785,13 +796,13 @@ const MaterialManagement: React.FC = () => {
                 <td style={LABEL_CELL_STYLE}>设计工时</td>
                 <td style={{ padding: '7px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>
                   <input type="number" min={0} value={editForm.design_hours ?? 0}
-                    onChange={e => setEditForm(p => ({ ...p, design_hours: parseInt(e.target.value) || 0 }))}
+                    onChange={e => setEditForm(p => ({ ...p, design_hours: parseInt(e.target.value, 10) || 0 }))}
                     style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, padding: '2px 0', margin: 0, display: 'block', boxSizing: 'border-box', lineHeight: 1.3 }} />
                 </td>
                 <td style={LABEL_CELL_STYLE}>装配工时</td>
                 <td style={{ padding: '7px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>
                   <input type="number" min={0} value={editForm.assembly_hours ?? 0}
-                    onChange={e => setEditForm(p => ({ ...p, assembly_hours: parseInt(e.target.value) || 0 }))}
+                    onChange={e => setEditForm(p => ({ ...p, assembly_hours: parseInt(e.target.value, 10) || 0 }))}
                     style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, padding: '2px 0', margin: 0, display: 'block', boxSizing: 'border-box', lineHeight: 1.3 }} />
                 </td>
               </tr>
@@ -830,6 +841,33 @@ const MaterialManagement: React.FC = () => {
           <div style={{ fontSize: 11, color: '#bbb', marginTop: 8 }}>
             编码规则：{'{类型缩写}-{名称}-{型号}-V{版本}'}，如 M-RACK-3015-V1.0。V0.x = 临时物料，V1.0+ = 正式物料。
             新建或编辑后物料状态自动变为"草稿"，提交审核后由总监审批。
+          </div>
+        </div>
+      </Modal>
+
+      {/* ── 删除确认弹窗 ── */}
+      <Modal
+        title={<span style={{ fontSize: 17, fontWeight: 600, color: COLORS.textDark, letterSpacing: 0.5 }}>删除物料</span>}
+        open={!!deleteModalItem}
+        onCancel={() => setDeleteModalItem(null)}
+        width={420}
+        destroyOnHidden
+        styles={{ body: { padding: '24px 28px 12px' } }}
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+            <Button icon={<CloseOutlined />} onClick={() => setDeleteModalItem(null)}
+              style={{ borderRadius: 3, width: 36, height: 36 }} />
+            <Button type="primary" ghost icon={<CheckOutlined />} onClick={confirmDeleteItem}
+              style={{ borderColor: COLORS.danger, color: COLORS.danger, borderRadius: 3, width: 36, height: 36 }} />
+          </div>
+        }
+      >
+        <div style={{ textAlign: 'center', padding: '16px 0' }}>
+          <div style={{ fontSize: 40, marginBottom: 12 }}>🗑️</div>
+          <div style={{ fontSize: 14, color: COLORS.textSecondary, marginBottom: 8 }}>
+            {deleteModalItem?.note?.startsWith('[删除]')
+              ? `确定永久删除物料"${deleteModalItem?.name_cn}"（${deleteModalItem?.code}）？`
+              : `物料"${deleteModalItem?.name_cn}"（${deleteModalItem?.code}）的删除操作需总监审批，确认提交？`}
           </div>
         </div>
       </Modal>
