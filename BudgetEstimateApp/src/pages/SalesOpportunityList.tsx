@@ -6,13 +6,15 @@ import { Button, Table, Tag, Input, Select, Modal, message, Dropdown } from 'ant
 
 import { PlusOutlined, EditOutlined, FileAddOutlined, CheckCircleOutlined, CloseCircleOutlined, PauseCircleOutlined, PlayCircleOutlined, CheckOutlined, CloseOutlined } from '@ant-design/icons';
 
-import { mockOpportunities, mockDeliveryProjects, mockClients, mockQuotationSummaries } from '../mockData';
+import { mockOpportunities, mockDeliveryProjects, mockClients, mockQuotationSummaries, mockApprovalRequests } from '../mockData';
 import ClientNameCell from '../components/ClientNameCell';
-import type { SalesOpportunity, DeliveryProject, DeliveryNode } from '../types';
+import BlueTableModal from '../components/BlueTableModal';
+import type { SalesOpportunity, DeliveryProject, DeliveryNode, BlueTable, ApprovalRequest, ReviewRecord } from '../types';
 import { REASON_TAXONOMY, formatReasons } from '../reasonTaxonomy';
 import { parseFY, FYSelector } from '../utils/fiscalYear';
 import { notifyMockUpdate } from '../utils/mockStore';
 import { COLORS } from '../styles/constants';
+import { calcBlueTableWinRate } from '../utils/blueTableCalculation';
 
 
 
@@ -30,6 +32,40 @@ const statusColors: Record<string, string> = {
 
   过程中: COLORS.primary, 赢: COLORS.success, 输: COLORS.danger, 冻结: COLORS.textLight,
 
+};
+
+const getWinRateColumn = (tab: string, opp: SalesOpportunity | null, setOpp: (o: SalesOpportunity | null) => void, setOpen: (v: boolean) => void) => {
+  if (tab === 'info') return [];
+  return [{
+    title: '赢率', dataIndex: 'winRate', width: 30, align: 'center' as const,
+    filters: ['__all__', [0, 25], [26, 50], [51, 75], [76, 100]].map(r => ({
+      text: r === '__all__' ? '全部' : `${r[0]}-${r[1]}%`,
+      value: r,
+    })),
+    filterSearch: true,
+    filterDropdownProps: { minOverlayWidthMatchTrigger: false },
+    onFilter: (value: unknown, record: SalesOpportunity) => {
+      if (value === '__all__') return true;
+      const range = value as number[];
+      return record.winRate >= range[0] && record.winRate <= range[1];
+    },
+    render: (v: number, rec: SalesOpportunity) => {
+      if (rec.terminated || rec.stage === '中标') {
+        return <span style={{ color: rec.stage === '中标' ? COLORS.success : COLORS.textLight, fontWeight: 600, fontSize: 13 }}>{rec.stage === '中标' ? '100%' : v + '%'}</span>;
+      }
+      const hasBlueTable = !!rec.blueTable;
+      if (rec.stage === '线索' && !hasBlueTable) {
+        return <span style={{ cursor: 'pointer', color: COLORS.chartGray, fontWeight: 600, fontSize: 13 }} onClick={() => { setOpp(rec); setOpen(true); }} title="点击填写销售蓝表">—</span>;
+      }
+      if (rec.stage === '信息') {
+        return <span style={{ color: COLORS.textLight, fontSize: 13 }}>—</span>;
+      }
+      const displayVal = hasBlueTable ? rec.winRate : 0;
+      return <span style={{ cursor: 'pointer', color: hasBlueTable ? COLORS.primary : COLORS.chartGray, fontWeight: 600, fontSize: 13 }}
+        onClick={() => { setOpp(rec); setOpen(true); }}
+        title={hasBlueTable ? `蓝表评估：${rec.winRate}%（点击编辑）` : '点击填写销售蓝表'}>{displayVal}%</span>;
+    },
+  }];
 };
 
 const CELL_INPUT: React.CSSProperties = {
@@ -73,7 +109,13 @@ const SalesOpportunityList: React.FC = () => {
   const [deliveryOpp, setDeliveryOpp] = useState<SalesOpportunity | null>(null);
   const [terminateOpp, setTerminateOpp] = useState<SalesOpportunity | null>(null);
   const [promoteOpp, setPromoteOpp] = useState<{ opp: SalesOpportunity; targetStage: string } | null>(null);
-  const [promoteReason, setPromoteReason] = useState('');
+
+  // ── 阶段晋升弹窗 ──
+  const [stagePromote, setStagePromote] = useState<{ opp: SalesOpportunity; nextStage: string } | null>(null);
+
+  // ── 蓝表弹窗 ──
+  const [blueTableOpp, setBlueTableOpp] = useState<SalesOpportunity | null>(null);
+  const [blueTableOpen, setBlueTableOpen] = useState(false);
 
   // ── 原因选择弹窗 ──
   const [reasonModal, setReasonModal] = useState<{
@@ -90,9 +132,8 @@ const SalesOpportunityList: React.FC = () => {
   const now = () => new Date().toISOString().slice(0, 10);
 
   const touch = useCallback((id: string, updates: Partial<SalesOpportunity>) => {
-
     setOpportunities(prev => prev.map(o => o.id === id && !o.terminated ? { ...o, ...updates, updatedAt: now() } : o));
-
+    notifyMockUpdate();
   }, []);
 
 
@@ -128,19 +169,21 @@ const SalesOpportunityList: React.FC = () => {
   const handleStageClick = useCallback((opp: SalesOpportunity) => {
     const idx = STAGE_OPTIONS.indexOf(opp.stage);
     if (idx >= STAGE_OPTIONS.length - 1) return;
+    // 信息/线索的阶段切换通过操作列的"转线索"/"转机会"完成
+    if (opp.stage === '信息' || opp.stage === '线索') return;
     const nextStage = STAGE_OPTIONS[idx + 1];
-    const target = nextStage === '中标' ? '赢单' : '晋升到「' + nextStage + '」';
-    Modal.confirm({
-      title: '确认阶段晋升',
-      content: '将「' + opp.projectName + '」' + target + '？',
-      okText: '确认', cancelText: '取消',
-      onOk: () => {
-        const updates: Partial<SalesOpportunity> = { stage: nextStage };
-        if (nextStage === '中标') { updates.status = '赢'; updates.winRate = 100; }
-        setOpportunities(prev => prev.map(o => o.id === opp.id && !o.terminated ? { ...o, ...updates, updatedAt: now() } : o));
-      },
-    });
+    setStagePromote({ opp, nextStage });
   }, []);
+
+  const confirmStagePromote = useCallback(() => {
+    if (!stagePromote) return;
+    const { opp, nextStage } = stagePromote;
+    const updates: Partial<SalesOpportunity> = { stage: nextStage, updatedAt: now() };
+    if (nextStage === '中标') { updates.status = '赢'; updates.winRate = 100; }
+    setOpportunities(prev => prev.map(o => o.id === opp.id && !o.terminated ? { ...o, ...updates } : o));
+    notifyMockUpdate();
+    setStagePromote(null);
+  }, [stagePromote]);
 
 
 
@@ -169,6 +212,7 @@ const SalesOpportunityList: React.FC = () => {
     if (action === 'win') { updates.stage = '中标'; updates.winRate = 100; }
     setOpportunities(prev => prev.map(o => o.id === opp.id ? { ...o, ...updates } : o));
     setReasonModal(p => ({ ...p, open: false }));
+    notifyMockUpdate();
     msg.success('状态已更新');
   };
 
@@ -194,6 +238,7 @@ const SalesOpportunityList: React.FC = () => {
   const handleStatusAction = useCallback((opp: SalesOpportunity, action: 'win' | 'loss' | 'freeze') => {
     if (action === 'freeze' && opp.status === '冻结') {
       setOpportunities(prev => prev.map(o => o.id === opp.id ? { ...o, status: '过程中', reasons: '', updatedAt: now() } : o));
+      notifyMockUpdate();
       msg.success('已恢复为过程中');
       return;
     }
@@ -201,6 +246,23 @@ const SalesOpportunityList: React.FC = () => {
   }, [msg]);
 
 
+
+  // ── 蓝表保存 ──
+  const handleBlueTableSave = useCallback((blueTable: BlueTable) => {
+    if (!blueTableOpp) return;
+    const calc = calcBlueTableWinRate(blueTable);
+    const winRate = calc.finalRate;
+    const updates: Partial<SalesOpportunity> = {
+      blueTable,
+      winRate,
+      updatedAt: now(),
+    };
+    setOpportunities(prev => prev.map(o => o.id === blueTableOpp.id ? { ...o, ...updates } : o));
+    setBlueTableOpen(false);
+    setBlueTableOpp(null);
+    notifyMockUpdate();
+    msg.success(`蓝表已保存，赢率 ${winRate}%`);
+  }, [blueTableOpp, msg]);
 
   const handleWinDeliver = useCallback((opp: SalesOpportunity) => {
     setDeliveryOpp(opp);
@@ -267,17 +329,50 @@ const SalesOpportunityList: React.FC = () => {
   }, [deliveryOpp, msg, navigate]);
 
   const handlePromote = useCallback((opp: SalesOpportunity, targetStage: string) => {
+    // 线索→机会必须填写蓝表
+    if (targetStage === '机会' && (!opp.blueTable || opp.blueTable.roles.length === 0)) {
+      Modal.warning({
+        title: '需要先填写销售蓝表',
+        content: '从线索晋升到机会前，请先完成销售蓝表评估（包含至少一个采购角色）。',
+        okText: '知道了',
+      });
+      return;
+    }
     setPromoteOpp({ opp, targetStage });
-    setPromoteReason('');
   }, []);
 
   const confirmPromote = useCallback(() => {
     if (!promoteOpp) return;
-    if (!promoteReason.trim()) { msg.warning('请填写原因'); return; }
-    touch(promoteOpp.opp.id, { stage: promoteOpp.targetStage });
-    setPromoteOpp(null);
-    msg.success('已晋升至 ' + promoteOpp.targetStage);
-  }, [promoteOpp, promoteReason, msg, touch]);
+    if (promoteOpp.targetStage === '机会') {
+      // 创建审批请求
+      const newReq: ApprovalRequest = {
+        id: 'apr-' + crypto.randomUUID().slice(0, 6),
+        approvalType: 'promote',
+        quotationId: '',
+        opportunityId: promoteOpp.opp.id,
+        salesNo: promoteOpp.opp.salesNo,
+        clientName: promoteOpp.opp.clientName,
+        projectName: promoteOpp.opp.projectName,
+        amount: promoteOpp.opp.amount,
+        totalCost: 0,
+        profitRate: 0,
+        gp3: 0,
+        submitter: promoteOpp.opp.salesman || '销售员',
+        submitTime: now(),
+        status: 'pending',
+        records: [],
+      };
+      mockApprovalRequests.push(newReq);
+      notifyMockUpdate();
+      setPromoteOpp(null);
+      msg.success('已提交审批，待总监审批');
+    } else {
+      touch(promoteOpp.opp.id, { stage: '线索' });
+      setPromoteOpp(null);
+      notifyMockUpdate();
+      msg.success('已转线索');
+    }
+  }, [promoteOpp, msg, touch]);
 
   const handleConfirmTerminate = useCallback((opp: SalesOpportunity) => {
     setTerminateOpp(opp);
@@ -331,7 +426,7 @@ const SalesOpportunityList: React.FC = () => {
     if (editing) {
 
       setOpportunities(prev => prev.map(o => o.id === editing.id ? { ...o, ...formData, updatedAt: now() } as SalesOpportunity : o));
-
+      notifyMockUpdate();
       msg.success('机会已更新');
 
     } else {
@@ -359,11 +454,16 @@ const SalesOpportunityList: React.FC = () => {
         createdAt: now(),
 
         updatedAt: now(),
+        blueTable: {
+          vetoBudget: 'ok', timelinePlan: '', timelineOption: 'optimistic',
+          roles: [], pricing: 'neutral', positioning: 5, reactionMode: 'EK',
+          strategy: '', targets: [], updatedAt: now(),
+        },
 
       } as SalesOpportunity;
 
       setOpportunities(prev => [...prev, newOpp]);
-
+      notifyMockUpdate();
       msg.success('机会已创建');
 
     }
@@ -425,42 +525,23 @@ const SalesOpportunityList: React.FC = () => {
             }
           }}>&yen;{Math.round(v).toLocaleString()}</span>
       )},
-    ...(tabFilter !== 'info' && tabFilter !== 'lead'
-      ? [{ title: '阶段', dataIndex: 'stage', width: 40, align: 'center' as const,
-        filters: [
-          { text: '全部', value: '__all__' },
-          { text: '投标', value: '投标' },
-          { text: '议价', value: '议价' },
-          { text: '中标', value: '中标' },
-        ],
-        filterSearch: true,
-        filterDropdownProps: { minOverlayWidthMatchTrigger: false },
-        onFilter: (value: string, record: SalesOpportunity) => value === '__all__' || record.stage === value,
-        render: (v: string, rec: SalesOpportunity) => rec.terminated
-          ? <Tag color={COLORS.textLight} style={{ cursor: 'default', margin: 0 }}>{v}</Tag>
-          : <Tag color={stageColors[v] || COLORS.textLight} style={{ cursor: 'pointer', margin: 0 }}
-              onClick={() => handleStageClick(rec)}>{v}</Tag>
-        }]
-      : []),
-    { title: '赢率', dataIndex: 'winRate', width: 30, align: 'center' as const,
+    { title: '阶段', dataIndex: 'stage', width: 40, align: 'center' as const,
       filters: [
         { text: '全部', value: '__all__' },
-        { text: '0-25%', value: [0, 25] },
-        { text: '26-50%', value: [26, 50] },
-        { text: '51-75%', value: [51, 75] },
-        { text: '76-100%', value: [76, 100] },
+        { text: '投标', value: '投标' },
+        { text: '议价', value: '议价' },
+        { text: '中标', value: '中标' },
       ],
       filterSearch: true,
       filterDropdownProps: { minOverlayWidthMatchTrigger: false },
-      onFilter: (value, record: SalesOpportunity) => {
-        if (value === '__all__') return true;
-        const range = value as number[];
-        return record.winRate >= range[0] && record.winRate <= range[1];
-      },
-      render: (v: number, rec: SalesOpportunity) => (
-        <span style={{ cursor: rec.terminated ? 'default' : 'pointer', color: rec.terminated ? COLORS.textLight : COLORS.primary, fontWeight: 600 }}
-          onClick={rec.terminated ? undefined : () => { const next = v >= 100 ? 0 : Math.min(v + 10, 100); touch(rec.id, { winRate: next }); }}>{v}%</span>
-      )},
+      onFilter: (value: string, record: SalesOpportunity) => value === '__all__' || record.stage === value,
+      render: (v: string, rec: SalesOpportunity) => rec.terminated
+        ? <Tag color={COLORS.textLight} style={{ cursor: 'default', margin: 0 }}>{v}</Tag>
+        : <Tag color={stageColors[v] || COLORS.textLight} style={{ cursor: 'pointer', margin: 0 }}
+            onClick={() => handleStageClick(rec)}>{v}</Tag>
+    },
+
+    ...getWinRateColumn(tabFilter, blueTableOpp, setBlueTableOpp, setBlueTableOpen),
     { title: '竞争对手', dataIndex: 'competitor', width: 145,
       render: (v: string, rec: SalesOpportunity) => {
         if (rec.terminated) return <span style={{ fontSize: 13, color: COLORS.textPrimary }}>{v || '—'}</span>;
@@ -922,7 +1003,7 @@ const SalesOpportunityList: React.FC = () => {
         onCancel={() => setPromoteOpp(null)}
         width={460}
         destroyOnHidden
-        styles={{ body: { padding: "12px 24px 4px" }, content: { borderRadius: 4 } }}
+        styles={{ body: { padding: "14px 32px 6px" } }}
         footer={
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
             <Button icon={<CloseOutlined />} onClick={() => setPromoteOpp(null)}
@@ -933,17 +1014,42 @@ const SalesOpportunityList: React.FC = () => {
         }
       >
         {promoteOpp && (
-          <div>
-            <div style={{ marginBottom: 4, fontSize: 13, color: "#555" }}>
-              请填写原因（如竞争分析结果）：
+          <div style={{ textAlign: 'center', padding: '4px 0 0' }}>
+            <div style={{ fontSize: 14, color: COLORS.textDark, fontWeight: 600, marginBottom: 6 }}>
+              {promoteOpp.targetStage === "线索"
+                ? '将"' + promoteOpp.opp.projectName + '"转线索？'
+                : '将"' + promoteOpp.opp.projectName + '"转机会，提交审批确认？'}
             </div>
-            <div style={{ margin: "0 -24px" }}>
-              <textarea rows={2}
-                value={promoteReason}
-                onChange={e => { setPromoteReason(e.target.value); }}
-                placeholder={"输入" + (promoteOpp.targetStage === "线索" ? "转线索" : "转机会") + "原因…"}
-                style={{ width: "100%", border: `1px solid ${COLORS.borderInput}`, borderRadius: 3, padding: "6px 24px", fontSize: 13, resize: "vertical", boxSizing: "border-box", fontFamily: "inherit", borderLeft: "none", borderRight: "none" }}
-            />
+            <div style={{ fontSize: 13, color: COLORS.textMuted, lineHeight: 1.6 }}>
+              {promoteOpp.targetStage === "机会"
+                ? '提交后将进入审批流程，待总监审批通过后晋升为机会。'
+                : '确认后直接转为线索阶段。'}
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* 阶段晋升弹窗（机会→投标/投标→议价/议价→中标） */}
+      <Modal
+        title={<span style={{ fontSize: 17, fontWeight: 600, color: COLORS.textDark, letterSpacing: 0.5 }}>{stagePromote ? (stagePromote.nextStage === "中标" ? "赢单确认" : "阶段晋升") : ""}</span>}
+        open={!!stagePromote}
+        onCancel={() => setStagePromote(null)}
+        width={460}
+        destroyOnHidden
+        styles={{ body: { padding: "12px 24px 4px" }, content: { borderRadius: 4 } }}
+        footer={
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+            <Button icon={<CloseOutlined />} onClick={() => setStagePromote(null)}
+              style={{ borderRadius: 3, width: 36, height: 36 }} />
+            <Button type="primary" ghost icon={<CheckOutlined />} onClick={confirmStagePromote}
+              style={{ borderColor: COLORS.primary, color: COLORS.primary, borderRadius: 3, width: 36, height: 36 }} />
+          </div>
+        }
+      >
+        {stagePromote && (
+          <div style={{ textAlign: 'center', padding: '4px 0 0' }}>
+            <div style={{ fontSize: 14, color: COLORS.textDark, fontWeight: 600, marginBottom: 6 }}>
+              将「{stagePromote.opp.projectName}」{stagePromote.nextStage === '中标' ? '赢单' : '晋升到「' + stagePromote.nextStage + '」'}？
             </div>
           </div>
         )}
@@ -1097,6 +1203,14 @@ const SalesOpportunityList: React.FC = () => {
           );
         })()}
       </Modal>
+
+      {/* 蓝表弹窗 */}
+      <BlueTableModal
+        open={blueTableOpen}
+        opportunity={blueTableOpp}
+        onSave={handleBlueTableSave}
+        onClose={() => { setBlueTableOpen(false); setBlueTableOpp(null); }}
+      />
 
     </div>
     </>

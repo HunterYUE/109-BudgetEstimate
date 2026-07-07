@@ -1,8 +1,8 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, Tag, Button, Modal, Input, message, Empty } from 'antd';
 import { CheckCircleOutlined, CloseCircleOutlined, HistoryOutlined, EyeOutlined, CheckOutlined, CloseOutlined } from '@ant-design/icons';
-import { mockApprovalRequests, mockDeliveryProjects, mockQuotationSummaries } from '../mockData';
+import { mockApprovalRequests, mockDeliveryProjects, mockQuotationSummaries, mockOpportunities } from '../mockData';
 import { formatMoney } from '../utils/calculations';
 import { notifyMockUpdate, useMockVersion } from '../utils/mockStore';
 import type { ApprovalRequest, ReviewRecord } from '../types';
@@ -14,17 +14,23 @@ const statusConfig: Record<string, { label: string; color: string }> = {
   rejected: { label: '已驳回', color: COLORS.danger },
 };
 
-const typeColor = (t: string) => t === 'quotation' ? COLORS.primary : t === 'plan' ? COLORS.warning : COLORS.success;
+const typeColor = (t: string) => t === 'quotation' ? COLORS.primary : t === 'plan' ? COLORS.warning : t === 'cost' ? COLORS.success : COLORS.purple;
 
 const ApprovalList: React.FC = () => {
   const navigate = useNavigate();
   const [msg, ctx] = message.useMessage();
+  const mockVer = useMockVersion();
   const [requests, setRequests] = useState<ApprovalRequest[]>(() =>
     mockApprovalRequests.map(r => ({
       ...r,
       records: r.records.map(rec => ({ ...rec })),
     }))
   );
+  // 同步外部 mock 数据变更（如新提交的转机会审批）
+  useEffect(() => {
+    setRequests(mockApprovalRequests.map(r => ({ ...r, records: r.records.map(rec => ({ ...rec })) })));
+  }, [mockVer]);
+
   const [filter, setFilter] = useState<'draft' | 'pending' | 'done' | 'all'>('pending');
   const [detailModal, setDetailModal] = useState<ApprovalRequest | null>(null);
   const [historyModal, setHistoryModal] = useState<ApprovalRequest | null>(null);
@@ -35,7 +41,6 @@ const ApprovalList: React.FC = () => {
     return requests;
   }, [requests, filter]);
 
-  const mockVer = useMockVersion();
   const draftItems = useMemo(() => {
     const items = [];
     for (const q of mockQuotationSummaries) {
@@ -92,6 +97,11 @@ const ApprovalList: React.FC = () => {
         else if (modal.req.approvalType === 'cost') { proj.costStatus = modal.action; proj.costApproval = appraisal; }
       }
     }
+    // 转机会审批同步回 SalesOpportunity
+    if (modal.req.approvalType === 'promote' && modal.action === 'approved' && modal.req.opportunityId) {
+      const opp = mockOpportunities.find(o => o.id === modal.req.opportunityId);
+      if (opp) opp.stage = '机会';
+    }
     notifyMockUpdate();
     if (modal.action === 'approved') msg.success('已通过');
     else msg.warning('已驳回');
@@ -146,7 +156,7 @@ const ApprovalList: React.FC = () => {
 
                     <Tag color={typeColor(item.approvalType)}
                       style={{ fontSize: 12, border: 'none', fontWeight: 600 }}>
-                      {item.approvalType === 'quotation' ? '报价审批' : item.approvalType === 'plan' ? '实施计划' : '成本对比'}
+                      {item.approvalType === 'quotation' ? '报价审批' : item.approvalType === 'plan' ? '实施计划' : item.approvalType === 'cost' ? '成本对比' : '转机会审批'}
                     </Tag>
                   </div>
                   <div style={{ display: 'flex', gap: 24, fontSize: 13, color: COLORS.textSecondary, flexWrap: 'wrap' }}>
@@ -160,7 +170,7 @@ const ApprovalList: React.FC = () => {
                 </div>
                 <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginLeft: 16, flexShrink: 0 }}>
                   <Button type="text" size="small" icon={<EyeOutlined style={{ fontSize: 18 }} />}
-                    onClick={() => item.deliveryId ? navigate('/delivery/' + item.deliveryId, { state: { tab: item.approvalType === 'cost' ? 'cost' : 'plan' } }) : navigate('/quotations/' + item.quotationId)}
+                    onClick={() => item.approvalType === 'promote' ? navigate('/') : item.deliveryId ? navigate('/delivery/' + item.deliveryId, { state: { tab: item.approvalType === 'cost' ? 'cost' : 'plan' } }) : navigate('/quotations/' + item.quotationId)}
                     style={{ color: COLORS.primary }} />
                 </div>
               </div>
@@ -190,7 +200,7 @@ const ApprovalList: React.FC = () => {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                     <span style={{ fontSize: 15, fontWeight: 600, color: COLORS.textDark }}>{req.clientName}</span>
                     {req.status !== 'pending' && <Tag color={statusConfig[req.status]?.color} style={{ fontWeight: 600, fontSize: 12, lineHeight: '20px', borderRadius: 3 }}>{statusConfig[req.status]?.label}</Tag>}
-                    <Tag color={typeColor(req.approvalType)} style={{ fontSize: 12, border: 'none', fontWeight: 600 }}>{req.approvalType === 'quotation' ? '报价审批' : req.approvalType === 'plan' ? '实施计划' : '成本对比'}</Tag>
+                    <Tag color={typeColor(req.approvalType)} style={{ fontSize: 12, border: 'none', fontWeight: 600 }}>{req.approvalType === 'quotation' ? '报价审批' : req.approvalType === 'plan' ? '实施计划' : req.approvalType === 'cost' ? '成本对比' : '转机会审批'}</Tag>
                   </div>
                   <div style={{ display: 'flex', gap: 24, fontSize: 13, color: COLORS.textSecondary, flexWrap: 'wrap' }}>
                     <span style={{ fontWeight: 600 }}>{req.projectName}</span>
@@ -209,7 +219,7 @@ const ApprovalList: React.FC = () => {
 
                 <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginLeft: 16, flexShrink: 0 }}>
                   <Button type="text" size="small" icon={<EyeOutlined style={{ fontSize: 18 }} />}
-                    onClick={() => req.deliveryId ? navigate('/delivery/' + req.deliveryId, { state: { tab: req.approvalType === 'cost' ? 'cost' : 'plan' } }) : navigate('/quotations/' + req.quotationId)}
+                    onClick={() => req.approvalType === 'promote' ? navigate('/') : req.deliveryId ? navigate('/delivery/' + req.deliveryId, { state: { tab: req.approvalType === 'cost' ? 'cost' : 'plan' } }) : navigate('/quotations/' + req.quotationId)}
                     style={{ color: COLORS.primary }} />
                   {req.records.length > 0 && (
                     <Button type="text" size="small" icon={<HistoryOutlined />}

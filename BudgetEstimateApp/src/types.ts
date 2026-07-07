@@ -124,6 +124,7 @@ export interface SalesOpportunity {
   updatedAt: string;
   quotationId?: string;
   terminated?: boolean;
+  blueTable?: BlueTable;       // 销售蓝表数据（可选）
 }
 
 // ===== 报价列表摘要 =====
@@ -154,8 +155,10 @@ export interface ReviewRecord {
 
 export interface ApprovalRequest {
   id: string;
-  approvalType: 'quotation' | 'plan' | 'cost';
+  approvalType: 'quotation' | 'plan' | 'cost' | 'promote';
   quotationId: string;
+  /** 线索转机会审批时关联的机会 ID */
+  opportunityId?: string;
   /** 交付审批时关联的交付项目 ID */
   deliveryId?: string;
   salesNo: string;
@@ -242,6 +245,42 @@ export interface ClientHistoryRecord {
 }
 
 export type AccountType = 'enterprise' | 'subsidiary';
+
+// ===== 销售蓝表 =====
+export type VetoBudgetOption = 'ok' | 'possible' | 'failed';
+export type TimelineOption = 'optimistic' | 'neutral' | 'negative';
+export type InfluenceLevel = 'high' | 'medium' | 'low';
+export type RoleType = 'EB' | 'UB' | 'TB' | 'COACH';
+export type PricingLevel = 'very_strong' | 'strong' | 'competitive' | 'neutral' | 'slightly_weak' | 'weak' | 'very_weak';
+export type ReactionMode = 'G' | 'T' | 'EK' | 'OC';
+
+export interface BlueTableRole {
+  id: string;
+  roleType: RoleType;
+  name?: string;               // 联系人姓名
+  influence: InfluenceLevel;   // 影响力
+  /** 影响力权重值，默认 高=5 中=3 低=1，可微调 */
+  influenceWeight: number;
+  support: number;             // 支持度 -5~+5
+  demandFit: number;           // 需求匹配度 1~5
+  relationship: number;        // 客户关系 1~5
+}
+
+export interface BlueTable {
+  vetoBudget: VetoBudgetOption;
+  /** 项目预算金额 */
+  budgetAmount?: number;
+  /** 客户节点计划描述（时间窗口、关键里程碑等） */
+  timelinePlan: string;
+  timelineOption: TimelineOption;
+  roles: BlueTableRole[];
+  pricing: PricingLevel;
+  positioning: number;         // 项目定位 1~10
+  reactionMode: ReactionMode;
+  strategy: string;            // 下一步行动
+  targets: { roleId: string; targetSupport: number; plan?: string }[];
+  updatedAt: string;
+}
 
 export interface Client {
   id: string;

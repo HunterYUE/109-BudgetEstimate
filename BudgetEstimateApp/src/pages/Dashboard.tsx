@@ -61,7 +61,9 @@ const VerticalBars: React.FC<{
   unit?: string;
   maxSlots?: number;
   groupGaps?: number[];
-}> = ({ items, height = 120, unit, maxSlots, groupGaps }) => {
+  gapSize?: number;
+  barWidth?: number;
+}> = ({ items, height = 120, unit, maxSlots, groupGaps, gapSize = 14, barWidth = 25 }) => {
   const slotCount = maxSlots || items.length;
   const maxVal = items.reduce((m, i) => Math.max(m, i.value), 0);
   const max = maxVal > 0 ? maxVal : 1;
@@ -75,7 +77,7 @@ const VerticalBars: React.FC<{
             <span key={t} style={{ fontSize: 9, color: '#aaa', textAlign: 'right', lineHeight: 1 }}>{t}{unit}</span>
           ))}
         </div>
-        <div style={{ flex: 1, height, position: 'relative', display: 'flex', alignItems: 'flex-end' }}>
+        <div style={{ flex: 1, height, position: 'relative', display: 'flex', alignItems: 'flex-end', gap: 2 }}>
           {ticks.map(t => (
             <div key={t} style={{ position: 'absolute', left: 0, right: 0, top: `${(1 - t / max) * 100}%`, borderTop: `1px solid ${COLORS.borderLight}`, pointerEvents: 'none' }} />
           ))}
@@ -83,7 +85,7 @@ const VerticalBars: React.FC<{
             <div key={i} style={{
               display: 'flex', flexDirection: 'column', alignItems: 'center',
               flex: 1, justifyContent: 'flex-end', alignSelf: 'stretch',
-              marginLeft: groupGaps?.includes(i - 1) ? 14 : 0,
+              marginLeft: groupGaps?.includes(i - 1) ? gapSize : 0,
             }}>
               {item && item.color !== 'transparent' ? (
                 <>
@@ -97,14 +99,14 @@ const VerticalBars: React.FC<{
                     <span style={{ fontSize: 9, fontWeight: 600, color: item.color, marginBottom: 3, textAlign: 'center', lineHeight: 1.2 }}>{item.value}{unit || ''}</span>
                   )}
                   <div style={{
-                    width: 25,
+                    width: barWidth,
                     height: `${Math.max((item.value / max) * 100, 4)}%`, minHeight: 4,
                     border: `3px solid ${item.color}`,
                     background: 'transparent',
                   }} />
                 </>
               ) : (
-                <div style={{ width: item && item.color === 'transparent' ? 16 : 25, height: 0 }} />
+                <div style={{ width: item && item.color === 'transparent' ? 16 : barWidth, height: 0 }} />
               )}
             </div>
           ))}
@@ -115,7 +117,7 @@ const VerticalBars: React.FC<{
           <span key={i} style={{
             flex: 1, textAlign: 'center', fontSize: 9, color: COLORS.textSecondary,
             lineHeight: 1.3, opacity: item && item.color !== 'transparent' ? 1 : 0,
-            marginLeft: groupGaps?.includes(i - 1) ? 14 : 0,
+            marginLeft: groupGaps?.includes(i - 1) ? gapSize : 0,
           }}>
             {item && item.color !== 'transparent' ? item.label.split('\n').map((l, j) => <span key={j} style={{ display: 'block' }}>{l}</span>) : ''}
           </span>
@@ -340,7 +342,7 @@ const Dashboard: React.FC = () => {
         let totalAmt = 0, totalProfit = 0;
         mockDeliveryProjects.forEach(p => {
           const status = getStatusInMonth(p, monthEnd);
-          if (prefix === '概算' && status === '进行中' && p.status !== '已完成') {
+          if (prefix === '概算' && status === '进行中') {
             totalProfit += getEstProfit(p);
             totalAmt += p.contractAmount;
           } else if (prefix === '实际' && status === '已完成' && changedThisMonth(p, monthEnd)) {
@@ -447,24 +449,24 @@ const Dashboard: React.FC = () => {
           styles={{ body: { padding: '18px 20px' } }}>
           <SectionTitle title="交付状态" />
           <div style={{ display: 'flex', gap: 8, alignItems: 'stretch', minHeight: 150, marginTop: -18 }}>
-            <div style={{ flex: 4, display: 'flex', flexDirection: 'column' }}>
+            <div style={{ flex: 4, display: 'flex', flexDirection: 'column', marginLeft: -20 }}>
               <div style={{ fontSize: 10, color: COLORS.textLight, fontWeight: 500, textAlign: 'right', marginBottom: 2, paddingRight: 2 }}>项目状态</div>
-              <VerticalBars items={deliveryStats.projectStatus} height={210} groupGaps={[2, 5]} />
+              <VerticalBars items={deliveryStats.projectStatus} height={210} groupGaps={[2, 5]} gapSize={4} />
             </div>
             <div style={{ width: 1, background: COLORS.borderLight, flexShrink: 0 }} />
-            <div style={{ flex: 5, display: 'flex', flexDirection: 'column' }}>
+            <div style={{ flex: 5, display: 'flex', flexDirection: 'column', marginLeft: -10 }}>
               <div style={{ fontSize: 10, color: COLORS.textLight, fontWeight: 500, textAlign: 'right', marginBottom: 2, paddingRight: 2 }}>节点执行</div>
-              <VerticalBars items={deliveryStats.nodeStatus} height={210} groupGaps={[2, 5, 8]} />
+              <VerticalBars items={deliveryStats.nodeStatus} height={210} groupGaps={[2, 5, 8]} gapSize={5} />
             </div>
             <div style={{ width: 1, background: COLORS.borderLight, flexShrink: 0 }} />
-            <div style={{ flex: 7, display: 'flex', flexDirection: 'column' }}>
+            <div style={{ flex: 6, display: 'flex', flexDirection: 'column' }}>
               <div style={{ fontSize: 10, color: COLORS.textLight, fontWeight: 500, textAlign: 'right', marginBottom: 2, paddingRight: 2 }}>节点准时率</div>
-              <VerticalBars items={deliveryStats.onTimeRate} height={210} unit="%" maxSlots={20} />
+              <VerticalBars items={deliveryStats.onTimeRate} height={210} unit="%" maxSlots={18} />
             </div>
             <div style={{ width: 1, background: COLORS.borderLight, flexShrink: 0 }} />
-            <div style={{ flex: 3, display: 'flex', flexDirection: 'column' }}>
+            <div style={{ flex: 4, display: 'flex', flexDirection: 'column' }}>
               <div style={{ fontSize: 10, color: COLORS.textLight, fontWeight: 500, textAlign: 'right', marginBottom: 2, paddingRight: 2 }}>利润概览</div>
-              <VerticalBars items={deliveryStats.profitOverview} height={210} unit="K" groupGaps={[2]} />
+              <VerticalBars items={deliveryStats.profitOverview} height={210} unit="K" />
             </div>
           </div>
         </Card>
@@ -473,20 +475,20 @@ const Dashboard: React.FC = () => {
       {/* ── 底栏：管道节点 | 行业分布 | 机会趋势 ── */}
       <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
         <Card size="small"
-          style={{ flex: '1 1 195px', minWidth: 165, borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
+          style={{ flex: '1 1 220px', minWidth: 190, borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
           styles={{ body: { padding: '16px 18px' } }}>
           <SectionTitle title="管道节点" />
           {stageDist.every(s => s.value === 0) ? (
             <div style={{ padding: 24, textAlign: 'center', color: COLORS.textLight, fontSize: 13 }}>暂无活跃管道</div>
           ) : (
-            <div style={{ marginTop: 50 }}>
+            <div style={{ marginTop: 50, marginLeft: -20 }}>
               <VerticalBars items={stageDist} height={250} groupGaps={[2, 5, 8, 11]} />
             </div>
           )}
         </Card>
 
         <Card size="small"
-          style={{ flex: '1 1 305px', minWidth: 255, borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
+          style={{ flex: '1 1 283px', minWidth: 233, borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
           styles={{ body: { padding: '16px 18px' } }}>
           <SectionTitle title="行业分布" count={industryDist.reduce((s, i) => s + i.value, 0)} />
           {industryDist.length === 0 ? (
@@ -509,7 +511,7 @@ const Dashboard: React.FC = () => {
         </Card>
 
         <Card size="small"
-          style={{ flex: '1 1 400px', minWidth: 340, borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
+          style={{ flex: '1 1 397px', minWidth: 337, borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
           styles={{ body: { padding: '16px 18px' } }}>
           <SectionTitle title="机会趋势" count={fyTrend.reduce((s, m) => s + m.value, 0)} />
           {fyTrend.every(m => m.value === 0) ? (
