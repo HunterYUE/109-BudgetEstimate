@@ -1,0 +1,27 @@
+# Claude memory
+.claude/
+
+# Python temp scripts
+*.py
+!scripts/
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+BudgetEstimateApp/dist/
+backend/dist/
+
+# Environment
+.env
+backend/.env
+*.local
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,729 @@
+import React, { useEffect, useState, useMemo } from 'react';
+import { Table, Tag, Button, Space, message, Empty } from 'antd';
+import type { ColumnsType } from 'antd/es/table';
+import {
+  PlusOutlined, EyeOutlined, EditOutlined, DeleteOutlined,
+  CheckOutlined, CloseOutlined,
+} from '@ant-design/icons';
+import { componentService } from '../services/componentService';
+import { tagService } from '../services/tagService';
+import { collectTagPaths, collectDescendantIds } from '../utils/tagHelpers';
+import { formatMoney } from '../utils/calculations';
+import type { Component, ItemType, SourcingType, ReviewStatus, TagNode } from '../types';
+import { COLORS } from '../styles/colors';
+import {
+  MaterialEditModal, MaterialDeleteModal,
+} from '../components/material/MaterialModals';
+import {
+  CATEGORY_OPTIONS, CATEGORIES, CATEGORY_LABELS,
+  SOURCES, UNITS, STATUS_CONFIG, LABEL_CELL_STYLE, validateCodeFormat,
+} from '../components/material/materialConstants';
+import { MaterialDrawer } from '../components/material/MaterialDrawer';
+
+
+// ── 辅助函数 ──
+
+function deepClone(c: Component): Component {
+  return { ...c, changeLog: Array.isArray(c.changeLog) ? c.changeLog.map(e => ({ ...e })) : [] };
+}
+
+function makeId(): string {
+  return 'mat-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6);
+}
+
+function parseVersionFromCode(code: string): { version: string; isTemp: boolean } | null {
+  const m = code?.match(/-V(\d+\.\d+)$/);
+  if (!m) return null;
+  return { version: 'V' + m[1], isTemp: parseInt(m[1], 10) < 1 };
+}
+
+// ── 组件 ──
+
+const MaterialManagement: React.FC = () => {
+  const [materials, setMaterials] = useState<Component[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [messageApi, msgContextHolder] = message.useMessage();
+
+  // ── 数据加载 ──
+
+  const loadMaterials = async () => {
+    setLoading(true);
+    try {
+      const res = await componentService.list();
+      if (res) {
+        setMaterials(res.map(c => deepClone(c)));
+      }
+    } catch (err: any) {
+      messageApi.error('加载物料数据失败：' + (err.message || '未知错误'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadMaterials();
+  }, []);
+
+  // 搜索与筛选
+  const [searchText, setSearchText] = useState('');
+  const [typeFilter, setTypeFilter] = useState('');
+  const [sourceFilter, setSourceFilter] = useState('');
+  const [statusTab, setStatusTab] = useState<string>('all');
+
+  // 编辑弹窗
+  const [editOpen, setEditOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<Partial<Component>>({});
+
+  // 详情 Drawer
+  const [drawerItem, setDrawerItem] = useState<Component | null>(null);
+  const [deleteModalItem, setDeleteModalItem] = useState<Component | null>(null);
+
+  // ── 筛选逻辑 ──
+
+  const matchesFilter = useMemo(() => {
+    return (c: Component) => {
+      if (searchText) {
+        const q = searchText.toLowerCase();
+        if (!c.nameCn.toLowerCase().includes(q) &&
+            !c.code.toLowerCase().includes(q) &&
+            !c.brand.toLowerCase().includes(q)) return false;
+      }
+      if (typeFilter && c.category !== typeFilter) return false;
+      if (sourceFilter && c.sourcingType !== sourceFilter) return false;
+      if (statusTab !== 'all' && c.reviewStatus !== statusTab) return false;
+      return true;
+    };
+  }, [searchText, typeFilter, sourceFilter, statusTab]);
+
+  const displayData = useMemo(() => {
+    return materials.filter(matchesFilter);
+  }, [materials, matchesFilter]);
+
+  // ── 标签树（需在 groupedRows 之前声明）──
+  const [tagTree, setTagTree] = useState<TagNode[]>([]);
+
+  useEffect(() => {
+    tagService.getTree().then(data => {
+      if (data && data.length > 0) setTagTree(data);
+    }).catch(() => {});
+  }, []);
+
+  const tagPathMap = useMemo(() => collectTagPaths(tagTree), [tagTree]);
+
+  // ── 按标签排序 ──
+  // 物料按最深 tag 路径名称排序，同标签物料连续显示
+  const sortedMaterials = useMemo(() => {
+    const idToLabel = new Map<string, string>();
+    (function walk(nodes: TagNode[], prefix: string[]) {
+      for (const n of nodes) {
+        idToLabel.set(n.id, [...prefix, n.name].join(' > '));
+        if (n.children) walk(n.children, [...prefix, n.name]);
+      }
+    })(tagTree, []);
+
+    const sortKey = (item: Component): string => {
+      const t = item.tags || [];
+      let bestId: string | null = null;
+      let bestDepth = -1;
+      for (const id of t) {
+        let depth = 1;
+        let cur = tagTree;
+        for (;;) {
+          const found = cur.find(n => n.id === id);
+          if (!found || !found.children) break;
+          depth++;
+          cur = found.children;
+        }
+        if (depth > bestDepth) { bestDepth = depth; bestId = id; }
+      }
+      if (bestId) return idToLabel.get(bestId) || '';
+      return '~~未分类';
+    };
+
+    return [...displayData].sort((a, b) => sortKey(a).localeCompare(sortKey(b), 'zh'));
+  }, [displayData, tagTree]);
+
+
+  // 品牌筛选选项（从数据动态提取）
+  const brandFilterOptions = useMemo(() => {
+    const brands = [...new Set(materials.filter(c => c.brand).map(c => c.brand))].sort();
+    return brands.map(b => ({ text: b, value: b }));
+  }, [materials]);
+
+  // ── 编辑操作 ──
+
+      const openNew = () => {
+    setEditingId(null);
+    setEditForm({
+      code: '',
+      nameCn: '',
+      category: 'COMPLETE_SET',
+      brand: '',
+      model: '',
+      specification: '',
+      note: '',
+      supplier: '',
+      unit: '套',
+      sourcingType: 'SELF_MANUFACTURED',
+      unitCost: 0,
+      designHours: 0,
+      assemblyHours: 0,
+      hasWarranty: true,
+      reviewStatus: 'pending',
+      version: 'V0.1',
+      tags: [],
+    });
+    setEditOpen(true);
+  };
+
+  const openEdit = (item: Component) => {
+    setEditingId(item.id);
+    setEditForm({
+      code: item.code,
+      nameCn: item.nameCn,
+      category: item.category,
+      brand: item.brand,
+      model: item.model,
+      specification: item.specification,
+      note: item.note,
+      supplier: item.supplier,
+      unit: item.unit,
+      sourcingType: item.sourcingType,
+      unitCost: item.unitCost,
+      designHours: item.designHours,
+      assemblyHours: item.assemblyHours,
+      hasWarranty: item.hasWarranty,
+      reviewStatus: item.reviewStatus,
+      version: item.version,
+      tags: item.tags ? [...item.tags] : [],
+    });
+    setEditOpen(true);
+  };
+
+  const saveEdit = async () => {
+    if (!editForm.code) { messageApi.warning('请输入物料编码'); return; }
+    if (!editForm.nameCn) { messageApi.warning('请输入物料名称'); return; }
+    const codeCheck = validateCodeFormat(editForm.code);
+    if (!codeCheck.valid) { messageApi.warning(codeCheck.error); return; }
+    const _dup = materials.find(c => c.code === editForm.code && c.id !== editingId);
+    if (_dup) { messageApi.warning('编码已被' + _dup.nameCn + '使用'); return; }
+    const now = new Date().toISOString().slice(0, 10);
+    try {
+      if (editingId) {
+        const target = materials.find(c => c.id === editingId);
+        if (!target) return;
+        const verChanged = editForm.code && editForm.code !== target.code;
+        const newVersion = verChanged
+          ? (parseVersionFromCode(editForm.code || '')?.version || target.version)
+          : target.version;
+        const logEntry = verChanged
+          ? { version: newVersion, date: now, note: '编码变更' }
+          : { version: target.version, date: now, note: '信息更新' };
+        await componentService.update(editingId, {
+          code: editForm.code ?? target.code,
+          nameCn: editForm.nameCn ?? target.nameCn,
+          category: (editForm.category as ItemType) ?? target.category,
+          brand: editForm.brand ?? target.brand,
+          model: editForm.model ?? target.model,
+          specification: editForm.specification ?? target.specification,
+          note: editForm.note ?? target.note,
+          supplier: editForm.supplier ?? target.supplier,
+          unit: editForm.unit ?? target.unit,
+          sourcingType: (editForm.sourcingType as SourcingType) ?? target.sourcingType,
+          unitCost: editForm.unitCost ?? target.unitCost,
+          designHours: editForm.designHours ?? target.designHours,
+          assemblyHours: editForm.assemblyHours ?? target.assemblyHours,
+          hasWarranty: editForm.hasWarranty ?? target.hasWarranty,
+          version: newVersion,
+          tags: editForm.tags ?? target.tags,
+          updatedAt: now,
+          changeLog: [...target.changeLog, logEntry],
+          reviewStatus: 'pending',
+        } as Partial<Component>);
+        messageApi.success('物料已更新，需重新审核');
+      } else {
+        const parsed = parseVersionFromCode(editForm.code || '');
+        await componentService.create({
+          code: editForm.code || '',
+          nameCn: editForm.nameCn || '',
+          category: (editForm.category as ItemType) || 'COMPLETE_SET',
+          brand: editForm.brand || '',
+          model: editForm.model || '',
+          specification: editForm.specification || '',
+          note: '[新建]',
+          supplier: editForm.supplier || '',
+          unit: editForm.unit || '套',
+          sourcingType: (editForm.sourcingType as SourcingType) || 'SELF_MANUFACTURED',
+          unitCost: editForm.unitCost || 0,
+          designHours: editForm.designHours || 0,
+          assemblyHours: editForm.assemblyHours || 0,
+          hasWarranty: editForm.hasWarranty ?? true,
+          reviewStatus: 'pending',
+          tags: editForm.tags || [],
+          version: parsed?.version || 'V0.1',
+          createdAt: now,
+          updatedAt: now,
+          changeLog: [{ version: parsed?.version || 'V0.1', date: now, note: '新建' }],
+        } as Partial<Component>);
+        messageApi.success('物料已创建');
+      }
+      await loadMaterials();
+    } catch (err) {
+      console.error('[Material] 保存失败:', err);
+      // API 失败，回退到本地更新
+      if (editingId) {
+        setMaterials(prev => prev.map(c => {
+          if (c.id !== editingId) return c;
+          const verChanged = editForm.code && editForm.code !== c.code;
+          const newVersion = verChanged
+            ? (parseVersionFromCode(editForm.code || '')?.version || c.version)
+            : c.version;
+          const logEntry = verChanged
+            ? { version: newVersion, date: now, note: '编码变更' }
+            : { version: c.version, date: now, note: '信息更新' };
+
+          return {
+            ...c,
+            code: editForm.code ?? c.code,
+            nameCn: editForm.nameCn ?? c.nameCn,
+            category: (editForm.category as ItemType) ?? c.category,
+            brand: editForm.brand ?? c.brand,
+            model: editForm.model ?? c.model,
+            specification: editForm.specification ?? c.specification,
+            note: editForm.note ?? c.note,
+            supplier: editForm.supplier ?? c.supplier,
+            unit: editForm.unit ?? c.unit,
+            sourcingType: (editForm.sourcingType as SourcingType) ?? c.sourcingType,
+            unitCost: editForm.unitCost ?? c.unitCost,
+            designHours: editForm.designHours ?? c.designHours,
+            assemblyHours: editForm.assemblyHours ?? c.assemblyHours,
+            hasWarranty: editForm.hasWarranty ?? c.hasWarranty,
+            version: newVersion,
+            tags: editForm.tags ?? c.tags,
+            updatedAt: now,
+            changeLog: [...c.changeLog, logEntry],
+            reviewStatus: 'pending',
+          };
+        }));
+        messageApi.warning('保存失败，已保存到本地');
+      } else {
+        const parsed = parseVersionFromCode(editForm.code || '');
+        const newItem: Component = {
+          id: makeId(),
+          code: editForm.code || '',
+          nameCn: editForm.nameCn || '',
+          category: (editForm.category as ItemType) || 'COMPLETE_SET',
+          brand: editForm.brand || '',
+          model: editForm.model || '',
+          specification: editForm.specification || '',
+          note: '[新建]',
+          supplier: editForm.supplier || '',
+          unit: editForm.unit || '套',
+          sourcingType: (editForm.sourcingType as SourcingType) || 'SELF_MANUFACTURED',
+          unitCost: editForm.unitCost || 0,
+          designHours: editForm.designHours || 0,
+          assemblyHours: editForm.assemblyHours || 0,
+          hasWarranty: editForm.hasWarranty ?? true,
+          reviewStatus: 'pending',
+          tags: editForm.tags || [],
+          version: parsed?.version || 'V0.1',
+          createdAt: now,
+          updatedAt: now,
+          changeLog: [{ version: parsed?.version || 'V0.1', date: now, note: '新建' }],
+        };
+        setMaterials(prev => [...prev, newItem]);
+        messageApi.warning('保存失败，已保存到本地');
+      }
+    }
+    setEditOpen(false);
+  };
+
+  const deleteItem = (item: Component) => {
+    setDeleteModalItem(item);
+  };
+
+  const confirmDeleteItem = async () => {
+    if (!deleteModalItem) return;
+    const item = deleteModalItem;
+    try {
+      if (item.note?.startsWith('[删除]')) {
+        await componentService.delete(item.id);
+        messageApi.success('物料已永久删除');
+      } else {
+        await componentService.update(item.id, { reviewStatus: 'pending' as ReviewStatus, note: '[删除]' } as Partial<Component>);
+        messageApi.success('删除申请已提交，待总监审批');
+      }
+      await loadMaterials();
+    } catch (err) {
+      console.error('[Material] 保存失败:', err);
+      // API 失败，回退到本地更新
+      if (item.note?.startsWith('[删除]')) {
+        setMaterials(prev => prev.filter(c => c.id !== item.id));
+        messageApi.success('物料已永久删除');
+      } else {
+        setMaterials(prev => prev.map(c =>
+          c.id === item.id ? { ...c, reviewStatus: 'pending' as ReviewStatus, note: '[删除]' } : c
+        ));
+        messageApi.success('删除申请已提交，待总监审批');
+      }
+    }
+    setDeleteModalItem(null);
+  };
+
+  // ── 审核操作 ──
+
+  const handleApprove = async (item: Component) => {
+    try {
+      if (item.note?.startsWith('[删除]')) {
+        await componentService.delete(item.id);
+        messageApi.success('删除申请已通过，物料已移除');
+      } else {
+        await componentService.update(item.id, { reviewStatus: 'approved' as ReviewStatus } as Partial<Component>);
+        messageApi.success('物料已通过审核');
+      }
+      await loadMaterials();
+    } catch (err) {
+      console.error('[Material] 保存失败:', err);
+      // API 失败，回退到本地更新
+      if (item.note?.startsWith('[删除]')) {
+        setMaterials(prev => prev.filter(c => c.id !== item.id));
+      } else {
+        setMaterials(prev => prev.map(c =>
+          c.id === item.id ? { ...c, reviewStatus: 'approved' as ReviewStatus } : c
+        ));
+      }
+    }
+  };
+
+  const handleReject = async (item: Component) => {
+    try {
+      if (item.note?.startsWith('[删除]')) {
+        await componentService.update(item.id, { reviewStatus: 'approved' as ReviewStatus, note: '' } as Partial<Component>);
+        messageApi.warning('删除申请已驳回');
+      } else {
+        await componentService.update(item.id, { reviewStatus: 'rejected' as ReviewStatus } as Partial<Component>);
+        messageApi.warning('物料已驳回');
+      }
+      await loadMaterials();
+    } catch (err) {
+      console.error('[Material] 保存失败:', err);
+      // API 失败，回退到本地更新
+      if (item.note?.startsWith('[删除]')) {
+        setMaterials(prev => prev.map(c =>
+          c.id === item.id ? { ...c, reviewStatus: 'approved' as ReviewStatus, note: '' } : c
+        ));
+      } else {
+        setMaterials(prev => prev.map(c =>
+          c.id === item.id ? { ...c, reviewStatus: 'rejected' as ReviewStatus } : c
+        ));
+      }
+    }
+  };
+
+  // ── 列定义 ──
+
+  const onCellLock = (w: number) => () => ({ style: { width: w, minWidth: w, maxWidth: w } });
+  
+  const columns: ColumnsType<Component> = [
+    {
+      title: '编码', dataIndex: 'code', width: 150,
+      onCell: onCellLock(150),
+      render: (v: string, rec: Component) => {
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span style={{
+              fontSize: 13, fontWeight: 600,
+              fontFamily: 'monospace',
+              color: rec.reviewStatus === 'approved' ? COLORS.primary
+                   : rec.reviewStatus === 'rejected' ? COLORS.danger
+                   : COLORS.textPrimary,
+            }}>{v}</span>
+            {rec.version && /^V0\.[0-9]/.test(rec.version) && (
+              <Tag color="orange" style={{ borderRadius: 1, margin: 0, fontSize: 9, lineHeight: '16px', padding: '0 4px' }}>临</Tag>
+            )}
+          </div>
+        );
+      },
+    },
+    { title: '名称', dataIndex: 'nameCn', width: 210, onCell: onCellLock(210),
+      render: (v: string) => <span style={{ fontSize: 12, color: '#555' }}>{v}</span>,
+    },
+    {
+      title: '类型', dataIndex: 'category', width: 60, align: 'center' as const, onCell: onCellLock(60),
+      filters: [{ text: '全部', value: '__all__' }, ...CATEGORIES.map(c => ({ text: CATEGORY_OPTIONS[c].label, value: c }))],
+      filterSearch: true,
+      filterDropdownProps: { minOverlayWidthMatchTrigger: false },
+      onFilter: (value: string, record: Component) => value === '__all__' || record.category === value,
+      render: (v: ItemType) => {
+        const cfg = CATEGORY_OPTIONS[v] || { label: v, color: COLORS.textLight };
+        return <Tag color={cfg.color} style={{ borderRadius: 1, margin: 0, fontSize: 12 }}>{cfg.label}</Tag>;
+      },
+    },
+    { title: '品牌', dataIndex: 'brand', width: 55, onCell: onCellLock(55),
+      filters: [{ text: '全部', value: '__all__' }, ...brandFilterOptions],
+      filterSearch: true,
+      filterDropdownProps: { minOverlayWidthMatchTrigger: false },
+      onFilter: (value: string, record: Component) => value === '__all__' || record.brand === value,
+      render: (v: any) => <span style={{ fontSize: 12, color: '#555' }}>{v || '—'}</span>,
+    },
+    { title: '供应商', dataIndex: 'supplier', width: 80, onCell: onCellLock(80),
+      filters: (() => {
+        const suppliers = [...new Set(materials.filter(c => c.supplier).map(c => c.supplier))].sort();
+        return [{ text: '全部', value: '__all__' }, ...suppliers.map(s => ({ text: s, value: s }))];
+      })(),
+      filterSearch: true,
+      filterDropdownProps: { minOverlayWidthMatchTrigger: false },
+      onFilter: (value: string, record: Component) => value === '__all__' || record.supplier === value,
+      render: (v: string) => <span style={{ fontSize: 12, color: '#555' }}>{v || '—'}</span>,
+    },
+    { title: '型号', dataIndex: 'model', width: 90, onCell: onCellLock(90),
+      render: (v: string) => <span style={{ fontSize: 12, color: '#555' }}>{v || '—'}</span>,
+    },
+    { title: '单位', dataIndex: 'unit', width: 48, align: 'center' as const, onCell: onCellLock(48),
+      filters: [{ text: '全部', value: '__all__' }, ...UNITS.map(u => ({ text: u, value: u }))],
+      filterSearch: true,
+      filterDropdownProps: { minOverlayWidthMatchTrigger: false },
+      onFilter: (value: string, record: Component) => value === '__all__' || record.unit === value,
+      render: (v: string) => <span style={{ fontSize: 12, color: '#555' }}>{v || '—'}</span>,
+    },
+    { title: '规格', dataIndex: 'specification', width: 220, onCell: onCellLock(220),
+      render: (v: string) => <span style={{ fontSize: 12, color: COLORS.textSecondary }}>{v || '—'}</span>,
+    },
+    {
+      title: '来源', dataIndex: 'sourcingType', width: 52, align: 'center' as const, onCell: onCellLock(52),
+      filters: [{ text: '全部', value: '__all__' }, ...SOURCES.map(s => ({ text: s.label, value: s.value }))],
+      filterSearch: true,
+      filterDropdownProps: { minOverlayWidthMatchTrigger: false },
+      onFilter: (value: string, record: Component) => value === '__all__' || record.sourcingType === value,
+      render: (v: SourcingType) => (
+        <Tag color={v === 'PURCHASED' ? 'orange' : COLORS.success} style={{ borderRadius: 1, margin: 0, fontSize: 12 }}>
+          {v === 'PURCHASED' ? '外购' : '自制'}
+        </Tag>
+      ),
+    },
+    {
+      title: '标签', dataIndex: 'tags', width: 160, onCell: onCellLock(160),
+      filters: [
+        { text: '全部', value: '__all__' },
+        ...tagTree.map(t => ({ text: t.name, value: t.id })),
+      ],
+      filterSearch: true,
+      filterDropdownProps: { minOverlayWidthMatchTrigger: false },
+      onFilter: (value: string, record: Component) => {
+        if (value === '__all__') return true;
+        const ids = collectDescendantIds(tagTree, value as string);
+        return ids.some(id => (record.tags || []).includes(id));
+      },
+      render: (v: string[] | undefined) => {
+        if (!v || v.length === 0) return <span style={{ fontSize: 12, color: COLORS.textDisabled }}>—</span>;
+        const labels = v.map(id => {
+          const found = tagPathMap.find(t => t.id === id);
+          return found ? found.path.join(' / ') : id;
+        });
+        return <span style={{ fontSize: 12, color: '#888' }}>{labels.join('; ')}</span>;
+      },
+    },
+    { title: '单位成本', dataIndex: 'unitCost', width: 90, align: 'right' as const, onCell: onCellLock(90),
+      render: (v: number) => <span style={{ fontWeight: 600 }}>&yen;{formatMoney(v)}</span>,
+    },
+    {
+      title: '状态', dataIndex: 'reviewStatus', width: 70, align: 'center' as const, onCell: onCellLock(70),
+      render: (v: ReviewStatus) => {
+        const cfg = STATUS_CONFIG[v] || { label: v, color: COLORS.textLight };
+        return <Tag color={cfg.color} style={{ borderRadius: 1, margin: 0, fontSize: 12 }}>{cfg.label}</Tag>;
+      },
+    },
+    {
+      title: '', key: 'action', width: 130, align: 'center' as const, onCell: onCellLock(130),
+      render: (_: unknown, rec: Component) => (
+        <Space size={0}>
+          <Button type="text" size="small" icon={<EyeOutlined />}
+            onClick={() => setDrawerItem(rec)}
+            style={{ color: COLORS.primary, fontSize: 14 }} />
+          <Button type="text" size="small" icon={<EditOutlined />}
+            onClick={() => openEdit(rec)}
+            style={{ color: rec.reviewStatus === 'pending' ? COLORS.borderInput : COLORS.primary, fontSize: 14 }}
+            disabled={rec.reviewStatus === 'pending'} />
+          {rec.reviewStatus === 'pending' && (
+            <>
+              <Button type="text" size="small" icon={<CheckOutlined />}
+                onClick={() => handleApprove(rec)}
+                style={{ color: COLORS.success, fontSize: 16 }} />
+              <Button type="text" size="small" icon={<CloseOutlined />}
+                onClick={() => handleReject(rec)}
+                style={{ color: COLORS.danger, fontSize: 16 }} />
+            </>
+          )}
+          <Button type="text" size="small" icon={<DeleteOutlined />}
+            onClick={() => deleteItem(rec)}
+            style={{ color: rec.reviewStatus === 'pending' ? COLORS.borderInput : COLORS.textLight, fontSize: 14 }}
+            disabled={rec.reviewStatus === 'pending'} />
+        </Space>
+      ),
+    },
+  ];
+
+  // ── 统计 ──
+
+  const tabCounts = useMemo(() => {
+    const all = materials.length;
+    const approved = materials.filter(c => c.reviewStatus === 'approved').length;
+    const pending = materials.filter(c => c.reviewStatus === 'pending').length;
+    return { all, approved, pending };
+  }, [materials]);
+
+  // ── Render ──
+  // Inject material-table-specific styles
+  useEffect(() => {
+    const css = `
+.mat-table .ant-table-tbody > tr:hover > td { background: #f0f6ff !important; }
+.mat-table .ant-table-tbody > tr > td { padding: 7px 8px !important; }
+.mat-table .ant-table-filter-trigger { color: #8892a4 !important; }
+.mat-table .ant-table-filter-trigger:hover { color: var(--color-primary) !important; }
+.mat-table .ant-table-filter-trigger.active,
+.mat-table .ant-table-filter-trigger.ant-table-filter-trigger.active { color: var(--color-primary) !important; }
+`;
+    const s = document.createElement('style');
+    s.textContent = css;
+    document.head.appendChild(s);
+    return () => s.remove();
+  }, []);
+
+
+  return (
+    <div>
+      {msgContextHolder}
+      <div style={{ fontSize: 17, fontWeight: 700, color: COLORS.textDark, marginBottom: 4 }}>物料数据管理</div>
+      <div style={{ fontSize: 13, color: COLORS.textLight, marginBottom: 16 }}>&nbsp;</div>
+
+      {/* 搜索 + 筛选栏 */}
+      <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 16 }}>
+        <colgroup>
+          <col width="44" /><col width="auto" /><col width="44" /><col width="100" /><col width="44" /><col width="100" /><col width="50" />
+        </colgroup>
+        <tbody>
+          <tr>
+            <td style={LABEL_CELL_STYLE}>搜索</td>
+            <td style={{ padding: '7px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>
+              <input placeholder="搜索物料名称 / 编码 / 品牌"
+                value={searchText}
+                onChange={e => setSearchText(e.target.value)}
+                style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, padding: '2px 0', margin: 0, display: 'block', boxSizing: 'border-box', lineHeight: 1.3 }} />
+            </td>
+            <td style={LABEL_CELL_STYLE}>类型</td>
+            <td style={{ padding: '7px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>
+              <span style={{ cursor: 'pointer', color: COLORS.primary, fontSize: 12 }}
+                onClick={() => {
+                  const opts = ['', ...CATEGORY_LABELS];
+                  const cur = opts.indexOf(typeFilter ? CATEGORY_OPTIONS[typeFilter as ItemType]?.label || '' : '');
+                  const next = opts[(cur + 1) % opts.length];
+                  setTypeFilter(next ? CATEGORIES[CATEGORY_LABELS.indexOf(next)] : '');
+                }}>
+                {typeFilter ? CATEGORY_OPTIONS[typeFilter as ItemType]?.label || typeFilter : '全部'} ▾
+              </span>
+            </td>
+            <td style={LABEL_CELL_STYLE}>来源</td>
+            <td style={{ padding: '7px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>
+              <span style={{ cursor: 'pointer', color: COLORS.primary, fontSize: 12 }}
+                onClick={() => {
+                  const opts = ['', ...SOURCES.map(s => s.label)];
+                  const cur = opts.indexOf(sourceFilter ? (sourceFilter === 'PURCHASED' ? '外购' : '自制') : '');
+                  const next = opts[(cur + 1) % opts.length];
+                  setSourceFilter(next === '外购' ? 'PURCHASED' : next === '自制' ? 'SELF_MANUFACTURED' : '');
+                }}>
+                {sourceFilter ? (sourceFilter === 'PURCHASED' ? '外购' : '自制') : '全部'} ▾
+              </span>
+            </td>
+            <td style={{ padding: 0, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle', textAlign: 'center' }}>
+              <Button type="text" icon={<PlusOutlined />} onClick={openNew}
+                style={{ color: COLORS.primary, fontSize: 18, width: 42, height: 42 }} />
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div style={{ marginBottom: 12, fontSize: 12, fontWeight: 600, color: '#3a4a6a', lineHeight: 1.8 }}>
+        <strong style={{ color: COLORS.primary }}>说明：</strong>
+        物料的编码格式，&nbsp;<code style={{ background: '#fff', padding: '1px 4px', borderRadius: 3, fontSize: 12 }}>{'{类型缩写2位}-{用途6位}-{规格6位}-V{版本}'}</code>
+        &nbsp;|&nbsp; 类型缩写：成套=EQ，组件/部件=CP，工程服务=SV，软件=SW
+        &nbsp;|&nbsp; 版本 V1.0+ 为正式版，V0.x 为临时版
+      </div>
+
+      {/* 状态标签 */}
+      <div style={{ display: 'flex', gap: 0, marginBottom: 16, borderBottom: `2px solid ${COLORS.border}` }}>
+        <div onClick={() => setStatusTab('all')}
+          style={{
+            padding: '8px 20px', cursor: 'pointer', fontSize: 14,
+            borderBottom: statusTab === 'all' ? `2px solid ${COLORS.primary}` : '2px solid transparent',
+            color: statusTab === 'all' ? COLORS.primary : COLORS.textSecondary, fontWeight: statusTab === 'all' ? 600 : 400,
+            marginBottom: -2, transition: 'all 0.15s',
+          }}>全部({tabCounts.all})
+        </div>
+        <div onClick={() => setStatusTab('approved')}
+          style={{
+            padding: '8px 20px', cursor: 'pointer', fontSize: 14,
+            borderBottom: statusTab === 'approved' ? `2px solid ${COLORS.success}` : '2px solid transparent',
+            color: statusTab === 'approved' ? COLORS.success : COLORS.textSecondary, fontWeight: statusTab === 'approved' ? 600 : 400,
+            marginBottom: -2, transition: 'all 0.15s',
+          }}>已通过({tabCounts.approved})
+        </div>
+        <div onClick={() => setStatusTab('pending')}
+          style={{
+            padding: '8px 20px', cursor: 'pointer', fontSize: 14,
+            borderBottom: statusTab === 'pending' ? `2px solid ${COLORS.warning}` : '2px solid transparent',
+            color: statusTab === 'pending' ? COLORS.warning : COLORS.textSecondary, fontWeight: statusTab === 'pending' ? 600 : 400,
+            marginBottom: -2, transition: 'all 0.15s',
+          }}>待审核({tabCounts.pending})
+        </div>
+      </div>
+
+      {/* 表格 */}
+      {/* Style injected via useEffect */}
+      <div style={{
+        borderRadius: 10, border: `1px solid ${COLORS.borderLight}`,
+        boxShadow: '0 2px 8px rgba(0,0,0,0.04)', overflow: 'hidden',
+      }}>
+      <Table
+        className="mat-table"
+        loading={loading}
+        dataSource={sortedMaterials}
+        columns={columns}
+        rowKey="id"
+        pagination={false}
+        size="small"
+        bordered
+        scroll={{ x: 1400 }}
+        locale={{ emptyText: <Empty description="暂无匹配的物料" /> }}
+        style={{ background: '#fff', borderRadius: 8 }}
+      />
+      </div>
+
+      {/* ── 编辑模态框 ── */}
+      <MaterialEditModal
+        open={editOpen}
+        editingId={editingId}
+        editForm={editForm}
+        onFormChange={setEditForm}
+        onClose={() => setEditOpen(false)}
+        onSave={saveEdit}
+      />
+
+      {/* ── 删除确认弹窗 ── */}
+      <MaterialDeleteModal
+        item={deleteModalItem}
+        onClose={() => setDeleteModalItem(null)}
+        onConfirm={confirmDeleteItem}
+      />
+
+      {/* ── 详情 Drawer ── */}
+      <MaterialDrawer
+        item={drawerItem}
+        tagPathMap={tagPathMap}
+        onClose={() => setDrawerItem(null)}
+      />
+    </div>
+  );
+};
+
+export default MaterialManagement;

@@ -1,0 +1,719 @@
+import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { Tag, Card, Button, message, Modal, ConfigProvider } from 'antd';
+import { ScheduleOutlined, AuditOutlined, SendOutlined, SaveOutlined, ArrowLeftOutlined, DownloadOutlined, UploadOutlined, EyeOutlined, DeleteOutlined } from '@ant-design/icons';
+import { formatMoney } from '../utils/calculations';
+import { approvalService } from '../services/approvalService';
+import { deliveryService } from '../services/deliveryService';
+import { projectService } from '../services/projectService';
+import { preloadQuotationGroups } from '../utils/analysisShared';
+import { api } from '../utils/api';
+import DeliveryNodeTimeline from '../components/DeliveryNodeTimeline';
+import IconButton from '../components/IconButton';
+import ItemCostTable from '../components/ItemCostTable';
+import type { DeliveryProject, DeliveryNode, Group, ProjectVersion } from '../types';
+import { COLORS } from '../styles/colors';
+import { exportHtmlTable } from '../utils/exportToExcel';
+
+const STATUS_CYCLE: DeliveryNode['status'][] = ['pending', 'in_progress', 'completed'];
+const STATUS_LABELS: Record<string, { label: string; color: string }> = {
+  draft: { label: '草稿', color: COLORS.textSecondary },
+  pending: { label: '待审批', color: COLORS.warning },
+  approved: { label: '已通过', color: COLORS.success },
+  rejected: { label: '已驳回', color: COLORS.danger },
+};
+
+/** 附件类型配置 */
+const ATTACHMENT_TYPES = [
+  { key: 'rfq' as const, label: '客户需求书' },
+  { key: 'techPlan' as const, label: '技术方案' },
+  { key: 'techAgreement' as const, label: '技术协议' },
+  { key: 'contract' as const, label: '商务合同' },
+];
+
+const DeliveryDetail: React.FC = () => {
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const [msg, ctx] = message.useMessage();
+  const location = useLocation();
+  const initTab = (location.state as { tab?: 'plan' | 'cost' | 'files' })?.tab || 'plan';
+  const [tab, setTab] = useState<'plan' | 'cost' | 'files'>(initTab);
+  const [project, setProject] = useState<DeliveryProject | null>(null);
+  const [actualCosts, setActualCosts] = useState<Record<string, number>>({});
+  const [costDirty, setCostDirty] = useState(false);
+  const [hasChanges, setHasChanges] = useState(false);
+  const [quotationProject, setQuotationProject] = useState<{ groups: Group[]; versions?: ProjectVersion[]; currentVersion?: ProjectVersion; [k: string]: unknown } | null>(null);
+  const projectRef = useRef<DeliveryProject | null>(null);
+  projectRef.current = project;
+  const baselinesRef = useRef<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!id) return;
+    deliveryService.getFull(id).then(data => {
+      setProject(data);
+      if (data.nodes) data.nodes.forEach((n: DeliveryNode) => { const b = n.baselineEndDate || n.baselinePlannedEndDate; if (b) baselinesRef.current[n.id] = b; });
+      if (data.quotationId) {
+        preloadQuotationGroups(data.quotationId);
+        // 通过 api.get 加载报价数据（使用统一转换/缓存/错误处理）
+        api.get<Record<string, unknown>>(`/quotations/${data.quotationId}`).then(quote => {
+          const pid = quote.projectId;
+          const qvn = quote.versionNo || '';
+          if (!pid) return;
+          projectService.getFull(pid).then(proj => {
+            const ver = (proj.versions || []).find((v: ProjectVersion) => v.versionNo === qvn) || proj.versions?.[0];
+            const vid = ver?.id || '';
+            const filtered = (proj.groups || []).filter((g: any) => (g as Record<string, unknown>).versionId === vid);
+            setQuotationProject({ ...proj, groups: filtered.length > 0 ? filtered : proj.groups });
+          });
+        }).catch(() => {});
+      }
+    }).catch(() => {});
+  }, [id]);
+
+  const [files, setFiles] = useState<Record<string, string>>({
+    rfq: '客户需求书_v1.0.pdf',
+    techPlan: '技术方案_v2.1.pdf',
+  });
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [activeFileKey, setActiveFileKey] = useState<string>('');
+
+  const handleUploadClick = (key: string) => {
+    setActiveFileKey(key);
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && activeFileKey) {
+      setFiles(prev => ({ ...prev, [activeFileKey]: file.name }));
+    }
+    e.target.value = '';
+  };
+
+  const handleRemoveFile = (key: string) => {
+    setFiles(prev => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  };
+
+  const quotationGroups: Group[] = useMemo(() => {
+    if (!quotationProject) return [];
+    return (quotationProject.groups || []) as Group[];
+  }, [quotationProject]);
+
+  const quotationVersion = useMemo(() => {
+    if (!quotationProject) return undefined;
+    const v = quotationProject.currentVersion || quotationProject.versions?.[0];
+    if (!v) return undefined;
+    return { warrantyRate: v.warrantyRate ?? 0, riskRate: v.riskRate ?? 0 };
+  }, [quotationProject]);
+
+  // 实施计划：仅待审批时锁定（通过后可继续修改无需再审批，驳回后可修改重新提交）
+  const planLocked = project?.planStatus === 'pending';
+  // 成本对比：仅待审批时锁定（通过后可修改并重新提交覆盖旧数据，驳回后可修改重新提交）
+  const costLocked = project?.costStatus === 'pending';
+  const costCanEdit = project?.costStatus !== 'pending';
+
+  // ---- Node handlers ----
+  const handleNodeStatusClick = useCallback((nodeId: string, newStatus?: string) => {
+    if (!project) return;
+    const now = new Date().toISOString().slice(0, 10);
+    setProject(prev => {
+      if (!prev) return prev;
+      const newNodes = prev.nodes.map(n => {
+        if (n.id !== nodeId) return n;
+        const nextStatus = newStatus || STATUS_CYCLE[(STATUS_CYCLE.indexOf(n.status) + 1) % STATUS_CYCLE.length];
+        // 切到"已完成"时记录实际完成日期，切离"已完成"时清除
+        const updated: DeliveryNode = { ...n, status: nextStatus as DeliveryNode['status'] };
+        // 记录状态变更到 history
+        updated.history = [...(n.history || []), {
+          id: crypto.randomUUID(),
+          field: 'status' as const,
+          oldValue: n.status,
+          newValue: nextStatus,
+          changedAt: new Date().toISOString(),
+        }];
+        if (nextStatus === 'completed') {
+          updated.actualDate = now;
+        } else if (n.status === 'completed') {
+          updated.actualDate = undefined;
+        }
+        return updated;
+      });
+      return { ...prev, nodes: newNodes };
+    });
+  }, [project]);
+
+  const handlePlannedDateChange = useCallback((nodeId: string, field: 'plannedStartDate' | 'plannedEndDate', date: string) => {
+    if (!project) return;
+    const now = new Date().toISOString().slice(0, 10);
+    const node = project.nodes.find(n => n.id === nodeId);
+    if (!node || node[field] === date) return;  // 日期未变，不处理
+    setHasChanges(true);
+    setProject(prev => {
+      if (!prev) return prev;
+      const next = {
+        ...prev,
+        nodes: prev.nodes.map(n => {
+          if (n.id !== nodeId) return n;
+          const entry = {
+            id: 'h-' + crypto.randomUUID().slice(0, 8),
+            field: 'plannedDate' as const,
+            oldValue: n[field],
+            newValue: date,
+            changedAt: now,
+          };
+          return { ...n, [field]: date, history: [...n.history, entry] };
+        }),
+      };
+      return next;
+    });
+  }, [project]);
+
+  const handleNodeCommentsChange = useCallback((nodeId: string, comments: string) => {
+    if (!project) return;
+    setProject(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        nodes: prev.nodes.map(n => n.id === nodeId ? { ...n, comments } : n),
+      };
+    });
+  }, [project]);
+
+  // ---- Cost handlers ----
+  const handleActualCostChange = useCallback((itemId: string, value: number) => {
+    if (costLocked) return;
+    setActualCosts(prev => ({ ...prev, [itemId]: value }));
+    setCostDirty(true);
+  }, [costLocked]);
+
+  // ---- Approval handlers ----
+  const handleSubmitPlan = useCallback(() => {
+    if (!project) return;
+    if (project.planStatus === 'approved') {
+      msg.success('实施计划已审批通过');
+      return;
+    }
+    // Check all planned dates are set
+    const emptyDates = project.nodes.filter(n => !n.plannedStartDate || !n.plannedEndDate);
+    if (emptyDates.length > 0) {
+      msg.warning(`请先填写所有节点的计划开始和结束时间（${emptyDates.map(n => n.name).join('、')}）`);
+      return;
+    }
+    Modal.confirm({
+      title: '确认提交审批',
+      content: '确定提交实施计划进行审批吗？',
+      okText: '提交', cancelText: '取消',
+      onOk: () => {
+        approvalService.create({
+          approvalType: 'plan',
+          quotationId: project.quotationId,
+          deliveryId: project.id,
+          salesNo: project.salesNo,
+          clientName: project.clientName,
+          projectName: project.projectName,
+          amount: project.contractAmount,
+          totalCost: 0,
+          profitRate: 0,
+          gp3: 0,
+          versionNo: '',
+          taxRate: 0.13,
+          totalAccountingPrice: project.contractAmount,
+          submitter: '方案经理',
+        }).then(() => {
+          setProject(prev => prev ? { ...prev, planStatus: 'pending' } : prev);
+          setHasChanges(false);
+          msg.success('实施计划已提交审批');
+        }).catch((err: any) => {
+          msg.error('提交审批失败：' + (err.message || '未知错误'));
+        });
+      },
+    });
+  }, [project, msg, Modal]);
+
+  const handleSubmitCost = useCallback(() => {
+    if (!project) return;
+    if (Object.keys(actualCosts).length === 0) {
+      msg.warning('请至少录入一项实际成本再提交');
+      return;
+    }
+    const totalActual = Object.values(actualCosts).reduce((s, v) => s + v, 0);
+    approvalService.create({
+      approvalType: 'cost',
+      quotationId: project.quotationId,
+      deliveryId: project.id,
+      salesNo: project.salesNo,
+      clientName: project.clientName,
+      projectName: project.projectName,
+      amount: project.contractAmount,
+      totalCost: totalActual,
+      profitRate: 0,
+      gp3: 0,
+      versionNo: '',
+      taxRate: 0.13,
+      totalAccountingPrice: project.contractAmount,
+      submitter: '交付经理',
+    }).then(() => {
+      setProject(prev => prev ? { ...prev, costStatus: 'pending' } : prev);
+      setCostDirty(false);
+      msg.success('成本对比已提交审批，请前往审批管理模块查看');
+    }).catch((err: any) => {
+      msg.error('提交审批失败：' + (err.message || '未知错误'));
+    });
+  }, [project, actualCosts, msg]);
+
+  const handleExportPlan = useCallback(() => {
+    if (!project) return;
+    let rows = '';
+    for (let i = 0; i < project.nodes.length; i++) {
+      const n = project.nodes[i];
+      const statusMap = { pending: '未开始', in_progress: '进行中', completed: '已完成', delayed: '延期中' };
+      const delay = n.status === 'completed' || n.status === 'delayed'
+        ? Math.max(0, Math.round((new Date(n.actualDate || n.plannedEndDate).getTime() - new Date(n.plannedEndDate).getTime()) / 86400000))
+        : n.status === 'in_progress'
+        ? Math.max(0, Math.round((Date.now() - new Date(n.plannedEndDate).getTime()) / 86400000))
+        : 0;
+      rows += '<tr>' +
+        '<td style="text-align:center">' + n.nodeNo + '</td>' +
+        '<td>' + n.name + '</td>' +
+        '<td style="text-align:center">' + (statusMap[n.status] || n.status) + '</td>' +
+        '<td style="text-align:center">' + n.plannedStartDate + '</td>' +
+        '<td style="text-align:center">' + n.plannedEndDate + '</td>' +
+        '<td style="text-align:center">' + (n.actualDate || '—') + '</td>' +
+        '<td style="text-align:center">' + (delay > 0 ? '+' + delay + '天' : '—') + '</td></tr>';
+    }
+    const html = '<h2 style="text-align:center;margin-bottom:16px">实施计划</h2>' +
+      '<table style="width:100%;border-collapse:collapse;margin-bottom:8px">' +
+      '<tr><td style="border:none;padding:2px 8px"><b>项目：</b>' + project.projectName + '</td>' +
+      '<td style="border:none;padding:2px 8px"><b>客户：</b>' + project.clientName + '</td></tr></table>' +
+      '<table style="width:100%;border-collapse:collapse"><thead><tr><th>节点</th><th>名称</th><th>状态</th><th>计划开始</th><th>计划结束</th><th>实际日期</th><th>延期</th></tr></thead><tbody>' + rows + '</tbody></table>';
+    exportHtmlTable('实施计划_' + project.clientName, html);
+  }, [project]);
+
+  const handleExportCost = useCallback(() => {
+    if (!project) return;
+    let totalAct = 0;
+    let totEst = 0;
+    let rows = '';
+    for (let gi = 0; gi < quotationGroups.length; gi++) {
+      const g = quotationGroups[gi];
+      for (let ii = 0; ii < g.items.length; ii++) {
+        const item = g.items[ii];
+        const act = actualCosts[item.id] || 0;
+        const est = item.directCost;
+        totalAct += act;
+        totEst += est;
+        const varAmt = act - est;
+        rows += '<tr><td>' + g.name + '</td><td>' + (item.code || item.description || '—') + '</td>' +
+          '<td class="amount">' + Math.round(est).toLocaleString() + '</td>' +
+          '<td class="amount">' + Math.round(act).toLocaleString() + '</td>' +
+          '<td class="amount" style="color:' + (varAmt > 0 ? 'red' : 'green') + '">' + (varAmt >= 0 ? '+' : '') + Math.round(varAmt).toLocaleString() + '</td>' +
+          '<td class="amount" style="color:' + (varAmt > 0 ? 'red' : 'green') + '">' + (est > 0 ? (varAmt / est * 100).toFixed(1) + '%' : '—') + '</td></tr>';
+      }
+    }
+    const html = '<h2 style="text-align:center;margin-bottom:16px">成本对比表</h2>' +
+      '<table style="width:100%;border-collapse:collapse;margin-bottom:8px">' +
+      '<tr><td style="border:none;padding:2px 8px"><b>项目：</b>' + project.projectName + '</td>' +
+      '<td style="border:none;padding:2px 8px"><b>客户：</b>' + project.clientName + '</td></tr></table>' +
+      '<table style="width:100%;border-collapse:collapse"><thead><tr><th>组</th><th>项次</th><th>概算</th><th>实际</th><th>偏差</th><th>偏差率</th></tr></thead><tbody>' + rows + '</tbody></table>' +
+      '<table style="width:100%;border-collapse:collapse;margin-top:8px">' +
+      '<tr><td style="border:none;text-align:right;font-size:13px"><b>概算总成本：</b>¥' + Math.round(totEst).toLocaleString() + '</td></tr>' +
+      '<tr><td style="border:none;text-align:right;font-size:13px"><b>实际总成本：</b>¥' + Math.round(totalAct).toLocaleString() + '</td></tr></table>';
+    exportHtmlTable('成本对比_' + project.clientName, html);
+  }, [project, quotationGroups, actualCosts]);
+
+  if (!project) {
+    return (
+      <div style={{ padding: 40, textAlign: 'center', color: COLORS.textLight }}>
+        项目未找到
+        <div style={{ marginTop: 16 }}>
+          <Button onClick={() => navigate('/delivery')}>返回交付管理</Button>
+        </div>
+      </div>
+    );
+  }
+
+  const totalActual = Object.values(actualCosts).reduce((s, v) => s + v, 0);
+  const totalEstimated = quotationGroups.reduce((s, g) => s + g.items.reduce((si, i) => si + i.directCost, 0), 0);
+  const warrantyCost = quotationVersion ? Math.round(
+    quotationGroups.reduce((s, g) =>
+      s + g.items.filter(i => !i.hasWarranty).reduce((si, i) => si + i.directCost, 0), 0)
+    * quotationVersion.warrantyRate
+  ) : 0;
+  const riskCost = quotationVersion ? Math.round(totalEstimated * quotationVersion.riskRate) : 0;
+  // 概算总成本含风险费用和质保费用（两者均为独立大项行）
+  const grandEstimated = totalEstimated + riskCost + warrantyCost;
+  const grandActual = totalActual + warrantyCost;
+  // 实际总成本预警阈值 = (概算总成本 - 风险费用 - 质保费用) × 95%
+  const costWarningThreshold = Math.round((grandEstimated - riskCost - warrantyCost) * 0.95);
+  const needsCostWarning = grandActual >= costWarningThreshold;
+  const TAX_RATE = 0.13;
+  const contractExTax = Math.round(project.contractAmount / (1 + TAX_RATE));
+  const estProfit = contractExTax - grandEstimated;
+  const actProfit = contractExTax - grandActual;
+  const estGP3 = contractExTax > 0 ? (estProfit / contractExTax) : 0;
+  const actGP3 = contractExTax > 0 ? (actProfit / contractExTax) : 0;
+
+  const renderApprovalBar = (type: 'plan' | 'cost') => {
+    const status = type === 'plan' ? project.planStatus : project.costStatus;
+    const approval = type === 'plan' ? project.planApproval : project.costApproval;
+    const label = type === 'plan' ? '实施计划' : '成本对比';
+    const cfg = STATUS_LABELS[status];
+
+    return (
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px',
+        background: COLORS.bgLight, borderRadius: 4, marginBottom: 12, flexWrap: 'wrap',
+      }}>
+        <span style={{ fontWeight: 600, fontSize: 13, color: COLORS.textPrimary }}>{label}</span>
+        {cfg && <Tag color={cfg.color} style={{ margin: 0, fontSize: 12, lineHeight: '20px', borderRadius: 3, border: 'none' }}>{cfg.label}</Tag>}
+        {status === 'approved' && approval && (
+          <span style={{ fontSize: 12, color: COLORS.textSecondary }}>
+            {approval.reviewer} 于 {approval.createdAt} 通过
+            {approval.comment ? `：「${approval.comment}」` : ''}
+          </span>
+        )}
+        {status === 'rejected' && approval && (
+          <span style={{ fontSize: 12, color: COLORS.danger }}>
+            {approval.reviewer} 驳回：{approval.comment}
+          </span>
+        )}
+        <div style={{ flex: 1 }} />
+        {status === 'rejected' && (
+          <span style={{ fontSize: 12, color: COLORS.danger }}>已驳回，可修改后重新提交</span>
+        )}
+        {status === 'approved' && type === 'cost' && (
+          <span style={{ fontSize: 12, color: COLORS.textLight }}>数据已锁定</span>
+        )}
+      </div>
+    );
+  };
+
+  const completedNodeCount = project.nodes.filter(n => n.status === 'completed' || n.status === 'delayed').length;
+
+  return (
+    <div>
+      {ctx}
+      {/* 返回按钮 + 标题 */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 16, marginBottom: 16,
+        background: '#fff', borderRadius: 4, border: `1px solid ${COLORS.border}`,
+        padding: '14px 20px',
+      }}>
+        <div onClick={() => navigate('/delivery')}
+          style={{
+            width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            color: COLORS.primary, fontSize: 16, cursor: 'pointer', userSelect: 'none',
+            background: '#f0f5ff', border: '1px solid #d4e3f7',
+            transition: 'all 0.2s',
+          }}
+          onMouseEnter={e => { e.currentTarget.style.background = '#d4e3f7'; }}
+          onMouseLeave={e => { e.currentTarget.style.background = '#f0f5ff'; }}
+          title="返回交付管理">
+          <ArrowLeftOutlined />
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: 17, fontWeight: 700, color: COLORS.textDark, letterSpacing: 1 }}>{project.clientName}</span>
+            <Tag color={project.status === '已完成' ? 'green' : project.status === '已延期' ? 'red' : 'blue'}
+              style={{ margin: 0, fontSize: 12, lineHeight: '20px', borderRadius: 3, border: 'none' }}>
+              {project.status}
+            </Tag>
+            {project.status !== '已完成' && project.nodes.find(n => n.nodeNo === 15)?.status === 'completed' && project.costStatus === 'approved' && (
+              <span onClick={() => {
+                Modal.confirm({
+                  title: '确认完成项目',
+                  content: '节点15已完成且成本对比已审批通过。确认将此项目标记为已完成？',
+                  okText: '确认完成',
+                  cancelText: '取消',
+                  okButtonProps: { style: { background: COLORS.success, borderColor: COLORS.success } },
+                  onOk: () => {
+                    deliveryService.update(project.id, { status: '已完成' }).then(() => {
+                      setProject(prev => {
+                        if (!prev) return prev;
+                        return { ...prev, status: '已完成' as const };
+                      });
+                      msg.success('项目已标记为已完成');
+                    }).catch((err: any) => {
+                      msg.error('项目完成操作失败：' + (err.message || '未知错误'));
+                    });
+                  },
+                });
+              }}
+                style={{
+                  marginLeft: 8, padding: '4px 12px', borderRadius: 4, cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                  color: '#fff', background: COLORS.success, border: 'none', userSelect: 'none',
+                  transition: 'opacity 0.15s',
+                }}
+                onMouseEnter={e => e.currentTarget.style.opacity = '0.8'}
+                onMouseLeave={e => e.currentTarget.style.opacity = '1'}
+              >✓ 完成项目</span>
+            )}
+          </div>
+          <div style={{ fontSize: 13, color: COLORS.textLight, marginTop: 4, display: 'flex', gap: 16 }}>
+            <span>{project.projectName}</span>
+            <span style={{ color: COLORS.borderInput }}>|</span>
+            <span>{project.salesNo}</span>
+            <span style={{ color: COLORS.borderInput }}>|</span>
+            <span>节点进度 <strong style={{ color: COLORS.primary, fontWeight: 700 }}>{completedNodeCount}</strong>/{project.nodes.length}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* 概览条 */}
+      <div style={{
+        display: 'flex', alignItems: 'center', marginBottom: 16,
+        background: '#fff', borderRadius: 4, border: `1px solid ${COLORS.border}`, padding: '14px 0',
+      }}>
+        <div style={{
+          display: 'flex', alignItems: 'stretch', flex: 1,
+          background: '#f0f5ff',
+        }}>
+          {/* 合同金额 */}
+          <div style={{
+            flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center',
+            padding: '0 20px', borderRight: '1px solid #d4e3f7',
+          }}>
+            <div style={{ fontSize: 12, color: COLORS.textSecondary, marginBottom: 2 }}>合同金额</div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.primary }}>&yen;{formatMoney(contractExTax)}</div>
+          </div>
+
+          {/* 总成本 */}
+          <div style={{
+            flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center',
+            borderRight: '1px solid #d4e3f7',
+          }}>
+            <div style={{ fontSize: 12, color: COLORS.textLight, marginBottom: 4 }}>总成本</div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.textLight }}>&yen;{formatMoney(grandEstimated)}</div>
+            <div style={{ fontSize: 14, fontWeight: 600, marginTop: 2, color: grandActual < grandEstimated ? COLORS.success : COLORS.danger }}>
+              &yen;{formatMoney(grandActual)}
+            </div>
+          </div>
+
+          {/* 利润 */}
+          <div style={{
+            flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center',
+            borderRight: '1px solid #d4e3f7',
+          }}>
+            <div style={{ fontSize: 12, color: COLORS.textLight, marginBottom: 4 }}>利润</div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.textLight }}>&yen;{formatMoney(estProfit)}</div>
+            <div style={{ fontSize: 14, fontWeight: 600, marginTop: 2, color: actProfit >= estProfit ? COLORS.success : COLORS.danger }}>
+              &yen;{formatMoney(actProfit)}
+            </div>
+          </div>
+
+          {/* GP3 */}
+          <div style={{
+            flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center',
+          }}>
+            <div style={{ fontSize: 12, color: COLORS.textLight, marginBottom: 4 }}>GP3</div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.textLight }}>{(estGP3 * 100).toFixed(1)}%</div>
+            <div style={{ fontSize: 14, fontWeight: 600, marginTop: 2, color: actGP3 >= estGP3 ? COLORS.success : COLORS.danger }}>
+              {(actGP3 * 100).toFixed(1)}%
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 标签切换 — 多 Tab 风格 */}
+      <div style={{ display: 'flex', gap: 0, marginBottom: 16, borderBottom: `2px solid ${COLORS.border}` }}>
+        <div onClick={() => setTab('plan')}
+          style={{
+            padding: '8px 20px', cursor: 'pointer', fontSize: 14,
+            borderBottom: tab === 'plan' ? `2px solid ${COLORS.primary}` : '2px solid transparent',
+            color: tab === 'plan' ? COLORS.primary : COLORS.textSecondary, fontWeight: tab === 'plan' ? 600 : 400,
+            marginBottom: -2, transition: 'all 0.15s',
+          }}>
+          <ScheduleOutlined style={{ color: COLORS.primary, marginRight: 6 }} />实施计划
+        </div>
+        <div onClick={() => setTab('cost')}
+          style={{
+            padding: '8px 20px', cursor: 'pointer', fontSize: 14,
+            borderBottom: tab === 'cost' ? `2px solid ${COLORS.success}` : '2px solid transparent',
+            color: tab === 'cost' ? COLORS.success : COLORS.textSecondary, fontWeight: tab === 'cost' ? 600 : 400,
+            marginBottom: -2, transition: 'all 0.15s',
+          }}>
+          <AuditOutlined style={{ color: COLORS.success, marginRight: 6 }} />成本对比
+        </div>
+        <div onClick={() => setTab('files')}
+          style={{
+            padding: '8px 20px', cursor: 'pointer', fontSize: 14,
+            borderBottom: tab === 'files' ? `2px solid ${COLORS.purple}` : '2px solid transparent',
+            color: tab === 'files' ? COLORS.purple : COLORS.textSecondary, fontWeight: tab === 'files' ? 600 : 400,
+            marginBottom: -2, transition: 'all 0.15s',
+          }}>
+          <UploadOutlined style={{ color: COLORS.purple, marginRight: 6 }} />附件管理
+        </div>
+      </div>
+
+      {tab === 'plan' ? (
+        <div>
+          {renderApprovalBar('plan')}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginBottom: 12, fontSize: 12, color: COLORS.textSecondary }}>
+            <span>项目延期：
+              <strong style={{ color: COLORS.danger }}>
+                {(() => {
+                  const done15 = project.nodes.find(n => n.nodeNo === 15);
+                  if (done15?.status === 'completed' && done15.actualDate) {
+                    const planEnd = new Date(done15.plannedEndDate);
+                    const actual = new Date(done15.actualDate);
+                    const days = Math.round((actual.getTime() - planEnd.getTime()) / (1000 * 60 * 60 * 24));
+                    return days > 0 ? days + '天' : '0天';
+                  }
+                  const now = new Date();
+                  const end15 = new Date(done15?.plannedEndDate || now);
+                  return end15 < now ? Math.round((now.getTime() - end15.getTime()) / (1000 * 60 * 60 * 24)) + '天' : '0天';
+                })()}
+              </strong>
+            </span>
+          </div>
+          <Card size="small" styles={{ body: { padding: 0 } }} style={{ borderRadius: 4, border: 'none', boxShadow: 'none', background: 'transparent' }}>
+            <DeliveryNodeTimeline
+              nodes={project.nodes}
+              locked={planLocked}
+              hasChanges={hasChanges}
+              onNodeStatusClick={handleNodeStatusClick}
+              onPlannedDateChange={handlePlannedDateChange}
+              onCommentsChange={handleNodeCommentsChange}
+              onSavePlan={async () => { if (!project) return; try { await deliveryService.saveNodes(project.id, project.nodes); setHasChanges(false); msg.success('实施计划已保存'); } catch { msg.error('保存失败，请重试'); } }}
+              onSubmitPlan={handleSubmitPlan}
+              onExportPlan={handleExportPlan}
+            />
+          </Card>
+        </div>
+      ) : tab === 'files' ? (
+        <div>
+          <Card size="small" styles={{ body: { padding: 0 } }} style={{ borderRadius: 8, border: `1px solid ${COLORS.borderLight}`, boxShadow: '0 2px 12px rgba(0,0,0,0.04)', background: '#fff', overflow: 'hidden' }}>
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 12, padding: '14px 20px',
+              background: 'linear-gradient(90deg, #f8faff, #f0f4ff)',
+              borderBottom: `1px solid ${COLORS.borderLight}`,
+            }}>
+              <UploadOutlined style={{ color: COLORS.purple, fontSize: 16 }} />
+              <span style={{ fontSize: 14, fontWeight: 700, color: COLORS.textDark, letterSpacing: 0.5 }}>附件管理</span>
+            </div>
+            <div style={{ padding: '4px 0' }}>
+              {ATTACHMENT_TYPES.map(at => {
+                const uploaded = !!files[at.key];
+                const typeColors: Record<string, string> = {
+                  rfq: '#4a6fa5', techPlan: '#5b8c5a', techAgreement: '#7b6f9e', contract: '#9e7b5a',
+                };
+                const typeLabels: Record<string, string> = {
+                  rfq: 'RFQ', techPlan: '方案', techAgreement: '协议', contract: '合同',
+                };
+                return (
+                  <div key={at.key} style={{
+                    display: 'flex', alignItems: 'center', gap: 14,
+                    padding: '12px 20px', transition: 'background 0.15s',
+                    borderBottom: `1px solid ${COLORS.borderLight}`,
+                  }}
+                    onMouseEnter={e => e.currentTarget.style.background = COLORS.bgSelected}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                  >
+                    <span style={{
+                      width: 32, height: 32, borderRadius: 8, display: 'inline-flex',
+                      alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                      fontSize: 11, fontWeight: 700, color: '#fff',
+                      background: typeColors[at.key], letterSpacing: 0.5,
+                    }}>{typeLabels[at.key]}</span>
+                    <span style={{ flex: 1, fontSize: 13, color: COLORS.textDark, fontWeight: 500, letterSpacing: 0.3 }}>{at.label}</span>
+                    {!uploaded ? (
+                      <span onClick={() => handleUploadClick(at.key)}
+                        style={{
+                          width: 28, height: 28, borderRadius: 6, display: 'inline-flex',
+                          alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+                          fontSize: 14, color: COLORS.primary, background: '#e6f0fa',
+                          lineHeight: 1, userSelect: 'none', transition: 'all 0.15s',
+                        }}
+                        onMouseEnter={e => { e.currentTarget.style.background = '#d0e4f7'; }}
+                        onMouseLeave={e => { e.currentTarget.style.background = '#e6f0fa'; }}
+                        title="上传文件">
+                        <UploadOutlined />
+                      </span>
+                    ) : (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{
+                          fontSize: 12, color: COLORS.primary, fontWeight: 500,
+                          maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        }}>{files[at.key]}</span>
+                        <span onClick={() => message.info('文件: ' + files[at.key] + '（模拟查看）')}
+                          style={{
+                            width: 28, height: 28, borderRadius: 6, display: 'inline-flex',
+                            alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+                          fontSize: 14, color: COLORS.primary, background: '#e6f0fa',
+                          lineHeight: 1, userSelect: 'none', transition: 'all 0.15s',
+                        }}
+                          onMouseEnter={e => { e.currentTarget.style.background = '#d0e4f7'; }}
+                          onMouseLeave={e => { e.currentTarget.style.background = '#e6f0fa'; }}
+                          title="查看文件"><EyeOutlined /></span>
+                        <span onClick={() => handleRemoveFile(at.key)}
+                          style={{
+                            width: 28, height: 28, borderRadius: 6, display: 'inline-flex',
+                            alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+                            fontSize: 14, color: COLORS.primary, background: '#e6f0fa',
+                            lineHeight: 1, userSelect: 'none', transition: 'all 0.15s',
+                          }}
+                          onMouseEnter={e => { e.currentTarget.style.background = '#fee'; e.currentTarget.style.color = COLORS.danger; }}
+                          onMouseLeave={e => { e.currentTarget.style.background = '#e6f0fa'; e.currentTarget.style.color = COLORS.primary; }}
+                          title="删除文件"><DeleteOutlined /></span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+          <input ref={fileInputRef} type="file" style={{ display: 'none' }} onChange={handleFileChange} accept=".pdf,.doc,.docx,.xls,.xlsx,.zip,.rar" />
+        </div>
+      ) : (
+        <ConfigProvider theme={{ token: { colorPrimary: COLORS.primary } }}>
+        <div>
+          {renderApprovalBar('cost')}
+          {needsCostWarning && (
+            <div style={{
+              padding: '10px 16px', marginBottom: 12, borderRadius: 4,
+              background: '#fff3e0', border: '1px solid #ffcc02',
+              fontSize: 13, color: COLORS.warning, fontWeight: 600,
+            }}>
+              ⚠ 实际总成本已达 &yen;{formatMoney(grandActual)}，超过预警阈值 &yen;{formatMoney(costWarningThreshold)}（概算总成本-风险费用-质保费用）×95%，需要审批
+            </div>
+          )}
+          <Card size="small" styles={{ body: { padding: 0 } }} style={{ borderRadius: 4, border: 'none', boxShadow: 'none', background: 'transparent' }}>
+            <ItemCostTable
+              groups={quotationGroups}
+              actualCosts={actualCosts}
+              onActualCostChange={handleActualCostChange}
+              locked={costLocked}
+              version={quotationVersion}
+            />
+          </Card>
+          {costCanEdit && (
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 16, marginTop: 16 }}>
+            <IconButton icon={<SaveOutlined style={{ fontWeight: 700 }} />}
+              onClick={async () => { if (!project) return; const totalAct = Object.values(actualCosts).reduce((s, v) => s + v, 0); try { await deliveryService.update(project.id, { totalActualCost: totalAct }); setCostDirty(false); msg.success('成本对比已保存'); } catch { msg.error('保存失败，请重试'); } }}
+              color={COLORS.amber} hoverBg="#fff7e6" title="保存"
+              disabled={!costDirty} />
+            <IconButton icon={<SendOutlined style={{ fontWeight: 700 }} />}
+              onClick={handleSubmitCost}
+              color={COLORS.primary} hoverBg="#e6f0fa" title="提交审批"
+              disabled={!costDirty} />
+            <IconButton icon={<DownloadOutlined style={{ fontWeight: 700 }} />}
+              onClick={handleExportCost} color={COLORS.success} hoverBg="#e8f5e9" title="导出" />
+          </div>
+          )}
+        </div>
+          </ConfigProvider>
+      )}
+    </div>
+  );
+};
+
+if (import.meta.hot) {
+  import.meta.hot.decline();
+}
+
+export default DeliveryDetail;

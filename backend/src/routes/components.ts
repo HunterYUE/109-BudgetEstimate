@@ -1,0 +1,14 @@
+import { Router } from 'express';
+import { crudRoutes } from './helpers.js';
+
+const fields = [
+  'id', 'code', 'name_cn', 'category', 'brand', 'model', 'specification',
+  'note', 'supplier', 'sourcing_type', 'unit_cost', 'design_hours',
+  'assembly_hours', 'has_warranty', 'unit', 'review_status', 'version',
+  'tags', 'change_log', 'created_at', 'updated_at',
+];
+
+export default crudRoutes('components', fields, {
+  searchFields: ['code', 'name_cn', 'brand', 'model'],
+  orderBy: 'updated_at DESC',
+});

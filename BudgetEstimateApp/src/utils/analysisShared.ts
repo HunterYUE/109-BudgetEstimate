@@ -1,0 +1,70 @@
+import type { Group } from '../types';
+import { projectService } from '../services/projectService';
+import { api } from './api';
+
+/** 格式化数字为千单位显示（如 1234 → "1K"） */
+export const fmtK = (v: number) => Math.round(v / 1000).toLocaleString() + 'K';
+
+/** 财年选项列表 */
+export const FY_OPTIONS = ['FY2425', 'FY2526', 'FY2627'] as const;
+
+// 缓存已加载的项目数据，避免重复请求
+const projectCache = new Map<string, { groups: Group[]; version?: { warrantyRate: number; riskRate: number } }>();
+
+/**
+ * 预加载报价数据到缓存（供同步 loadQuotationGroups 使用）
+ * 流程：报价ID → 查 quotation → 取 project_id → 加载项目完整数据
+ */
+export async function preloadQuotationGroups(quotationId: string | undefined | null): Promise<void> {
+  if (!quotationId) return;
+  if (projectCache.has(quotationId)) return;
+  try {
+    // 1. 先查报价获取 project_id + version_no（api.get 自动注入 token、toCamel、错误处理）
+    const quote = await api.get<Record<string, unknown>>(`/quotations/${quotationId}`);
+    const projectId = quote.projectId as string | undefined;
+    if (!projectId) throw new Error('报价缺少 projectId');
+    const quoteVerNo = quote.versionNo || '';
+
+    // 2. 再加载项目完整数据
+    const project = await projectService.getFull(projectId);
+    // ⚠️ 按版本过滤组数据，避免加载全量组导致成本对比表重复显示多条设备组
+    const version = project.versions?.find((v: any) => v.versionNo === quoteVerNo) || project.versions?.[0];
+    const versionId = version?.id || '';
+    const versionGroups = (project.groups || []).filter((g: any) =>
+      g.versionId === versionId
+    );
+    // 版本过滤未命中时回退全量组（兼容旧数据），避免成本对比表空白
+    const finalGroups = versionGroups.length > 0 ? versionGroups : (project.groups || []);
+    projectCache.set(quotationId, {
+      groups: finalGroups.map((g: any) => ({
+        ...g,
+        items: (g.items || []).map((i: any) => ({ ...i })),
+      })),
+      version: version ? {
+        warrantyRate: version.warrantyRate ?? 0,
+        riskRate: version.riskRate ?? 0,
+      } : undefined,
+    });
+  } catch {
+    projectCache.set(quotationId, { groups: [], version: undefined });
+  }
+}
+
+/**
+ * 从缓存同步获取报价编制数据（保持与原有同步接口兼容）
+ */
+export function loadQuotationGroups(quotationId: string | undefined | null): {
+  groups: Group[];
+  version?: { warrantyRate: number; riskRate: number };
+} {
+  if (!quotationId) return { groups: [], version: undefined };
+  return projectCache.get(quotationId) || { groups: [], version: undefined };
+}
+
+/** 批量预加载 */
+export async function preloadQuotationGroupsBatch(ids: string[]): Promise<void> {
+  await Promise.all(ids.map(id => preloadQuotationGroups(id)));
+}
+
+/** 清除项目缓存（用于重新加载） */
+export function clearQuotationCache() { projectCache.clear(); }
