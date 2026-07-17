@@ -86,7 +86,7 @@ const GroupCard: React.FC<Props> = ({ group, onGroupChange, onAddItem, onDeleteI
             overflowCount={999999999}
           />
           <div style={{ flex: 1 }} />
-          {!group.isFixed && onDeleteGroup && (
+          {!group.isFixed && onDeleteGroup && editable && (
             <Tooltip title="删除组">
               <Button size="small" type="text" danger icon={<DeleteOutlined />} onClick={() => onDeleteGroup(group.id)} />
             </Tooltip>

@@ -143,12 +143,12 @@ const PieChart: React.FC<{
   const H = pieSize + pad * 2;
   const cx = W / 2, cy = H / 2, r = pieSize / 2;
   type Slice = { start: number; end: number; label: string; value: number; color: string };
-  let cur = 0;
-  const slices: Slice[] = items.map(i => {
+  const slices: Slice[] = [];
+  for (let i = 0, cur = 0; i < items.length; i++) {
     const start = (cur / total) * 360;
-    cur += i.value;
-    return { start, end: (cur / total) * 360, ...i };
-  });
+    cur += items[i].value;
+    slices.push({ start, end: (cur / total) * 360, ...items[i] });
+  }
   const polar = (angle: number, radius: number) => ({
     x: cx + radius * Math.cos((angle - 90) * Math.PI / 180),
     y: cy + radius * Math.sin((angle - 90) * Math.PI / 180),

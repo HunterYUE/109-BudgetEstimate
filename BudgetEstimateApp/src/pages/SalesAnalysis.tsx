@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Card, Spin, message } from 'antd';
 import type { SalesOpportunity, QuotationSummary, DeliveryProject } from '../types';
 import { parseReasons, REASON_TAXONOMY } from '../reasonTaxonomy';

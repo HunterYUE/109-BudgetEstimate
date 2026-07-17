@@ -8,6 +8,7 @@ const fields = [
   'sales_no', 'client_name', 'project_name', 'amount', 'total_cost',
   'profit_rate', 'gp3', 'tax_rate', 'submitter', 'submit_time', 'status',
   'version_no', 'total_accounting_price', 'discounted_price',
+  'discount_rate', 'gp3_amount',
   'created_at', 'updated_at',
 ];
 

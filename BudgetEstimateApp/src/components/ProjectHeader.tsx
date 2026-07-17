@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { Modal, App } from 'antd';
+import { Modal } from 'antd';
 import type { Project } from '../types';
 import { COLORS } from '../styles/colors';
 
@@ -67,7 +67,6 @@ const DeliveryPeriodInput: React.FC<{ value: string; onChange: (v: string) => vo
 };
 
 const ProjectHeader: React.FC<Props> = ({ project, onUpdate, versionBump, onVersionBumpChange, readOnly }) => {
-  const { message } = App.useApp();
   const v = project.currentVersion;
   const pct = parsePayment(project.paymentTerms);
 

@@ -2,7 +2,7 @@ import React, { useState, useMemo, useCallback, useEffect } from 'react';
 
 import { useNavigate } from 'react-router-dom';
 
-import { Button, Table, Tag, Modal, message, Dropdown, Switch } from 'antd';
+import { Button, Table, Tag, Modal, message, Dropdown, Switch, Tooltip } from 'antd';
 
 import { PlusOutlined, EditOutlined, FileAddOutlined, CheckCircleOutlined, CloseCircleOutlined, PauseCircleOutlined, PlayCircleOutlined, CheckOutlined, CloseOutlined } from '@ant-design/icons';
 
@@ -214,8 +214,8 @@ const SalesOpportunityList: React.FC = () => {
     const cfg = REASON_TAXONOMY[action];
     const defaultGroup = cfg.groups[0]?.groupLabel || '';
     const competitors = (opp.competitor || '').split(/[、，]/).map(s => s.trim()).filter(Boolean);
-    const winner = competitors.length === 1 ? competitors[0] : '';
-    setReasonModal({ open: true, opp, action, selectedGroup: defaultGroup, selections: {}, comment: '', winner, dropdownOpen: false, pendingStage });
+    const winner = opp.winner || (competitors.length === 1 ? competitors[0] : '');
+    setReasonModal({ open: true, opp, action, selectedGroup: defaultGroup, selections: {}, comment: opp.notes || '', winner, dropdownOpen: false, pendingStage });
   };
 
   const handleReasonOk = () => {
@@ -230,7 +230,7 @@ const SalesOpportunityList: React.FC = () => {
       updatedAt: now(),
     };
     if (action === 'loss' && reasonModal.winner) {
-      updates.competitor = reasonModal.winner;
+      updates.winner = reasonModal.winner;
     }
     // 如果原因弹窗附加了阶段变更（如"中标"→赢），同步更新 stage
     if (reasonModal.pendingStage) {
@@ -261,13 +261,15 @@ const SalesOpportunityList: React.FC = () => {
     });
   };
 
-  const handleStatusAction = useCallback((opp: SalesOpportunity, action: 'win' | 'loss' | 'freeze') => {
-    if (action === 'freeze' && opp.status === '冻结') {
+  const handleStatusAction = useCallback((opp: SalesOpportunity, action: 'win' | 'loss' | 'freeze' | 'resume') => {
+    if (action === 'resume') {
+      // 恢复到过程中：清除原因，无需弹窗
       setOpportunities(prev => prev.map(o => o.id === opp.id ? { ...o, status: '过程中', reasons: '', updatedAt: now() } : o));
-      opportunityService.update(opp.id, { status: '过程中', reasons: '', updatedAt: now() }).catch(e => console.warn('[Unfreeze] 保存失败', e));
+      opportunityService.update(opp.id, { status: '过程中', reasons: '', updatedAt: now() }).catch(e => console.warn('[Resume] 保存失败', e));
       msg.success('已恢复为过程中');
       return;
     }
+    // 赢/输/冻结：清除旧原因，打开原因弹窗
     openReasonModal(opp, action);
   }, [msg]);
 
@@ -606,35 +608,45 @@ const SalesOpportunityList: React.FC = () => {
       filterDropdownProps: { minOverlayWidthMatchTrigger: false },
       onFilter: (value: string, record: SalesOpportunity) => value === '__all__' || record.status === value,
       render: (v: string, rec: SalesOpportunity) => {
-        if (rec.terminated) return <Tag color={COLORS.textLight} style={{ margin: 0, fontSize: 12 }}>{v}</Tag>;
-        const STATUS_ACTIONS: Record<string, { icon: React.ReactNode; action: string; label: string }[]> = {
-          '过程中': [
-            { icon: <CheckCircleOutlined />, action: 'win', label: '赢单' },
-            { icon: <CloseCircleOutlined />, action: 'loss', label: '输单' },
-            { icon: <PauseCircleOutlined />, action: 'freeze', label: '冻结' },
-          ],
-          '冻结': [
-            { icon: <PlayCircleOutlined />, action: 'freeze', label: '恢复' },
-          ],
-        };
-        const actions = STATUS_ACTIONS[v] || [];
-        if (actions.length === 0) {
-          return <Tag color={statusColors[v] || COLORS.textLight} style={{ margin: 0, fontSize: 12 }}>{v}</Tag>;
-        }
+        if (rec.terminated) return (
+          <Tooltip title={(() => {
+            if (!rec.reasons && !rec.winner) return undefined;
+            const parts: string[] = [];
+            if (rec.reasons) parts.push(rec.reasons);
+            if (v === '输' && rec.winner) parts.push(rec.winner);
+            return parts.join(' | ') || undefined;
+          })()}>
+            <Tag color={COLORS.textLight} style={{ margin: 0, fontSize: 12 }}>{v}</Tag>
+          </Tooltip>
+        );
+        // ⚠️ 所有状态显示全部可用操作，排除当前状态自身
+        const ALL_STATUS_ACTIONS: { icon: React.ReactNode; action: string; label: string; target: string; colorKey: string }[] = [
+          { icon: <CheckCircleOutlined />, action: 'win', label: '赢单', target: '赢', colorKey: '赢' },
+          { icon: <CloseCircleOutlined />, action: 'loss', label: '输单', target: '输', colorKey: '输' },
+          { icon: <PauseCircleOutlined />, action: 'freeze', label: '冻结', target: '冻结', colorKey: '冻结' },
+          { icon: <PlayCircleOutlined />, action: 'resume', label: '恢复进行', target: '过程中', colorKey: '过程中' },
+        ];
+        const actions = ALL_STATUS_ACTIONS.filter(a => a.target !== v);
         return (
           <Dropdown menu={{
             items: actions.map(a => ({
               key: a.action,
-              label: <div style={{ fontSize: 18, color: statusColors[a.action === 'freeze' && v === '冻结' ? '过程中' : a.action === 'win' ? '赢' : a.action === 'loss' ? '输' : '过程中'] || COLORS.textLight, textAlign: 'center', padding: '2px 4px' }}>{a.icon}</div>,
-              onClick: () => a.action === 'win' ? handleStatusAction(rec, 'win')
-                : a.action === 'loss' ? handleStatusAction(rec, 'loss')
-                : handleStatusAction(rec, 'freeze'),
+              label: <div style={{ fontSize: 18, color: statusColors[a.colorKey] || COLORS.textLight, textAlign: 'center', padding: '2px 4px' }}>{a.icon}</div>,
+              onClick: () => handleStatusAction(rec, a.action as 'win' | 'loss' | 'freeze' | 'resume'),
             })),
-                    }} trigger={['click']}>
-            <Tag color={statusColors[v] || COLORS.textLight}
-              style={{ cursor: 'pointer', margin: 0, fontSize: 12 }}>
-              {v} <span style={{ fontSize: 10, marginLeft: 2 }}>▼</span>
-            </Tag>
+          }} trigger={['click']}>
+            <Tooltip title={(() => {
+              if (!rec.reasons && !rec.winner) return undefined;
+              const parts: string[] = [];
+              if (rec.reasons) parts.push(rec.reasons);
+              if (v === '输' && rec.winner) parts.push(rec.winner);
+              return parts.join(' | ') || undefined;
+            })()}>
+              <Tag color={statusColors[v] || COLORS.textLight}
+                style={{ cursor: 'pointer', margin: 0, fontSize: 12 }}>
+                {v} <span style={{ fontSize: 10, marginLeft: 2 }}>▼</span>
+              </Tag>
+            </Tooltip>
           </Dropdown>
         );
         }

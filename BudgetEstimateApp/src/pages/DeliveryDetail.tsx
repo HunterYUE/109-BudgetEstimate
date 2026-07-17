@@ -44,7 +44,7 @@ const DeliveryDetail: React.FC = () => {
   const [hasChanges, setHasChanges] = useState(false);
   const [quotationProject, setQuotationProject] = useState<{ groups: Group[]; versions?: ProjectVersion[]; currentVersion?: ProjectVersion; [k: string]: unknown } | null>(null);
   const projectRef = useRef<DeliveryProject | null>(null);
-  projectRef.current = project;
+  useEffect(() => { projectRef.current = project; }, [project]);
   const baselinesRef = useRef<Record<string, string>>({});
 
   useEffect(() => {

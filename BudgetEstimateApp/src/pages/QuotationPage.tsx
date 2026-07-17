@@ -166,22 +166,30 @@ const QuotationPage: React.FC = () => {
           const quotation = await quotationService.get(quoteId);
           const pid = (quotation as any).projectId || quotation.projectId;
           if (!pid) throw new Error('no project_id');
-          setQuotationLocked((quotation as any).locked === true);
           oppIdRef.current = (quotation as any).opportunityId || (quotation as any).opportunity_id || null;
-          // 检查关联机会是否为 中标+赢（已签单），是则全部版本锁定
-          if (oppIdRef.current) {
-            try {
-              const checkOpp = await opportunityService.get(oppIdRef.current);
-              if (checkOpp.stage === '中标' && checkOpp.status === '赢') setQuotationLocked(true);
-            } catch { console.warn("[Caught]"); }
-          }
           const data = await projectService.getFull(pid);
           if (!cancelled) {
             // 取与报价版本号匹配的版本（若无匹配则用最新版）
             const quoteVerNo = (quotation as any).versionNo || (quotation as any).version_no || '';
             const lv = data.versions?.find(v => v.versionNo === quoteVerNo) || data.versions?.[0];
-            if (lv?.reviewStatus === 'pending') setQuotationLocked(true);
-            if (lv?.reviewStatus === 'rejected') setQuotationLocked(false);
+            // ⚠️ 锁定规则：先根据 DB 字段和版本状态判断，最后检查机会签单状态（全覆盖）
+            let shouldLock = (quotation as any).locked === true;
+            // 版本状态规则：待审批锁定，审批通过/驳回后解锁
+            if (lv?.reviewStatus === 'pending') shouldLock = true;
+            if (lv?.reviewStatus === 'approved') shouldLock = false;
+            if (lv?.reviewStatus === 'rejected') shouldLock = false;
+            // ⚠️ 报价表自身状态兜底（兼容历史数据中版本状态未同步的情况）
+            if ((quotation as any).status === 'approved') shouldLock = false;
+            if ((quotation as any).status === 'rejected') shouldLock = false;
+            // 已签单（中标+赢）强制锁定，覆盖版本规则
+            if (oppIdRef.current) {
+              try {
+                const checkOpp = await opportunityService.get(oppIdRef.current);
+                if (checkOpp.stage === '中标' && checkOpp.status === '赢') shouldLock = true;
+                if (checkOpp.terminated) shouldLock = true;
+              } catch { console.warn("[Caught]"); }
+            }
+            setQuotationLocked(shouldLock);
             // ⚠️ 按版本过滤组数据；无匹配时检查是否为无版本隔离的旧数据（此时回退全量组），
             // 否则视为新版本尚无组，保持空（避免加载全量组后保存导致版本内组重复）
             let versionGroups = data.groups?.filter((g: any) => g.versionId === lv?.id) || [];
@@ -202,6 +210,7 @@ const QuotationPage: React.FC = () => {
             try {
               const opp = await opportunityService.get(oppId);
               if (opp.stage === '中标' && opp.status === '赢') { setQuotationLocked(true); }
+              if (opp.terminated) { setQuotationLocked(true); }
               const cn = opp.clientName || opp.client_name || '';
               // 从客户列表查找客户编号
               let cc = '';

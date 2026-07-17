@@ -37,7 +37,8 @@ export function useApi<T>(fetcher: Fetcher<T>, deps: React.DependencyList = []) 
           setState({ data: null, loading: false, error: err instanceof Error ? err.message : String(err) });
         }
       });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // 动态 deps 由调用者控制，禁用 exhaustive-deps 检查
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react-hooks/use-memo
   }, deps);
 
   useEffect(() => { execute(); }, [execute]);

@@ -4,6 +4,7 @@ import { Card, Tag, Button, Modal, Input, message, Empty } from 'antd';
 import { CheckCircleOutlined, CloseCircleOutlined, EyeOutlined, CheckOutlined, CloseOutlined } from '@ant-design/icons';
 import { approvalService } from '../services/approvalService';
 import { deliveryService } from '../services/deliveryService';
+import { projectService } from '../services/projectService';
 import { quotationService } from '../services/quotationService';
 import { opportunityService } from '../services/opportunityService';
 import { formatMoney } from '../utils/calculations';
@@ -113,7 +114,17 @@ const ApprovalList: React.FC = () => {
       setRequests(prev => prev.map(r => r.id === modal.req.id ? { ...r, status: newStatus } : r));
       const cascadeUpdates: Promise<unknown>[] = [];
       if (modal.req.approvalType === 'quotation' && modal.req.quotationId) {
-        cascadeUpdates.push(quotationService.update(modal.req.quotationId, { status: newStatus, locked: false }));
+        cascadeUpdates.push(
+          (async () => {
+            // 更新报价表的 locked 和 status
+            const updated = await quotationService.update(modal.req.quotationId, { status: newStatus, locked: false });
+            // ⚠️ 同步更新项目版本的审核状态（否则 QuotationPage 加载时仍视为 pending 而锁定）
+            const pid = (updated as any).projectId;
+            if (pid && modal.req.versionNo) {
+              await projectService.updateVersionStatus(pid, modal.req.versionNo, newStatus);
+            }
+          })(),
+        );
       }
       if (modal.req.deliveryId) {
         const appraisal = { reviewer: user?.displayName || '审批人', action: modal.action, comment: approvalComment, createdAt: new Date().toISOString() };

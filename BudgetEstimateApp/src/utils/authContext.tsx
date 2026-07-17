@@ -23,7 +23,6 @@ const AuthContext = createContext<AuthState | null>(null);
 const TOKEN_KEY = 'budget_token';
 /** 登录时间戳，用于判断 token 是否即将过期（后端 JWT 有效期 24h） */
 const TOKEN_TIME_KEY = 'budget_token_login_time';
-const JWT_LIFETIME_MS = 24 * 60 * 60 * 1000; // 后端 JWT_EXPIRES_IN = '24h'
 const PROACTIVE_REFRESH_MS = 12 * 60 * 60 * 1000; // 超过 12h 主动刷新
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
