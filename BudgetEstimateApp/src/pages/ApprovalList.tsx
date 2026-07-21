@@ -109,9 +109,15 @@ const ApprovalList: React.FC = () => {
     }
     try {
       const newStatus = modal.action === 'approved' ? 'approved' : 'rejected';
-      // 直接更新审批请求状态（替代原来的 addRecord 审批记录）
+      // 更新审批请求状态 + 写入审批记录（含审批人、原因、时间）
       await approvalService.update(modal.req.id, { status: newStatus });
-      setRequests(prev => prev.map(r => r.id === modal.req.id ? { ...r, status: newStatus } : r));
+      await approvalService.createRecord(modal.req.id, {
+        reviewer: user?.displayName || '审批人',
+        action: modal.action,
+        comment: approvalComment,
+      }).catch(() => {});
+      // 重新加载列表确保 latestRecord 数据最新
+      approvalService.list().then(res => setRequests(res)).catch(() => {});
       const cascadeUpdates: Promise<unknown>[] = [];
       if (modal.req.approvalType === 'quotation' && modal.req.quotationId) {
         cascadeUpdates.push(
@@ -131,8 +137,13 @@ const ApprovalList: React.FC = () => {
         if (modal.req.approvalType === 'plan') cascadeUpdates.push(deliveryService.update(modal.req.deliveryId, { planStatus: newStatus, planApproval: appraisal }));
         else if (modal.req.approvalType === 'cost') cascadeUpdates.push(deliveryService.update(modal.req.deliveryId, { costStatus: newStatus, costApproval: appraisal }));
       }
-      if (modal.req.approvalType === 'promote' && modal.action === 'approved' && modal.req.opportunityId) {
-        cascadeUpdates.push(opportunityService.update(modal.req.opportunityId, { stage: '机会' }));
+      if (modal.req.approvalType === 'promote' && modal.req.opportunityId) {
+        cascadeUpdates.push(
+          opportunityService.update(modal.req.opportunityId, {
+            promoteLocked: false,
+            stage: modal.action === 'approved' ? '机会' : undefined,
+          })
+        );
       }
       if (cascadeUpdates.length > 0) await Promise.all(cascadeUpdates);
       if (modal.action === 'approved') msg.success('已通过');
@@ -285,6 +296,11 @@ const ApprovalList: React.FC = () => {
                   <div style={{ marginTop: 4, fontSize: 12, color: COLORS.textLight }}>
                     {req.submitter}@{formatBeijing(req.submitTime)}
                   </div>
+                  {req.latestRecord && (
+                    <div style={{ marginTop: 4, fontSize: 12, color: COLORS.textLight, lineHeight: 1.6 }}>
+                      {req.latestRecord.comment}{req.latestRecord.createdAt ? '@' + formatBeijing(req.latestRecord.createdAt) : ''}
+                    </div>
+                  )}
                 </div>
 
                 <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginLeft: 16, flexShrink: 0 }}>

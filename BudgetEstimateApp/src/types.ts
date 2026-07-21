@@ -85,6 +85,7 @@ export interface ProjectVersion {
   discountedPrice: number;
   discountRate: number;
   gp3ProfitRate: number;
+  gp3Amount: number;
   reviewStatus: ReviewStatus;
 }
 
@@ -132,6 +133,8 @@ export interface SalesOpportunity {
   hasQuote?: boolean;
   /** 引用报价编制表中的折后金额（后端返回，最新报价的 amount） */
   quotationAmount?: number;
+  /** 报价对应的税率（后端返回，用于含税→未税转换） */
+  taxRate?: number;
   terminated?: boolean;
   promoteLocked?: boolean;
   blueTable?: BlueTable;       // 销售蓝表数据（可选）
@@ -150,6 +153,7 @@ export interface QuotationSummary {
   profitRate: number;
   updatedAt: string;
   createdAt?: string;
+  projectId?: string;
   opportunityId?: string;
   locked?: boolean;
 }
@@ -199,6 +203,8 @@ export interface ApprovalRequest {
   submitter: string;
   submitTime: string;
   status: ReviewStatus;
+  /** 最新审批记录（后端列表查询返回） */
+  latestRecord?: ReviewRecord;
   /** @deprecated 不再使用，保留向后兼容 */
   records?: ReviewRecord[];
 }

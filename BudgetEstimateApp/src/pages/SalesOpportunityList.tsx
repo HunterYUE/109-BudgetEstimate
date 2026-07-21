@@ -12,6 +12,8 @@ import { opportunityService } from '../services/opportunityService';
 import { clientService } from '../services/clientService';
 import { deliveryService } from '../services/deliveryService';
 import { approvalService } from '../services/approvalService';
+import { quotationService } from '../services/quotationService';
+import { projectService } from '../services/projectService';
 import { REASON_TAXONOMY, formatReasons } from '../reasonTaxonomy';
 import { parseFY, FYSelector } from '../utils/fiscalYear';
 import { COLORS } from '../styles/constants';
@@ -19,6 +21,7 @@ import { clearCache } from '../utils/api';
 import { calcBlueTableWinRate } from '../utils/blueTableCalculation';
 import { NODE_NAMES } from '../utils/constants';
 import { formatBeijing } from '../utils/timeFormat';
+import { useAuth } from '../utils/authContext';
 
 
 
@@ -54,15 +57,15 @@ const getWinRateColumn = (tab: string, opp: SalesOpportunity | null, setOpp: (o:
       return record.winRate >= range[0] && record.winRate <= range[1];
     },
     render: (v: number, rec: SalesOpportunity) => {
-      const isReadOnly = rec.terminated;
+      const isReadOnly = rec.terminated || rec.promoteLocked;
       const hasBlueTable = !!rec.blueTable;
-      if (!hasBlueTable && !isReadOnly) {
-        return <span style={{ cursor: 'pointer', color: COLORS.chartGray, fontWeight: 600, fontSize: 13 }}
-          onClick={() => { setOpp(rec); setOpen(true); }} title="点击填写销售蓝表">{v}%</span>;
-      }
       if (isReadOnly) return <span style={{ cursor: 'pointer', color: COLORS.textLight, fontWeight: 600, fontSize: 13 }}
         onClick={() => { setOpp(rec); setOpen(true); }}
         title={hasBlueTable ? `蓝表评估：${v}%（点击查看）` : '点击查看'}>{v}%</span>;
+      if (!hasBlueTable) {
+        return <span style={{ cursor: 'pointer', color: COLORS.chartGray, fontWeight: 600, fontSize: 13 }}
+          onClick={() => { setOpp(rec); setOpen(true); }} title="点击填写销售蓝表">{v}%</span>;
+      }
       return <span style={{ cursor: 'pointer', color: COLORS.primary, fontWeight: 600, fontSize: 13 }}
         onClick={() => { setOpp(rec); setOpen(true); }}
         title={`蓝表评估：${v}%（点击编辑）`}>{v}%</span>;
@@ -78,6 +81,7 @@ const CELL_INPUT: React.CSSProperties = {
 const OPP_STAGES = ['机会', '投标', '议价', '中标'];
 
 const now = () => new Date().toISOString().slice(0, 10);
+const nowISO = () => new Date().toISOString();
 
 // SalesOpportunity state is local; SalesAnalysis reads from mockOpportunities directly
 
@@ -86,6 +90,7 @@ const now = () => new Date().toISOString().slice(0, 10);
 const SalesOpportunityList: React.FC = () => {
 
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   const [msg, ctx] = message.useMessage();
 
@@ -169,12 +174,14 @@ const SalesOpportunityList: React.FC = () => {
 
 
   const touch = useCallback((id: string, updates: Partial<SalesOpportunity>) => {
-    setOpportunities(prev => prev.map(o => o.id === id && !o.terminated ? { ...o, ...updates, updatedAt: now() } : o));
-    opportunityService.update(id, { ...updates, updatedAt: now() }).catch(e => {
+    const opp = opportunities.find(o => o.id === id);
+    if (opp?.promoteLocked || opp?.terminated) return;
+    setOpportunities(prev => prev.map(o => o.id === id ? { ...o, ...updates, updatedAt: nowISO() } : o));
+    opportunityService.update(id, { ...updates, updatedAt: nowISO() }).catch(e => {
       console.warn('[Touch] 保存失败', e);
       msg.warning('部分修改保存失败，请刷新后检查');
     });
-  }, [msg]);
+  }, [msg, opportunities]);
 
 
 
@@ -214,7 +221,7 @@ const SalesOpportunityList: React.FC = () => {
     const cfg = REASON_TAXONOMY[action];
     const defaultGroup = cfg.groups[0]?.groupLabel || '';
     const competitors = (opp.competitor || '').split(/[、，]/).map(s => s.trim()).filter(Boolean);
-    const winner = opp.winner || (competitors.length === 1 ? competitors[0] : '');
+    const winner = opp.winner || competitors[0] || '';
     setReasonModal({ open: true, opp, action, selectedGroup: defaultGroup, selections: {}, comment: opp.notes || '', winner, dropdownOpen: false, pendingStage });
   };
 
@@ -227,7 +234,7 @@ const SalesOpportunityList: React.FC = () => {
       status: action === 'win' ? '赢' : action === 'loss' ? '输' : '冻结',
       reasons: reasonsStr,
       notes: reasonModal.comment || '',
-      updatedAt: now(),
+      updatedAt: nowISO(),
     };
     if (action === 'loss' && reasonModal.winner) {
       updates.winner = reasonModal.winner;
@@ -264,8 +271,8 @@ const SalesOpportunityList: React.FC = () => {
   const handleStatusAction = useCallback((opp: SalesOpportunity, action: 'win' | 'loss' | 'freeze' | 'resume') => {
     if (action === 'resume') {
       // 恢复到过程中：清除原因，无需弹窗
-      setOpportunities(prev => prev.map(o => o.id === opp.id ? { ...o, status: '过程中', reasons: '', updatedAt: now() } : o));
-      opportunityService.update(opp.id, { status: '过程中', reasons: '', updatedAt: now() }).catch(e => console.warn('[Resume] 保存失败', e));
+      setOpportunities(prev => prev.map(o => o.id === opp.id ? { ...o, status: '过程中', reasons: '', updatedAt: nowISO() } : o));
+      opportunityService.update(opp.id, { status: '过程中', reasons: '', updatedAt: nowISO() }).catch(e => console.warn('[Resume] 保存失败', e));
       msg.success('已恢复为过程中');
       return;
     }
@@ -286,7 +293,7 @@ const SalesOpportunityList: React.FC = () => {
       const updates: Partial<SalesOpportunity> = {
         blueTable,
         winRate,
-        updatedAt: now(),
+        updatedAt: nowISO(),
       };
       setOpportunities(prev => prev.map(o => o.id === blueTableOpp.id ? { ...o, ...updates } : o));
       clearCache('/opportunities');
@@ -306,6 +313,7 @@ const SalesOpportunityList: React.FC = () => {
   const confirmDeliver = useCallback(async () => {
     const opp = deliveryOpp;
     if (!opp) return;
+    if (opp.terminated) { msg.warning('该项目已转交付'); setDeliveryOpp(null); return; }
     const d = now();
 
     // 取机会关联的报价ID
@@ -344,7 +352,7 @@ const SalesOpportunityList: React.FC = () => {
       // 2. 保存交付节点
       await deliveryService.saveNodes(newDel.id, nodes);
       // 3. 更新机会：标记为已转交付
-      await opportunityService.update(opp.id, { terminated: true, updatedAt: now() });
+      await opportunityService.update(opp.id, { terminated: true, updatedAt: nowISO() });
       clearCache('/opportunities');
       setOpportunities(prev => prev.filter(o => o.id !== opp.id));
       setDeliveryOpp(null);
@@ -373,19 +381,88 @@ const SalesOpportunityList: React.FC = () => {
     if (!promoteOpp) return;
     if (promoteOpp.targetStage === '机会') {
       try {
-        // 线索→机会：只传 promote 相关字段，避免无关财务字段污染后端数据
+        const opp = promoteOpp.opp;
+        // 从关联报价获取完整财务数据
+        let versionNo = 'V1.0';
+        let totalAccountingPrice = 0;
+        let discountedPrice = 0;
+        let discountRate = 0;
+        let gp3 = 0;
+        let gp3Amount = 0;
+        let totalCost = 0;
+        let profitRate = 0;
+        let taxRate = 0.13;
+        let amount = opp.amount || 0;
+        let foundApproved = false;
+
+        if (opp.quotationId) {
+          try {
+            const quotation = await quotationService.get(opp.quotationId);
+            const qt = quotation as any;
+            versionNo = qt.versionNo || 'V1.0';
+            // 通过项目ID获取版本财务数据
+            if (qt.projectId) {
+              const projectData = await projectService.getFull(qt.projectId);
+              // ⚠️ 只采用已审批版本数据，无已审批版本时阻止提交
+              const ver = projectData.versions?.find(v => v.versionNo === qt.versionNo && v.reviewStatus === 'approved')
+                || projectData.versions?.find(v => v.reviewStatus === 'approved');
+              if (ver) {
+                foundApproved = true;
+                versionNo = ver.versionNo;
+                // ⚠️ 所有财务数据一律从数据库已存储的值直接读取，不重新计算
+                totalAccountingPrice = ver.totalAccountingPrice || 0;
+                discountedPrice = ver.discountedPrice || 0;
+                discountRate = ver.discountRate || 0;
+                totalCost = ver.totalCost || 0;
+                taxRate = ver.taxRate || 0.13;
+                amount = ver.discountedPrice || amount;
+                gp3 = ver.gp3ProfitRate || 0;
+                // ⚠️ 优先读存储的 gp3Amount，为 0 时从汇总值回退计算（兼容旧数据）
+                gp3Amount = ver.gp3Amount || Math.round((ver.discountedPrice || 0) - Math.round((ver.totalCost || 0) * (1 + (ver.taxRate || 0.13))));
+                profitRate = Math.round((ver.gp3ProfitRate || 0) * 10000) / 100;
+              } else {
+                discountedPrice = qt.amount || 0;
+                amount = qt.amount || amount;
+              }
+            }
+          } catch (e) {
+            console.warn('[Promote] 获取报价数据失败', e);
+          }
+        }
+
+        // 无已审批版本时阻止提交
+        if (!foundApproved) { msg.error('请先完成报价编制审批，再提交转机会审批'); setPromoteOpp(null); return; }
+
+        // 先提交审批请求
         await approvalService.create({
           approvalType: 'promote',
-          quotationId: '',
-          opportunityId: promoteOpp.opp.id,
-          salesNo: promoteOpp.opp.salesNo,
-          clientName: promoteOpp.opp.clientName,
-          projectName: promoteOpp.opp.projectName,
-          amount: promoteOpp.opp.amount,
-          submitter: promoteOpp.opp.salesman || '销售员',
-          submitTime: now(),
+          quotationId: opp.quotationId || '',
+          opportunityId: opp.id,
+          versionNo,
+          salesNo: opp.salesNo,
+          clientName: opp.clientName,
+          projectName: opp.projectName,
+          amount,
+          totalCost,
+          profitRate,
+          gp3,
+          taxRate,
+          totalAccountingPrice,
+          discountedPrice,
+          discountRate,
+          gp3Amount,
+          submitter: user?.displayName || opp.salesman || '销售员',
+          submitTime: nowISO(),
           status: 'pending',
         });
+
+        // 审批提交成功后锁定机会
+        await opportunityService.update(opp.id, { promoteLocked: true, updatedAt: nowISO() });
+        // 更新本地状态（立即生效，无需刷新页面）
+        setOpportunities(prev => prev.map(o =>
+          o.id === opp.id ? { ...o, promoteLocked: true } : o
+        ));
+
         clearCache('/approvals');
         setPromoteOpp(null);
         msg.success('已提交审批，待总监审批');
@@ -398,7 +475,7 @@ const SalesOpportunityList: React.FC = () => {
       setPromoteOpp(null);
       msg.success('已转线索');
     }
-  }, [promoteOpp, msg, touch]);
+  }, [promoteOpp, msg, touch, user]);
 
   const handleConfirmTerminate = useCallback((opp: SalesOpportunity) => {
     setTerminateOpp(opp);
@@ -408,9 +485,9 @@ const SalesOpportunityList: React.FC = () => {
     const opp = terminateOpp;
     if (!opp) return;
     setOpportunities(prev => prev.map(o =>
-      o.id === opp.id ? { ...o, terminated: true, updatedAt: now() } : o
+      o.id === opp.id ? { ...o, terminated: true, updatedAt: nowISO() } : o
     ));
-    opportunityService.update(opp.id, { terminated: true, updatedAt: now() }).catch(e => console.warn('[Terminate] 保存失败', e));
+    opportunityService.update(opp.id, { terminated: true, updatedAt: nowISO() }).catch(e => console.warn('[Terminate] 保存失败', e));
     setTerminateOpp(null);
     msg.success('项目已终止');
   }, [terminateOpp, msg]);
@@ -516,7 +593,7 @@ const SalesOpportunityList: React.FC = () => {
       render: (v: string, rec: SalesOpportunity) =>
         <span style={{ fontSize: 13, color: rec.terminated ? COLORS.textLight : COLORS.textDark }}>{v || '—'}</span> },
     { title: '说明', dataIndex: 'notes', width: 295,
-      render: (v: string, rec: SalesOpportunity) => rec.terminated
+      render: (v: string, rec: SalesOpportunity) => (rec.terminated || rec.promoteLocked)
         ? <span style={{ fontSize: 13, color: COLORS.textLight }}>{v || '—'}</span>
         : (
         <input type="text" defaultValue={v || ''}
@@ -528,7 +605,7 @@ const SalesOpportunityList: React.FC = () => {
     { title: '金额', dataIndex: 'amount', width: 110, align: 'right' as const,
       render: (v: number, rec: SalesOpportunity) => {
         const hasQuote = !!rec.quotationId;
-        const isReadOnly = hasQuote || rec.terminated;
+        const isReadOnly = hasQuote || rec.terminated || rec.promoteLocked;
         const displayVal = hasQuote ? (rec.quotationAmount ?? v) : v;
         if (isReadOnly) {
           return <span style={{ color: COLORS.textLight, fontWeight: 600, fontSize: 13 }}>¥{Math.round(displayVal).toLocaleString()}</span>;
@@ -555,7 +632,7 @@ const SalesOpportunityList: React.FC = () => {
       filterDropdownProps: { minOverlayWidthMatchTrigger: false },
       onFilter: (value: string, record: SalesOpportunity) => value === '__all__' || record.stage === value,
       render: (v: string, rec: SalesOpportunity) => {
-        if (rec.terminated) return <Tag color={COLORS.textLight} style={{ cursor: 'default', margin: 0 }}>{v}</Tag>;
+        if (rec.terminated || rec.promoteLocked) return <Tag color={COLORS.textLight} style={{ cursor: 'default', margin: 0 }}>{v}</Tag>;
         // 信息/线索 tab 只读显示，通过操作列按钮晋级
         if (tabFilter === 'info' || tabFilter === 'lead') {
           return <Tag color={stageColors[v] || COLORS.textLight} style={{ margin: 0 }}>{v}</Tag>;
@@ -567,7 +644,7 @@ const SalesOpportunityList: React.FC = () => {
               key: s,
               label: <span style={{ fontSize: 13, color: s === v ? COLORS.primary : COLORS.textDark }}>{s}</span>,
               onClick: s !== v ? () => {
-                const updates = { stage: s, updatedAt: now() };
+                const updates = { stage: s, updatedAt: nowISO() };
                 touch(rec.id, updates);
               } : undefined,
             })),
@@ -583,7 +660,7 @@ const SalesOpportunityList: React.FC = () => {
     ...getWinRateColumn(tabFilter, blueTableOpp, setBlueTableOpp, setBlueTableOpen),
     { title: '竞争对手', dataIndex: 'competitor', width: 145,
       render: (v: string, rec: SalesOpportunity) => {
-        if (rec.terminated) return <span style={{ fontSize: 13, color: COLORS.textLight }}>{v || '—'}</span>;
+        if (rec.terminated || rec.promoteLocked) return <span style={{ fontSize: 13, color: COLORS.textLight }}>{v || '—'}</span>;
         const hasInvalidSep = v && /[^一-龥a-zA-Z0-9、， ]/.test(v);
         return (
           <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
@@ -608,8 +685,9 @@ const SalesOpportunityList: React.FC = () => {
       filterDropdownProps: { minOverlayWidthMatchTrigger: false },
       onFilter: (value: string, record: SalesOpportunity) => value === '__all__' || record.status === value,
       render: (v: string, rec: SalesOpportunity) => {
-        if (rec.terminated) return (
+        if (rec.terminated || rec.promoteLocked) return (
           <Tooltip title={(() => {
+            if (rec.promoteLocked) return '审批锁定中';
             if (!rec.reasons && !rec.winner) return undefined;
             const parts: string[] = [];
             if (rec.reasons) parts.push(rec.reasons);
@@ -661,7 +739,7 @@ const SalesOpportunityList: React.FC = () => {
     { title: '预计定标', dataIndex: 'expectedCloseDate', width: 67,
       filters: Array.from(new Set(opportunities.map(o => o.expectedCloseDate).filter(Boolean))).sort().map(s => ({ text: s, value: s })),
       onFilter: (value: string, record: SalesOpportunity) => record.expectedCloseDate === value,
-      render: (v: string, rec: SalesOpportunity) => rec.terminated
+      render: (v: string, rec: SalesOpportunity) => (rec.terminated || rec.promoteLocked)
         ? <span style={{ fontSize: 13, color: COLORS.textLight }}>{v || '—'}</span>
         : (
         <input type="text" defaultValue={v || ''}
@@ -672,7 +750,7 @@ const SalesOpportunityList: React.FC = () => {
       )},
     { title: '报价', dataIndex: 'quotationId', width: 50, align: 'center' as const,
       render: (v: string | undefined, rec: SalesOpportunity) => {
-        const isReadOnly = rec.terminated;
+        const isReadOnly = rec.terminated || rec.promoteLocked;
         if (!v && !isReadOnly) return (
           <Button type="text" size="small" icon={<FileAddOutlined style={{ fontSize: 18 }} />}
             onClick={() => navigate('/quotations/new?oppId=' + rec.id)}
@@ -680,9 +758,11 @@ const SalesOpportunityList: React.FC = () => {
         );
         if (!v) return <span style={{ color: COLORS.textLight, fontSize: 13 }}>—</span>;
         return (
-          <Button type="text" size="small" icon={<EditOutlined style={{ fontSize: 18 }} />}
-            onClick={() => navigate('/quotations/' + v)}
-            style={{ color: isReadOnly ? COLORS.textLight : COLORS.primary }} />
+          <Tooltip title={isReadOnly ? '查看报价（只读）' : '编辑报价'}>
+            <Button type="text" size="small" icon={<EditOutlined style={{ fontSize: 18 }} />}
+              onClick={() => navigate('/quotations/' + v + (isReadOnly ? '?view=1' : ''))}
+              style={{ color: isReadOnly ? COLORS.textLight : COLORS.primary }} />
+          </Tooltip>
         );
       }},
     { title: '操作', key: 'action', width: 75, align: 'center' as const,
@@ -714,9 +794,10 @@ const SalesOpportunityList: React.FC = () => {
           );
         }
         if (rec.terminated) return <span style={{ fontSize: 12, color: COLORS.textLight }}>已终止</span>;
+        if (rec.promoteLocked) return <span style={{ fontSize: 12, color: COLORS.warning }}>审批中</span>;
         return (
           <div style={{ display: 'flex', gap: 4, justifyContent: 'center', flexWrap: 'wrap' }}>
-            {rec.status === '赢' && (
+            {rec.status === '赢' && !rec.terminated && (
               <Button type="text" size="small" icon={<CheckOutlined style={{ fontSize: 18 }} />}
                 onClick={() => handleWinDeliver(rec)}
                 style={{ color: COLORS.purple }} title="转交付" />
@@ -942,7 +1023,7 @@ const SalesOpportunityList: React.FC = () => {
             <tr>
               <td style={labelStyle2}>赢率 (%)</td>
               <td style={cellStyle2}>
-                <input type="number" min={0} max={100} value={formData.winRate ?? ''} onChange={e => setFormData(p => ({ ...p, winRate: parseInt(e.target.value, 10) || 0 }))}
+                <input type="number" min={0} max={100} value={formData.winRate ?? ''} onChange={e => setFormData(p => ({ ...p, winRate: e.target.value === '' ? 0 : parseInt(e.target.value, 10) || 0 }))}
                   style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, padding: '2px 0', margin: 0, display: 'block', boxSizing: 'border-box' }} />
               </td>
               <td style={labelStyle2}>竞争对手</td>
@@ -1223,7 +1304,7 @@ const SalesOpportunityList: React.FC = () => {
       <BlueTableModal
         open={blueTableOpen}
         opportunity={blueTableOpp}
-        onSave={blueTableOpp?.terminated ? undefined : handleBlueTableSave}
+        onSave={blueTableOpp?.terminated || blueTableOpp?.promoteLocked ? undefined : handleBlueTableSave}
         onClose={() => { setBlueTableOpen(false); setBlueTableOpp(null); }}
       />
 

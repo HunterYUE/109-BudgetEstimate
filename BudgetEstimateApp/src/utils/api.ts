@@ -89,8 +89,6 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     method: options?.method,
     body: options?.body,
     headers: { ...headers, ...(options?.headers as Record<string, string> || {}) },
-    // 非 GET 请求启用 keepalive：确保页面卸载前请求完成（解决 onBlur 后立即刷新的问题）
-    keepalive: options?.method && options.method !== 'GET' ? true : undefined,
   });
 
   // 401 token 过期 → 清除登录状态并跳转

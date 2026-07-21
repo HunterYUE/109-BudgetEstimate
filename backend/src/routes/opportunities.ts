@@ -68,7 +68,9 @@ router.get('/', async (req, res, next) => {
         -- ⚠️ has_quote 检查任何报价（不限 status='approved'），删除此条件会导致 draft 状态的报价不被视为"有报价"
         EXISTS(SELECT 1 FROM quotations WHERE opportunity_id = so.id) as has_quote,
         -- ⚠️ quotation_amount 取机会关联的报价金额（已含税），不可用最新报价（否则机会切换报价后金额错误）
-        (SELECT q.amount FROM quotations q WHERE q.id = so.quotation_id) as quotation_amount
+        (SELECT q.amount FROM quotations q WHERE q.id = so.quotation_id) as quotation_amount,
+        -- 报价编制表对应的税率，用于 Dashboard 等页面含税→未税转换
+        (SELECT pv.tax_rate FROM quotations q JOIN project_versions pv ON pv.project_id = q.project_id AND pv.version_no = q.version_no WHERE q.id = so.quotation_id LIMIT 1) as tax_rate
        FROM sales_opportunities so
        LEFT JOIN blue_tables bt ON bt.opportunity_id = so.id
        ${where}
@@ -174,7 +176,38 @@ router.put('/:id/blue-table', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// 挂载标准 CRUD 路由（创建、更新、删除等）
+// 自定义 PUT：更新前检查 promote_locked（允许更新 promote_locked 字段本身以支持锁定/解锁）
+router.put('/:id', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const body = objKeysToSnake({ ...req.body });
+    // 如果只改 promote_locked（锁定/解锁），跳过检查
+    const isOnlyLockToggle = Object.keys(body).length === 1 && 'promote_locked' in body;
+    if (!isOnlyLockToggle) {
+      const existing = (await query('SELECT promote_locked FROM sales_opportunities WHERE id = $1', [id])).rows[0];
+      if (existing?.promote_locked) {
+        throw new AppError(403, '该机会已提交转机会审批，审批完成前不可修改');
+      }
+    }
+    // 通过检查后交给标准 CRUD PUT 处理
+    const snakeBody = objKeysToSnake({ ...req.body });
+    const updateCols = fields.filter(f =>
+      !['id', 'created_at', 'updated_at'].includes(f) && snakeBody[f] !== undefined
+    );
+    if (updateCols.length === 0) throw new AppError(400, '没有要更新的字段');
+    const setClause = updateCols.map((f, i) => `"${f}" = $${i + 1}`).join(', ');
+    const rawValues = updateCols.map(f => snakeBody[f]);
+    rawValues.push(id);
+    const result = await query(
+      `UPDATE sales_opportunities SET ${setClause}, updated_at = now() WHERE id = $${rawValues.length} RETURNING *`,
+      rawValues
+    );
+    if (result.rows.length === 0) throw new AppError(404, '记录不存在');
+    res.json(result.rows[0]);
+  } catch (err) { next(err); }
+});
+
+// 挂载标准 CRUD 路由
 router.use(crudRouter);
 
 export default router;

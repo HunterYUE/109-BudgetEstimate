@@ -28,6 +28,10 @@ export const projectService = {
   deleteGroup: (id: string) =>
     api.delete(`/project-groups/${id}`),
 
+  /** 删除指定版本的所有组和明细（保存时清理不存在的数据） */
+  deleteGroupsByVersion: (versionId: string) =>
+    api.delete(`/project-groups/by-version/${versionId}`),
+
   /** 更新项目版本的审核状态 */
   updateVersionStatus: (projectId: string, versionNo: string, status: string) =>
     api.put(`/projects/${projectId}/versions/${versionNo}/status`, { reviewStatus: status }),

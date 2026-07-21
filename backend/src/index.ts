@@ -20,7 +20,7 @@ if (!corsOrigin) {
 app.use(cors({
   origin: corsOrigin.split(',').map(s => s.trim()),
 }));
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '20mb' }));
 
 // 健康检查（含数据库状态）
 app.get('/api/health', async (_req, res) => {

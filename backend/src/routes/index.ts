@@ -46,7 +46,7 @@ router.post('/project-versions', requireAuth, async (req, res, next) => {
       rounding_digits = 0, warranty_rate = 0.01, risk_rate = 0.03,
       commercial_cost = 0, total_direct_cost = 0, total_accounting_price = 0,
       discounted_price = 0, discount_rate = 0,
-      gp3_profit_rate = 0, review_status = 'draft',
+      gp3_profit_rate = 0, gp3_amount = 0, review_status = 'draft',
       total_cost = 0, warranty_cost = 0, risk_cost = 0,
       material_cost = 0, labor_cost = 0, project_expense = 0 } = snakeBody;
 
@@ -58,9 +58,9 @@ router.post('/project-versions', requireAuth, async (req, res, next) => {
       `INSERT INTO project_versions (project_id, version_no, eur_rate, tax_rate,
         rounding_digits, warranty_rate, risk_rate, commercial_cost,
         total_direct_cost, total_accounting_price, discounted_price, discount_rate,
-        gp3_profit_rate, review_status,
+        gp3_profit_rate, gp3_amount, review_status,
         total_cost, warranty_cost, risk_cost, material_cost, labor_cost, project_expense)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
        ON CONFLICT (project_id, version_no) DO UPDATE SET
         eur_rate = EXCLUDED.eur_rate,
         tax_rate = EXCLUDED.tax_rate,
@@ -73,6 +73,7 @@ router.post('/project-versions', requireAuth, async (req, res, next) => {
         discounted_price = EXCLUDED.discounted_price,
         discount_rate = EXCLUDED.discount_rate,
         gp3_profit_rate = EXCLUDED.gp3_profit_rate,
+        gp3_amount = EXCLUDED.gp3_amount,
         review_status = EXCLUDED.review_status,
         total_cost = EXCLUDED.total_cost,
         warranty_cost = EXCLUDED.warranty_cost,
@@ -85,7 +86,7 @@ router.post('/project-versions', requireAuth, async (req, res, next) => {
       [project_id, version_no, eur_rate, tax_rate, rounding_digits,
        warranty_rate, risk_rate, commercial_cost, total_direct_cost,
        total_accounting_price, discounted_price, discount_rate,
-       gp3_profit_rate, review_status,
+       gp3_profit_rate, gp3_amount, review_status,
        total_cost, warranty_cost, risk_cost, material_cost, labor_cost, project_expense]
     );
 
@@ -179,7 +180,17 @@ router.post('/project-groups', requireAuth, async (req, res, next) => {
   }
 });
 
-// 删除项目组
+// 删除指定版本的所有组和明细（必须在 /:id 之前注册，否则 by-version 被 :id 捕获）
+router.delete('/project-groups/by-version/:versionId', requireAuth, async (req, res, next) => {
+  try {
+    const { versionId } = req.params;
+    await query('DELETE FROM group_items WHERE group_id IN (SELECT id FROM project_groups WHERE version_id = $1)', [versionId]);
+    await query('DELETE FROM project_groups WHERE version_id = $1', [versionId]);
+    res.json({ deleted: true });
+  } catch (err) { next(err); }
+});
+
+// 删除单个项目组
 router.delete('/project-groups/:id', requireAuth, async (req, res, next) => {
   try {
     const { id } = req.params;

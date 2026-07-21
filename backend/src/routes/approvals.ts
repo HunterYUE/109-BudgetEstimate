@@ -22,6 +22,62 @@ const crudRouter = crudRoutes('approval_requests', fields, {
 // 顶层路由 — 自定义 LIST 优先于 crudRouter 的默认 LIST（否则默认 LIST 永远拦截请求）
 const router = Router();
 
+// 自定义 POST：创建转机会审批时自动锁定机会并填充财务数据
+router.post('/', async (req, res, next) => {
+  try {
+    const { approvalType, opportunityId } = req.body;
+    if (approvalType === 'promote' && opportunityId) {
+      // 锁定机会
+      await query(
+        'UPDATE sales_opportunities SET promote_locked = true, updated_at = now() WHERE id = $1',
+        [opportunityId]
+      );
+
+      // 从关联报价自动填充财务数据（如前端未提供）
+      if (!req.body.versionNo || !req.body.totalAccountingPrice) {
+        try {
+          const oppRows = await query(
+            'SELECT quotation_id FROM sales_opportunities WHERE id = $1',
+            [opportunityId]
+          );
+          const oppRow = oppRows.rows[0];
+          if (oppRow?.quotation_id) {
+            const qtRows = await query(
+              'SELECT project_id, version_no FROM quotations WHERE id = $1',
+              [oppRow.quotation_id]
+            );
+            const qtRow = qtRows.rows[0];
+            if (qtRow?.project_id) {
+              const pvRows = await query(
+                `SELECT * FROM project_versions WHERE project_id = $1 AND version_no = $2`,
+                [qtRow.project_id, qtRow.version_no]
+              );
+              const pv = pvRows.rows[0];
+              if (pv) {
+                if (!req.body.versionNo) req.body.versionNo = qtRow.version_no;
+                if (!req.body.totalAccountingPrice) req.body.totalAccountingPrice = parseFloat(pv.total_accounting_price) || 0;
+                if (!req.body.discountedPrice) req.body.discountedPrice = parseFloat(pv.discounted_price) || 0;
+                if (!req.body.discountRate) req.body.discountRate = parseFloat(pv.discount_rate) || 0;
+                if (!req.body.gp3) req.body.gp3 = parseFloat(pv.gp3_profit_rate) || 0;
+                if (!req.body.totalCost) req.body.totalCost = parseFloat(pv.total_cost) || 0;
+                if (!req.body.taxRate) req.body.taxRate = parseFloat(pv.tax_rate) || 0.13;
+                if (!req.body.amount) req.body.amount = parseFloat(pv.discounted_price) || 0;
+                if (!req.body.gp3) req.body.gp3 = parseFloat(pv.gp3_profit_rate) || 0;
+                if (!req.body.gp3Amount) req.body.gp3Amount = parseFloat(pv.gp3_amount) || 0;
+              }
+            }
+          }
+        } catch (e) {
+          console.warn('[Approvals] 自动填充转机会财务数据失败:', (e as Error).message);
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[Approvals] 锁定机会失败:', (err as Error).message);
+  }
+  next();
+});
+
 // 自定义列表查询，包含最新审批记录（latest_record）
 router.get('/', async (req, res, next) => {
   try {

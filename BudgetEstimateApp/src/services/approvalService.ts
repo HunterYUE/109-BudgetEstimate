@@ -10,4 +10,8 @@ export const approvalService = {
   update: (id: string, data: Partial<ApprovalRequest>) => api.put<ApprovalRequest>(`/approvals/${id}`, data),
 
   delete: (id: string) => api.delete(`/approvals/${id}`),
+
+  /** 添加审批记录并级联更新相关状态 */
+  createRecord: (id: string, data: { reviewer: string; action: string; comment?: string }) =>
+    api.post<{ id: string }>(`/approvals/${id}/records`, data),
 };

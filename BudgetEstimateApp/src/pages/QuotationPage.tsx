@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { Button, message, Modal, ConfigProvider, Spin } from 'antd';
 import { PlusOutlined, DownloadOutlined, SaveOutlined, SendOutlined, CheckOutlined, CloseOutlined, ArrowLeftOutlined } from '@ant-design/icons';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../utils/authContext';
 import ProjectHeader from '../components/ProjectHeader';
 import GroupCard from '../components/GroupCard';
@@ -141,15 +141,16 @@ const QuotationPage: React.FC = () => {
   const [project, setProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
   const [quotationLocked, setQuotationLocked] = useState(false);
-  const [versionBump, setVersionBump] = useState<'minor' | 'major'>('minor');
   const [deleteGroupId, setDeleteGroupId] = useState<string | null>(null);
   const [deleteItemId, setDeleteItemId] = useState<{ groupId: string; itemId: string } | null>(null);
   const [componentDB, setComponentDB] = useState<Component[]>([]);
   const [messageApi, contextHolder] = message.useMessage();
   const { id: quoteId } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const viewOnly = searchParams.get('view') === '1';
   const invalidQuote = quoteId && !loading && !project;
-  const isLocked = quotationLocked;
+  const isLocked = quotationLocked || viewOnly;
   const { user } = useAuth();
   const submitterName = user?.displayName || '方案经理';
   const [hasChanges, setHasChanges] = useState(false);
@@ -375,6 +376,7 @@ const QuotationPage: React.FC = () => {
       groups.splice(idx >= 0 ? idx : groups.length, 0, newGroup);
       return { ...prev, groups: renumberEquipGroups(groups) };
     });
+    setHasChanges(true);
     messageApi.success('已添加新设备组');
   }, [messageApi]);
 
@@ -388,11 +390,12 @@ const QuotationPage: React.FC = () => {
 
   const handleProjectUpdate = useCallback((field: string, value: string | number) => {
     setProject(prev => {
-      if (field === 'eurRate' || field === 'taxRate' || field === 'warrantyRate' || field === 'riskRate' || field === 'commercialCost') {
+      if (field === 'versionNo' || field === 'eurRate' || field === 'taxRate' || field === 'warrantyRate' || field === 'riskRate' || field === 'commercialCost') {
         return { ...prev, currentVersion: { ...prev.currentVersion, [field]: value } };
       }
       return { ...prev, [field]: value };
     });
+    setHasChanges(true);
   }, []);
 
   const handleGroupNameChange = useCallback((groupId: string, name: string) => {
@@ -400,6 +403,7 @@ const QuotationPage: React.FC = () => {
       ...prev,
       groups: prev.groups.map(g => g.id === groupId ? { ...g, name } : g),
     }));
+    setHasChanges(true);
   }, []);
 
   const validateCodes = useCallback((): string[] => {
@@ -414,13 +418,6 @@ const QuotationPage: React.FC = () => {
     return badCodes;
   }, [project, componentDB]);
 
-  const nextVersionNo = useCallback((currentVer, bumpType) => {
-    const m = currentVer.match(/^V(\d+)\.(\d+)$/);
-    if (!m) return 'V1.0';
-    return bumpType === 'major'
-      ? 'V' + (parseInt(m[1], 10) + 1) + '.0'
-      : 'V' + m[1] + '.' + (parseInt(m[2], 10) + 1);
-  }, []);
 
   // ⚠️ 报价同步金额取 calcProjectSummary 汇总值，discountedPrice 需传未税（从含税存储值转换）
   const syncQuotation = useCallback(async (versionNo, status, overrideProjectId?: string) => {
@@ -460,9 +457,9 @@ const QuotationPage: React.FC = () => {
       return;
     }
     const curVer = project.currentVersion;
-    const isApproved = curVer && curVer.reviewStatus === 'approved';
-    const versionForSave = isApproved ? nextVersionNo(curVer.versionNo, versionBump) : (curVer ? curVer.versionNo : 'V1.0');
-    const statusForSave = isApproved ? 'draft' : (curVer ? curVer.reviewStatus : 'draft');
+    // 始终使用当前版本号保存（不迭代版本，版本编辑由用户手动输入）
+    const versionForSave = curVer ? curVer.versionNo : 'V1.0';
+    const statusForSave = curVer ? curVer.reviewStatus : 'draft';
     try {
       savingRef.current = true;
       setIsSaving(true); // ⚠️ 防止重复点击
@@ -487,6 +484,7 @@ const QuotationPage: React.FC = () => {
           discountedPrice: newVerSummary.discountedPrice,
           discountRate: newVerSummary.discountRate,
           gp3ProfitRate: newVerSummary.gp3,
+          gp3Amount: newVerSummary.gp3Amount,
           totalCost: newVerSummary.totalCost,
           warrantyCost: newVerSummary.warrantyCost,
           riskCost: newVerSummary.riskCost,
@@ -500,7 +498,8 @@ const QuotationPage: React.FC = () => {
         }
         const syncResult = await syncQuotation(versionForSave, statusForSave, newId);
         const qid = syncResult?.id || '';
-        setProject(prev => prev ? { ...prev, id: newId, currentVersion: { ...prev.currentVersion, id: svId, versionNo: versionForSave, reviewStatus: statusForSave } } : prev);
+        // ⚠️ 必须同步更新计算字段，否则 handleSubmit 会使用旧版的过期数据覆盖数据库
+        setProject(prev => prev ? { ...prev, id: newId, currentVersion: { ...prev.currentVersion, ...newVerSummary, id: svId, versionNo: versionForSave, reviewStatus: statusForSave } } : prev);
         // 新建报价保存后跳转到报价 URL，刷新不再丢失
         // 回写 opportunity.quotationId，使销售管理页面图标变为编辑
         if (qid && oppIdRef.current) {
@@ -525,6 +524,7 @@ const QuotationPage: React.FC = () => {
           discountedPrice: versionSummary.discountedPrice,
           discountRate: versionSummary.discountRate,
           gp3ProfitRate: versionSummary.gp3,
+          gp3Amount: versionSummary.gp3Amount,
           totalCost: versionSummary.totalCost,
           warrantyCost: versionSummary.warrantyCost,
           riskCost: versionSummary.riskCost,
@@ -542,11 +542,11 @@ const QuotationPage: React.FC = () => {
         if (newQid && oppIdRef.current && quoteId) {
           opportunityService.update(oppIdRef.current, { quotationId: newQid } as any).catch(() => {});
         }
-        setProject(prev => prev ? { ...prev, currentVersion: { ...prev.currentVersion, id: savedVersionId, versionNo: versionForSave, reviewStatus: statusForSave } } : prev);
+        setProject(prev => prev ? { ...prev, currentVersion: { ...prev.currentVersion, ...versionSummary, id: savedVersionId, versionNo: versionForSave, reviewStatus: statusForSave } } : prev);
       }
       clearCache('/projects');
       setHasChanges(false);
-      messageApi.success(isApproved ? '已保存，版本自动迭代至 ' + versionForSave : '概算表已保存');
+      messageApi.success('概算表已保存');
     } catch (err: any) {
       console.error("[SaveError]", err);
       messageApi.error('保存失败：' + (err.message || '未知错误'));
@@ -554,7 +554,7 @@ const QuotationPage: React.FC = () => {
       setIsSaving(false);
       savingRef.current = false;
     }
-  }, [validateCodes, messageApi, project, isLocked, versionBump, nextVersionNo, syncQuotation, quoteId, navigate]);
+  }, [validateCodes, messageApi, project, isLocked, syncQuotation, quoteId, navigate]);
 
   const handleSubmit = useCallback(async () => {
     if (savingRef.current) return; // ⚠️ 同步防重入锁
@@ -578,12 +578,27 @@ const QuotationPage: React.FC = () => {
         delivery_period: project.deliveryPeriod, payment_terms: project.paymentTerms,
         postfix: project.postfix, note: project.note,
       });
-      const updatedVersion = { ...curVer, reviewStatus: 'pending' };
+      // ⚠️ 必须先重新计算汇总值再保存版本，否则 curVer 中的 discountRate/gp3ProfitRate 是过期数据
+      const submitUntaxed = curVer?.discountedPrice ? Math.round(curVer.discountedPrice / (1 + (curVer.taxRate || 0.13))) : undefined;
+      const submitSummary = calcProjectSummary(project.groups || [], curVer, submitUntaxed);
+      const updatedVersion = {
+        ...curVer, reviewStatus: 'pending',
+        totalDirectCost: submitSummary.totalDirectCost,
+        totalAccountingPrice: submitSummary.totalAccountingPrice,
+        discountedPrice: submitSummary.discountedPrice,
+        discountRate: submitSummary.discountRate,
+        gp3ProfitRate: submitSummary.gp3,
+        gp3Amount: submitSummary.gp3Amount,
+        totalCost: submitSummary.totalCost,
+        warrantyCost: submitSummary.warrantyCost,
+        riskCost: submitSummary.riskCost,
+        materialCost: submitSummary.materialCost,
+        laborCost: submitSummary.laborCost,
+        projectExpense: submitSummary.projectExpense,
+      };
       const savedVer = await projectService.saveVersion(project.id, updatedVersion);
       const savedVerId = savedVer.id;
       // 注意：组数据已在 handleSave 中保存，此处不再重复保存，避免翻倍
-      const submitUntaxed = curVer?.discountedPrice ? Math.round(curVer.discountedPrice / (1 + (curVer.taxRate || 0.13))) : undefined;
-      const submitSummary = calcProjectSummary(project.groups, curVer, submitUntaxed);
       const synced = await quotationService.sync({
         projectId: project.id, versionNo: curVer.versionNo,
         salesNo: project.salesNo, clientName: project.clientName,
@@ -593,7 +608,7 @@ const QuotationPage: React.FC = () => {
         opportunityId: oppIdRef.current,
       });
       const quotationId = (synced as any)?.id || '';
-      const createdApproval = await approvalService.create({
+      await approvalService.create({
         approvalType: 'quotation', quotationId: quotationId,
         salesNo: project.salesNo, versionNo: curVer?.versionNo || 'V1.0', clientName: project.clientName,
         projectName: project.projectName || project.clientName,
@@ -608,19 +623,11 @@ const QuotationPage: React.FC = () => {
         gp3Amount: submitSummary.gp3Amount || 0,
         submitter: submitterName, status: 'pending',
       });
-      // ⚠️ 后端 POST 处理程序暂不识别 discountRate/gp3Amount 新列，
-      // 通过单独 PUT 确保值被持久化（待后端修复后可删除此补丁）
-      if (submitSummary.discountRate || submitSummary.gp3Amount) {
-        approvalService.update((createdApproval as any).id, {
-          discountRate: submitSummary.discountRate,
-          gp3Amount: submitSummary.gp3Amount,
-        }).catch(e => console.warn('[Approval] 补充字段持久化失败', e));
-      }
-      setProject(prev => prev ? { ...prev, currentVersion: { ...prev.currentVersion, id: savedVerId, reviewStatus: 'pending' } } : prev);
+      // 提交不创建新版本，用户手动修改版本号→保存时才创建
+      setProject(prev => prev ? { ...prev, currentVersion: { ...prev.currentVersion, ...submitSummary, id: savedVerId, reviewStatus: 'pending' } } : prev);
       clearCache('/projects');
       setQuotationLocked(true);
       setHasChanges(false);
-      setVersionBump('minor');
       messageApi.success('已提交审批');
     } catch (err: any) {
       console.error("[SaveError]", err);
@@ -628,7 +635,7 @@ const QuotationPage: React.FC = () => {
     } finally {
       setIsSaving(false);
     }
-  }, [validateCodes, messageApi, project, isLocked, submitterName]);
+  }, [validateCodes, messageApi, project, isLocked, submitterName, syncQuotation]);
 
   // ⚠️ 所有 calcProjectSummary 调用必须传入未税 discountedPrice（已含税存储的 ÷(1+taxRate) 转换）
   const summary = useMemo(() => {
@@ -737,7 +744,7 @@ const QuotationPage: React.FC = () => {
           <div style={{ fontSize: 13, color: COLORS.textLight }}>Pre-Sales Calculation</div>
         </div>
 
-        <ProjectHeader project={project} onUpdate={handleProjectUpdate} versionBump={versionBump} onVersionBumpChange={setVersionBump} readOnly={isLocked} />
+        <ProjectHeader project={project} onUpdate={handleProjectUpdate} readOnly={isLocked} />
 
         <div style={{
           marginBottom: 12, fontSize: 12, fontWeight: 600, color: '#3a4a6a', lineHeight: 1.8

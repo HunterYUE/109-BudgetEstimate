@@ -14,6 +14,9 @@ import { quotationService } from '../services/quotationService';
 import type { SalesOpportunity, ApprovalRequest, DeliveryProject, Client, QuotationSummary } from '../types';
 
 const fmtK = (v: number) => Math.round(v / 1000).toLocaleString() + 'K';
+/** 含税→未税（Dashboard 统一使用未税口径） */
+/** 含税→未税：优先使用机会自带的税率，默认 13% */
+const exAmount = (v: number, taxRate?: number) => Math.round(v / (1 + (taxRate ?? 0.13)));
 
 /* ── KPI 卡片（与销售分析完全一致） ── */
 const KpiCard: React.FC<{
@@ -231,11 +234,11 @@ const Dashboard: React.FC = () => {
       const winCnt = monthWins.length, lossCnt = monthLosses.length;
       const total = winCnt + lossCnt;
       return {
-        amt: monthOpps.reduce((s, o) => s + o.amount, 0), cnt: monthOpps.length,
-        winAmt: monthWins.reduce((s, o) => s + o.amount, 0), winCnt,
-        newAmt: monthNew.reduce((s, o) => s + o.amount, 0), newCnt: monthNew.length,
+        amt: monthOpps.reduce((s, o) => s + exAmount(o.amount, o.taxRate), 0), cnt: monthOpps.length,
+        winAmt: monthWins.reduce((s, o) => s + exAmount(o.amount, o.taxRate), 0), winCnt,
+        newAmt: monthNew.reduce((s, o) => s + exAmount(o.amount, o.taxRate), 0), newCnt: monthNew.length,
         winRate: total > 0 ? Math.round(winCnt / total * 100) : 0,
-        delAmt: activeDel.reduce((s, p) => s + p.contractAmount, 0), delCnt: activeDel.length,
+        delAmt: activeDel.reduce((s, p) => s + exAmount(p.contractAmount), 0), delCnt: activeDel.length,
       };
     };
     return [calcMonth(1), calcMonth(2), calcMonth(3)];
@@ -337,9 +340,9 @@ const Dashboard: React.FC = () => {
     });
     const getEstProfit = (p: typeof deliveries[0]) => {
       const q = quotations.find(q => q.id === p.quotationId);
-      return q ? Math.round(p.contractAmount * q.profitRate / 100) : 0;
+      return q ? Math.round(exAmount(p.contractAmount) * q.profitRate / 100) : 0;
     };
-    const getActProfit = (p: typeof deliveries[0]) => p.totalActualCost ? p.contractAmount - p.totalActualCost : 0;
+    const getActProfit = (p: typeof deliveries[0]) => p.totalActualCost ? exAmount(p.contractAmount) - p.totalActualCost : 0;
     const profitOverview: { label: string; value: number; color: string; displayValue?: string }[] = [];
     for (const prefix of ['概算', '实际'] as const) {
       for (let mi = 3; mi >= 1; mi--) {
@@ -350,10 +353,10 @@ const Dashboard: React.FC = () => {
           const status = getStatusInMonth(p, monthEnd);
           if (prefix === '概算' && status === '进行中') {
             totalProfit += getEstProfit(p);
-            totalAmt += p.contractAmount;
+            totalAmt += exAmount(p.contractAmount);
           } else if (prefix === '实际' && status === '已完成' && changedThisMonth(p, monthEnd)) {
             totalProfit += getActProfit(p);
-            totalAmt += p.contractAmount;
+            totalAmt += exAmount(p.contractAmount);
           }
         });
         profitOverview.push({
@@ -385,7 +388,7 @@ const Dashboard: React.FC = () => {
       const month = (6 + i) % 12;
       const monthOpps = fyOpps.filter(o => new Date(o.createdAt).getMonth() === month);
       const count = monthOpps.length;
-      const amount = monthOpps.reduce((s, o) => s + o.amount, 0);
+      const amount = monthOpps.reduce((s, o) => s + exAmount(o.amount, o.taxRate), 0);
       return {
         label: monthLabels[i],
         value: count > 0 ? Math.round(amount / 1000) : 0,
@@ -553,7 +556,7 @@ const Dashboard: React.FC = () => {
                       <span>{o.updatedAt}</span>
                     </div>
                   </div>
-                  <span style={{ fontSize: 14, fontWeight: 700, color: COLORS.success, whiteSpace: 'nowrap' }}>¥{fmtK(o.amount)}</span>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: COLORS.success, whiteSpace: 'nowrap' }}>¥{fmtK(exAmount(o.amount, o.taxRate))}</span>
                   <RightOutlined style={{ color: COLORS.textLight, fontSize: 12 }} />
                 </div>
               ))}
@@ -618,7 +621,7 @@ const Dashboard: React.FC = () => {
                       </div>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-                      <span style={{ fontSize: 14, fontWeight: 700, color: COLORS.textSecondary, whiteSpace: 'nowrap' }}>¥{fmtK(o.amount)}</span>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: COLORS.textSecondary, whiteSpace: 'nowrap' }}>¥{fmtK(exAmount(o.amount, o.taxRate))}</span>
                       <Tag color={reason.color}
                         style={{ margin: 0, fontSize: 11, fontWeight: 600, border: 'none', borderRadius: 4, padding: '1px 8px' }}>
                         {reason.label}

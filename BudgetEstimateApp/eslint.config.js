@@ -44,6 +44,8 @@ export default defineConfig([
     rules: {
       '@typescript-eslint/no-explicit-any': 'warn',
       'no-direct-fetch/no-fetch': 'warn',
+      // React 19 数据加载模式兼容：useEffect + setState 是标准初始化模式
+      'react-hooks/set-state-in-effect': 'off',
     },
   },
   // 例外：api.ts（客户端自身）和 authContext（认证流程，发生在 token 获取前）

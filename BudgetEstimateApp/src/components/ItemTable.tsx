@@ -268,7 +268,7 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
     title: '数量', dataIndex: 'qtyTotal', width: 52, align: 'center' as const,
     onCell: onCellLock(52),
     render: (v: number, _record: GroupItem, idx: number) => editing ? (
-      <input type="number" min={0} value={v}
+      <input type="number" min={0} defaultValue={v}
         onChange={e => { const raw = e.target.value; if (raw === '') return; const val = parseInt(raw, 10); if (!isNaN(val) && val >= 0) updateItem(idx, { qtyTotal: val }); }}
         onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
         style={{ width: '100%', textAlign: 'center', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, MozAppearance: 'textfield' }} />
@@ -283,7 +283,7 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
         return <span>{'¥'}{Math.round(v).toLocaleString()}</span>;
       }
       return (
-        <input type="number" min={0} step={1} value={v}
+        <input type="number" min={0} step={1} defaultValue={v}
           onChange={e => { const raw = e.target.value; if (raw === '') return; const val = parseFloat(raw); if (!isNaN(val) && val >= 0) updateItem(idx, { unitCost: val }); }}
           onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
           style={{ width: '100%', textAlign: 'right', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, MozAppearance: 'textfield' }} />
@@ -299,7 +299,7 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
         return <span style={{ display: 'block', textAlign: 'right' }}>{v}</span>;
       }
       return (
-        <input type="number" min={0} step={0.5} value={v}
+        <input type="number" min={0} step={0.5} defaultValue={v}
           onChange={e => { const raw = e.target.value; if (raw === '') return; const val = parseFloat(raw); if (!isNaN(val) && val >= 0) updateItem(idx, { designHours: val }); }}
           onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
           style={{ width: '100%', textAlign: 'right', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, MozAppearance: 'textfield' }} />
@@ -315,7 +315,7 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
         return <span style={{ display: 'block', textAlign: 'right' }}>{v}</span>;
       }
       return (
-        <input type="number" min={0} step={0.5} value={v}
+        <input type="number" min={0} step={0.5} defaultValue={v}
           onChange={e => { const raw = e.target.value; if (raw === '') return; const val = parseFloat(raw); if (!isNaN(val) && val >= 0) updateItem(idx, { assemblyHours: val }); }}
           onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
           style={{ width: '100%', textAlign: 'right', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, MozAppearance: 'textfield' }} />

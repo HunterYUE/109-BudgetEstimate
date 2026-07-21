@@ -181,7 +181,7 @@ const SummarySection: React.FC<Props> = ({ groups, version, onDiscountChange, on
               ¥{formatMoney(summary.totalAccountingPrice)}
             </div>
             <div style={{ marginTop: 8, fontSize: 12, color: COLORS.textSecondary }}>
-              欧元 <span style={{ fontWeight: 600, color: COLORS.textDark }}>€{formatMoney(Math.round(summary.totalAccountingPrice / version.eurRate))}</span>
+              欧元 <span style={{ fontWeight: 600, color: COLORS.textDark }}>€{formatMoney(Math.round(Math.round(summary.totalAccountingPrice / (1 + (version.taxRate || 0.13))) / version.eurRate))}</span>
             </div>
           </div>
         </Col>

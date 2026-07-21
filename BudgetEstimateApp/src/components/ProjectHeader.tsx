@@ -1,13 +1,11 @@
-import React, { useRef, useState, useEffect } from 'react';
-import { Modal } from 'antd';
+import React, { useRef, useState } from 'react';
+import { message, Modal } from 'antd';
 import type { Project } from '../types';
 import { COLORS } from '../styles/colors';
 
 interface Props {
   project: Project;
   onUpdate?: (field: string, value: string | number) => void;
-  versionBump?: 'minor' | 'major';
-  onVersionBumpChange?: (v: 'minor' | 'major') => void;
   readOnly?: boolean;
 }
 
@@ -66,15 +64,14 @@ const DeliveryPeriodInput: React.FC<{ value: string; onChange: (v: string) => vo
   );
 };
 
-const ProjectHeader: React.FC<Props> = ({ project, onUpdate, versionBump, onVersionBumpChange, readOnly }) => {
+const ProjectHeader: React.FC<Props> = ({ project, onUpdate, readOnly }) => {
   const v = project.currentVersion;
   const pct = parsePayment(project.paymentTerms);
 
   const updater = (field: string) => (e: React.ChangeEvent<HTMLInputElement>) => onUpdate?.(field, e.target?.value ?? e);
 
-  // EUR 汇率：允许输入小数点后再提交
-  const [eurDraft, setEurDraft] = useState<string>('');
-  useEffect(() => { setEurDraft(String(v.eurRate ?? 7.8)); }, [v.eurRate]);
+  // EUR 汇率：允许输入小数点后再提交（key 变化时重新初始化）
+  const [eurDraft, setEurDraft] = useState<string>(String(v.eurRate ?? 7.8));
   const commitEur = () => {
     const num = parseFloat(eurDraft);
     if (!isNaN(num) && num > 0) onUpdate?.('eurRate', num);
@@ -118,14 +115,9 @@ const ProjectHeader: React.FC<Props> = ({ project, onUpdate, versionBump, onVers
             </td>
             <td style={labelStyle}>版本</td>
             <td style={cellStyle}>
-              <span style={{ cursor: 'pointer', color: COLORS.success, fontWeight: 600, ...inputStyle, userSelect: 'none' }}
-                onClick={() => onVersionBumpChange?.(versionBump === 'major' ? 'minor' : 'major')}
-                title={'下次提交: ' + (versionBump === 'major' ? '大版本 +1.0' : '小版本 +0.1')}>
-                {v.versionNo}
-                <span style={{ fontSize: 10, color: COLORS.textMuted, marginLeft: 4 }}>
-                  {versionBump === 'major' ? '▲ +1.0' : '▸ +0.1'}
-                </span>
-              </span>
+              <input style={{ ...inputStyle, color: COLORS.primary, fontWeight: 600 }}
+                value={v.versionNo}
+                onChange={e => onUpdate?.('versionNo', e.target.value)} />
             </td>
             <td style={labelStyle}>后缀号</td>
             <td style={cellStyle} colSpan={2}>
@@ -211,6 +203,41 @@ const ProjectHeader: React.FC<Props> = ({ project, onUpdate, versionBump, onVers
 
 const ProjectLayoutUpload: React.FC<{ value: string; onChange: (v: string) => void }> = ({ value, onChange }) => {
   const inputRef = useRef<HTMLInputElement>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [modalSize, setModalSize] = useState({ w: 800, h: 600 });
+  const dragRef = useRef<{ active: boolean; startX: number; startY: number; offsetX: number; offsetY: number }>({
+    active: false, startX: 0, startY: 0, offsetX: 0, offsetY: 0,
+  });
+  const modalWrapRef = useRef<HTMLElement | null>(null);
+
+  // 拖拽弹窗位置
+  const onDragStart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    // 找到 modal wrap 容器
+    modalWrapRef.current = modalWrapRef.current || document.querySelector('.ant-modal-wrap');
+    if (!modalWrapRef.current) return;
+    const wrap = modalWrapRef.current;
+    // 读取当前偏移（如果有 transform）
+    const curTransform = wrap.style.transform || '';
+    const match = curTransform.match(/translate\(([^,]+),\s*([^)]+)\)/);
+    const curX = match ? parseInt(match[1]) : 0;
+    const curY = match ? parseInt(match[2]) : 0;
+    dragRef.current = { active: true, startX: e.clientX, startY: e.clientY, offsetX: curX, offsetY: curY };
+
+    const onMove = (ev: MouseEvent) => {
+      if (!dragRef.current.active) return;
+      const dx = ev.clientX - dragRef.current.startX + dragRef.current.offsetX;
+      const dy = ev.clientY - dragRef.current.startY + dragRef.current.offsetY;
+      if (wrap) wrap.style.transform = `translate(${dx}px, ${dy}px)`;
+    };
+    const onUp = () => {
+      dragRef.current.active = false;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
 
   const handleClick = () => {
     inputRef.current?.click();
@@ -219,45 +246,72 @@ const ProjectLayoutUpload: React.FC<{ value: string; onChange: (v: string) => vo
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    // 仅接受 PDF/PNG
     if (!['application/pdf', 'image/png'].includes(file.type)) {
-      Modal.warning({
-        title: '文件格式不支持',
-        content: '仅支持 PDF 或 PNG 格式',
-        okText: '知道了',
-      });
+      Modal.warning({ title: '文件格式不支持', content: '仅支持 PDF 或 PNG 格式', okText: '知道了' });
       return;
     }
-    // 限制文件大小（5MB）
-    if (file.size > 5 * 1024 * 1024) {
-      message.warning('图片文件不能超过 5MB');
+    if (file.size > 3 * 1024 * 1024) {
+      message.warning('图片大小超过3MB，请压缩！');
       return;
     }
     const reader = new FileReader();
-    reader.onload = (ev) => {
-      onChange(ev.target?.result as string || '');
-    };
-    reader.onerror = () => {
-      message.warning('文件读取失败，请重试');
-    };
+    reader.onload = (ev) => onChange(ev.target?.result as string || '');
+    reader.onerror = () => message.warning('文件读取失败，请重试');
     reader.readAsDataURL(file);
   };
 
-  const handleRemove = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    onChange('');
+  const handleRemove = (e: React.MouseEvent) => { e.stopPropagation(); onChange(''); };
+
+  const onResizeStart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    dragRef.current.active = false;
+    const start = { x: e.clientX, y: e.clientY, w: modalSize.w, h: modalSize.h };
+    const onMove = (ev: MouseEvent) => {
+      setModalSize({
+        w: Math.max(400, start.w + (ev.clientX - start.x)),
+        h: Math.max(300, start.h + (ev.clientY - start.y)),
+      });
+    };
+    const onUp = () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
   };
 
   if (value) {
     const isPdf = value.startsWith('data:application/pdf');
     return (
-      <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <a href={value} target="_blank" rel="noopener noreferrer"
-          style={{ color: COLORS.primary, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
-          {isPdf ? '📄 布置图.pdf' : '🖼️ 布置图.png'}
-        </a>
-        <span onClick={handleRemove} style={{ color: '#f5222d', cursor: 'pointer', fontSize: 16, lineHeight: 1 }}>×</span>
-      </span>
+      <>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span onClick={() => { setModalSize({ w: 800, h: 600 }); setPreviewOpen(true); }}
+            style={{ color: COLORS.primary, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
+            {isPdf ? '📄 布置图.pdf' : '🖼️ 布置图.png'}
+          </span>
+          <span onClick={handleRemove} style={{ color: '#f5222d', cursor: 'pointer', fontSize: 16, lineHeight: 1 }}>×</span>
+        </span>
+        <Modal open={previewOpen} onCancel={() => setPreviewOpen(false)}
+          footer={null} width={modalSize.w} destroyOnHidden
+          styles={{ body: { padding: 0, position: 'relative' } }}
+          title={
+            <div style={{ cursor: 'move', userSelect: 'none', fontSize: 14, fontWeight: 600, color: COLORS.textDark }}
+              onMouseDown={onDragStart}>
+              布置图预览
+            </div>
+          }>
+          <div style={{ padding: '0 16px 2px', marginTop: -6, textAlign: 'center' }}>
+            {isPdf ? (
+              <iframe src={value} style={{ width: '100%', height: modalSize.h - 100, border: 'none', borderRadius: 6, display: 'block' }} title="PDF预览" />
+            ) : (
+              <img src={value} style={{ width: '100%', height: modalSize.h - 100, objectFit: 'contain', borderRadius: 6, display: 'block' }} alt="布置图" />
+            )}
+          </div>
+          <div onMouseDown={onResizeStart} style={{
+            position: 'absolute', right: 0, bottom: 0, width: 16, height: 16,
+            cursor: 'nwse-resize', userSelect: 'none',
+            borderRight: '3px solid #ccc', borderBottom: '3px solid #ccc',
+            borderRadius: '0 0 4px 0', opacity: 0.7,
+          }} />
+        </Modal>
+      </>
     );
   }
 
