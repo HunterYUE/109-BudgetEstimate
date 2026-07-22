@@ -107,7 +107,7 @@ const [fySelect, setFySelect] = useState(defaultFy);
 
   // ── 缓存财年范围 ──
   const fyRange = useMemo(() => parseFY(fySelect), [fySelect]);
-  const preloadVersion = preloadVersion;
+  const preloadVersion = getPreloadVersion();
 
   // ── 财年过滤（活跃期交集：与销售分析一致的逻辑）──
   const fyFiltered = useMemo(() => {
