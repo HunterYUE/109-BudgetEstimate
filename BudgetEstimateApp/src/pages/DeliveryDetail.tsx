@@ -449,12 +449,12 @@ const DeliveryDetail: React.FC = () => {
 
   // ⚠️ 概算财务数据：使用 useMemo 缓存避免重复计算（必须在条件返回之前）
   const {
-    totalActual, contractExTax, grandEstimated, grandActual,
+    contractExTax, grandEstimated, grandActual,
     costWarningThreshold, needsCostWarning,
     estProfit, actProfit, estGP3, actGP3,
   } = useMemo(() => {
     if (!project) return {
-      totalActual: 0, contractExTax: 0, grandEstimated: 0, grandActual: 0,
+      contractExTax: 0, grandEstimated: 0, grandActual: 0,
       costWarningThreshold: 0, needsCostWarning: false,
       estProfit: 0, actProfit: 0, estGP3: 0, actGP3: 0,
     };
@@ -463,7 +463,7 @@ const DeliveryDetail: React.FC = () => {
     const ga = ta + wc;
     const cwt = Math.round((ge - rc - wc) * 0.95);
     return {
-      totalActual: ta, contractExTax: exTax, grandEstimated: ge,
+      contractExTax: exTax, grandEstimated: ge,
       grandActual: ga, costWarningThreshold: cwt, needsCostWarning: ga >= cwt,
       estProfit: exTax - ge, actProfit: exTax - ga,
       estGP3: exTax > 0 ? (exTax - ge) / exTax : 0,
