@@ -447,29 +447,21 @@ const DeliveryDetail: React.FC = () => {
     );
   }
 
-  // ⚠️ 概算财务数据：使用 useMemo 缓存避免重复计算（必须在条件返回之前）
-  const {
-    contractExTax, grandEstimated, grandActual,
-    costWarningThreshold, needsCostWarning,
-    estProfit, actProfit, estGP3, actGP3,
-  } = useMemo(() => {
-    if (!project) return {
-      contractExTax: 0, grandEstimated: 0, grandActual: 0,
-      costWarningThreshold: 0, needsCostWarning: false,
-      estProfit: 0, actProfit: 0, estGP3: 0, actGP3: 0,
-    };
+  // 概算财务数据（使用计算变量而非 useMemo 避免 hooks 条件执行问题）
+  let contractExTax = 0, grandEstimated = 0, grandActual = 0;
+  let costWarningThreshold = 0, needsCostWarning = false;
+  let estProfit = 0, actProfit = 0, estGP3 = 0, actGP3 = 0;
+  if (project) {
     const ta = Object.values(actualCosts).reduce((s, v) => s + v, 0);
     const { exTax, grandEstimated: ge, warrantyCost: wc, riskCost: rc } = computeDeliveryEstGP3(project.contractAmount, quotationGroups, quotationVersion);
-    const ga = ta + wc;
-    const cwt = Math.round((ge - rc - wc) * 0.95);
-    return {
-      contractExTax: exTax, grandEstimated: ge,
-      grandActual: ga, costWarningThreshold: cwt, needsCostWarning: ga >= cwt,
-      estProfit: exTax - ge, actProfit: exTax - ga,
-      estGP3: exTax > 0 ? (exTax - ge) / exTax : 0,
-      actGP3: exTax > 0 ? (exTax - ga) / exTax : 0,
-    };
-  }, [project, actualCosts, quotationGroups, quotationVersion]);
+    grandActual = ta + wc;
+    costWarningThreshold = Math.round((ge - rc - wc) * 0.95);
+    needsCostWarning = grandActual >= costWarningThreshold;
+    contractExTax = exTax; grandEstimated = ge;
+    estProfit = exTax - ge; actProfit = exTax - grandActual;
+    estGP3 = exTax > 0 ? (exTax - ge) / exTax : 0;
+    actGP3 = exTax > 0 ? (exTax - grandActual) / exTax : 0;
+  }
 
   if (!project) {
     return (
