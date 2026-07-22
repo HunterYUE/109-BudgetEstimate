@@ -59,7 +59,7 @@ const PctBadge: React.FC<{ value: number; label: string; onClick: () => void }> 
 const SummarySection: React.FC<Props> = ({ groups, version, onDiscountChange, onVersionUpdate, readOnly }) => {
   // calcProjectSummary 的 discountedPrice 参数需为未税值，从含税版本值转换回
   const untaxedDiscounted = version.discountedPrice
-    ? Math.round(version.discountedPrice / (1 + (version.taxRate || 0.13)))
+    ? Math.round(version.discountedPrice / (1 + (version.taxRate ?? 0.13)))
     : undefined;
   const summary = calcProjectSummary(groups, version, untaxedDiscounted);
   const { materialCost, laborCost, projectExpense } = summary;
@@ -181,7 +181,7 @@ const SummarySection: React.FC<Props> = ({ groups, version, onDiscountChange, on
               ¥{formatMoney(summary.totalAccountingPrice)}
             </div>
             <div style={{ marginTop: 8, fontSize: 12, color: COLORS.textSecondary }}>
-              欧元 <span style={{ fontWeight: 600, color: COLORS.textDark }}>€{formatMoney(Math.round(Math.round(summary.totalAccountingPrice / (1 + (version.taxRate || 0.13))) / version.eurRate))}</span>
+              欧元 <span style={{ fontWeight: 600, color: COLORS.textDark }}>€{formatMoney(Math.round(Math.round(summary.totalAccountingPrice / (1 + (version.taxRate ?? 0.13))) / version.eurRate))}</span>
             </div>
           </div>
         </Col>
@@ -244,7 +244,7 @@ const SummarySection: React.FC<Props> = ({ groups, version, onDiscountChange, on
               项目利润 <span style={{ fontSize: 10 }}>(含税)</span>
             </div>
             <div style={{ fontWeight: 700, fontSize: 24, lineHeight: 1.2 }}>
-              ¥{formatMoney(Math.round(summary.discountedPrice - summary.totalCost * (1 + (version.taxRate || 0.13))))}
+              ¥{formatMoney(Math.round(summary.discountedPrice - summary.totalCost * (1 + (version.taxRate ?? 0.13))))}
             </div>
             <div style={{ marginTop: 8, fontSize: 13 }}>
               <span style={{ opacity: 0.7 }}>GP3 毛利率 </span>

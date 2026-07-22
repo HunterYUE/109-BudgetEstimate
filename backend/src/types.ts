@@ -259,6 +259,7 @@ export interface DeliveryProjectRow {
   cost_status: ReviewStatus;
   cost_approval: any;
   total_actual_cost: number | null;
+  actual_costs: Record<string, number>;
   terminated: boolean;
   created_at: string;
   updated_at: string;

@@ -189,14 +189,13 @@ router.put('/:id', async (req, res, next) => {
         throw new AppError(403, '该机会已提交转机会审批，审批完成前不可修改');
       }
     }
-    // 通过检查后交给标准 CRUD PUT 处理
-    const snakeBody = objKeysToSnake({ ...req.body });
+    // 通过检查后交给标准 CRUD PUT 处理（复用上面的 body 转换结果）
     const updateCols = fields.filter(f =>
-      !['id', 'created_at', 'updated_at'].includes(f) && snakeBody[f] !== undefined
+      !['id', 'created_at', 'updated_at'].includes(f) && body[f] !== undefined
     );
     if (updateCols.length === 0) throw new AppError(400, '没有要更新的字段');
     const setClause = updateCols.map((f, i) => `"${f}" = $${i + 1}`).join(', ');
-    const rawValues = updateCols.map(f => snakeBody[f]);
+    const rawValues = updateCols.map(f => body[f]);
     rawValues.push(id);
     const result = await query(
       `UPDATE sales_opportunities SET ${setClause}, updated_at = now() WHERE id = $${rawValues.length} RETURNING *`,
@@ -204,6 +203,23 @@ router.put('/:id', async (req, res, next) => {
     );
     if (result.rows.length === 0) throw new AppError(404, '记录不存在');
     res.json(result.rows[0]);
+  } catch (err) { next(err); }
+});
+
+// 获取下个销售编号（必须在 crudRouter 之前，否则 /:id 会拦截）
+router.get('/next-sales-no', async (req, res, next) => {
+  try {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const prefix = `A${y}-${m}-`;
+    const result = await query(
+      `SELECT COALESCE(MAX(SUBSTRING(sales_no FROM 'A\\d+-\\d+-(\\d+)')::int), 0) + 1 AS next_seq
+       FROM sales_opportunities WHERE sales_no LIKE $1`,
+      [prefix + '%']
+    );
+    const seq = String(result.rows[0].next_seq).padStart(3, '0');
+    res.json({ salesNo: `${prefix}${seq}-S` });
   } catch (err) { next(err); }
 });
 

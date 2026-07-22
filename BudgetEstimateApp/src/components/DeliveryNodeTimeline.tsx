@@ -16,6 +16,7 @@ interface Props {
   onSavePlan?: () => void;
   onSubmitPlan?: () => void;
   onExportPlan?: () => void;
+  saving?: boolean;
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -24,10 +25,9 @@ const STATUS_LABELS: Record<string, string> = {
 
 /** 说明标签颜色表（深色系，按 nodeNo 轮转）—— 从 constants 导入 */
 
-/** 判断节点是否延期 */
-function isNodeDelayed(node: DeliveryNode): boolean {
-  if (node.status === 'completed') return false;
-  return new Date(node.plannedEndDate) < new Date();
+/** 取节点基准计划日期（审批通过时的计划时间），无基准时用当前计划时间 */
+function getNodeBaseline(node: DeliveryNode): string {
+  return node.baselineEndDate || node.baselinePlannedEndDate || node.plannedEndDate || '';
 }
 
 /** 计算工作日 */
@@ -58,6 +58,7 @@ const DeliveryNodeTimeline: React.FC<Props> = ({
   onNodeStatusClick, onPlannedDateChange, onCommentsChange,
   planStatus = 'draft',
   onSavePlan, onSubmitPlan, onExportPlan,
+  saving = false,
 }) => {
   const sorted = [...nodes].sort((a, b) => a.nodeNo - b.nodeNo);
   const [editing, setEditing] = useState<{ id: string; field: 'plannedStartDate' | 'plannedEndDate' } | null>(null);
@@ -66,7 +67,10 @@ const DeliveryNodeTimeline: React.FC<Props> = ({
   useEffect(() => { if (editing && inputRef.current) inputRef.current.focus(); }, [editing]);
 
   // Inject one-time style
+  const styleInjected = useRef(false);
   useEffect(() => {
+    if (styleInjected.current) return;
+    styleInjected.current = true;
     const s = document.createElement('style');
     s.textContent = 'input.dt-hide::-webkit-calendar-picker-indicator { display: none }';
     document.head.appendChild(s);
@@ -84,20 +88,38 @@ const DeliveryNodeTimeline: React.FC<Props> = ({
     if (node.history.length === 0) return;
     Modal.info({
       title: `${node.name} — 变更历史`,
-      width: 480,
+      width: 500,
       content: (
         <div style={{ position: 'relative', paddingLeft: 24 }}>
           <div style={{ position: 'absolute', left: 11, top: 4, bottom: 4, width: 2, background: COLORS.border }} />
           {[...node.history].reverse().map(h => (
-            <div key={h.id} style={{ position: 'relative', paddingBottom: 10 }}>
+            <div key={h.id} style={{ position: 'relative', paddingBottom: 12 }}>
               <div style={{ position: 'absolute', left: -20, top: 4, width: 12, height: 12, borderRadius: '50%', background: COLORS.primary, border: '2px solid #fff' }} />
               <div style={{ fontSize: 13, color: COLORS.textDark, fontWeight: 600 }}>
                 {h.field === 'status' ? '状态变更' : '计划日期变更'}
               </div>
-              <div style={{ fontSize: 12, color: COLORS.textLight }}>{h.changedAt}</div>
-              <div style={{ fontSize: 13, color: COLORS.textSecondary, marginTop: 2 }}>
-                {h.oldValue || '—'} → {h.newValue}
-              </div>
+              {/* 新版格式（含修改人） */}
+              {h.modifier ? (
+                <div style={{ fontSize: 12, color: COLORS.textSecondary, marginTop: 4, lineHeight: 1.8 }}>
+                  <div style={{ color: COLORS.textLight }}>{h.modifier}@{h.changedAtFull || h.changedAt}</div>
+                  {h.oldValue.includes('开始:') || h.oldValue.includes('结束:') ? (
+                    h.oldValue.split(', ').map((part, i) => {
+                      const newPart = h.newValue.split(', ')[i] || '';
+                      return <div key={i}>{part.replace('开始: ', '开始 ').replace('结束: ', '结束 ')} → {newPart.replace('开始: ', '').replace('结束: ', '')}</div>;
+                    })
+                  ) : (
+                    <div>{h.oldValue || '—'} → {h.newValue}</div>
+                  )}
+                </div>
+              ) : (
+                /* 旧版格式（兼容无 modifier 的旧数据） */
+                <>
+                  <div style={{ fontSize: 12, color: COLORS.textLight }}>{h.changedAt}</div>
+                  <div style={{ fontSize: 13, color: COLORS.textSecondary, marginTop: 2 }}>
+                    {h.oldValue || '—'} → {h.newValue}
+                  </div>
+                </>
+              )}
             </div>
           ))}
         </div>
@@ -148,7 +170,6 @@ const DeliveryNodeTimeline: React.FC<Props> = ({
         </thead>
         <tbody>
           {sorted.map(node => {
-            const delayed = isNodeDelayed(node);
             const planDays = workDays(node.plannedStartDate, node.plannedEndDate);
             const startDate = node.actualStartDate || (node.history.find(h => h.field === 'status' && h.newValue === 'in_progress')?.changedAt) || null;
             const actualDays = node.status === 'completed' && node.actualDate && startDate
@@ -172,7 +193,7 @@ const DeliveryNodeTimeline: React.FC<Props> = ({
                         background: '#fff', border: `1px solid ${COLORS.borderInput}`, borderRadius: 4,
                         minWidth: 72, boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
                       }}>
-                        {(node.status === 'pending' ? ['in_progress'] : node.status === 'in_progress' ? ['completed'] : ['pending', 'in_progress']).map(st => (
+                        {(node.status === 'pending' ? ['in_progress'] : node.status === 'in_progress' ? ['completed'] : node.status === 'delayed' ? ['completed', 'in_progress'] : ['pending', 'in_progress']).map(st => (
                           <div key={st} onClick={() => { onNodeStatusClick?.(node.id, st); setStatusDropdown(null); }}
                             style={{
                               padding: '4px 12px', cursor: 'pointer', fontSize: 12,
@@ -191,21 +212,30 @@ const DeliveryNodeTimeline: React.FC<Props> = ({
                   <span style={{ fontSize: 13, fontWeight: 700, color: '#1a2634' }}>{node.name}</span>
                 </td>
                 <td style={{ ...cellStyle, textAlign: 'center', padding: '10px 8px 6px' }}>
-                  {node.status === 'completed' && node.actualEndDate ? (() => {
-                    const baseline = node.baselineEndDate || node.plannedEndDate;
-                    const dd = Math.round((new Date(node.actualEndDate).getTime() - new Date(baseline).getTime()) / 86400000);
-                    return dd > 0
-                      ? <Tag color={COLORS.danger} style={{ margin: 0, borderRadius: 3, fontSize: 11, lineHeight: '22px', border: 'none' }}>{dd}天</Tag>
-                      : dd < 0
-                      ? <Tag color={COLORS.success} style={{ margin: 0, borderRadius: 3, fontSize: 11, lineHeight: '22px', border: 'none' }}>{dd}天</Tag>
-                      : <Tag color={COLORS.success} style={{ margin: 0, borderRadius: 3, fontSize: 11, lineHeight: '22px', border: 'none' }}>0天</Tag>;
-                  })() : delayed ? (
-                    <Tag color={COLORS.danger} style={{ margin: 0, borderRadius: 3, fontSize: 11, lineHeight: '22px', border: 'none' }}>
-                      {Math.round((new Date().getTime() - new Date(node.plannedEndDate).getTime()) / (1000 * 60 * 60 * 24))}天
-                    </Tag>
-                  ) : (
-                    <Tag color="default" style={{ margin: 0, borderRadius: 3, fontSize: 11, lineHeight: '22px', border: 'none', color: '#bbb' }}>—</Tag>
-                  )}
+                  {(() => {
+                    const refDate = getNodeBaseline(node);
+                    if (node.status === 'completed' && (node.actualDate || node.actualEndDate)) {
+                      // 已完成：实际完成日 vs 基准计划日（超期正/提前负）
+                      const actualEnd = node.actualDate || node.actualEndDate!;
+                      const dd = Math.round((new Date(actualEnd).getTime() - new Date(refDate).getTime()) / 86400000);
+                      return dd > 0
+                        ? <Tag color={COLORS.danger} style={{ margin: 0, borderRadius: 3, fontSize: 11, lineHeight: '22px', border: 'none' }}>+{dd}</Tag>
+                        : dd < 0
+                        ? <Tag color={COLORS.success} style={{ margin: 0, borderRadius: 3, fontSize: 11, lineHeight: '22px', border: 'none' }}>{dd}</Tag>
+                        : <Tag color={COLORS.success} style={{ margin: 0, borderRadius: 3, fontSize: 11, lineHeight: '22px', border: 'none' }}>0</Tag>;
+                    }
+                    if (node.status !== 'completed') {
+                      // 未完成：当前时间 vs 基准日期（通过审批的初始计划）
+                      if (!refDate) return <Tag color="default" style={{ margin: 0, borderRadius: 3, fontSize: 11, lineHeight: '22px', border: 'none', color: '#bbb' }}>—</Tag>;
+                      const dd = Math.round((new Date().getTime() - new Date(refDate).getTime()) / 86400000);
+                      const hasBaseline = !!node.baselineEndDate || !!node.baselinePlannedEndDate;
+                      if (dd > 0) return <Tag color={COLORS.danger} style={{ margin: 0, borderRadius: 3, fontSize: 11, lineHeight: '22px', border: 'none' }}>+{dd}</Tag>;
+                      // 提前天数仅在存在基准（审批通过的计划）时显示
+                      if (dd < 0 && hasBaseline) return <Tag color={COLORS.success} style={{ margin: 0, borderRadius: 3, fontSize: 11, lineHeight: '22px', border: 'none' }}>{dd}</Tag>;
+                      return <Tag color="default" style={{ margin: 0, borderRadius: 3, fontSize: 11, lineHeight: '22px', border: 'none', color: '#bbb' }}>—</Tag>;
+                    }
+                    return <Tag color="default" style={{ margin: 0, borderRadius: 3, fontSize: 11, lineHeight: '22px', border: 'none', color: '#bbb' }}>—</Tag>;
+                  })()}
                 </td>
                 <td style={cellStyle}>
                   <span style={{ fontSize: 12, color: COLORS.textSecondary }}>
@@ -242,7 +272,7 @@ const DeliveryNodeTimeline: React.FC<Props> = ({
                     </span>
                   )}
                 </td>
-                <td style={{ ...cellStyle, textAlign: 'center', fontSize: 11, color: COLORS.textMuted }}>{planDays}天</td>
+                <td style={{ ...cellStyle, textAlign: 'center', fontSize: 11, color: COLORS.textMuted }}>{planDays}</td>
                 <td style={{ ...cellStyle, textAlign: 'center', fontSize: 12, color: node.status === 'completed' ? COLORS.primary : COLORS.primary }}>
                   {node.status === 'in_progress' && node.actualStartDate ? shortDate(node.actualStartDate) :
                    node.status === 'completed' && node.actualDate ? (() => {
@@ -252,8 +282,8 @@ const DeliveryNodeTimeline: React.FC<Props> = ({
                 </td>
                 <td style={{ ...cellStyle, textAlign: 'center', fontSize: 11, color: COLORS.textMuted }}>
                   {node.status === 'completed' ? (() => {
-                    return <span>{node.status === 'completed' && actualDays > 0 ? <span style={{ color: COLORS.primary, fontWeight: 600 }}>{actualDays}天</span> : '—'}</span>;
-                  })() : (actualDays > 0 ? <span style={{ color: COLORS.primary, fontWeight: 600 }}>{actualDays}天</span> : '—')}
+                    return <span>{node.status === 'completed' && actualDays > 0 ? <span style={{ color: COLORS.primary, fontWeight: 600 }}>{actualDays}</span> : '—'}</span>;
+                  })() : (actualDays > 0 ? <span style={{ color: COLORS.primary, fontWeight: 600 }}>{actualDays}</span> : '—')}
                 </td>
                 <td style={cellStyle}>
                   {editingComments === node.id ? (
@@ -267,8 +297,8 @@ const DeliveryNodeTimeline: React.FC<Props> = ({
                       />
                     </div>
                   ) : (
-                    <span onClick={() => startEditComments(node.id, node.comments || '')}
-                      style={{ cursor: 'pointer', display: 'block', minHeight: 20 }}>
+                    <span onClick={() => !locked && startEditComments(node.id, node.comments || '')}
+                      style={{ cursor: locked ? 'default' : 'pointer', display: 'block', minHeight: 20 }}>
                       {node.comments ? (
                         <Tag color={COMMENT_TAG_COLORS[Math.abs(node.nodeNo - 1) % COMMENT_TAG_COLORS.length]}
                           style={{ margin: 0, borderRadius: 3, fontSize: 12, lineHeight: '20px', border: 'none' }}>
@@ -291,7 +321,7 @@ const DeliveryNodeTimeline: React.FC<Props> = ({
         {!!onSavePlan && (
           <IconButton icon={<SaveOutlined style={{ fontWeight: 700 }} />}
             onClick={onSavePlan} color="#d46b08" hoverBg="#fff7e6" title="保存"
-            disabled={locked || !hasChanges} />
+            disabled={locked || !hasChanges || saving} />
         )}
         {!!onSubmitPlan && (
           <IconButton icon={<SendOutlined style={{ fontWeight: 700 }} />}

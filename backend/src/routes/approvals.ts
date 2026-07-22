@@ -22,15 +22,32 @@ const crudRouter = crudRoutes('approval_requests', fields, {
 // 顶层路由 — 自定义 LIST 优先于 crudRouter 的默认 LIST（否则默认 LIST 永远拦截请求）
 const router = Router();
 
-// 自定义 POST：创建转机会审批时自动锁定机会并填充财务数据
+// 自定义 POST：创建审批时自动级联更新相关状态
 router.post('/', async (req, res, next) => {
   try {
-    const { approvalType, opportunityId } = req.body;
-    if (approvalType === 'promote' && opportunityId) {
+    const { approval_type, opportunity_id, delivery_id } = req.body;
+
+    // 创建实施计划审批时，锁定交付项目
+    if (approval_type === 'plan' && delivery_id) {
+      await query(
+        'UPDATE delivery_projects SET plan_status = $1, updated_at = now() WHERE id = $2',
+        ['pending', delivery_id]
+      );
+    }
+
+    // 创建成本对比审批时，锁定交付项目成本状态
+    if (approval_type === 'cost' && delivery_id) {
+      await query(
+        'UPDATE delivery_projects SET cost_status = $1, updated_at = now() WHERE id = $2',
+        ['pending', delivery_id]
+      );
+    }
+
+    if (approval_type === 'promote' && opportunity_id) {
       // 锁定机会
       await query(
         'UPDATE sales_opportunities SET promote_locked = true, updated_at = now() WHERE id = $1',
-        [opportunityId]
+        [opportunity_id]
       );
 
       // 从关联报价自动填充财务数据（如前端未提供）
@@ -38,7 +55,7 @@ router.post('/', async (req, res, next) => {
         try {
           const oppRows = await query(
             'SELECT quotation_id FROM sales_opportunities WHERE id = $1',
-            [opportunityId]
+            [opportunity_id]
           );
           const oppRow = oppRows.rows[0];
           if (oppRow?.quotation_id) {
@@ -62,7 +79,6 @@ router.post('/', async (req, res, next) => {
                 if (!req.body.totalCost) req.body.totalCost = parseFloat(pv.total_cost) || 0;
                 if (!req.body.taxRate) req.body.taxRate = parseFloat(pv.tax_rate) || 0.13;
                 if (!req.body.amount) req.body.amount = parseFloat(pv.discounted_price) || 0;
-                if (!req.body.gp3) req.body.gp3 = parseFloat(pv.gp3_profit_rate) || 0;
                 if (!req.body.gp3Amount) req.body.gp3Amount = parseFloat(pv.gp3_amount) || 0;
               }
             }
@@ -154,6 +170,30 @@ router.post('/:id/records', async (req, res, next) => {
           [ar.opportunity_id]
         );
       }
+    }
+
+    // 实施计划审批完成时，同步交付项目状态 + 保存基准计划时间
+    if (ar.approval_type === 'plan' && ar.delivery_id) {
+      await query(
+        'UPDATE delivery_projects SET plan_status = $1, updated_at = now() WHERE id = $2',
+        [newStatus, ar.delivery_id]
+      );
+      // 审批通过时，将当前计划结束日期写入 baseline_planned_end_date（仅首次写入）
+      if (newStatus === 'approved') {
+        await query(
+          `UPDATE delivery_nodes SET baseline_planned_end_date = planned_end_date
+           WHERE delivery_project_id = $1 AND baseline_planned_end_date IS NULL`,
+          [ar.delivery_id]
+        );
+      }
+    }
+
+    // 成本对比审批完成时，同步交付项目成本状态
+    if (ar.approval_type === 'cost' && ar.delivery_id) {
+      await query(
+        'UPDATE delivery_projects SET cost_status = $1, updated_at = now() WHERE id = $2',
+        [newStatus, ar.delivery_id]
+      );
     }
 
     // 报价审批完成时，同步项目版本状态 + 关联机会金额

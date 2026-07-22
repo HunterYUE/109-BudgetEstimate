@@ -9,7 +9,8 @@ export const fmtK = (v: number) => Math.round(v / 1000).toLocaleString() + 'K';
 export const FY_OPTIONS = ['FY2425', 'FY2526', 'FY2627'] as const;
 
 // 缓存已加载的项目数据，避免重复请求
-const projectCache = new Map<string, { groups: Group[]; version?: { warrantyRate: number; riskRate: number } }>();
+const CACHE_MAX_SIZE = 200;
+const projectCache = new Map<string, { groups: Group[]; version?: { warrantyRate: number; riskRate: number; taxRate: number; commercialCost: number } }>();
 
 /**
  * 预加载报价数据到缓存（供同步 loadQuotationGroups 使用）
@@ -35,6 +36,11 @@ export async function preloadQuotationGroups(quotationId: string | undefined | n
     );
     // 版本过滤未命中时回退全量组（兼容旧数据），避免成本对比表空白
     const finalGroups = versionGroups.length > 0 ? versionGroups : (project.groups || []);
+    // 淘汰最旧条目
+    if (projectCache.size > CACHE_MAX_SIZE) {
+      const firstKey = projectCache.keys().next().value;
+      if (firstKey) projectCache.delete(firstKey);
+    }
     projectCache.set(quotationId, {
       groups: finalGroups.map((g: any) => ({
         ...g,
@@ -43,9 +49,12 @@ export async function preloadQuotationGroups(quotationId: string | undefined | n
       version: version ? {
         warrantyRate: version.warrantyRate ?? 0,
         riskRate: version.riskRate ?? 0,
+        taxRate: version.taxRate ?? 0.13,
+        commercialCost: version.commercialCost ?? 0,
       } : undefined,
     });
-  } catch {
+  } catch (err) {
+    console.warn('[preloadQuotationGroups] 加载报价数据失败:', quotationId, (err as Error).message);
     projectCache.set(quotationId, { groups: [], version: undefined });
   }
 }
@@ -55,7 +64,7 @@ export async function preloadQuotationGroups(quotationId: string | undefined | n
  */
 export function loadQuotationGroups(quotationId: string | undefined | null): {
   groups: Group[];
-  version?: { warrantyRate: number; riskRate: number };
+  version?: { warrantyRate: number; riskRate: number; taxRate: number; commercialCost: number };
 } {
   if (!quotationId) return { groups: [], version: undefined };
   return projectCache.get(quotationId) || { groups: [], version: undefined };

@@ -198,7 +198,8 @@ const [fySelect, setFySelect] = useState(defaultFy);
     const completedCount = fyFiltered.filter(p => isNode15CompletedInFy(p, fyRange)).length;
     let totalAmt = 0, activeAmt = 0, completedAmt = 0, delayedAmt = 0;
     for (const p of fyFiltered) {
-      const exTax = Math.round(p.contractAmount / (1 + 0.13));
+      const taxRate = loadQuotationGroups(p.quotationId).version?.taxRate ?? 0.13;
+      const exTax = Math.round(p.contractAmount / (1 + taxRate));
       totalAmt += exTax;
       const n15Done = p.nodes.find(n => n.nodeNo === 15)?.status === 'completed';
       if (!n15Done) activeAmt += exTax;
@@ -250,7 +251,8 @@ const [fySelect, setFySelect] = useState(defaultFy);
       let tAmt = 0, aAmt = 0, cAmt = 0, dAmt = 0, tDelay = 0, dCnt = 0, onT = 0, tN = 0;
       let active = 0, completed = 0, delayed = 0;
       for (const p of mp) {
-        const ex = Math.round(p.contractAmount / 1.13);
+        const taxRate = loadQuotationGroups(p.quotationId).version?.taxRate ?? 0.13;
+        const ex = Math.round(p.contractAmount / (1 + taxRate));
         tAmt += ex;
         const n15 = p.nodes.find(n => n.nodeNo === 15);
         const n15done = n15?.status === 'completed' && !!n15.actualDate && new Date(n15.actualDate) <= mEnd;

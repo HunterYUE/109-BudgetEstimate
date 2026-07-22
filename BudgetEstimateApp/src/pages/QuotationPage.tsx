@@ -633,6 +633,7 @@ const QuotationPage: React.FC = () => {
       console.error("[SaveError]", err);
       messageApi.error('提交失败：' + (err.message || '未知错误'));
     } finally {
+      savingRef.current = false;
       setIsSaving(false);
     }
   }, [validateCodes, messageApi, project, isLocked, submitterName, syncQuotation]);

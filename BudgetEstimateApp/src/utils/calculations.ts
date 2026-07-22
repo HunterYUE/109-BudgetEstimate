@@ -105,7 +105,7 @@ export function calcProjectSummary(
     ? (totalAccountingPrice - discountedPriceV) / totalAccountingPrice
     : 0;
 
-  const taxRate = version.taxRate || 0.13;
+  const taxRate = version.taxRate ?? 0.13;
   const warrantyCost = Math.round(warrantyBase * version.warrantyRate);
   const riskCost = Math.round(totalDirectCost * version.riskRate);
   const commercialCost = version.commercialCost;
@@ -143,20 +143,20 @@ export function formatMoney(value: number | undefined | null, locale = 'zh-CN'):
 
 /**
  * 计算交付项目的概算 GP3（不含实际成本）
- * 公式与 DeliveryDetail 保持一致：
- *   exTax = contractAmount / 1.13
+ * 公式：
+ *   exTax = contractAmount / (1 + taxRate)
  *   totalEstimated = Σ direct_cost
  *   warrantyCost = Σ(items WITHOUT warranty × direct_cost) × warranty_rate
  *   riskCost = totalEstimated * risk_rate
- *   grandEstimated = totalEstimated + riskCost + warrantyCost
+ *   grandEstimated = totalEstimated + riskCost + warrantyCost + commercialCost
  *   estGP3 = (exTax - grandEstimated) / exTax
  */
 export function computeDeliveryEstGP3(
   contractAmount: number,
   groups: Group[],
-  version?: { warrantyRate?: number; riskRate?: number }
-): { exTax: number; totalEstimated: number; warrantyCost: number; riskCost: number; grandEstimated: number; estGP3: number } {
-  const TAX_RATE = 0.13;
+  version?: { warrantyRate?: number; riskRate?: number; taxRate?: number; commercialCost?: number }
+): { exTax: number; totalEstimated: number; warrantyCost: number; riskCost: number; commercialCost: number; grandEstimated: number; estGP3: number } {
+  const TAX_RATE = version?.taxRate ?? 0.13;
   const exTax = Math.round(contractAmount / (1 + TAX_RATE));
 
   const totalEstimated = groups.reduce((s, g) => s + g.items.reduce((si, i) => si + i.directCost, 0), 0);
@@ -171,9 +171,11 @@ export function computeDeliveryEstGP3(
 
   const riskCost = version ? Math.round(totalEstimated * (version.riskRate ?? 0)) : 0;
 
-  const grandEstimated = totalEstimated + riskCost + warrantyCost;
+  const commercialCost = version?.commercialCost ?? 0;
+
+  const grandEstimated = totalEstimated + riskCost + warrantyCost + commercialCost;
   const estGP3 = exTax > 0 ? (exTax - grandEstimated) / exTax : 0;
 
-  return { exTax, totalEstimated, warrantyCost, riskCost, grandEstimated, estGP3 };
+  return { exTax, totalEstimated, warrantyCost, riskCost, commercialCost, grandEstimated, estGP3 };
 }
 

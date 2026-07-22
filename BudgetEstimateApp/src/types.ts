@@ -217,6 +217,10 @@ export interface NodeChangeEntry {
   oldValue: string;
   newValue: string;
   changedAt: string;
+  /** 修改人显示名（仅 plannedDate 类型） */
+  modifier?: string;
+  /** 修改完整时间戳（仅 plannedDate 类型） */
+  changedAtFull?: string;
 }
 
 export interface DeliveryNode {
@@ -255,6 +259,8 @@ export interface DeliveryProject {
   costApproval?: ApprovalInfo;
   /** 成本审批通过后的实际总成本，由成本对比表审批时写入 */
   totalActualCost?: number;
+  /** 逐项实际成本 JSON: { itemId: number } */
+  actualCosts?: Record<string, number>;
   createdAt: string;
   updatedAt: string;
   terminated?: boolean;

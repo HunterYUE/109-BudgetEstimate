@@ -314,7 +314,8 @@ const [fySelect, setFySelect] = useState(defaultFy);
     if (delivered.length === 0) return 0;
     let totalAmt = 0, weighted = 0;
     for (const p of delivered) {
-      const exTax = Math.round(p.contractAmount / 1.13);
+      const taxRate = loadQuotationGroups(p.quotationId).version?.taxRate ?? 0.13;
+      const exTax = Math.round(p.contractAmount / (1 + taxRate));
       totalAmt += exTax;
       const actProfit = exTax - p.totalActualCost;
       const actGP3 = exTax > 0 ? actProfit / exTax : 0;
@@ -402,7 +403,7 @@ const [fySelect, setFySelect] = useState(defaultFy);
         const w = Math.round(o.amount * o.winRate / 100);
         weighted += w;
         const q = o.quotationId ? (quotationSummaries||[]).find(q => q.id === o.quotationId) : undefined;
-        profit += Math.round(w * (q ? q.profitRate / 100 : 0.15));
+        profit += Math.round(w * (q ? (q.profitRate ?? 0) / 100 : 0.15));
       }
       const cycle = wonOpps.length > 0 ? Math.round(wonOpps.reduce((s, o) => {
         return s + Math.round((new Date(o.updatedAt).getTime() - new Date(o.createdAt).getTime()) / (1000 * 60 * 60 * 24));
@@ -499,7 +500,7 @@ const [fySelect, setFySelect] = useState(defaultFy);
         let profitRate = 0.15;
         if (o.quotationId) {
           const q = (quotationSummaries||[]).find(q => q.id === o.quotationId);
-          if (q) profitRate = q.profitRate / 100;
+          if (q) profitRate = (q.profitRate ?? 0) / 100;
         }
         s.profitTotal += Math.round(o.amount * profitRate);
       }

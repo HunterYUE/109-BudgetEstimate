@@ -56,6 +56,13 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
 /* ============================================================
    Component
    ============================================================ */
+  const TITLE_PERMISSIONS: Record<string, string[]> = {
+    '销售经理': ['销售机会管理', '新建信息/线索/机会', '编辑销售机会', '转线索/转机会', '销售蓝表编辑', '客户管理', '新建客户', '报价列表查看', '仪表盘查看'],
+    '方案经理': ['物料管理', '新增物料', '新建标签', '报价编制', '报价列表查看', '仪表盘查看', '销售机会管理', '客户管理'],
+    '交付经理': ['交付管理', '交付分析', '成本录入', '物料管理', '仪表盘查看', '报价列表查看', '销售机会管理', '客户管理'],
+    '部门总监': ['全部查看权限', '审批管理', '用户管理', '系统配置', '仪表盘查看', '销售机会管理', '报价编制', '物料管理', '新增物料', '新建标签', '交付管理', '交付分析', '客户管理', '新建客户', '新建信息/线索/机会', '编辑销售机会', '转线索/转机会', '销售蓝表编辑', '成本录入'],
+  };
+
 const SystemManagement: React.FC = () => {
   const [tab, setTab] = useState<TabKey>('users');
   const [messageApi, msgContextHolder] = message.useMessage();
@@ -111,7 +118,7 @@ const SystemManagement: React.FC = () => {
 
   // 操作日志
   const [logs, setLogs] = useState<AuditLog[]>([]);
-  const [, setLogLoading] = useState(false);
+  const [_setLogLoading, setLogLoading] = useState(false);
   const [logModuleFilter, setLogModuleFilter] = useState<string | null>(null);
 
   const loadLogs = useCallback(async () => {
@@ -228,12 +235,6 @@ const SystemManagement: React.FC = () => {
     }
   };
 
-  const TITLE_PERMISSIONS: Record<string, string[]> = {
-    '销售经理': ['销售机会管理', '新建信息/线索/机会', '编辑销售机会', '转线索/转机会', '销售蓝表编辑', '客户管理', '新建客户', '报价列表查看', '仪表盘查看'],
-    '方案经理': ['物料管理', '新增物料', '新建标签', '报价编制', '报价列表查看', '仪表盘查看', '销售机会管理', '客户管理'],
-    '交付经理': ['交付管理', '交付分析', '成本录入', '物料管理', '仪表盘查看', '报价列表查看', '销售机会管理', '客户管理'],
-    '部门总监': ['全部查看权限', '审批管理', '用户管理', '系统配置', '仪表盘查看', '销售机会管理', '报价编制', '物料管理', '新增物料', '新建标签', '交付管理', '交付分析', '客户管理', '新建客户', '新建信息/线索/机会', '编辑销售机会', '转线索/转机会', '销售蓝表编辑', '成本录入'],
-  };
 
   const openPermModal = (u: UserRecord) => {
     setEditTarget(u);

@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, Tag, message, Empty } from 'antd';
+import { Card, Tag, message, Empty, Spin } from 'antd';
 import { SyncOutlined, HistoryOutlined } from '@ant-design/icons';
 import { formatMoney } from '../utils/calculations';
 import { deliveryService } from '../services/deliveryService';
@@ -18,14 +18,18 @@ const DeliveryManagement: React.FC = () => {
   const [filter, setFilter] = useState<'active' | 'completed'>('active');
 
   const [projects, setProjects] = useState<DeliveryProject[]>([]);
+  const [loading, setLoading] = useState(false);
   const [messageApi, msgContextHolder] = message.useMessage();
 
   const fetchProjects = async () => {
+    setLoading(true);
     try {
       const data = await deliveryService.list();
       setProjects(data);
     } catch {
       messageApi.warning('加载交付项目失败');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -121,7 +125,9 @@ const DeliveryManagement: React.FC = () => {
         </div>
       </div>
 
-      {displayList.length === 0 ? (
+      {loading ? (
+        <div style={{ textAlign: 'center', padding: 60 }}><Spin /></div>
+      ) : displayList.length === 0 ? (
         <Empty description={filter === 'active' ? '暂无进行中的交付项目' : '暂无历史项目'}
           style={{ padding: 40, background: '#fff', borderRadius: 6 }} />
       ) : (

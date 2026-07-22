@@ -255,7 +255,7 @@ const Dashboard: React.FC = () => {
   const stageDist = useMemo(() => {
     const stages = ['信息', '线索', '机会', '投标', '议价'];
     const colors = [COLORS.chartGray, COLORS.primary, COLORS.purple, COLORS.warning, COLORS.amber];
-    const monthLabels = ['Apr', 'May', 'Jun'];
+    const monthLabels = [2,1,0].map(i => new Date(now.getFullYear(), now.getMonth() - i, 1).toLocaleString('en', {month:'short'}));
     const getPipelineStage = (o: typeof opportunities[0], monthEnd: Date) => {
       if (new Date(o.createdAt) > monthEnd) return null;
       if ((o.status === '赢' || o.status === '输') && new Date(o.updatedAt) <= monthEnd) return null;
@@ -296,7 +296,7 @@ const Dashboard: React.FC = () => {
       const monthStart = new Date(monthEnd.getFullYear(), monthEnd.getMonth(), 1);
       return d >= monthStart && d <= monthEnd;
     };
-    const monthLabels = ['Apr', 'May', 'Jun'];
+    const monthLabels = [2,1,0].map(i => new Date(now.getFullYear(), now.getMonth() - i, 1).toLocaleString('en', {month:'short'}));
     const statusNames = ['已完成', '进行中', '已延期'] as const;
     const statusColors = [COLORS.success, COLORS.primary, COLORS.danger] as const;
     const projectStatus: { label: string; value: number; color: string }[] = [];

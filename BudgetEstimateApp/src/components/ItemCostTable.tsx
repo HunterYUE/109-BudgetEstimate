@@ -7,6 +7,8 @@ import { COLORS } from '../styles/colors';
 interface VersionData {
   warrantyRate: number;
   riskRate: number;
+  taxRate?: number;
+  commercialCost?: number;
 }
 
 interface Props {
@@ -305,6 +307,39 @@ const ItemCostTable: React.FC<Props> = ({ groups, actualCosts, onActualCostChang
       });
     }
 
+    // ===== 5.5 Commercial cost (flat amount from version) =====
+    if (version && version.commercialCost && version.commercialCost > 0) {
+      const cc = version.commercialCost;
+      result.push({
+        key: 'h-commercial',
+        _type: 'header',
+        category: '商业费用',
+        code: '',
+        detail: '',
+        qty: 0,
+        estimated: cc,
+        actual: cc,
+        variance: 0,
+        varianceRate: 0,
+        _relatedIds: ['_commercial'],
+        _isRiskItem: false,
+      });
+      result.push({
+        key: '_commercial',
+        _type: 'item',
+        category: '商业费用',
+        code: 'C-COMMERCIAL',
+        detail: '项目管理费/商业费用',
+        qty: 0,
+        estimated: cc,
+        actual: cc,
+        variance: 0,
+        varianceRate: 0,
+        _relatedIds: ['_commercial'],
+        _isRiskItem: false,
+      });
+    }
+
     // ===== 6. Warranty cost (not editable, always incurred) =====
     if (version && version.warrantyRate > 0) {
       // ⚠️ 质保基数仅统计 EQUIPMENT/INTEGRATION 组类型（与 calcProjectSummary 一致）
@@ -365,7 +400,7 @@ const ItemCostTable: React.FC<Props> = ({ groups, actualCosts, onActualCostChang
     if (row._type === 'header' || row._warrantyItem) return;
 
     for (const id of row._relatedIds) {
-      onActualCostChange(id, id === row._relatedIds[0] ? newVal : 0);
+      onActualCostChange(id, newVal);
     }
   };
 

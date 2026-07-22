@@ -7,10 +7,39 @@ const fields = [
   'id', 'opportunity_id', 'sales_no', 'client_name', 'project_name',
   'contract_amount', 'quotation_id', 'status', 'plan_status',
   'plan_approval', 'cost_status', 'cost_approval', 'total_actual_cost',
+  'actual_costs',
   'terminated', 'created_at', 'updated_at',
 ];
 
-const router = crudRoutes('delivery_projects', fields, {
+const router = Router();
+
+// 自定义列表查询：包含节点完成统计（节点总数、已完成数）
+router.get('/', async (req, res, next) => {
+  try {
+    const { search, limit = '100', offset = '0' } = req.query as Record<string, string>;
+    const limitNum = Math.min(1000, Math.max(1, parseInt(limit, 10) || 100));
+    const offsetNum = Math.max(0, parseInt(offset, 10) || 0);
+    let sql = `SELECT dp.*,
+        COALESCE(
+          (SELECT jsonb_agg(to_jsonb(dn_sub) ORDER BY dn_sub.node_no)
+           FROM delivery_nodes dn_sub
+           WHERE dn_sub.delivery_project_id = dp.id
+          ), '[]'::jsonb
+        ) AS nodes
+      FROM delivery_projects dp`;
+    const params: any[] = [];
+    if (search) {
+      const conditions = ['dp.sales_no::text ILIKE $1', 'dp.client_name::text ILIKE $1', 'dp.project_name::text ILIKE $1'];
+      sql += ` WHERE ${conditions.join(' OR ')}`;
+      params.push(`%${search}%`);
+    }
+    sql += ` ORDER BY dp.project_name DESC LIMIT ${limitNum} OFFSET ${offsetNum}`;
+    const result = await query(sql, params);
+    res.json(result.rows);
+  } catch (err) { next(err); }
+});
+
+const crudRouter = crudRoutes('delivery_projects', fields, {
   searchFields: ['sales_no', 'client_name', 'project_name'],
   orderBy: 'updated_at DESC',
   extra: (r) => {
@@ -90,5 +119,8 @@ const router = crudRoutes('delivery_projects', fields, {
     });
   },
 });
+
+// 挂载标准 CRUD 路由（GET /:id, POST, PUT, DELETE 等）
+router.use(crudRouter);
 
 export default router;

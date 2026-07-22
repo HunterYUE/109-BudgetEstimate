@@ -9,6 +9,7 @@ interface IconButtonProps {
   title?: string;
   size?: number;
   disabled?: boolean;
+  loading?: boolean;
 }
 
 /** 将 hex 颜色转为 rgba 半透明 */
@@ -21,6 +22,7 @@ function hexToRgba(hex: string, alpha: number): string {
 const IconButton: React.FC<IconButtonProps> = ({
   icon, onClick, color = COLORS.primary, hoverBg,
   title, size = 36, disabled = false,
+  loading = false,
 }) => {
   const bg = hoverBg || hexToRgba(color, 0.08);
 

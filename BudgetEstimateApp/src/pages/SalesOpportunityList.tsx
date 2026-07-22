@@ -17,7 +17,7 @@ import { projectService } from '../services/projectService';
 import { REASON_TAXONOMY, formatReasons } from '../reasonTaxonomy';
 import { parseFY, FYSelector } from '../utils/fiscalYear';
 import { COLORS } from '../styles/constants';
-import { clearCache } from '../utils/api';
+import { api, clearCache } from '../utils/api';
 import { calcBlueTableWinRate } from '../utils/blueTableCalculation';
 import { NODE_NAMES } from '../utils/constants';
 import { formatBeijing } from '../utils/timeFormat';
@@ -512,7 +512,7 @@ const SalesOpportunityList: React.FC = () => {
 
 
 
-  const handleModalOk = useCallback(() => {
+  const handleModalOk = useCallback(async () => {
 
     if (!formData.clientName || !formData.projectName) {
 
@@ -538,13 +538,19 @@ const SalesOpportunityList: React.FC = () => {
 
     } else {
 
-      const salesNo = (() => {
+      // 从后端API获取下一个销售编号（避免本地计数不准确导致重复）
+      let salesNo;
+      try {
+        const resp = await api.get<{ salesNo: string }>('/opportunities/next-sales-no');
+        salesNo = resp.salesNo;
+      } catch {
+        // fallback: 本地计数
         const d = new Date();
         const y = d.getFullYear();
         const m = String(d.getMonth() + 1).padStart(2, '0');
         const count = opportunities.filter(o => o.salesNo.startsWith('A' + y + '-' + m)).length;
-        return 'A' + y + '-' + m + '-' + String(count + 1).padStart(3, '0') + '-S';
-      })();
+        salesNo = 'A' + y + '-' + m + '-' + String(count + 1).padStart(3, '0') + '-S';
+      }
 
       opportunityService.create({
         salesNo,

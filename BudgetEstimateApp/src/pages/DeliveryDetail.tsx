@@ -1,8 +1,8 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { Tag, Card, Button, message, Modal, ConfigProvider } from 'antd';
-import { ScheduleOutlined, AuditOutlined, SendOutlined, SaveOutlined, ArrowLeftOutlined, DownloadOutlined, UploadOutlined, EyeOutlined, DeleteOutlined } from '@ant-design/icons';
-import { formatMoney } from '../utils/calculations';
+import { Tag, Card, Button, message, Modal, ConfigProvider, Spin } from 'antd';
+import { ScheduleOutlined, AuditOutlined, SendOutlined, SaveOutlined, ArrowLeftOutlined, DownloadOutlined, UploadOutlined, EyeOutlined, DeleteOutlined, CheckOutlined, CloseOutlined } from '@ant-design/icons';
+import { formatMoney, computeDeliveryEstGP3 } from '../utils/calculations';
 import { approvalService } from '../services/approvalService';
 import { deliveryService } from '../services/deliveryService';
 import { projectService } from '../services/projectService';
@@ -11,9 +11,11 @@ import { api } from '../utils/api';
 import DeliveryNodeTimeline from '../components/DeliveryNodeTimeline';
 import IconButton from '../components/IconButton';
 import ItemCostTable from '../components/ItemCostTable';
-import type { DeliveryProject, DeliveryNode, Group, ProjectVersion } from '../types';
+import type { DeliveryProject, DeliveryNode, NodeChangeEntry, Group, ProjectVersion } from '../types';
 import { COLORS } from '../styles/colors';
 import { exportHtmlTable } from '../utils/exportToExcel';
+import { todayBeijing } from '../utils/timeFormat';
+import { useAuth } from '../utils/authContext';
 
 const STATUS_CYCLE: DeliveryNode['status'][] = ['pending', 'in_progress', 'completed'];
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
@@ -39,18 +41,39 @@ const DeliveryDetail: React.FC = () => {
   const initTab = (location.state as { tab?: 'plan' | 'cost' | 'files' })?.tab || 'plan';
   const [tab, setTab] = useState<'plan' | 'cost' | 'files'>(initTab);
   const [project, setProject] = useState<DeliveryProject | null>(null);
+  const [loading, setLoading] = useState(true);
   const [actualCosts, setActualCosts] = useState<Record<string, number>>({});
+  const [savingPlan, setSavingPlan] = useState(false);
+  const initialCostsLoaded = useRef(false);
   const [costDirty, setCostDirty] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
+  const [submitPlanOpen, setSubmitPlanOpen] = useState(false);
   const [quotationProject, setQuotationProject] = useState<{ groups: Group[]; versions?: ProjectVersion[]; currentVersion?: ProjectVersion; [k: string]: unknown } | null>(null);
   const projectRef = useRef<DeliveryProject | null>(null);
   useEffect(() => { projectRef.current = project; }, [project]);
   const baselinesRef = useRef<Record<string, string>>({});
 
+  // 待刷新的计划日期变更（审批通过后，3分钟内的多次编辑合并为一次历史记录）
+  const pendingDateChangesRef = useRef<Map<string, {
+    oldStart: string; newStartVal: string;
+    oldEnd: string; newEndVal: string;
+    firstChangedAt: number;
+  }>>(new Map());
+
+  const { user } = useAuth();
+  const modifierName = user?.displayName || user?.email || 'unknown';
+
   useEffect(() => {
     if (!id) return;
+    let cancelled = false;
+    setLoading(true);
     deliveryService.getFull(id).then(data => {
+      if (cancelled) return;
       setProject(data);
+      if (data.actualCosts && !initialCostsLoaded.current) {
+        setActualCosts(data.actualCosts);
+        initialCostsLoaded.current = true;
+      }
       if (data.nodes) data.nodes.forEach((n: DeliveryNode) => { const b = n.baselineEndDate || n.baselinePlannedEndDate; if (b) baselinesRef.current[n.id] = b; });
       if (data.quotationId) {
         preloadQuotationGroups(data.quotationId);
@@ -63,11 +86,12 @@ const DeliveryDetail: React.FC = () => {
             const ver = (proj.versions || []).find((v: ProjectVersion) => v.versionNo === qvn) || proj.versions?.[0];
             const vid = ver?.id || '';
             const filtered = (proj.groups || []).filter((g: any) => (g as Record<string, unknown>).versionId === vid);
-            setQuotationProject({ ...proj, groups: filtered.length > 0 ? filtered : proj.groups });
+            if (!cancelled) setQuotationProject({ ...proj, groups: filtered.length > 0 ? filtered : proj.groups });
           });
         }).catch(() => {});
       }
-    }).catch(() => {});
+    }).catch(() => {}).finally(() => setLoading(false));
+    return () => { cancelled = true; };
   }, [id]);
 
   const [files, setFiles] = useState<Record<string, string>>({
@@ -107,7 +131,14 @@ const DeliveryDetail: React.FC = () => {
     if (!quotationProject) return undefined;
     const v = quotationProject.currentVersion || quotationProject.versions?.[0];
     if (!v) return undefined;
-    return { warrantyRate: v.warrantyRate ?? 0, riskRate: v.riskRate ?? 0 };
+    return { warrantyRate: v.warrantyRate ?? 0, riskRate: v.riskRate ?? 0, taxRate: v.taxRate ?? 0.13, commercialCost: v.commercialCost ?? 0 };
+  }, [quotationProject]);
+
+  /** 报价版本完整财务数据（用于审批创建） */
+  const quotationVersionFull = useMemo(() => {
+    if (!quotationProject) return undefined;
+    const v = quotationProject.currentVersion || quotationProject.versions?.[0];
+    return v;
   }, [quotationProject]);
 
   // 实施计划：仅待审批时锁定（通过后可继续修改无需再审批，驳回后可修改重新提交）
@@ -117,28 +148,28 @@ const DeliveryDetail: React.FC = () => {
   const costCanEdit = project?.costStatus !== 'pending';
 
   // ---- Node handlers ----
+  /** 节点状态变更：不记历史，仅更新实际日期字段 */
   const handleNodeStatusClick = useCallback((nodeId: string, newStatus?: string) => {
     if (!project) return;
-    const now = new Date().toISOString().slice(0, 10);
+    const today = todayBeijing();
+    setHasChanges(true);
     setProject(prev => {
       if (!prev) return prev;
       const newNodes = prev.nodes.map(n => {
         if (n.id !== nodeId) return n;
         const nextStatus = newStatus || STATUS_CYCLE[(STATUS_CYCLE.indexOf(n.status) + 1) % STATUS_CYCLE.length];
-        // 切到"已完成"时记录实际完成日期，切离"已完成"时清除
         const updated: DeliveryNode = { ...n, status: nextStatus as DeliveryNode['status'] };
-        // 记录状态变更到 history
-        updated.history = [...(n.history || []), {
-          id: crypto.randomUUID(),
-          field: 'status' as const,
-          oldValue: n.status,
-          newValue: nextStatus,
-          changedAt: new Date().toISOString(),
-        }];
-        if (nextStatus === 'completed') {
-          updated.actualDate = now;
+        // 状态变更不记录历史（仅当审批通过后的日期变更才记历史）
+        if (nextStatus === 'in_progress') {
+          updated.actualStartDate = today;
+        } else if (nextStatus === 'completed') {
+          updated.actualDate = today;
+          updated.actualEndDate = today;
         } else if (n.status === 'completed') {
           updated.actualDate = undefined;
+          updated.actualEndDate = undefined;
+        } else if (n.status === 'in_progress') {
+          // 从进行中切走不清除 actualStartDate（保留历史记录）
         }
         return updated;
       });
@@ -148,32 +179,55 @@ const DeliveryDetail: React.FC = () => {
 
   const handlePlannedDateChange = useCallback((nodeId: string, field: 'plannedStartDate' | 'plannedEndDate', date: string) => {
     if (!project) return;
-    const now = new Date().toISOString().slice(0, 10);
     const node = project.nodes.find(n => n.id === nodeId);
     if (!node || node[field] === date) return;  // 日期未变，不处理
+    // 日期范围验证
+    if (field === 'plannedEndDate' && date < node.plannedStartDate) {
+      msg.warning('计划结束日期不能早于开始日期');
+      return;
+    }
+    if (field === 'plannedStartDate' && date > node.plannedEndDate) {
+      msg.warning('计划开始日期不能晚于结束日期');
+      return;
+    }
     setHasChanges(true);
+    // 审批通过后的日期变更，累积到 pendingDateChangesRef 中（不立即记历史）
+    if (project.planStatus === 'approved') {
+      const now = Date.now();
+      const existing = pendingDateChangesRef.current.get(nodeId);
+      if (existing && (now - existing.firstChangedAt < 3 * 60 * 1000)) {
+        // 3分钟内已有的待刷新增条目，合并
+        if (field === 'plannedStartDate') {
+          existing.newStartVal = date;
+        } else {
+          existing.newEndVal = date;
+        }
+      } else {
+        // 新建待刷新增条目
+        pendingDateChangesRef.current.set(nodeId, {
+          oldStart: node.plannedStartDate,
+          newStartVal: field === 'plannedStartDate' ? date : node.plannedStartDate,
+          oldEnd: node.plannedEndDate,
+          newEndVal: field === 'plannedEndDate' ? date : node.plannedEndDate,
+          firstChangedAt: now,
+        });
+      }
+    }
     setProject(prev => {
       if (!prev) return prev;
-      const next = {
+      return {
         ...prev,
         nodes: prev.nodes.map(n => {
           if (n.id !== nodeId) return n;
-          const entry = {
-            id: 'h-' + crypto.randomUUID().slice(0, 8),
-            field: 'plannedDate' as const,
-            oldValue: n[field],
-            newValue: date,
-            changedAt: now,
-          };
-          return { ...n, [field]: date, history: [...n.history, entry] };
+          return { ...n, [field]: date };
         }),
       };
-      return next;
     });
-  }, [project]);
+  }, [project, msg]);
 
   const handleNodeCommentsChange = useCallback((nodeId: string, comments: string) => {
     if (!project) return;
+    setHasChanges(true);
     setProject(prev => {
       if (!prev) return prev;
       return {
@@ -182,6 +236,48 @@ const DeliveryDetail: React.FC = () => {
       };
     });
   }, [project]);
+
+  /** 将累积的待刷新日期变更写入各节点的 history（保存前调用） */
+  const flushPendingDateChanges = useCallback((projectData: DeliveryProject): DeliveryProject => {
+    if (projectData.planStatus !== 'approved') return projectData;
+    const pending = pendingDateChangesRef.current;
+    if (pending.size === 0) return projectData;
+    const now = new Date();
+    // 北京时间完整时间戳
+    const beijingOffset = 8 * 60 * 60 * 1000;
+    const beijingTs = new Date(now.getTime() + beijingOffset).toISOString().replace('T', ' ').slice(0, 19);
+    const beijingDate = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' });
+
+    const updatedNodes = projectData.nodes.map(n => {
+      const change = pending.get(n.id);
+      if (!change) return n;
+      // 检查是否有实际变更（开始或结束）
+      const startChanged = change.oldStart !== change.newStartVal;
+      const endChanged = change.oldEnd !== change.newEndVal;
+      if (!startChanged && !endChanged) {
+        pending.delete(n.id);
+        return n;
+      }
+      const oldDesc = (startChanged ? '开始: ' + change.oldStart : '') +
+        (startChanged && endChanged ? ', ' : '') +
+        (endChanged ? '结束: ' + change.oldEnd : '');
+      const newDesc = (startChanged ? '开始: ' + change.newStartVal : '') +
+        (startChanged && endChanged ? ', ' : '') +
+        (endChanged ? '结束: ' + change.newEndVal : '');
+      const entry: NodeChangeEntry = {
+        id: crypto.randomUUID(),
+        field: 'plannedDate',
+        oldValue: oldDesc,
+        newValue: newDesc,
+        changedAt: beijingDate,
+        modifier: modifierName,
+        changedAtFull: beijingTs,
+      };
+      pending.delete(n.id);
+      return { ...n, history: [...n.history, entry] };
+    });
+    return { ...projectData, nodes: updatedNodes };
+  }, [modifierName]);
 
   // ---- Cost handlers ----
   const handleActualCostChange = useCallback((itemId: string, value: number) => {
@@ -203,36 +299,45 @@ const DeliveryDetail: React.FC = () => {
       msg.warning(`请先填写所有节点的计划开始和结束时间（${emptyDates.map(n => n.name).join('、')}）`);
       return;
     }
-    Modal.confirm({
-      title: '确认提交审批',
-      content: '确定提交实施计划进行审批吗？',
-      okText: '提交', cancelText: '取消',
-      onOk: () => {
-        approvalService.create({
-          approvalType: 'plan',
-          quotationId: project.quotationId,
-          deliveryId: project.id,
-          salesNo: project.salesNo,
-          clientName: project.clientName,
-          projectName: project.projectName,
-          amount: project.contractAmount,
-          totalCost: 0,
-          profitRate: 0,
-          gp3: 0,
-          versionNo: '',
-          taxRate: 0.13,
-          totalAccountingPrice: project.contractAmount,
-          submitter: '方案经理',
-        }).then(() => {
-          setProject(prev => prev ? { ...prev, planStatus: 'pending' } : prev);
-          setHasChanges(false);
-          msg.success('实施计划已提交审批');
-        }).catch((err: any) => {
-          msg.error('提交审批失败：' + (err.message || '未知错误'));
-        });
-      },
+    setSubmitPlanOpen(true);
+  }, [project, msg]);
+
+  const confirmSubmitPlan = useCallback(() => {
+    if (!project) return;
+    const ver = quotationVersionFull;
+    const totalAccountingPrice = ver?.totalAccountingPrice || 0;
+    const discountedPrice = ver?.discountedPrice || 0;
+    const gp3ProfitRate = ver?.gp3ProfitRate || 0;
+    const totalCost = ver?.totalCost || 0;
+    const grandTotal = totalCost + (quotationVersion?.commercialCost || 0);
+    approvalService.create({
+      approvalType: 'plan',
+      status: 'pending',
+      quotationId: project.quotationId,
+      deliveryId: project.id,
+      salesNo: project.salesNo,
+      clientName: project.clientName,
+      projectName: project.projectName,
+      amount: discountedPrice || project.contractAmount,
+      totalCost: grandTotal,
+      profitRate: Math.round(gp3ProfitRate * 10000) / 100,
+      gp3: gp3ProfitRate,
+      versionNo: ver?.versionNo || '',
+      taxRate: quotationVersion?.taxRate ?? 0.13,
+      totalAccountingPrice: totalAccountingPrice,
+      discountedPrice: discountedPrice,
+      discountRate: ver?.discountRate || 0,
+      gp3Amount: Math.round(gp3ProfitRate * discountedPrice) || 0,
+      submitter: modifierName,
+    }).then(() => {
+      setProject(prev => prev ? { ...prev, planStatus: 'pending' } : prev);
+      setHasChanges(false);
+      setSubmitPlanOpen(false);
+      msg.success('实施计划已提交审批');
+    }).catch((err: any) => {
+      msg.error('提交审批失败：' + (err.message || '未知错误'));
     });
-  }, [project, msg, Modal]);
+  }, [project, msg, quotationVersionFull, quotationVersion, modifierName]);
 
   const handleSubmitCost = useCallback(() => {
     if (!project) return;
@@ -240,9 +345,14 @@ const DeliveryDetail: React.FC = () => {
       msg.warning('请至少录入一项实际成本再提交');
       return;
     }
+    const ver = quotationVersionFull;
     const totalActual = Object.values(actualCosts).reduce((s, v) => s + v, 0);
+    const exTax = computeDeliveryEstGP3(project.contractAmount, quotationGroups, quotationVersion).exTax;
+    const actProfit = exTax - totalActual;
+    const actGP3 = exTax > 0 ? actProfit / exTax : 0;
     approvalService.create({
       approvalType: 'cost',
+      status: 'pending',
       quotationId: project.quotationId,
       deliveryId: project.id,
       salesNo: project.salesNo,
@@ -250,12 +360,15 @@ const DeliveryDetail: React.FC = () => {
       projectName: project.projectName,
       amount: project.contractAmount,
       totalCost: totalActual,
-      profitRate: 0,
-      gp3: 0,
-      versionNo: '',
-      taxRate: 0.13,
-      totalAccountingPrice: project.contractAmount,
-      submitter: '交付经理',
+      profitRate: Math.round(actGP3 * 10000) / 100,
+      gp3: actGP3,
+      versionNo: ver?.versionNo || '',
+      taxRate: quotationVersion?.taxRate ?? 0.13,
+      totalAccountingPrice: ver?.totalAccountingPrice || 0,
+      discountedPrice: ver?.discountedPrice || 0,
+      discountRate: ver?.discountRate || 0,
+      gp3Amount: Math.round(actGP3 * (ver?.discountedPrice || 0)) || 0,
+      submitter: modifierName,
     }).then(() => {
       setProject(prev => prev ? { ...prev, costStatus: 'pending' } : prev);
       setCostDirty(false);
@@ -263,7 +376,7 @@ const DeliveryDetail: React.FC = () => {
     }).catch((err: any) => {
       msg.error('提交审批失败：' + (err.message || '未知错误'));
     });
-  }, [project, actualCosts, msg]);
+  }, [project, actualCosts, msg, quotationVersionFull, quotationVersion, quotationGroups, modifierName]);
 
   const handleExportPlan = useCallback(() => {
     if (!project) return;
@@ -271,11 +384,12 @@ const DeliveryDetail: React.FC = () => {
     for (let i = 0; i < project.nodes.length; i++) {
       const n = project.nodes[i];
       const statusMap = { pending: '未开始', in_progress: '进行中', completed: '已完成', delayed: '延期中' };
-      const delay = n.status === 'completed' || n.status === 'delayed'
-        ? Math.max(0, Math.round((new Date(n.actualDate || n.plannedEndDate).getTime() - new Date(n.plannedEndDate).getTime()) / 86400000))
-        : n.status === 'in_progress'
-        ? Math.max(0, Math.round((Date.now() - new Date(n.plannedEndDate).getTime()) / 86400000))
-        : 0;
+      // ⚠️ 与界面显示逻辑一致：取基准日期，无基准时取当前计划结束日
+      const refDate = n.baselineEndDate || n.baselinePlannedEndDate || n.plannedEndDate;
+      const dd = n.status === 'completed' && n.actualDate
+        ? Math.round((new Date(n.actualDate).getTime() - new Date(refDate).getTime()) / 86400000)
+        : Math.round((Date.now() - new Date(refDate).getTime()) / 86400000);
+      const delayStr = dd > 0 ? '+' + dd : (dd < 0 ? String(dd) : '0');
       rows += '<tr>' +
         '<td style="text-align:center">' + n.nodeNo + '</td>' +
         '<td>' + n.name + '</td>' +
@@ -283,7 +397,7 @@ const DeliveryDetail: React.FC = () => {
         '<td style="text-align:center">' + n.plannedStartDate + '</td>' +
         '<td style="text-align:center">' + n.plannedEndDate + '</td>' +
         '<td style="text-align:center">' + (n.actualDate || '—') + '</td>' +
-        '<td style="text-align:center">' + (delay > 0 ? '+' + delay + '天' : '—') + '</td></tr>';
+        '<td style="text-align:center">' + delayStr + '</td></tr>';
     }
     const html = '<h2 style="text-align:center;margin-bottom:16px">实施计划</h2>' +
       '<table style="width:100%;border-collapse:collapse;margin-bottom:8px">' +
@@ -325,6 +439,14 @@ const DeliveryDetail: React.FC = () => {
     exportHtmlTable('成本对比_' + project.clientName, html);
   }, [project, quotationGroups, actualCosts]);
 
+  if (loading) {
+    return (
+      <div style={{ padding: 60, textAlign: 'center', color: COLORS.textLight }}>
+        <Spin />
+      </div>
+    );
+  }
+
   if (!project) {
     return (
       <div style={{ padding: 40, textAlign: 'center', color: COLORS.textLight }}>
@@ -336,30 +458,27 @@ const DeliveryDetail: React.FC = () => {
     );
   }
 
-  const totalActual = Object.values(actualCosts).reduce((s, v) => s + v, 0);
-  const totalEstimated = quotationGroups.reduce((s, g) => s + g.items.reduce((si, i) => si + i.directCost, 0), 0);
-  const warrantyCost = quotationVersion ? Math.round(
-    quotationGroups.reduce((s, g) =>
-      s + g.items.filter(i => !i.hasWarranty).reduce((si, i) => si + i.directCost, 0), 0)
-    * quotationVersion.warrantyRate
-  ) : 0;
-  const riskCost = quotationVersion ? Math.round(totalEstimated * quotationVersion.riskRate) : 0;
-  // 概算总成本含风险费用和质保费用（两者均为独立大项行）
-  const grandEstimated = totalEstimated + riskCost + warrantyCost;
-  const grandActual = totalActual + warrantyCost;
-  // 实际总成本预警阈值 = (概算总成本 - 风险费用 - 质保费用) × 95%
-  const costWarningThreshold = Math.round((grandEstimated - riskCost - warrantyCost) * 0.95);
-  const needsCostWarning = grandActual >= costWarningThreshold;
-  const TAX_RATE = 0.13;
-  const contractExTax = Math.round(project.contractAmount / (1 + TAX_RATE));
-  const estProfit = contractExTax - grandEstimated;
-  const actProfit = contractExTax - grandActual;
-  const estGP3 = contractExTax > 0 ? (estProfit / contractExTax) : 0;
-  const actGP3 = contractExTax > 0 ? (actProfit / contractExTax) : 0;
+  // ⚠️ 概算财务数据：使用 useMemo 缓存避免重复计算
+  const {
+    totalActual, contractExTax, grandEstimated, warrantyCost, riskCost,
+    grandActual, costWarningThreshold, needsCostWarning,
+    estProfit, actProfit, estGP3, actGP3,
+  } = useMemo(() => {
+    const ta = Object.values(actualCosts).reduce((s, v) => s + v, 0);
+    const { exTax, grandEstimated: ge, warrantyCost: wc, riskCost: rc } = computeDeliveryEstGP3(project.contractAmount, quotationGroups, quotationVersion);
+    const ga = ta + wc;
+    const cwt = Math.round((ge - rc - wc) * 0.95);
+    return {
+      totalActual: ta, contractExTax: exTax, grandEstimated: ge, warrantyCost: wc, riskCost: rc,
+      grandActual: ga, costWarningThreshold: cwt, needsCostWarning: ga >= cwt,
+      estProfit: exTax - ge, actProfit: exTax - ga,
+      estGP3: exTax > 0 ? (exTax - ge) / exTax : 0,
+      actGP3: exTax > 0 ? (exTax - ga) / exTax : 0,
+    };
+  }, [actualCosts, project.contractAmount, quotationGroups, quotationVersion]);
 
   const renderApprovalBar = (type: 'plan' | 'cost') => {
     const status = type === 'plan' ? project.planStatus : project.costStatus;
-    const approval = type === 'plan' ? project.planApproval : project.costApproval;
     const label = type === 'plan' ? '实施计划' : '成本对比';
     const cfg = STATUS_LABELS[status];
 
@@ -370,21 +489,7 @@ const DeliveryDetail: React.FC = () => {
       }}>
         <span style={{ fontWeight: 600, fontSize: 13, color: COLORS.textPrimary }}>{label}</span>
         {cfg && <Tag color={cfg.color} style={{ margin: 0, fontSize: 12, lineHeight: '20px', borderRadius: 3, border: 'none' }}>{cfg.label}</Tag>}
-        {status === 'approved' && approval && (
-          <span style={{ fontSize: 12, color: COLORS.textSecondary }}>
-            {approval.reviewer} 于 {approval.createdAt} 通过
-            {approval.comment ? `：「${approval.comment}」` : ''}
-          </span>
-        )}
-        {status === 'rejected' && approval && (
-          <span style={{ fontSize: 12, color: COLORS.danger }}>
-            {approval.reviewer} 驳回：{approval.comment}
-          </span>
-        )}
         <div style={{ flex: 1 }} />
-        {status === 'rejected' && (
-          <span style={{ fontSize: 12, color: COLORS.danger }}>已驳回，可修改后重新提交</span>
-        )}
         {status === 'approved' && type === 'cost' && (
           <span style={{ fontSize: 12, color: COLORS.textLight }}>数据已锁定</span>
         )}
@@ -423,11 +528,11 @@ const DeliveryDetail: React.FC = () => {
               style={{ margin: 0, fontSize: 12, lineHeight: '20px', borderRadius: 3, border: 'none' }}>
               {project.status}
             </Tag>
-            {project.status !== '已完成' && project.nodes.find(n => n.nodeNo === 15)?.status === 'completed' && project.costStatus === 'approved' && (
+            {project.status !== '已完成' && project.nodes.every(n => n.status === 'completed' || n.status === 'delayed') && project.costStatus === 'approved' && (
               <span onClick={() => {
                 Modal.confirm({
                   title: '确认完成项目',
-                  content: '节点15已完成且成本对比已审批通过。确认将此项目标记为已完成？',
+                  content: '所有节点已完成且成本对比已审批通过。确认将此项目标记为已完成？',
                   okText: '确认完成',
                   cancelText: '取消',
                   okButtonProps: { style: { background: COLORS.success, borderColor: COLORS.success } },
@@ -559,14 +664,17 @@ const DeliveryDetail: React.FC = () => {
                 {(() => {
                   const done15 = project.nodes.find(n => n.nodeNo === 15);
                   if (done15?.status === 'completed' && done15.actualDate) {
-                    const planEnd = new Date(done15.plannedEndDate);
+                    const baseline = done15.baselineEndDate || done15.baselinePlannedEndDate || done15.plannedEndDate;
+                    const planEnd = new Date(baseline);
                     const actual = new Date(done15.actualDate);
                     const days = Math.round((actual.getTime() - planEnd.getTime()) / (1000 * 60 * 60 * 24));
-                    return days > 0 ? days + '天' : '0天';
+                    return days > 0 ? '+' + days + '天' : days + '天';
                   }
                   const now = new Date();
-                  const end15 = new Date(done15?.plannedEndDate || now);
-                  return end15 < now ? Math.round((now.getTime() - end15.getTime()) / (1000 * 60 * 60 * 24)) + '天' : '0天';
+                  const refDate = done15?.baselineEndDate || done15?.baselinePlannedEndDate || done15?.plannedEndDate;
+                  const end15 = new Date(refDate || now);
+                  const days = Math.round((now.getTime() - end15.getTime()) / (1000 * 60 * 60 * 24));
+                  return days > 0 ? '+' + days + '天' : days + '天';
                 })()}
               </strong>
             </span>
@@ -576,10 +684,12 @@ const DeliveryDetail: React.FC = () => {
               nodes={project.nodes}
               locked={planLocked}
               hasChanges={hasChanges}
+              saving={savingPlan}
+              planStatus={project.planStatus}
               onNodeStatusClick={handleNodeStatusClick}
               onPlannedDateChange={handlePlannedDateChange}
               onCommentsChange={handleNodeCommentsChange}
-              onSavePlan={async () => { if (!project) return; try { await deliveryService.saveNodes(project.id, project.nodes); setHasChanges(false); msg.success('实施计划已保存'); } catch { msg.error('保存失败，请重试'); } }}
+              onSavePlan={async () => { if (!project || savingPlan) return; setSavingPlan(true); try { const flushed = flushPendingDateChanges(project); await deliveryService.saveNodes(project.id, flushed.nodes); setProject(flushed); setHasChanges(false); msg.success('实施计划已保存'); } catch { msg.error('保存失败，请重试'); } finally { setSavingPlan(false); } }}
               onSubmitPlan={handleSubmitPlan}
               onExportPlan={handleExportPlan}
             />
@@ -694,7 +804,7 @@ const DeliveryDetail: React.FC = () => {
           {costCanEdit && (
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 16, marginTop: 16 }}>
             <IconButton icon={<SaveOutlined style={{ fontWeight: 700 }} />}
-              onClick={async () => { if (!project) return; const totalAct = Object.values(actualCosts).reduce((s, v) => s + v, 0); try { await deliveryService.update(project.id, { totalActualCost: totalAct }); setCostDirty(false); msg.success('成本对比已保存'); } catch { msg.error('保存失败，请重试'); } }}
+              onClick={async () => { if (!project) return; const totalAct = Object.values(actualCosts).reduce((s, v) => s + v, 0); try { await deliveryService.update(project.id, { totalActualCost: totalAct, actualCosts }); setCostDirty(false); msg.success('成本对比已保存'); } catch { msg.error('保存失败，请重试'); } }}
               color={COLORS.amber} hoverBg="#fff7e6" title="保存"
               disabled={!costDirty} />
             <IconButton icon={<SendOutlined style={{ fontWeight: 700 }} />}
@@ -708,6 +818,33 @@ const DeliveryDetail: React.FC = () => {
         </div>
           </ConfigProvider>
       )}
+
+      {/* 提交审批弹窗 */}
+      <Modal
+        title={<span style={{ fontSize: 17, fontWeight: 600, color: COLORS.textDark, letterSpacing: 0.5 }}>确认提交审批</span>}
+        open={submitPlanOpen}
+        onCancel={() => setSubmitPlanOpen(false)}
+        width={460}
+        destroyOnHidden
+        styles={{ body: { padding: '14px 32px 6px' } }}
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+            <Button icon={<CloseOutlined />} onClick={() => setSubmitPlanOpen(false)}
+              style={{ borderRadius: 3, width: 36, height: 36 }} />
+            <Button type="primary" ghost icon={<CheckOutlined />} onClick={confirmSubmitPlan}
+              style={{ borderColor: COLORS.primary, color: COLORS.primary, borderRadius: 3, width: 36, height: 36 }} />
+          </div>
+        }
+      >
+        <div style={{ textAlign: 'center', padding: '4px 0 0' }}>
+          <div style={{ fontSize: 14, color: COLORS.textDark, fontWeight: 600, marginBottom: 6 }}>
+            确定提交实施计划进行审批吗？
+          </div>
+          <div style={{ fontSize: 13, color: COLORS.textMuted, lineHeight: 1.6 }}>
+            实施计划提交后将锁定，无法编辑修改，等待审批处理。
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };
