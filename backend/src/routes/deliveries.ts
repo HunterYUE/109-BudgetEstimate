@@ -61,8 +61,9 @@ const crudRouter = crudRoutes('delivery_projects', fields, {
 
     // 添加/更新节点（事务保护）
     r.put('/:id/nodes', async (req, res, next) => {
-      const client = await getClient();
+      let client: any;
       try {
+        client = await getClient();
         const { id } = req.params;
         // ⚠️ 节点字段必须转 snake_case（前端发 camelCase nodeNo → node_no）
         const rawNodes = (req.body.nodes || req.body);
@@ -114,7 +115,7 @@ const crudRouter = crudRoutes('delivery_projects', fields, {
         await client.query('ROLLBACK').catch(() => {});
         next(err);
       } finally {
-        client.release();
+        client!.release();
       }
     });
   },

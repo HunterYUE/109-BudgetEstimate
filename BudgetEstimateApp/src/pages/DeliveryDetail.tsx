@@ -1,19 +1,21 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { Tag, Card, Button, message, Modal, ConfigProvider, Spin } from 'antd';
-import { ScheduleOutlined, AuditOutlined, SendOutlined, SaveOutlined, ArrowLeftOutlined, DownloadOutlined, UploadOutlined, EyeOutlined, DeleteOutlined, CheckOutlined, CloseOutlined } from '@ant-design/icons';
+import { Tag, Card, Button, message, Modal, ConfigProvider, Spin, Switch } from 'antd';
+import { ScheduleOutlined, AuditOutlined, SendOutlined, SaveOutlined, ArrowLeftOutlined, DownloadOutlined, UploadOutlined, EyeOutlined, DeleteOutlined, CheckOutlined, CloseOutlined, LockOutlined, UnlockOutlined } from '@ant-design/icons';
 import { formatMoney, computeDeliveryEstGP3 } from '../utils/calculations';
 import { approvalService } from '../services/approvalService';
 import { deliveryService } from '../services/deliveryService';
 import { projectService } from '../services/projectService';
+import { componentService } from '../services/componentService';
 import { preloadQuotationGroups } from '../utils/analysisShared';
-import { api } from '../utils/api';
+import { api, clearCache } from '../utils/api';
 import DeliveryNodeTimeline from '../components/DeliveryNodeTimeline';
 import IconButton from '../components/IconButton';
 import ItemCostTable from '../components/ItemCostTable';
 import type { DeliveryProject, DeliveryNode, NodeChangeEntry, Group, ProjectVersion } from '../types';
 import { COLORS } from '../styles/colors';
 import { exportHtmlTable } from '../utils/exportToExcel';
+import { deliveryFileService, type DeliveryFile } from '../services/deliveryFileService';
 import { todayBeijing } from '../utils/timeFormat';
 import { useAuth } from '../utils/authContext';
 
@@ -38,12 +40,26 @@ const DeliveryDetail: React.FC = () => {
   const navigate = useNavigate();
   const [msg, ctx] = message.useMessage();
   const location = useLocation();
-  const initTab = (location.state as { tab?: 'plan' | 'cost' | 'files' })?.tab || 'plan';
-  const [tab, setTab] = useState<'plan' | 'cost' | 'files'>(initTab);
+  // 从 sessionStorage 恢复 tab（刷新后保留），其次从 location.state（从父页面跳转），最后默认 plan
+  const [tab, setTab] = useState<'plan' | 'cost' | 'files'>(() => {
+    try {
+      const saved = sessionStorage.getItem('delivery_tab');
+      if (saved === 'plan' || saved === 'cost' || saved === 'files') return saved;
+    } catch {}
+    return (location.state as { tab?: 'plan' | 'cost' | 'files' })?.tab || 'plan';
+  });
+  // tab 切换时持久化
+  const handleTabChange = useCallback((t: 'plan' | 'cost' | 'files') => {
+    setTab(t);
+    try { sessionStorage.setItem('delivery_tab', t); } catch {}
+  }, []);
   const [project, setProject] = useState<DeliveryProject | null>(null);
   const [loading, setLoading] = useState(true);
   const [actualCosts, setActualCosts] = useState<Record<string, number>>({});
   const [savingPlan, setSavingPlan] = useState(false);
+  const [submitCostOpen, setSubmitCostOpen] = useState(false);
+  const [costOverride, setCostOverride] = useState(false);
+  const [laborRates, setLaborRates] = useState<{ design: number; assembly: number }>({ design: 175, assembly: 85 });
   const initialCostsLoaded = useRef(false);
   const [costDirty, setCostDirty] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
@@ -90,36 +106,74 @@ const DeliveryDetail: React.FC = () => {
           });
         }).catch(() => {});
       }
+      // 加载物料费率（设计会签/装配调试）
+      Promise.all([
+        componentService.list({ search: 'SV-DESIGN-000000-V1.0' }),
+        componentService.list({ search: 'SV-INSASS-000000-V1.0' }),
+      ]).then(([designComps, assyComps]) => {
+        if (cancelled) return;
+        const designRate = (designComps?.[0] as any)?.unitCost || 175;
+        const assyRate = (assyComps?.[0] as any)?.unitCost || 85;
+        setLaborRates({ design: Number(designRate), assembly: Number(assyRate) });
+      }).catch(() => {});
     }).catch(() => {}).finally(() => setLoading(false));
     return () => { cancelled = true; };
   }, [id]);
 
-  const [files, setFiles] = useState<Record<string, string>>({
-    rfq: '客户需求书_v1.0.pdf',
-    techPlan: '技术方案_v2.1.pdf',
-  });
+  const [deliveryFiles, setDeliveryFiles] = useState<DeliveryFile[]>([]);
+  const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [activeFileKey, setActiveFileKey] = useState<string>('');
+
+  const loadFiles = useCallback(async () => {
+    if (!id) return;
+    try {
+      const data = await deliveryFileService.list(id);
+      setDeliveryFiles(data);
+    } catch {}
+  }, [id]);
+
+  useEffect(() => { loadFiles(); }, [loadFiles]);
 
   const handleUploadClick = (key: string) => {
     setActiveFileKey(key);
     fileInputRef.current?.click();
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file && activeFileKey) {
-      setFiles(prev => ({ ...prev, [activeFileKey]: file.name }));
+    if (!file || !id || !activeFileKey) return;
+    if (file.type !== 'application/pdf') { msg.warning('仅支持 PDF 文件'); e.target.value = ''; return; }
+    if (file.size > 3 * 1024 * 1024) { msg.warning('文件大小不能超过 3MB'); e.target.value = ''; return; }
+    setUploading(true);
+    try {
+      await deliveryFileService.upload(id, activeFileKey, file);
+      clearCache();
+      const fresh = await deliveryFileService.list(id);
+      setDeliveryFiles(fresh);
+      msg.success('上传成功');
+    } catch {
+      msg.error('上传失败');
+    } finally {
+      setUploading(false);
+      e.target.value = '';
     }
-    e.target.value = '';
   };
 
-  const handleRemoveFile = (key: string) => {
-    setFiles(prev => {
-      const next = { ...prev };
-      delete next[key];
-      return next;
-    });
+  const handleRemoveFile = async (fileId: string) => {
+    if (!id) return;
+    try {
+      await deliveryFileService.delete(id, fileId);
+      msg.success('文件已删除');
+      loadFiles();
+    } catch {
+      msg.error('删除失败');
+    }
+  };
+
+  const handleViewFile = (fileId: string) => {
+    if (!id) return;
+    window.open(deliveryFileService.getDownloadUrl(id, fileId), '_blank');
   };
 
   const quotationGroups: Group[] = useMemo(() => {
@@ -141,16 +195,24 @@ const DeliveryDetail: React.FC = () => {
     return v;
   }, [quotationProject]);
 
-  // 实施计划：仅待审批时锁定（通过后可继续修改无需再审批，驳回后可修改重新提交）
+  // 实施计划：仅待审批时锁定
   const planLocked = project?.planStatus === 'pending';
-  // 成本对比：仅待审批时锁定（通过后可修改并重新提交覆盖旧数据，驳回后可修改重新提交）
-  const costLocked = project?.costStatus === 'pending';
-  const costCanEdit = project?.costStatus !== 'pending';
+  // 成本对比：待审批或已通过时锁定（已通过时总监可解锁覆盖）
+  const costLocked = (project?.costStatus === 'pending') || (project?.costStatus === 'approved' && !costOverride);
+  const costCanEdit = project?.costStatus !== 'pending' && (project?.costStatus !== 'approved' || costOverride);
+  const isDirector = user?.role === 'director';
 
   // ---- Node handlers ----
   /** 节点状态变更：不记历史，仅更新实际日期字段 */
   const handleNodeStatusClick = useCallback((nodeId: string, newStatus?: string) => {
     if (!project) return;
+    // 节点15（项目总结）切到"已完成"需要成本对比已通过
+    const targetNode = project.nodes.find(n => n.id === nodeId);
+    const nextStatus = newStatus || (targetNode ? STATUS_CYCLE[(STATUS_CYCLE.indexOf(targetNode.status) + 1) % STATUS_CYCLE.length] : '');
+    if (nextStatus === 'completed' && targetNode?.nodeNo === 15 && project.costStatus !== 'approved') {
+      msg.warning('节点15完成后项目将结束，请先完成成本对比审批');
+      return;
+    }
     const today = todayBeijing();
     setHasChanges(true);
     setProject(prev => {
@@ -175,7 +237,7 @@ const DeliveryDetail: React.FC = () => {
       });
       return { ...prev, nodes: newNodes };
     });
-  }, [project]);
+  }, [project, msg]);
 
   const handlePlannedDateChange = useCallback((nodeId: string, field: 'plannedStartDate' | 'plannedEndDate', date: string) => {
     if (!project) return;
@@ -308,8 +370,8 @@ const DeliveryDetail: React.FC = () => {
     const totalAccountingPrice = ver?.totalAccountingPrice || 0;
     const discountedPrice = ver?.discountedPrice || 0;
     const gp3ProfitRate = ver?.gp3ProfitRate || 0;
+    // ⚠️ ver.totalCost 已包含 commercialCost（calcProjectSummary 公式），无需再加
     const totalCost = ver?.totalCost || 0;
-    const grandTotal = totalCost + (quotationVersion?.commercialCost || 0);
     approvalService.create({
       approvalType: 'plan',
       status: 'pending',
@@ -319,7 +381,7 @@ const DeliveryDetail: React.FC = () => {
       clientName: project.clientName,
       projectName: project.projectName,
       amount: discountedPrice || project.contractAmount,
-      totalCost: grandTotal,
+      totalCost: totalCost,
       profitRate: Math.round(gp3ProfitRate * 10000) / 100,
       gp3: gp3ProfitRate,
       versionNo: ver?.versionNo || '',
@@ -339,17 +401,25 @@ const DeliveryDetail: React.FC = () => {
     });
   }, [project, msg, quotationVersionFull, quotationVersion, modifierName]);
 
-  const handleSubmitCost = useCallback(() => {
+  const handleOpenSubmitCost = useCallback(() => {
     if (!project) return;
     if (Object.keys(actualCosts).length === 0) {
       msg.warning('请至少录入一项实际成本再提交');
       return;
     }
+    setSubmitCostOpen(true);
+  }, [project, actualCosts, msg]);
+
+  const handleSubmitCost = useCallback(() => {
+    if (!project) return;
     const ver = quotationVersionFull;
     const totalActual = Object.values(actualCosts).reduce((s, v) => s + v, 0);
-    const exTax = computeDeliveryEstGP3(project.contractAmount, quotationGroups, quotationVersion).exTax;
-    const actProfit = exTax - totalActual;
-    const actGP3 = exTax > 0 ? actProfit / exTax : 0;
+    const taxRate = quotationVersion?.taxRate ?? 0.13;
+    const { exTax, warrantyCost } = computeDeliveryEstGP3(project.contractAmount, quotationGroups, quotationVersion);
+    const grandActual = totalActual + warrantyCost;
+    const actProfit = exTax - grandActual;                // 未税利润（与概览条一致）
+    const actGP3 = exTax > 0 ? actProfit / exTax : 0;    // GP3（未税=含税）
+    // gp3Amount 存含税利润，gp3 存费率（未税/含税相同 totalCost 存未税值供对照）
     approvalService.create({
       approvalType: 'cost',
       status: 'pending',
@@ -359,19 +429,20 @@ const DeliveryDetail: React.FC = () => {
       clientName: project.clientName,
       projectName: project.projectName,
       amount: project.contractAmount,
-      totalCost: totalActual,
+      totalCost: grandActual,
       profitRate: Math.round(actGP3 * 10000) / 100,
       gp3: actGP3,
       versionNo: ver?.versionNo || '',
-      taxRate: quotationVersion?.taxRate ?? 0.13,
+      taxRate: taxRate,
       totalAccountingPrice: ver?.totalAccountingPrice || 0,
       discountedPrice: ver?.discountedPrice || 0,
       discountRate: ver?.discountRate || 0,
-      gp3Amount: Math.round(actGP3 * (ver?.discountedPrice || 0)) || 0,
+      gp3Amount: Math.round(actProfit * (1 + taxRate)) || 0,  // 含税利润
       submitter: modifierName,
     }).then(() => {
       setProject(prev => prev ? { ...prev, costStatus: 'pending' } : prev);
       setCostDirty(false);
+      setSubmitCostOpen(false);
       msg.success('成本对比已提交审批，请前往审批管理模块查看');
     }).catch((err: any) => {
       msg.error('提交审批失败：' + (err.message || '未知错误'));
@@ -409,35 +480,95 @@ const DeliveryDetail: React.FC = () => {
 
   const handleExportCost = useCallback(() => {
     if (!project) return;
-    let totalAct = 0;
-    let totEst = 0;
+    const { warrantyCost, riskCost, commercialCost } = computeDeliveryEstGP3(project.contractAmount, quotationGroups, quotationVersion);
+    const riskAct = actualCosts['_risk'] ?? 0;
+    const commAct = actualCosts['_commercial'] ?? 0;
+    const designAct = actualCosts['_sv_design'] ?? 0;
+    const assyAct = actualCosts['_assy_debug'] ?? 0;
+
+    let totalEst = 0, totalAct = 0;
     let rows = '';
-    for (let gi = 0; gi < quotationGroups.length; gi++) {
-      const g = quotationGroups[gi];
-      for (let ii = 0; ii < g.items.length; ii++) {
-        const item = g.items[ii];
-        const act = actualCosts[item.id] || 0;
-        const est = item.directCost;
-        totalAct += act;
-        totEst += est;
-        const varAmt = act - est;
-        rows += '<tr><td>' + g.name + '</td><td>' + (item.code || item.description || '—') + '</td>' +
-          '<td class="amount">' + Math.round(est).toLocaleString() + '</td>' +
-          '<td class="amount">' + Math.round(act).toLocaleString() + '</td>' +
-          '<td class="amount" style="color:' + (varAmt > 0 ? 'red' : 'green') + '">' + (varAmt >= 0 ? '+' : '') + Math.round(varAmt).toLocaleString() + '</td>' +
-          '<td class="amount" style="color:' + (varAmt > 0 ? 'red' : 'green') + '">' + (est > 0 ? (varAmt / est * 100).toFixed(1) + '%' : '—') + '</td></tr>';
+    const addRow = (grp: string, code: string, est: number, act: number) => {
+      totalEst += est; totalAct += act;
+      const varAmt = act - est;
+      rows += '<tr><td>' + grp + '</td><td>' + code + '</td>' +
+        '<td class="amount">' + Math.round(est).toLocaleString() + '</td>' +
+        '<td class="amount">' + Math.round(act).toLocaleString() + '</td>' +
+        '<td class="amount" style="color:' + (varAmt > 0 ? 'red' : 'green') + '">' + (varAmt >= 0 ? '+' : '') + Math.round(varAmt).toLocaleString() + '</td>' +
+        '<td class="amount" style="color:' + (varAmt > 0 ? 'red' : 'green') + '">' + (est > 0 ? (varAmt / est * 100).toFixed(1) + '%' : '—') + '</td></tr>';
+    };
+
+    // 设备组 / 集成组：物料成本
+    for (const g of quotationGroups) {
+      if (g.groupType === 'EQUIPMENT' || g.groupType === 'INTEGRATION') {
+        for (const item of g.items) {
+          const mat = Math.round(item.unitCost * item.qtyTotal);
+          const act = actualCosts[item.id] ?? 0;
+          addRow(g.name, item.code || item.description || '—', mat, act);
+        }
       }
     }
+
+    // 设计会签 / 装配调试
+    let designHours = 0, designEst = 0;
+    let assyHours = 0, assyEst = 0;
+    for (const g of quotationGroups) {
+      if (g.groupType === 'EQUIPMENT' || g.groupType === 'INTEGRATION') {
+        for (const item of g.items) {
+          if (item.designHours) {
+            designHours += item.designHours * (item.qtyTotal || 1);
+            designEst += Math.round(item.designHours * (item.designHourRate || (laborRates?.design ?? 175)));
+          }
+          if (item.assemblyHours) {
+            assyHours += item.assemblyHours * (item.qtyTotal || 1);
+            assyEst += Math.round(item.assemblyHours * (item.assemblyHourRate || (laborRates?.assembly ?? 85)) * (item.qtyTotal || 1));
+          }
+        }
+      }
+    }
+    // 项目交付组中的设计会签/装配调试服务项
+    const pdGroup = quotationGroups.find(g => g.groupType === 'PROJECT_DELIVERY');
+    if (pdGroup) {
+      for (const item of pdGroup.items) {
+        if (item.code === 'SV-DESIGN-000000-V1.0') { designHours += item.qtyTotal || 0; designEst += item.directCost || 0; }
+        if (item.code === 'SV-INSASS-000000-V1.0') { assyHours += item.qtyTotal || 0; assyEst += item.directCost || 0; }
+      }
+    }
+    if (designEst > 0) addRow('人工成本', 'SV-DESIGN-000000-V1.0 设计会签', designEst, designAct);
+    if (assyEst > 0) addRow('人工成本', 'SV-INSASS-000000-V1.0 装配调试', assyEst, assyAct);
+
+    // 项目交付（除设计/装配外的项次）
+    if (pdGroup) {
+      for (const item of pdGroup.items) {
+        if (item.code === 'SV-DESIGN-000000-V1.0' || item.code === 'SV-INSASS-000000-V1.0') continue;
+        addRow('人工成本', item.code || item.description || '—', item.directCost, actualCosts[item.id] ?? 0);
+      }
+    }
+
+    // 费用组
+    for (const g of quotationGroups) {
+      if (g.groupType === 'PACKAGING_TRANSPORT' || g.groupType === 'IMPLEMENTATION_EXPENSE' || g.groupType === 'OTHER') {
+        for (const item of g.items) {
+          addRow('项目费用', item.code || item.description || '—', item.directCost, actualCosts[item.id] ?? 0);
+        }
+      }
+    }
+
+    // 风险 / 商业 / 质保
+    if (riskCost > 0) addRow('风险费用', 'R-RISKCOST', riskCost, riskAct);
+    addRow('商业费用', 'C-COMMERCIAL', commercialCost, commAct);
+    addRow('质保费用', 'W-WARRANTY', warrantyCost, warrantyCost);
+
     const html = '<h2 style="text-align:center;margin-bottom:16px">成本对比表</h2>' +
       '<table style="width:100%;border-collapse:collapse;margin-bottom:8px">' +
       '<tr><td style="border:none;padding:2px 8px"><b>项目：</b>' + project.projectName + '</td>' +
       '<td style="border:none;padding:2px 8px"><b>客户：</b>' + project.clientName + '</td></tr></table>' +
       '<table style="width:100%;border-collapse:collapse"><thead><tr><th>组</th><th>项次</th><th>概算</th><th>实际</th><th>偏差</th><th>偏差率</th></tr></thead><tbody>' + rows + '</tbody></table>' +
       '<table style="width:100%;border-collapse:collapse;margin-top:8px">' +
-      '<tr><td style="border:none;text-align:right;font-size:13px"><b>概算总成本：</b>¥' + Math.round(totEst).toLocaleString() + '</td></tr>' +
+      '<tr><td style="border:none;text-align:right;font-size:13px"><b>概算总成本：</b>¥' + Math.round(totalEst).toLocaleString() + '</td></tr>' +
       '<tr><td style="border:none;text-align:right;font-size:13px"><b>实际总成本：</b>¥' + Math.round(totalAct).toLocaleString() + '</td></tr></table>';
     exportHtmlTable('成本对比_' + project.clientName, html);
-  }, [project, quotationGroups, actualCosts]);
+  }, [project, quotationGroups, actualCosts, quotationVersion, laborRates]);
 
   if (loading) {
     return (
@@ -449,14 +580,11 @@ const DeliveryDetail: React.FC = () => {
 
   // 概算财务数据（使用计算变量而非 useMemo 避免 hooks 条件执行问题）
   let contractExTax = 0, grandEstimated = 0, grandActual = 0;
-  let costWarningThreshold = 0, needsCostWarning = false;
   let estProfit = 0, actProfit = 0, estGP3 = 0, actGP3 = 0;
   if (project) {
     const ta = Object.values(actualCosts).reduce((s, v) => s + v, 0);
     const { exTax, grandEstimated: ge, warrantyCost: wc, riskCost: rc } = computeDeliveryEstGP3(project.contractAmount, quotationGroups, quotationVersion);
     grandActual = ta + wc;
-    costWarningThreshold = Math.round((ge - rc - wc) * 0.95);
-    needsCostWarning = grandActual >= costWarningThreshold;
     contractExTax = exTax; grandEstimated = ge;
     estProfit = exTax - ge; actProfit = exTax - grandActual;
     estGP3 = exTax > 0 ? (exTax - ge) / exTax : 0;
@@ -487,9 +615,6 @@ const DeliveryDetail: React.FC = () => {
         <span style={{ fontWeight: 600, fontSize: 13, color: COLORS.textPrimary }}>{label}</span>
         {cfg && <Tag color={cfg.color} style={{ margin: 0, fontSize: 12, lineHeight: '20px', borderRadius: 3, border: 'none' }}>{cfg.label}</Tag>}
         <div style={{ flex: 1 }} />
-        {status === 'approved' && type === 'cost' && (
-          <span style={{ fontSize: 12, color: COLORS.textLight }}>数据已锁定</span>
-        )}
       </div>
     );
   };
@@ -623,7 +748,7 @@ const DeliveryDetail: React.FC = () => {
 
       {/* 标签切换 — 多 Tab 风格 */}
       <div style={{ display: 'flex', gap: 0, marginBottom: 16, borderBottom: `2px solid ${COLORS.border}` }}>
-        <div onClick={() => setTab('plan')}
+        <div onClick={() => handleTabChange('plan')}
           style={{
             padding: '8px 20px', cursor: 'pointer', fontSize: 14,
             borderBottom: tab === 'plan' ? `2px solid ${COLORS.primary}` : '2px solid transparent',
@@ -632,7 +757,7 @@ const DeliveryDetail: React.FC = () => {
           }}>
           <ScheduleOutlined style={{ color: COLORS.primary, marginRight: 6 }} />实施计划
         </div>
-        <div onClick={() => setTab('cost')}
+        <div onClick={() => handleTabChange('cost')}
           style={{
             padding: '8px 20px', cursor: 'pointer', fontSize: 14,
             borderBottom: tab === 'cost' ? `2px solid ${COLORS.success}` : '2px solid transparent',
@@ -641,7 +766,7 @@ const DeliveryDetail: React.FC = () => {
           }}>
           <AuditOutlined style={{ color: COLORS.success, marginRight: 6 }} />成本对比
         </div>
-        <div onClick={() => setTab('files')}
+        <div onClick={() => handleTabChange('files')}
           style={{
             padding: '8px 20px', cursor: 'pointer', fontSize: 14,
             borderBottom: tab === 'files' ? `2px solid ${COLORS.purple}` : '2px solid transparent',
@@ -705,7 +830,7 @@ const DeliveryDetail: React.FC = () => {
             </div>
             <div style={{ padding: '4px 0' }}>
               {ATTACHMENT_TYPES.map(at => {
-                const uploaded = !!files[at.key];
+                const file = deliveryFiles.find(f => f.fileType === at.key);
                 const typeColors: Record<string, string> = {
                   rfq: '#4a6fa5', techPlan: '#5b8c5a', techAgreement: '#7b6f9e', contract: '#9e7b5a',
                 };
@@ -728,16 +853,14 @@ const DeliveryDetail: React.FC = () => {
                       background: typeColors[at.key], letterSpacing: 0.5,
                     }}>{typeLabels[at.key]}</span>
                     <span style={{ flex: 1, fontSize: 13, color: COLORS.textDark, fontWeight: 500, letterSpacing: 0.3 }}>{at.label}</span>
-                    {!uploaded ? (
+                    {!file ? (
                       <span onClick={() => handleUploadClick(at.key)}
                         style={{
                           width: 28, height: 28, borderRadius: 6, display: 'inline-flex',
-                          alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
-                          fontSize: 14, color: COLORS.primary, background: '#e6f0fa',
-                          lineHeight: 1, userSelect: 'none', transition: 'all 0.15s',
+                          alignItems: 'center', justifyContent: 'center', cursor: uploading ? 'default' : 'pointer',
+                          fontSize: 14, color: uploading ? COLORS.borderInput : COLORS.primary,
+                          background: '#e6f0fa', lineHeight: 1, userSelect: 'none', transition: 'all 0.15s',
                         }}
-                        onMouseEnter={e => { e.currentTarget.style.background = '#d0e4f7'; }}
-                        onMouseLeave={e => { e.currentTarget.style.background = '#e6f0fa'; }}
                         title="上传文件">
                         <UploadOutlined />
                       </span>
@@ -746,18 +869,18 @@ const DeliveryDetail: React.FC = () => {
                         <span style={{
                           fontSize: 12, color: COLORS.primary, fontWeight: 500,
                           maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                        }}>{files[at.key]}</span>
-                        <span onClick={() => message.info('文件: ' + files[at.key] + '（模拟查看）')}
+                        }}>{file.fileName}</span>
+                        <span onClick={() => handleViewFile(file.id)}
                           style={{
                             width: 28, height: 28, borderRadius: 6, display: 'inline-flex',
                             alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
-                          fontSize: 14, color: COLORS.primary, background: '#e6f0fa',
-                          lineHeight: 1, userSelect: 'none', transition: 'all 0.15s',
-                        }}
+                            fontSize: 14, color: COLORS.primary, background: '#e6f0fa',
+                            lineHeight: 1, userSelect: 'none', transition: 'all 0.15s',
+                          }}
                           onMouseEnter={e => { e.currentTarget.style.background = '#d0e4f7'; }}
                           onMouseLeave={e => { e.currentTarget.style.background = '#e6f0fa'; }}
                           title="查看文件"><EyeOutlined /></span>
-                        <span onClick={() => handleRemoveFile(at.key)}
+                        <span onClick={() => handleRemoveFile(file.id)}
                           style={{
                             width: 28, height: 28, borderRadius: 6, display: 'inline-flex',
                             alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
@@ -774,19 +897,17 @@ const DeliveryDetail: React.FC = () => {
               })}
             </div>
           </Card>
-          <input ref={fileInputRef} type="file" style={{ display: 'none' }} onChange={handleFileChange} accept=".pdf,.doc,.docx,.xls,.xlsx,.zip,.rar" />
+          <input ref={fileInputRef} type="file" style={{ display: 'none' }} onChange={handleFileChange} accept=".pdf" />
         </div>
       ) : (
         <ConfigProvider theme={{ token: { colorPrimary: COLORS.primary } }}>
         <div>
           {renderApprovalBar('cost')}
-          {needsCostWarning && (
-            <div style={{
-              padding: '10px 16px', marginBottom: 12, borderRadius: 4,
-              background: '#fff3e0', border: '1px solid #ffcc02',
-              fontSize: 13, color: COLORS.warning, fontWeight: 600,
-            }}>
-              ⚠ 实际总成本已达 &yen;{formatMoney(grandActual)}，超过预警阈值 &yen;{formatMoney(costWarningThreshold)}（概算总成本-风险费用-质保费用）×95%，需要审批
+          {project.costStatus === 'approved' && isDirector && (
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8, alignItems: 'center', gap: 8 }}>
+              <Switch size="small" checked={costOverride} onChange={setCostOverride}
+                checkedChildren={<UnlockOutlined style={{ fontSize: 10 }} />}
+                unCheckedChildren={<LockOutlined style={{ fontSize: 10 }} />} />
             </div>
           )}
           <Card size="small" styles={{ body: { padding: 0 } }} style={{ borderRadius: 4, border: 'none', boxShadow: 'none', background: 'transparent' }}>
@@ -796,18 +917,21 @@ const DeliveryDetail: React.FC = () => {
               onActualCostChange={handleActualCostChange}
               locked={costLocked}
               version={quotationVersion}
+              laborRates={laborRates}
             />
           </Card>
           {costCanEdit && (
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 16, marginTop: 16 }}>
             <IconButton icon={<SaveOutlined style={{ fontWeight: 700 }} />}
-              onClick={async () => { if (!project) return; const totalAct = Object.values(actualCosts).reduce((s, v) => s + v, 0); try { await deliveryService.update(project.id, { totalActualCost: totalAct, actualCosts }); setCostDirty(false); msg.success('成本对比已保存'); } catch { msg.error('保存失败，请重试'); } }}
+              onClick={async () => { if (!project) return; const ta = Object.values(actualCosts).reduce((s, v) => s + v, 0); const { warrantyCost } = computeDeliveryEstGP3(project.contractAmount, quotationGroups, quotationVersion); try { await deliveryService.update(project.id, { totalActualCost: ta + warrantyCost, actualCosts }); setCostDirty(false); msg.success('成本对比已保存'); } catch { msg.error('保存失败，请重试'); } }}
               color={COLORS.amber} hoverBg="#fff7e6" title="保存"
               disabled={!costDirty} />
+            {project.costStatus !== 'approved' && (
             <IconButton icon={<SendOutlined style={{ fontWeight: 700 }} />}
-              onClick={handleSubmitCost}
+              onClick={handleOpenSubmitCost}
               color={COLORS.primary} hoverBg="#e6f0fa" title="提交审批"
-              disabled={!costDirty} />
+              disabled={!costDirty && Object.keys(actualCosts).length === 0} />
+            )}
             <IconButton icon={<DownloadOutlined style={{ fontWeight: 700 }} />}
               onClick={handleExportCost} color={COLORS.success} hoverBg="#e8f5e9" title="导出" />
           </div>
@@ -839,6 +963,33 @@ const DeliveryDetail: React.FC = () => {
           </div>
           <div style={{ fontSize: 13, color: COLORS.textMuted, lineHeight: 1.6 }}>
             实施计划提交后将锁定，无法编辑修改，等待审批处理。
+          </div>
+        </div>
+      </Modal>
+
+      {/* 提交成本对比审批弹窗 */}
+      <Modal
+        title={<span style={{ fontSize: 17, fontWeight: 600, color: COLORS.textDark, letterSpacing: 0.5 }}>确认提交审批</span>}
+        open={submitCostOpen}
+        onCancel={() => setSubmitCostOpen(false)}
+        width={460}
+        destroyOnHidden
+        styles={{ body: { padding: '14px 32px 6px' } }}
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+            <Button icon={<CloseOutlined />} onClick={() => setSubmitCostOpen(false)}
+              style={{ borderRadius: 3, width: 36, height: 36 }} />
+            <Button type="primary" ghost icon={<CheckOutlined />} onClick={handleSubmitCost}
+              style={{ borderColor: COLORS.primary, color: COLORS.primary, borderRadius: 3, width: 36, height: 36 }} />
+          </div>
+        }
+      >
+        <div style={{ textAlign: 'center', padding: '4px 0 0' }}>
+          <div style={{ fontSize: 14, color: COLORS.textDark, fontWeight: 600, marginBottom: 6 }}>
+            确定提交成本对比进行审批吗？
+          </div>
+          <div style={{ fontSize: 13, color: COLORS.textMuted, lineHeight: 1.6 }}>
+            成本对比提交后将锁定实际成本数据，等待审批处理。
           </div>
         </div>
       </Modal>

@@ -28,13 +28,16 @@ export function signToken(payload: JwtPayload): string {
 }
 
 export function requireAuth(req: Request, res: Response, next: NextFunction): void {
+  let token: string;
   const header = req.headers.authorization;
-  if (!header || !header.startsWith('Bearer ')) {
+  if (header && header.startsWith('Bearer ')) {
+    token = header.slice(7);
+  } else if (req.query.token) {
+    token = req.query.token as string;
+  } else {
     res.status(401).json({ error: '未登录，请先登录' });
     return;
   }
-
-  const token = header.slice(7);
   try {
     const decoded = jwt.verify(token, JWT_SECRET!, { algorithms: ['HS256'] }) as JwtPayload;
     req.user = decoded;

@@ -9,7 +9,7 @@ import { deliveryService } from '../services/deliveryService';
 import { COLORS } from '../styles/colors';
 import { computeDeliveryEstGP3 } from '../utils/calculations';
 import { parseFY, FYSelector } from '../utils/fiscalYear';
-import { fmtK, loadQuotationGroups, preloadQuotationGroupsBatch } from '../utils/analysisShared';
+import { fmtK, loadQuotationGroups, preloadQuotationGroupsBatch, getPreloadVersion } from '../utils/analysisShared';
 
 /* ============================================================
    常量
@@ -99,7 +99,7 @@ const [fySelect, setFySelect] = useState(defaultFy);
       setAllOpps(opps);
       setQuotationSummaries(qs);
       setDeliveryProjects(dps);
-    } catch (err: any) {
+    } catch (err: unknown) {
       msg.error('加载销售分析数据失败：' + (err.message || '未知错误'));
       setAllOpps([]);
       setQuotationSummaries([]);

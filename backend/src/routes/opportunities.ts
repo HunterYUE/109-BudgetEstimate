@@ -101,12 +101,12 @@ router.get('/:id/detail', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// 蓝表保存（upsert 蓝表 + 角色）
+// 蓝表保存（upsert 蓝表 + 角色，同一事务）
 router.put('/:id/blue-table', async (req, res, next) => {
+  let tx: any;
   try {
     const { id } = req.params;
     logAudit(req, '保存蓝表', 'opportunity', `机会 ${id.slice(0,8)} 蓝表已更新`);
-    // 统一转换键名（前端发 camelCase 或 snake_case 均可）
     const body = objKeysToSnake({ ...req.body });
     const { veto_budget, budget_amount, timeline_plan, timeline_option,
             pricing, positioning, reaction_mode, strategy, targets, roles } = body;
@@ -114,8 +114,11 @@ router.put('/:id/blue-table', async (req, res, next) => {
     const opp = (await query('SELECT id FROM sales_opportunities WHERE id = $1', [id])).rows[0];
     if (!opp) throw new AppError(404, 'Opportunity not found');
 
+    tx = await getClient();
+    await tx.query('BEGIN');
+
     // Upsert blue table
-    const bt = (await query(
+    const bt = (await tx.query(
       `INSERT INTO blue_tables (opportunity_id, veto_budget, budget_amount, timeline_plan,
         timeline_option, pricing, positioning, reaction_mode, strategy, targets)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
@@ -135,45 +138,44 @@ router.put('/:id/blue-table', async (req, res, next) => {
        pricing, positioning, reaction_mode, strategy, JSON.stringify(targets || [])]
     )).rows[0];
 
-    // Replace roles: delete old, insert new（事务保护）
+    // Replace roles: delete old, insert new（与蓝表同一事务）
     if (roles !== undefined) {
-      const tx = await getClient();
-      try {
-        await tx.query('BEGIN');
-        await tx.query('DELETE FROM blue_table_roles WHERE blue_table_id = $1', [bt.id]);
-        for (const role of roles) {
-          const r = {
-            role_type: role.role_type ?? role.roleType ?? '',
-            name: role.name ?? '',
-            influence: role.influence ?? 'medium',
-            influence_weight: role.influence_weight ?? role.influenceWeight ?? 3,
-            support: role.support ?? 0,
-            demand_fit: role.demand_fit ?? role.demandFit ?? 3,
-            relationship: role.relationship ?? 3,
-          };
-          await tx.query(
-            `INSERT INTO blue_table_roles (blue_table_id, role_type, name, influence,
-              influence_weight, support, demand_fit, relationship)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-            [bt.id, r.role_type, r.name, r.influence,
-             r.influence_weight, r.support, r.demand_fit, r.relationship]
-          );
-        }
-        await tx.query('COMMIT');
-      } catch (e) {
-        await tx.query('ROLLBACK').catch(() => {});
-        throw e;
-      } finally {
-        tx.release();
+      await tx.query('DELETE FROM blue_table_roles WHERE blue_table_id = $1', [bt.id]);
+      for (const role of roles) {
+        const r = {
+          role_type: role.role_type ?? role.roleType ?? '',
+          name: role.name ?? '',
+          influence: role.influence ?? 'medium',
+          influence_weight: role.influence_weight ?? role.influenceWeight ?? 3,
+          support: role.support ?? 0,
+          demand_fit: role.demand_fit ?? role.demandFit ?? 3,
+          relationship: role.relationship ?? 3,
+        };
+        await tx.query(
+          `INSERT INTO blue_table_roles (blue_table_id, role_type, name, influence,
+            influence_weight, support, demand_fit, relationship)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+          [bt.id, r.role_type, r.name, r.influence,
+           r.influence_weight, r.support, r.demand_fit, r.relationship]
+        );
       }
     }
 
-    const newRoles = roles
+    await tx.query('COMMIT');
+
+    // 提交后重新查询（事务外的连接才能看到已提交的数据）
+    const savedBt = (await query('SELECT * FROM blue_tables WHERE id = $1', [bt.id])).rows[0];
+    const savedRoles = roles
       ? (await query('SELECT * FROM blue_table_roles WHERE blue_table_id = $1 ORDER BY influence_weight DESC', [bt.id])).rows
       : [];
 
-    res.json({ ...bt, roles: newRoles });
-  } catch (err) { next(err); }
+    res.json({ ...savedBt, roles: savedRoles });
+  } catch (e) {
+    if (tx) await tx.query('ROLLBACK').catch(() => {});
+    next(e);
+  } finally {
+    if (tx) tx.release();
+  }
 });
 
 // 自定义 PUT：更新前检查 promote_locked（允许更新 promote_locked 字段本身以支持锁定/解锁）

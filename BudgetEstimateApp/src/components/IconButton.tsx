@@ -49,7 +49,7 @@ const IconButton: React.FC<IconButtonProps> = ({
       }}
       title={title}
     >
-      {icon}
+      {loading ? <span style={{ fontSize: size * 0.5, opacity: 0.6 }}>⟳</span> : icon}
     </div>
   );
 };

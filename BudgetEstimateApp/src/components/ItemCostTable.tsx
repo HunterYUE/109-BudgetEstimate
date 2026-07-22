@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { Table } from 'antd';
 import type { Group } from '../types';
 import { formatMoney } from '../utils/calculations';
@@ -17,9 +17,8 @@ interface Props {
   onActualCostChange?: (itemId: string, value: number) => void;
   locked?: boolean;
   version?: VersionData;
+  laborRates?: { design: number; assembly: number };
 }
-
-const RATES = { design: 175, assembly: 85 };
 
 interface FlatRow {
   key: string;
@@ -37,7 +36,7 @@ interface FlatRow {
   _warrantyItem?: boolean;
 }
 
-const ItemCostTable: React.FC<Props> = ({ groups, actualCosts, onActualCostChange, locked, version }) => {
+const ItemCostTable: React.FC<Props> = ({ groups, actualCosts, onActualCostChange, locked, version, laborRates }) => {
   const rows: FlatRow[] = useMemo(() => {
     const result: FlatRow[] = [];
 
@@ -129,70 +128,86 @@ const ItemCostTable: React.FC<Props> = ({ groups, actualCosts, onActualCostChang
     let laborEst = 0, laborAct = 0;
     const laborSubRows: FlatRow[] = [];
 
-    // Computed: design hours (from EQUIPMENT + INTEGRATION)
-    let designLaborEst = 0;
-    const designLaborAct = actualCosts['_labor:design'] ?? 0;
+    // 汇总设计/装配工时：仅限 EQUIPMENT/INTEGRATION（物料区只显示 mat，设计/装配在人工区单独体现）
+    // 其他组（PACKAGING/IMPLEMENTATION/OTHER）的项次以完整 directCost 显示在费用区，不再重复计入人工区
+    let totalDesignHours = 0, totalDesignCost = 0;
+    let totalAssemblyHours = 0, totalAssemblyCost = 0;
     for (const g of groups) {
       if (g.groupType === 'EQUIPMENT' || g.groupType === 'INTEGRATION') {
         for (const item of g.items) {
-          designLaborEst += Math.round((item.designHours || 0) * (item.designHourRate || RATES.design));
+          if (item.designHours) {
+            totalDesignHours += item.designHours * (item.qtyTotal || 1);
+            totalDesignCost += Math.round(item.designHours * (item.designHourRate || (laborRates?.design ?? 175)));
+          }
+          if (item.assemblyHours) {
+            totalAssemblyHours += item.assemblyHours * (item.qtyTotal || 1);
+            totalAssemblyCost += Math.round(item.assemblyHours * (item.assemblyHourRate || (laborRates?.assembly ?? 85)) * (item.qtyTotal || 1));
+          }
         }
       }
-    }
-    if (designLaborEst > 0 || designLaborAct > 0) {
-      const dv = designLaborAct - designLaborEst;
-      laborSubRows.push({
-        key: '_labor:design',
-        _type: 'item',
-        category: '人工成本',
-        code: 'L-DESIGN-HRS',
-        detail: '设计工时汇总',
-        qty: 0,
-        estimated: designLaborEst,
-        actual: designLaborAct,
-        variance: dv,
-        varianceRate: designLaborEst > 0 ? dv / designLaborEst : 0,
-        _relatedIds: ['_labor:design'],
-        _isRiskItem: false,
-      });
-      laborEst += designLaborEst;
-      laborAct += designLaborAct;
-    }
-
-    // Computed: assembly hours (from EQUIPMENT + INTEGRATION)
-    let assemblyLaborEst = 0;
-    const assemblyLaborAct = actualCosts['_labor:assembly'] ?? 0;
-    for (const g of groups) {
-      if (g.groupType === 'EQUIPMENT' || g.groupType === 'INTEGRATION') {
+      // PROJECT_DELIVERY 中的设计会签/装配调试服务项（designHours/assemblyHours 为 0，以 qtyTotal 计）
+      if (g.groupType === 'PROJECT_DELIVERY') {
         for (const item of g.items) {
-          assemblyLaborEst += Math.round((item.assemblyHours || 0) * (item.assemblyHourRate || RATES.assembly) * item.qtyTotal);
+          if (item.code === 'SV-DESIGN-000000-V1.0') {
+            totalDesignHours += item.qtyTotal || 0;
+            totalDesignCost += item.directCost || 0;
+          }
+          if (item.code === 'SV-INSASS-000000-V1.0') {
+            totalAssemblyHours += item.qtyTotal || 0;
+            totalAssemblyCost += item.directCost || 0;
+          }
         }
       }
     }
-    if (assemblyLaborEst > 0 || assemblyLaborAct > 0) {
-      const av = assemblyLaborAct - assemblyLaborEst;
+
+    // 设计会签（SV-DESIGN-000000-V1.0，汇总报价编制表所有设计工时）
+    if (totalDesignCost > 0) {
+      const designHoursTotal = Math.round(totalDesignHours);
+      const act = actualCosts['_sv_design'] ?? 0;
+      laborEst += totalDesignCost;
+      laborAct += act;
       laborSubRows.push({
-        key: '_labor:assembly',
+        key: '_sv_design',
         _type: 'item',
         category: '人工成本',
-        code: 'L-ASSEMBLY-HRS',
-        detail: '装配工时汇总',
-        qty: 0,
-        estimated: assemblyLaborEst,
-        actual: assemblyLaborAct,
-        variance: av,
-        varianceRate: assemblyLaborEst > 0 ? av / assemblyLaborEst : 0,
-        _relatedIds: ['_labor:assembly'],
+        code: 'SV-DESIGN-000000-V1.0',
+        detail: '设计会签',
+        qty: designHoursTotal,
+        estimated: totalDesignCost,
+        actual: act,
+        variance: act - totalDesignCost,
+        varianceRate: totalDesignCost > 0 ? (act - totalDesignCost) / totalDesignCost : 0,
+        _relatedIds: ['_sv_design'],
         _isRiskItem: false,
       });
-      laborEst += assemblyLaborEst;
-      laborAct += assemblyLaborAct;
     }
 
-    // Items from PROJECT_DELIVERY (pure labor services)
+    // 装配调试（物料 SV-INSASS-000000-V1.0，汇总报价编制表所有装配工时）
+    if (totalAssemblyCost > 0) {
+      const act = actualCosts['_assy_debug'] ?? 0;
+      laborEst += totalAssemblyCost;
+      laborAct += act;
+      laborSubRows.push({
+        key: '_assy_debug',
+        _type: 'item',
+        category: '人工成本',
+        code: 'SV-INSASS-000000-V1.0',
+        detail: '装配调试',
+        qty: Math.round(totalAssemblyHours),
+        estimated: totalAssemblyCost,
+        actual: act,
+        variance: act - totalAssemblyCost,
+        varianceRate: totalAssemblyCost > 0 ? (act - totalAssemblyCost) / totalAssemblyCost : 0,
+        _relatedIds: ['_assy_debug'],
+        _isRiskItem: false,
+      });
+    }
+
+    // Items from PROJECT_DELIVERY (pure labor services, 排除已汇总到设计会签/装配调试的项)
     const deliveryGroup = groups.find(g => g.groupType === 'PROJECT_DELIVERY');
     if (deliveryGroup) {
       for (const item of deliveryGroup.items) {
+        if (item.code === 'SV-DESIGN-000000-V1.0' || item.code === 'SV-INSASS-000000-V1.0') continue;
         const act = actualCosts[item.id] ?? 0;
         laborEst += item.directCost;
         laborAct += act;
@@ -295,8 +310,8 @@ const ItemCostTable: React.FC<Props> = ({ groups, actualCosts, onActualCostChang
         key: '_risk',
         _type: 'item',
         category: '风险费用',
-        code: 'R-RISK-COST-V1.0',
-        detail: '项目风险费用审批后方可使用',
+        code: 'R-RISKCOST',
+        detail: '审批使用',
         qty: 0,
         estimated: riskEst,
         actual: riskAct,
@@ -307,9 +322,10 @@ const ItemCostTable: React.FC<Props> = ({ groups, actualCosts, onActualCostChang
       });
     }
 
-    // ===== 5.5 Commercial cost (flat amount from version) =====
-    if (version && version.commercialCost && version.commercialCost > 0) {
-      const cc = version.commercialCost;
+    // ===== 5.5 商业费用（始终显示，实际成本由用户输入） =====
+    if (version) {
+      const cc = version.commercialCost || 0;
+      const act = actualCosts['_commercial'] ?? 0;
       result.push({
         key: 'h-commercial',
         _type: 'header',
@@ -318,9 +334,9 @@ const ItemCostTable: React.FC<Props> = ({ groups, actualCosts, onActualCostChang
         detail: '',
         qty: 0,
         estimated: cc,
-        actual: cc,
-        variance: 0,
-        varianceRate: 0,
+        actual: act,
+        variance: act - cc,
+        varianceRate: cc > 0 ? (act - cc) / cc : 0,
         _relatedIds: ['_commercial'],
         _isRiskItem: false,
       });
@@ -329,12 +345,12 @@ const ItemCostTable: React.FC<Props> = ({ groups, actualCosts, onActualCostChang
         _type: 'item',
         category: '商业费用',
         code: 'C-COMMERCIAL',
-        detail: '项目管理费/商业费用',
+        detail: '商业费用',
         qty: 0,
         estimated: cc,
-        actual: cc,
-        variance: 0,
-        varianceRate: 0,
+        actual: act,
+        variance: act - cc,
+        varianceRate: cc > 0 ? (act - cc) / cc : 0,
         _relatedIds: ['_commercial'],
         _isRiskItem: false,
       });
@@ -370,7 +386,7 @@ const ItemCostTable: React.FC<Props> = ({ groups, actualCosts, onActualCostChang
         _type: 'item',
         category: '质保费用',
         code: 'W-WARRANTY',
-        detail: '质保成本已计入实际成本',
+        detail: '不可使用',
         qty: 0,
         estimated: warrantyCost,
         actual: warrantyCost,
@@ -410,7 +426,7 @@ const ItemCostTable: React.FC<Props> = ({ groups, actualCosts, onActualCostChang
       title: '成本类别', width: 120,
       render: (_text: unknown, rec: FlatRow) => {
         if (rec._type === 'header') {
-          const isEquip = !['集成开发', '人工成本', '项目费用', '风险费用', '质保费用'].includes(rec.category);
+          const isEquip = !['集成开发', '人工成本', '项目费用', '风险费用', '商业费用', '质保费用'].includes(rec.category);
           return (
             <span style={{ color: isEquip ? COLORS.primary : COLORS.textPrimary, fontWeight: 700, fontSize: 13 }}>
               {rec.category}
@@ -464,24 +480,12 @@ const ItemCostTable: React.FC<Props> = ({ groups, actualCosts, onActualCostChang
       title: '实际成本', width: 140, align: 'right' as const,
       render: (_text: unknown, rec: FlatRow) => {
         if (rec._type === 'header') {
-          return <span style={{ fontWeight: 700, fontSize: 13, color: '#000' }}>¥{formatMoney(rec.actual)}</span>;
+          return <span style={{ fontWeight: 700, fontSize: 13, color: '#000', display: 'block', textAlign: 'right', padding: '2px 4px' }}>¥{formatMoney(rec.actual)}</span>;
         }
-        if (locked) {
-          return <span style={{ fontWeight: 600, fontSize: 13, color: '#000' }}>¥{formatMoney(rec.actual)}</span>;
+        if (locked || !onActualCostChange) {
+          return <span style={{ fontWeight: 600, fontSize: 13, color: '#000', display: 'block', textAlign: 'right', padding: '2px 4px' }}>¥{formatMoney(rec.actual)}</span>;
         }
-        return (
-          <input type="number" min={0}
-            value={rec.actual ?? ''}
-            onChange={e => handleActualChange(rec, parseFloat(e.target.value) || 0)}
-            style={{
-              width: '100%', height: '100%', minHeight: 28,
-              border: `1px solid ${COLORS.border}`, borderRadius: 3,
-              padding: '2px 8px', textAlign: 'right', fontSize: 13,
-              fontWeight: 600, outline: 'none', boxSizing: 'border-box',
-              MozAppearance: 'textfield',
-            }}
-          />
-        );
+        return <ActualCostInput value={rec.actual} onChange={v => handleActualChange(rec, v)} />;
       },
     },
     {
@@ -554,6 +558,56 @@ const ItemCostTable: React.FC<Props> = ({ groups, actualCosts, onActualCostChang
       />
       </div>
     </>
+  );
+};
+
+/** 实际成本输入：纯文本外观，支持 ¥1,000 格式，可删除最后一位 */
+
+/** 实际成本输入：点击即改，无框体，失焦格式化 */
+const ActualCostInput: React.FC<{ value: number; onChange: (v: number) => void }> = ({ value, onChange }) => {
+  const [text, setText] = useState(() => value ? '¥' + Math.round(value).toLocaleString() : '');
+  const [editing, setEditing] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const committed = useRef(value);
+
+  useEffect(() => {
+    if (!editing && committed.current !== value) {
+      committed.current = value;
+      setText(value ? '¥' + Math.round(value).toLocaleString() : '');
+    }
+  }, [value, editing]);
+
+  const commit = () => {
+    const raw = text.replace(/[^0-9]/g, '');
+    const num = parseInt(raw, 10) || 0;
+    committed.current = num;
+    setText(num ? '¥' + num.toLocaleString() : '');
+    onChange(num);
+    setEditing(false);
+  };
+
+  if (!editing) {
+    return (
+      <span onClick={() => { setEditing(true); const raw = text.replace(/[^0-9]/g, ''); setText(raw); setTimeout(() => inputRef.current?.focus(), 0); }}
+        style={{ cursor: 'text', fontWeight: 600, fontSize: 13, color: '#000', display: 'block', textAlign: 'right', padding: '2px 4px', minHeight: 28, lineHeight: '24px' }}>
+        {text || '¥0'}
+      </span>
+    );
+  }
+
+  return (
+    <input ref={inputRef}
+      value={text}
+      onChange={e => setText(e.target.value)}
+      onBlur={commit}
+      onKeyDown={e => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') { setEditing(false); setText(committed.current ? '¥' + Math.round(committed.current).toLocaleString() : ''); } }}
+      style={{
+        width: '100%', height: 28,
+        border: 'none', padding: '2px 4px', textAlign: 'right', fontSize: 13,
+        fontWeight: 600, outline: 'none', boxSizing: 'border-box',
+        background: 'transparent', MozAppearance: 'textfield',
+      }}
+    />
   );
 };
 

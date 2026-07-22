@@ -53,7 +53,7 @@ const MaterialManagement: React.FC = () => {
       if (res) {
         setMaterials(res.map(c => deepClone(c)));
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       messageApi.error('加载物料数据失败：' + (err.message || '未知错误'));
     } finally {
       setLoading(false);
@@ -427,7 +427,7 @@ const MaterialManagement: React.FC = () => {
   
   const columns: ColumnsType<Component> = [
     {
-      title: '编码', dataIndex: 'code', width: 150,
+      title: '编码', dataIndex: 'code', width: 165,
       onCell: onCellLock(150),
       render: (v: string, rec: Component) => {
         return (
@@ -446,7 +446,7 @@ const MaterialManagement: React.FC = () => {
         );
       },
     },
-    { title: '名称', dataIndex: 'nameCn', width: 210, onCell: onCellLock(210),
+    { title: '名称', dataIndex: 'nameCn', width: 195, onCell: onCellLock(195),
       render: (v: string) => <span style={{ fontSize: 12, color: '#555' }}>{v}</span>,
     },
     {

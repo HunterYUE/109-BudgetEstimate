@@ -36,8 +36,9 @@ const router = crudRoutes('clients', fields, {
 
     // 保存客户时同步保存联系人（事务保护）
     r.put('/:id/save', async (req, res, next) => {
-      const tx = await getClient();
+      let tx: any;
       try {
+        tx = await getClient();
         const { id } = req.params;
         const body = objKeysToSnake(req.body);
         const { contacts, ...clientData } = body;
@@ -83,7 +84,7 @@ const router = crudRoutes('clients', fields, {
         await tx.query('ROLLBACK').catch(() => {});
         next(err);
       } finally {
-        tx.release();
+        tx!.release();
       }
     });
 

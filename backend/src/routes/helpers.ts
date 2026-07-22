@@ -72,7 +72,7 @@ export function crudRoutes(table: string, fields: string[], options?: {
     const params: any[] = [];
     if (search && searchFields.length > 0) {
       const conditions = searchFields.map((f, i) => `"${f}"::text ILIKE $${i + 1}`);
-      params.push(`%${search}%`);
+      for (let i = 0; i < searchFields.length; i++) params.push(`%${search}%`);
       sql += ` WHERE ${conditions.join(' OR ')}`;
     }
     const limitNum = Math.min(1000, Math.max(1, parseInt(limit as string, 10) || 100));
@@ -100,7 +100,8 @@ export function crudRoutes(table: string, fields: string[], options?: {
     return vals.map(v => {
       if (v === null || v === undefined) return v;
       if (Array.isArray(v)) {
-        if (v.length === 0) return v;
+        // 空数组序列化为 '[]' 避免 pg 库当成 PG ARRAY 处理
+        if (v.length === 0) return '[]';
         // 对象数组或包含非字符串的数组需 JSON.stringify 以匹配 JSONB 列
         if (typeof v[0] === 'object' || typeof v[0] === 'number' || typeof v[0] === 'boolean') return JSON.stringify(v);
       }

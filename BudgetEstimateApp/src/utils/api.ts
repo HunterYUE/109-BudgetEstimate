@@ -37,7 +37,8 @@ export function toCamel(obj: unknown): unknown {
   const record = obj as Record<string, unknown>;
   const result: Record<string, unknown> = {};
   for (const key of Object.keys(record)) {
-    result[key.replace(/_([a-z])/g, (_, l) => l.toUpperCase())] = toCamel(record[key]);
+    // ⚠️ 以下划线开头的键（如 _risk, _commercial）为内部标识符，不进行蛇形→驼峰转换
+    result[key.startsWith('_') ? key : key.replace(/_([a-z])/g, (_, l) => l.toUpperCase())] = toCamel(record[key]);
   }
   return result;
 }

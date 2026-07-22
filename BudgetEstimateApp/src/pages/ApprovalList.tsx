@@ -115,7 +115,7 @@ const ApprovalList: React.FC = () => {
         reviewer: user?.displayName || '审批人',
         action: modal.action,
         comment: approvalComment,
-      }).catch(() => {});
+      }).catch((e: any) => { console.warn('[Approval] 创建审批记录失败:', e); msg.error('审批记录创建失败'); });
       // 重新加载列表确保 latestRecord 数据最新
       approvalService.list().then(res => setRequests(res)).catch(() => {});
       const cascadeUpdates: Promise<unknown>[] = [];

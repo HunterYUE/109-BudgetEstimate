@@ -21,7 +21,7 @@ const Login: React.FC = () => {
     try {
       await login(email, password);
       navigate(from, { replace: true });
-    } catch (err: any) {
+    } catch (err: unknown) {
       setError(err.message || '登录失败');
     } finally {
       setSubmitting(false);

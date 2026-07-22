@@ -547,7 +547,7 @@ const QuotationPage: React.FC = () => {
       clearCache('/projects');
       setHasChanges(false);
       messageApi.success('概算表已保存');
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[SaveError]", err);
       messageApi.error('保存失败：' + (err.message || '未知错误'));
     } finally {
@@ -614,7 +614,7 @@ const QuotationPage: React.FC = () => {
         projectName: project.projectName || project.clientName,
         amount: submitSummary.discountedPrice || 0,
         totalCost: submitSummary.totalCost,
-        profitRate: 0,
+        profitRate: Math.round((submitSummary.gp3 || 0) * 10000) / 100,
         gp3: submitSummary.gp3,
         taxRate: curVer?.taxRate || 0.13,
         totalAccountingPrice: submitSummary.totalAccountingPrice,
@@ -629,7 +629,7 @@ const QuotationPage: React.FC = () => {
       setQuotationLocked(true);
       setHasChanges(false);
       messageApi.success('已提交审批');
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[SaveError]", err);
       messageApi.error('提交失败：' + (err.message || '未知错误'));
     } finally {

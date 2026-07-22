@@ -70,10 +70,16 @@ export function loadQuotationGroups(quotationId: string | undefined | null): {
   return projectCache.get(quotationId) || { groups: [], version: undefined };
 }
 
-/** 批量预加载 */
+/** 批量预加载（完成后递增版本号，触发 useMemo 重新计算） */
 export async function preloadQuotationGroupsBatch(ids: string[]): Promise<void> {
   await Promise.all(ids.map(id => preloadQuotationGroups(id)));
+  bumpPreloadVersion();
 }
+
+/** 缓存版本号（预加载完成后递增，用于触发 useMemo 重新计算） */
+let _preloadVersion = 0;
+export function getPreloadVersion(): number { return _preloadVersion; }
+export function bumpPreloadVersion(): void { _preloadVersion++; }
 
 /** 清除项目缓存（用于重新加载） */
 export function clearQuotationCache() { projectCache.clear(); }

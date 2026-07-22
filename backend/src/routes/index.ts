@@ -8,6 +8,7 @@ import opportunities from './opportunities.js';
 import quotations from './quotations.js';
 import approvals from './approvals.js';
 import deliveries from './deliveries.js';
+import deliveryFiles from './deliveryFiles.js';
 import clients from './clients.js';
 import tags from './tags.js';
 import auditLogs from './auditLogs.js';
@@ -34,6 +35,7 @@ router.use('/opportunities', requireAuth, opportunities);
 router.use('/quotations', requireAuth, quotations);
 router.use('/approvals', requireAuth, approvals);
 router.use('/deliveries', requireAuth, deliveries);
+router.use('/deliveries', requireAuth, deliveryFiles);
 router.use('/clients', requireAuth, clients);
 router.use('/tags', requireAuth, tags);
 router.use('/audit-logs', requireAuth, requireRole('director', 'admin'), auditLogs);
@@ -98,8 +100,9 @@ router.post('/project-versions', requireAuth, async (req, res, next) => {
 
 // ── 项目组和明细保存（事务保护） ──
 router.post('/project-groups', requireAuth, async (req, res, next) => {
-  const client = await getClient();
+  let client: any;
   try {
+    client = await getClient();
     const body = objKeysToSnake(req.body);
   const { project_id, version_id, group_no, group_type, name,
       is_fixed = false, items = [] } = body;
@@ -176,7 +179,7 @@ router.post('/project-groups', requireAuth, async (req, res, next) => {
     await client.query('ROLLBACK').catch(() => {});
     next(err);
   } finally {
-    client.release();
+    client!.release();
   }
 });
 
@@ -184,7 +187,7 @@ router.post('/project-groups', requireAuth, async (req, res, next) => {
 router.delete('/project-groups/by-version/:versionId', requireAuth, async (req, res, next) => {
   try {
     const { versionId } = req.params;
-    await query('DELETE FROM group_items WHERE group_id IN (SELECT id FROM project_groups WHERE version_id = $1)', [versionId]);
+    // group_items 通过外键 ON DELETE CASCADE 自动删除
     await query('DELETE FROM project_groups WHERE version_id = $1', [versionId]);
     res.json({ deleted: true });
   } catch (err) { next(err); }

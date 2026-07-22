@@ -77,7 +77,7 @@ const SystemManagement: React.FC = () => {
     try {
       const data = await userService.list();
       setUsers(data);
-    } catch (err: any) {
+    } catch (err: unknown) {
       messageApi.error('加载用户列表失败：' + (err.message || '未知错误'));
     } finally {
       setLoading(false);
@@ -118,7 +118,7 @@ const SystemManagement: React.FC = () => {
 
   // 操作日志
   const [logs, setLogs] = useState<AuditLog[]>([]);
-  const [_setLogLoading, setLogLoading] = useState(false);
+  const [, setLogLoading] = useState(false);
   const [logModuleFilter, setLogModuleFilter] = useState<string | null>(null);
 
   const loadLogs = useCallback(async () => {
@@ -143,7 +143,7 @@ const SystemManagement: React.FC = () => {
     try {
       const updated = await userService.update(user.id, { isActive: !user.isActive });
       setUsers(prev => prev.map(u => u.id === updated.id ? updated : u));
-    } catch (err: any) {
+    } catch (err: unknown) {
       messageApi.error('操作失败：' + (err.message || ''));
     }
   };
@@ -171,7 +171,7 @@ const SystemManagement: React.FC = () => {
       setUsers(prev => [...prev, created]);
       setAddOpen(false);
       messageApi.success(`用户 ${created.displayName} 添加成功（初始密码 ${DEFAULT_USER_PASSWORD}）`);
-    } catch (err: any) {
+    } catch (err: unknown) {
       messageApi.error(err.message || '添加失败');
     } finally {
       setSaving(false);
@@ -203,7 +203,7 @@ const SystemManagement: React.FC = () => {
       setEditOpen(false);
       setEditTarget(null);
       messageApi.success('用户信息已更新');
-    } catch (err: any) {
+    } catch (err: unknown) {
       messageApi.error(err.message || '更新失败');
     } finally {
       setSaving(false);
@@ -228,7 +228,7 @@ const SystemManagement: React.FC = () => {
       setPwdOpen(false);
       setEditTarget(null);
       messageApi.success('密码已重置');
-    } catch (err: any) {
+    } catch (err: unknown) {
       messageApi.error(err.message || '密码重置失败');
     } finally {
       setSaving(false);
@@ -256,7 +256,7 @@ const SystemManagement: React.FC = () => {
       setPermOpen(false);
       setEditTarget(null);
       messageApi.success('角色权限已更新');
-    } catch (err: any) {
+    } catch (err: unknown) {
       messageApi.error(err.message || '更新失败');
     } finally {
       setSaving(false);
@@ -271,7 +271,7 @@ const SystemManagement: React.FC = () => {
       setUsers(prev => prev.filter(u => u.id !== deleteTarget.id));
       setDeleteTarget(null);
       messageApi.success('用户已删除');
-    } catch (err: any) {
+    } catch (err: unknown) {
       messageApi.error(err.message || '删除失败');
     } finally {
       setSaving(false);
