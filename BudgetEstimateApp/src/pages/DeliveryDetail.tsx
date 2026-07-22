@@ -447,6 +447,30 @@ const DeliveryDetail: React.FC = () => {
     );
   }
 
+  // ⚠️ 概算财务数据：使用 useMemo 缓存避免重复计算（必须在条件返回之前）
+  const {
+    totalActual, contractExTax, grandEstimated, grandActual,
+    costWarningThreshold, needsCostWarning,
+    estProfit, actProfit, estGP3, actGP3,
+  } = useMemo(() => {
+    if (!project) return {
+      totalActual: 0, contractExTax: 0, grandEstimated: 0, grandActual: 0,
+      costWarningThreshold: 0, needsCostWarning: false,
+      estProfit: 0, actProfit: 0, estGP3: 0, actGP3: 0,
+    };
+    const ta = Object.values(actualCosts).reduce((s, v) => s + v, 0);
+    const { exTax, grandEstimated: ge, warrantyCost: wc, riskCost: rc } = computeDeliveryEstGP3(project.contractAmount, quotationGroups, quotationVersion);
+    const ga = ta + wc;
+    const cwt = Math.round((ge - rc - wc) * 0.95);
+    return {
+      totalActual: ta, contractExTax: exTax, grandEstimated: ge,
+      grandActual: ga, costWarningThreshold: cwt, needsCostWarning: ga >= cwt,
+      estProfit: exTax - ge, actProfit: exTax - ga,
+      estGP3: exTax > 0 ? (exTax - ge) / exTax : 0,
+      actGP3: exTax > 0 ? (exTax - ga) / exTax : 0,
+    };
+  }, [project, actualCosts, quotationGroups, quotationVersion]);
+
   if (!project) {
     return (
       <div style={{ padding: 40, textAlign: 'center', color: COLORS.textLight }}>
@@ -457,25 +481,6 @@ const DeliveryDetail: React.FC = () => {
       </div>
     );
   }
-
-  // ⚠️ 概算财务数据：使用 useMemo 缓存避免重复计算
-  const {
-    totalActual, contractExTax, grandEstimated, warrantyCost, riskCost,
-    grandActual, costWarningThreshold, needsCostWarning,
-    estProfit, actProfit, estGP3, actGP3,
-  } = useMemo(() => {
-    const ta = Object.values(actualCosts).reduce((s, v) => s + v, 0);
-    const { exTax, grandEstimated: ge, warrantyCost: wc, riskCost: rc } = computeDeliveryEstGP3(project.contractAmount, quotationGroups, quotationVersion);
-    const ga = ta + wc;
-    const cwt = Math.round((ge - rc - wc) * 0.95);
-    return {
-      totalActual: ta, contractExTax: exTax, grandEstimated: ge, warrantyCost: wc, riskCost: rc,
-      grandActual: ga, costWarningThreshold: cwt, needsCostWarning: ga >= cwt,
-      estProfit: exTax - ge, actProfit: exTax - ga,
-      estGP3: exTax > 0 ? (exTax - ge) / exTax : 0,
-      actGP3: exTax > 0 ? (exTax - ga) / exTax : 0,
-    };
-  }, [actualCosts, project.contractAmount, quotationGroups, quotationVersion]);
 
   const renderApprovalBar = (type: 'plan' | 'cost') => {
     const status = type === 'plan' ? project.planStatus : project.costStatus;
