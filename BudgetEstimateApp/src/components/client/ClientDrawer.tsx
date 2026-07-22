@@ -6,15 +6,15 @@ import type { Client, Contact } from '../../types';
 import { COLORS } from '../../styles/colors';
 import { gradeConfig, creditConfig, roleColors } from './clientConstants';
 import { formatMoney } from '../../utils/calculations';
+import { formatBeijing } from '../../utils/timeFormat';
 
 interface ClientDrawerProps {
   drawerClient: Client | null;
   clients: Client[];
-  quotationLookup: Map<string, string>;
   onClose: () => void;
 }
 
-const ClientDrawer: React.FC<ClientDrawerProps> = ({ drawerClient, clients, quotationLookup, onClose }) => {
+const ClientDrawer: React.FC<ClientDrawerProps> = ({ drawerClient, clients, onClose }) => {
   const navigate = useNavigate();
 
   const sectionHeader = (title: string, count?: number) => (
@@ -53,7 +53,7 @@ const ClientDrawer: React.FC<ClientDrawerProps> = ({ drawerClient, clients, quot
               {creditConfig[client.creditLevel]?.label}
             </Tag>
           ))}
-          {infoRow('创建日期', client.createdAt)}
+          {infoRow('创建日期', formatBeijing(client.createdAt))}
         </div>
 
         {/* ── 联系人卡片 ── */}
@@ -131,47 +131,41 @@ const ClientDrawer: React.FC<ClientDrawerProps> = ({ drawerClient, clients, quot
           padding: '20px 24px',
         }}>
           {sectionHeader('历史报价记录')}
-          {(client.history || []).length > 0 ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {client.history.map(h => {
-                const qId = quotationLookup.get(h.salesNo);
-                const clickable = !!qId;
-                return (
-                  <div key={h.id} onClick={() => clickable && navigate('/quotations/' + qId)}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 10,
-                      background: '#fff', border: `1px solid ${COLORS.borderInner}`, borderRadius: 1,
-                      padding: '10px 14px', fontSize: 13,
-                      cursor: clickable ? 'pointer' : 'default',
-                      transition: 'background 0.15s',
-                    }}
-                    onMouseEnter={e => { if (clickable) (e.currentTarget as HTMLElement).style.background = '#f5f8ff'; }}
-                    onMouseLeave={e => { if (clickable) (e.currentTarget as HTMLElement).style.background = '#fff'; }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 600, color: COLORS.textDark }}>
-                        {h.projectName}
-                        {clickable && <span style={{ marginLeft: 6, fontSize: 11, color: COLORS.primary }}>›</span>}
-                      </div>
-                      <div style={{ fontSize: 11, color: COLORS.textFormLabel, marginTop: 1 }}>{h.salesNo}</div>
-                    </div>
-                    <div style={{ fontWeight: 600, color: COLORS.textDark, minWidth: 90, textAlign: 'right' }}>
-                      &yen;{formatMoney(h.amount)}
-                    </div>
-                    {h.status === '赢' ? (
-                      <Tag color={COLORS.success} style={{ borderRadius: 1, fontSize: 11, lineHeight: '20px' }}>赢单</Tag>
-                    ) : h.status === '冻结' ? (
-                      <Tag color={COLORS.amber} style={{ borderRadius: 1, fontSize: 11, lineHeight: '20px' }}>冻结</Tag>
-                    ) : (
-                      <Tag color={COLORS.danger} style={{ borderRadius: 1, fontSize: 11, lineHeight: '20px' }}>输单</Tag>
-                    )}
-                    <span style={{ fontSize: 12, color: COLORS.textFormLabel, minWidth: 80, textAlign: 'center' }}>{h.date}</span>
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <div style={{ padding: 20, textAlign: 'center', color: '#b0b8c4', fontSize: 13 }}>暂无历史记录</div>
-          )}
+          {(() => {
+            const qh = (client as any).quotationHistory || [];
+            return qh.length > 0 ? (
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <tbody>
+                  {qh.map((h: any, i: number) => {
+                    const qId = h.quotationId || h.quotation_id;
+                    const clickable = !!qId;
+                    const salesNo = h.salesNo || h.sales_no || '';
+                    const verNo = h.versionNo || h.version_no || '';
+                    const price = h.discountedPrice || h.discounted_price || h.amount || 0;
+                    return (
+                      <tr key={salesNo || i} onClick={() => clickable && navigate('/quotations/' + qId)}
+                        style={{ cursor: clickable ? 'pointer' : 'default', transition: 'background 0.12s' }}
+                        onMouseEnter={e => { if (clickable) (e.currentTarget as HTMLElement).style.background = '#f5f8ff'; }}
+                        onMouseLeave={e => { if (clickable) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}>
+                        <td style={{ padding: '10px 12px', borderBottom: `1px solid ${COLORS.borderLight}`, fontSize: 13 }}>
+                          <span style={{ fontWeight: 600, color: COLORS.textDark }}>{salesNo}</span>
+                          <span style={{ color: COLORS.textSecondary, marginLeft: 4, fontSize: 12 }}>{verNo}</span>
+                          <span style={{ marginLeft: 10, fontSize: 12, fontWeight: 500, color: COLORS.textSecondary }}>
+                            &yen;{formatMoney(price)}
+                          </span>
+                        </td>
+                        <td style={{ width: 24, padding: '10px 6px', borderBottom: `1px solid ${COLORS.borderLight}`, textAlign: 'center' }}>
+                          {clickable && <span style={{ color: COLORS.textLight, fontSize: 14 }}>›</span>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            ) : (
+              <div style={{ padding: 20, textAlign: 'center', color: '#b0b8c4', fontSize: 13 }}>暂无历史记录</div>
+            );
+          })()}
         </div>
       </div>
     );

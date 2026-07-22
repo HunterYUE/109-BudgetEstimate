@@ -30,7 +30,21 @@ const router = crudRoutes('clients', fields, {
           [id]
         )).rows;
 
-        res.json({ ...client, contacts, history });
+        // 从销售机会表获取该客户所有项目的最新报价记录
+        const quotationHistory = (await query(
+          `SELECT DISTINCT ON (so.sales_no) so.sales_no, so.project_name, so.amount, so.status,
+            q.id AS quotation_id, q.version_no,
+            pv.discounted_price
+           FROM sales_opportunities so
+           LEFT JOIN quotations q ON q.opportunity_id = so.id
+           LEFT JOIN project_versions pv ON pv.project_id = q.project_id AND pv.version_no = q.version_no
+           WHERE so.client_name = $1
+             AND so.terminated = true
+           ORDER BY so.sales_no, q.updated_at DESC`,
+          [client.name]
+        )).rows;
+
+        res.json({ ...client, contacts, history, quotationHistory });
       } catch (err) { next(err); }
     });
 
