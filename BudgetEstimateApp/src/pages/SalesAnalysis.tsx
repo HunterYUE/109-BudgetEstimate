@@ -9,7 +9,7 @@ import { deliveryService } from '../services/deliveryService';
 import { COLORS } from '../styles/colors';
 import { computeDeliveryEstGP3 } from '../utils/calculations';
 import { parseFY, FYSelector } from '../utils/fiscalYear';
-import { fmtK, loadQuotationGroups, preloadQuotationGroupsBatch, getPreloadVersion } from '../utils/analysisShared';
+import { fmtK, loadQuotationGroups, preloadQuotationGroupsBatch } from '../utils/analysisShared';
 
 /* ============================================================
    常量

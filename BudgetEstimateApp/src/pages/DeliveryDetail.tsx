@@ -104,7 +104,7 @@ const DeliveryDetail: React.FC = () => {
             const filtered = (proj.groups || []).filter((g: any) => (g as Record<string, unknown>).versionId === vid);
             if (!cancelled) setQuotationProject({ ...proj, groups: filtered.length > 0 ? filtered : proj.groups });
           });
-        }).catch(() => {});
+        }).catch(() => {/* empty */});
       }
       // 加载物料费率（设计会签/装配调试）
       Promise.all([
@@ -115,8 +115,8 @@ const DeliveryDetail: React.FC = () => {
         const designRate = (designComps?.[0] as any)?.unitCost || 175;
         const assyRate = (assyComps?.[0] as any)?.unitCost || 85;
         setLaborRates({ design: Number(designRate), assembly: Number(assyRate) });
-      }).catch(() => {});
-    }).catch(() => {}).finally(() => setLoading(false));
+      }).catch(() => {/* empty */});
+    }).catch(() => {/* empty */}).finally(() => setLoading(false));
     return () => { cancelled = true; };
   }, [id]);
 
@@ -510,17 +510,15 @@ const DeliveryDetail: React.FC = () => {
     }
 
     // 设计会签 / 装配调试
-    let designHours = 0, designEst = 0;
-    let assyHours = 0, assyEst = 0;
+    let designEst = 0;
+    let assyEst = 0;
     for (const g of quotationGroups) {
       if (g.groupType === 'EQUIPMENT' || g.groupType === 'INTEGRATION') {
         for (const item of g.items) {
           if (item.designHours) {
-            designHours += item.designHours * (item.qtyTotal || 1);
             designEst += Math.round(item.designHours * (item.designHourRate || (laborRates?.design ?? 175)));
           }
           if (item.assemblyHours) {
-            assyHours += item.assemblyHours * (item.qtyTotal || 1);
             assyEst += Math.round(item.assemblyHours * (item.assemblyHourRate || (laborRates?.assembly ?? 85)) * (item.qtyTotal || 1));
           }
         }
@@ -530,8 +528,8 @@ const DeliveryDetail: React.FC = () => {
     const pdGroup = quotationGroups.find(g => g.groupType === 'PROJECT_DELIVERY');
     if (pdGroup) {
       for (const item of pdGroup.items) {
-        if (item.code === 'SV-DESIGN-000000-V1.0') { designHours += item.qtyTotal || 0; designEst += item.directCost || 0; }
-        if (item.code === 'SV-INSASS-000000-V1.0') { assyHours += item.qtyTotal || 0; assyEst += item.directCost || 0; }
+        if (item.code === 'SV-DESIGN-000000-V1.0') { designEst += item.directCost || 0; }
+        if (item.code === 'SV-INSASS-000000-V1.0') { assyEst += item.directCost || 0; }
       }
     }
     if (designEst > 0) addRow('人工成本', 'SV-DESIGN-000000-V1.0 设计会签', designEst, designAct);
@@ -583,7 +581,7 @@ const DeliveryDetail: React.FC = () => {
   let estProfit = 0, actProfit = 0, estGP3 = 0, actGP3 = 0;
   if (project) {
     const ta = Object.values(actualCosts).reduce((s, v) => s + v, 0);
-    const { exTax, grandEstimated: ge, warrantyCost: wc, riskCost: rc } = computeDeliveryEstGP3(project.contractAmount, quotationGroups, quotationVersion);
+    const { exTax, grandEstimated: ge, warrantyCost: wc } = computeDeliveryEstGP3(project.contractAmount, quotationGroups, quotationVersion);
     grandActual = ta + wc;
     contractExTax = exTax; grandEstimated = ge;
     estProfit = exTax - ge; actProfit = exTax - grandActual;

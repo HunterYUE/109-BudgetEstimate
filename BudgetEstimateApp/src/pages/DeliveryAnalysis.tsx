@@ -107,6 +107,7 @@ const [fySelect, setFySelect] = useState(defaultFy);
 
   // ── 缓存财年范围 ──
   const fyRange = useMemo(() => parseFY(fySelect), [fySelect]);
+  const preloadVersion = preloadVersion;
 
   // ── 财年过滤（活跃期交集：与销售分析一致的逻辑）──
   const fyFiltered = useMemo(() => {
@@ -183,7 +184,7 @@ const [fySelect, setFySelect] = useState(defaultFy);
     const actItems = itemData.filter(d => d.actGP3 != null);
     const avgActGP3 = actItems.length > 0 ? actItems.reduce((s, d) => s + d.exTax * d.actGP3!, 0) / actItems.reduce((s, d) => s + d.exTax, 0) : 0;
     return { items, avgEstGP3, avgActGP3 };
-  }, [fyFiltered, fyRange, getPreloadVersion()]);
+  }, [fyFiltered, fyRange, preloadVersion]);
 
   // ── 健康 KPI 卡片 ──
   const overviewItems = useMemo((): KpiCard[] => {
@@ -267,7 +268,7 @@ const [fySelect, setFySelect] = useState(defaultFy);
       return { total: mp.length, tAmt, active, aAmt, completed, cAmt, delayed, dAmt, avgDelay: dCnt > 0 ? Math.round(tDelay / dCnt) : 0, onTimeRate: tN > 0 ? Math.round(onT / tN * 100) : 100 };
     };
     return [calcMonth(1), calcMonth(2), calcMonth(3)];
-  }, [deliveryProjects, getPreloadVersion()]);
+  }, [deliveryProjects, preloadVersion]);
 
   // ── 甘特图数据（12个月时间线，仅显示在时间范围内的节点）──
   const ganttData = useMemo(() => {
@@ -320,7 +321,7 @@ const [fySelect, setFySelect] = useState(defaultFy);
       return { name: p.clientName, slots };
     });
     return { tlStart, totalDays, months, todayPos, projectRows, DAY_MS };
-  }, [fyFiltered, getPreloadVersion()]);
+  }, [fyFiltered, preloadVersion]);
 
   // ── 所有 fyFiltered 项目的生命周期（用于甘特图负载压力线）──
   const projectLifecycles = useMemo(() => {
@@ -343,7 +344,7 @@ const [fySelect, setFySelect] = useState(defaultFy);
       const { exTax } = computeDeliveryEstGP3(p.contractAmount, groups, version);
       return { id: p.id, start, end, exTax };
     }).filter(Boolean) as { id: string; start: Date; end: Date; exTax: number }[];
-  }, [fyFiltered, getPreloadVersion()]);
+  }, [fyFiltered, preloadVersion]);
 
   // ── 气泡图数据（仅含当前财年内完成节点15的项目）──
   // 产能压力：按实际时间窗口计算并行项目的时间加权贡献
