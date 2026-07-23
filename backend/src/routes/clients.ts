@@ -44,7 +44,7 @@ const router = crudRoutes('clients', fields, {
           [client.name]
         )).rows;
 
-        res.json({ ...client, contacts, history, quotationHistory });
+        res.json({ ...client, contacts, history, quotation_history: quotationHistory });
       } catch (err) { next(err); }
     });
 

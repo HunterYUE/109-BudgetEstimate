@@ -593,10 +593,38 @@ EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
 DO $$ BEGIN
+  CREATE TRIGGER trg_users_updated_at BEFORE UPDATE ON users
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
   CREATE TRIGGER trg_tags_updated_at BEFORE UPDATE ON tags
     FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
+
+
+-- ============================================================
+-- 0. 用户表（users）—— 部署时手动创建，补录文档
+-- ============================================================
+CREATE TABLE IF NOT EXISTS users (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email         VARCHAR(200) NOT NULL,
+  display_name  VARCHAR(200) NOT NULL,
+  title         VARCHAR(100) NOT NULL DEFAULT '',
+  phone         VARCHAR(100) NOT NULL DEFAULT '',
+  password_hash VARCHAR(200) NOT NULL,
+  role          VARCHAR(50) NOT NULL DEFAULT 'user',
+  is_active     BOOLEAN NOT NULL DEFAULT true,
+  permissions   JSONB NOT NULL DEFAULT '[]'::jsonb,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(email)
+);
+
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
 
 -- ============================================================
 -- 18. 操作日志（audit_logs）

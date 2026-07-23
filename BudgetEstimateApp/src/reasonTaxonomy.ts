@@ -4,19 +4,19 @@
    ============================================================ */
 
 /** 原因项：可包含子项（价格→主机价格高/解决方案价格高）*/
-export interface ReasonItem {
+interface ReasonItem {
   label: string;
   items?: ReasonItem[];
 }
 
 /** 一个原因大类下的分组 */
-export interface ReasonGroup {
+interface ReasonGroup {
   groupLabel: string;
   items: ReasonItem[];
 }
 
 /** 某一状态的原因配置 */
-export interface StatusReasons {
+interface StatusReasons {
   label: string;
   groups: ReasonGroup[];
 }
@@ -106,7 +106,7 @@ export function formatReasons(groupLabel: string, selections: { subLabel: string
 }
 
 /** 解析存储的原因字符串 */
-export interface ParsedReason {
+interface ParsedReason {
   groupLabel: string;
   subLabel: string;
   detailItems: string[];

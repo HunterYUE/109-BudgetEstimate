@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Tag, Modal } from 'antd';
 import { HistoryOutlined, SaveOutlined, SendOutlined, DownloadOutlined } from '@ant-design/icons';
 import type { DeliveryNode } from '../types';
@@ -65,17 +65,6 @@ const DeliveryNodeTimeline: React.FC<Props> = ({
   const [editVal, setEditVal] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
   useEffect(() => { if (editing && inputRef.current) inputRef.current.focus(); }, [editing]);
-
-  // Inject one-time style
-  const styleInjected = useRef(false);
-  useEffect(() => {
-    if (styleInjected.current) return;
-    styleInjected.current = true;
-    const s = document.createElement('style');
-    s.textContent = 'input.dt-hide::-webkit-calendar-picker-indicator { display: none }';
-    document.head.appendChild(s);
-    return () => s.remove();
-  }, []);
 
   const commitEdit = () => {
     if (editing && editVal && onPlannedDateChange) {

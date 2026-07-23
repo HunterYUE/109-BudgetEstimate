@@ -44,7 +44,7 @@ customRouter.put('/sync', async (req, res, next) => {
     );
 
     logAudit(req, '保存报价', 'quotation',
-      `${project_id.slice(0,8)} v${version_no} ¥${amount} ${status}`);
+      `${sales_no} ${version_no} ¥${amount} ${status}`);
 
     res.json(result.rows[0]);
   } catch (err) { next(err); }

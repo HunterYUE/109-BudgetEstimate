@@ -61,3 +61,10 @@ export const TAG_COLORS = [
   '#1abc9c', '#2980b9', '#2c3e50', '#7d3c98', '#a04000',
   '#5d6d7e', '#b03a2e', '#1f618d', '#1e8449', '#6c3483',
 ];
+
+/** 表格标签单元格样式 — 用于模块表单中的固定左侧标签列 */
+export const LABEL_CELL_STYLE = {
+  padding: '7px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`,
+  verticalAlign: 'middle', fontWeight: 600, background: COLORS.bgLight,
+  whiteSpace: 'nowrap', color: COLORS.labelDark,
+} as const;

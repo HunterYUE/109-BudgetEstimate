@@ -6,8 +6,8 @@ interface TagRow {
   id: string;
   name: string;
   description?: string;
-  parent_id?: string | null;
-  sort_order?: number;
+  parentId?: string | null;
+  sortOrder?: number;
 }
 
 export const tagService = {

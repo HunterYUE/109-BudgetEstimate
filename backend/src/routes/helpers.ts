@@ -96,7 +96,7 @@ export function crudRoutes(table: string, fields: string[], options?: {
 
   /** JSONB 参数序列化：pg 不支持直接传对象数组给 JSONB 列（会把数组当 PG ARRAY），
    *  但 TEXT[] 列需要保留数组原样传给 pg。只 stringify 包含对象的数组。 */
-  function serializeParams(vals: any[]): any[] {
+  function serializeParams(vals: unknown[]): unknown[] {
     return vals.map(v => {
       if (v === null || v === undefined) return v;
       if (Array.isArray(v)) {

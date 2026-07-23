@@ -10,7 +10,7 @@ import { opportunityService } from '../services/opportunityService';
 import { formatMoney } from '../utils/calculations';
 import { formatBeijing } from '../utils/timeFormat';
 import type { ApprovalRequest, QuotationSummary, DeliveryProject } from '../types';
-import { COLORS } from '../styles/constants';
+import { COLORS } from '../styles/colors';
 import { useAuth } from '../utils/authContext';
 
 const statusConfig: Record<string, { label: string; color: string }> = {

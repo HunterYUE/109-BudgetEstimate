@@ -16,7 +16,7 @@ import { quotationService } from '../services/quotationService';
 import { projectService } from '../services/projectService';
 import { REASON_TAXONOMY, formatReasons } from '../reasonTaxonomy';
 import { parseFY, FYSelector } from '../utils/fiscalYear';
-import { COLORS } from '../styles/constants';
+import { COLORS } from '../styles/colors';
 import { api, clearCache } from '../utils/api';
 import { calcBlueTableWinRate } from '../utils/blueTableCalculation';
 import { NODE_NAMES } from '../utils/constants';
@@ -119,7 +119,6 @@ const SalesOpportunityList: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadOpportunities();
   }, [loadOpportunities]);
 

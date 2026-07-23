@@ -97,7 +97,7 @@ router.get('/:id/detail', async (req, res, next) => {
       roles = (await query('SELECT * FROM blue_table_roles WHERE blue_table_id = $1 ORDER BY influence_weight DESC', [blueTable.id])).rows;
     }
 
-    res.json({ ...opp, blueTable: blueTable ? { ...blueTable, roles } : null });
+    res.json({ ...opp, blue_table: blueTable ? { ...blueTable, roles } : null });
   } catch (err) { next(err); }
 });
 
@@ -106,7 +106,8 @@ router.put('/:id/blue-table', async (req, res, next) => {
   let tx: any;
   try {
     const { id } = req.params;
-    logAudit(req, '保存蓝表', 'opportunity', `机会 ${id.slice(0,8)} 蓝表已更新`);
+    const oppRow = (await query('SELECT sales_no FROM sales_opportunities WHERE id = $1', [id])).rows[0];
+    logAudit(req, '保存蓝表', 'opportunity', `机会 ${oppRow?.sales_no || id.slice(0,8)} 蓝表已更新`);
     const body = objKeysToSnake({ ...req.body });
     const { veto_budget, budget_amount, timeline_plan, timeline_option,
             pricing, positioning, reaction_mode, strategy, targets, roles } = body;
@@ -142,14 +143,15 @@ router.put('/:id/blue-table', async (req, res, next) => {
     if (roles !== undefined) {
       await tx.query('DELETE FROM blue_table_roles WHERE blue_table_id = $1', [bt.id]);
       for (const role of roles) {
+      const rs = objKeysToSnake(role);
         const r = {
-          role_type: role.role_type ?? role.roleType ?? '',
-          name: role.name ?? '',
-          influence: role.influence ?? 'medium',
-          influence_weight: role.influence_weight ?? role.influenceWeight ?? 3,
-          support: role.support ?? 0,
-          demand_fit: role.demand_fit ?? role.demandFit ?? 3,
-          relationship: role.relationship ?? 3,
+          role_type: rs.role_type || '',
+          name: rs.name || '',
+          influence: rs.influence || 'medium',
+          influence_weight: rs.influence_weight || 3,
+          support: rs.support || 0,
+          demand_fit: rs.demand_fit || 3,
+          relationship: rs.relationship || 3,
         };
         await tx.query(
           `INSERT INTO blue_table_roles (blue_table_id, role_type, name, influence,
@@ -221,7 +223,7 @@ router.get('/next-sales-no', async (req, res, next) => {
       [prefix + '%']
     );
     const seq = String(result.rows[0].next_seq).padStart(3, '0');
-    res.json({ salesNo: `${prefix}${seq}-S` });
+    res.json({ sales_no: `${prefix}${seq}-S` });
   } catch (err) { next(err); }
 });
 

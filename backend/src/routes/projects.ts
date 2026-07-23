@@ -44,7 +44,7 @@ const router = crudRoutes('projects', projectsFields, {
             [groupIds]
           )).rows;
 
-          const itemsByGroup: Record<string, any[]> = {};
+          const itemsByGroup: Record<string, unknown[]> = {};
           for (const item of items) {
             if (!itemsByGroup[item.group_id]) itemsByGroup[item.group_id] = [];
             itemsByGroup[item.group_id].push(item);

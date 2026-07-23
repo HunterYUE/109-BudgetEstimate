@@ -6,7 +6,7 @@ import { COLORS } from '../styles/colors';
 import { NODE_DISPLAY_NAMES } from '../utils/constants';
 import { computeDeliveryEstGP3 } from '../utils/calculations';
 import { parseFY, FYSelector } from '../utils/fiscalYear';
-import { fmtK, loadQuotationGroups, preloadQuotationGroupsBatch, getPreloadVersion } from '../utils/analysisShared';
+import { fmtK, loadQuotationGroups, preloadQuotationGroupsBatch } from '../utils/analysisShared';
 import { VerticalBarChart, ProfitChart, ProjectGantt, BubbleChart } from '../components/charts/DeliveryCharts';
 import type { ProfitItem, BubbleDataItem } from '../components/charts/DeliveryCharts';
 
@@ -80,9 +80,12 @@ const [fySelect, setFySelect] = useState(defaultFy);
   }, []);
 
   // 交货项目加载完成后，预加载报价数据到缓存
+  const [preloadReady, setPreloadReady] = useState(0);
   useEffect(() => {
     const ids = deliveryProjects.filter(p => p.quotationId).map(p => p.quotationId);
-    if (ids.length > 0) preloadQuotationGroupsBatch(ids);
+    if (ids.length > 0) {
+      preloadQuotationGroupsBatch(ids).then(() => setPreloadReady(v => v + 1));
+    }
   }, [deliveryProjects]);
 
   // ── 共享工具函数 ──
@@ -107,7 +110,7 @@ const [fySelect, setFySelect] = useState(defaultFy);
 
   // ── 缓存财年范围 ──
   const fyRange = useMemo(() => parseFY(fySelect), [fySelect]);
-  const preloadVersion = getPreloadVersion();
+  const preloadVersion = preloadReady;
 
   // ── 财年过滤（活跃期交集：与销售分析一致的逻辑）──
   const fyFiltered = useMemo(() => {
@@ -240,7 +243,7 @@ const [fySelect, setFySelect] = useState(defaultFy);
       { label: '节点按时率', value: `${onTimeRate}%`, color: onTimeRate >= 80 ? COLORS.success : onTimeRate >= 50 ? COLORS.warning : COLORS.danger, icon: '🎯' },
       { label: '成本偏差率', value: costDevDenominator > 0 ? `${costDevRate > 0 ? '+' : ''}${costDevRate.toFixed(1)}%` : '—', color: costDevRate <= 0 ? COLORS.success : COLORS.danger, icon: '💰' },
     ];
-  }, [fyFiltered, fyRange]);
+  }, [fyFiltered, fyRange, preloadVersion]);
 
   // ── 按月交付 KPI（最近3个完整月） ──
   const monthlyDelKpi = useMemo(() => {

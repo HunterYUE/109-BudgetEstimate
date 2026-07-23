@@ -36,7 +36,6 @@ export const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
   rejected: { label: '已驳回', color: COLORS.danger },
 };
 
-export const LABEL_CELL_STYLE = { padding: '7px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle', fontWeight: 600, background: COLORS.bgLight, whiteSpace: 'nowrap', color: COLORS.labelDark } as const;
 
 // ── 编码规则 ──
 // 格式：{类型缩写2位}-{用途6位}-{规格6位}-V{版本}

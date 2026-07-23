@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
+import { pool } from '../db/index.js';
 
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
   console.error('[FATAL] JWT_SECRET 必须设置且长度不少于 32 位字符！');
@@ -27,7 +28,7 @@ export function signToken(payload: JwtPayload): string {
   return jwt.sign(payload, JWT_SECRET!, { expiresIn: JWT_EXPIRES_IN });
 }
 
-export function requireAuth(req: Request, res: Response, next: NextFunction): void {
+export async function requireAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
   let token: string;
   const header = req.headers.authorization;
   if (header && header.startsWith('Bearer ')) {
@@ -40,6 +41,12 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
   }
   try {
     const decoded = jwt.verify(token, JWT_SECRET!, { algorithms: ['HS256'] }) as JwtPayload;
+    // 校验用户是否仍为活跃状态（管理员停用后立即失效）
+    const userRow = await pool.query('SELECT is_active FROM users WHERE id = $1', [decoded.userId]);
+    if (!userRow.rows[0]?.is_active) {
+      res.status(401).json({ error: '账户已被停用' });
+      return;
+    }
     req.user = decoded;
     next();
   } catch {

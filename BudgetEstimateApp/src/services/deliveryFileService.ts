@@ -16,6 +16,7 @@ export const deliveryFileService = {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('file_type', fileType);
+    /* eslint-disable-next-line no-direct-fetch/no-fetch -- multipart form-data 不支持 api.ts 的 JSON 编码 */
     return fetch(`${(import.meta.env.VITE_API_BASE || '/api/v1')}/deliveries/${deliveryId}/files`, {
       method: 'POST',
       headers: { Authorization: 'Bearer ' + (localStorage.getItem('budget_token') || '') },

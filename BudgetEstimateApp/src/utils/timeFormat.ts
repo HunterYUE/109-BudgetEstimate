@@ -14,8 +14,3 @@ export function todayBeijing(): string {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' });
 }
 
-/** 将 ISO 时间戳格式化为短日期 "yyyy-mm-dd" */
-export function formatDate(iso: string | undefined | null): string {
-  if (!iso) return '—';
-  return iso.slice(0, 10);
-}

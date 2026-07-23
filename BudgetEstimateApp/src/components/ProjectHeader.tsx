@@ -65,6 +65,16 @@ const DeliveryPeriodInput: React.FC<{ value: string; onChange: (v: string) => vo
 };
 
 const ProjectHeader: React.FC<Props> = ({ project, onUpdate, readOnly }) => {
+  // 组件卸载时清理拖拽/调整大小时的残留 window 事件监听器
+  const dragRefCleanup = React.useRef<(() => void) | null>(null);
+  React.useEffect(() => {
+    return () => {
+      if (dragRefCleanup.current) {
+        dragRefCleanup.current();
+        dragRefCleanup.current = null;
+      }
+    };
+  }, []);
   const v = project.currentVersion;
   const pct = parsePayment(project.paymentTerms);
 
@@ -237,6 +247,11 @@ const ProjectLayoutUpload: React.FC<{ value: string; onChange: (v: string) => vo
     };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
+    // 存储清理函数以便组件卸载时移除残留监听器
+    dragRefCleanup.current = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
   };
 
   const handleClick = () => {
@@ -275,6 +290,11 @@ const ProjectLayoutUpload: React.FC<{ value: string; onChange: (v: string) => vo
     const onUp = () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
+    // 存储清理函数以便组件卸载时移除残留监听器
+    dragRefCleanup.current = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
   };
 
   if (value) {

@@ -137,11 +137,11 @@ const ClientDrawer: React.FC<ClientDrawerProps> = ({ drawerClient, clients, onCl
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <tbody>
                   {qh.map((h: any, i: number) => {
-                    const qId = h.quotationId || h.quotation_id;
+                    const qId = h.quotationId;
                     const clickable = !!qId;
-                    const salesNo = h.salesNo || h.sales_no || '';
-                    const verNo = h.versionNo || h.version_no || '';
-                    const price = h.discountedPrice || h.discounted_price || h.amount || 0;
+                    const salesNo = h.salesNo || '';
+                    const verNo = h.versionNo || '';
+                    const price = h.discountedPrice || h.amount || 0;
                     return (
                       <tr key={salesNo || i} onClick={() => clickable && navigate('/quotations/' + qId)}
                         style={{ cursor: clickable ? 'pointer' : 'default', transition: 'background 0.12s' }}

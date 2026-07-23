@@ -6,7 +6,8 @@ import {
 } from '@ant-design/icons';
 import type { Client, Contact, CreditLevel, ClientGrade } from '../../types';
 import { COLORS } from '../../styles/colors';
-import { INDUSTRIES, REGIONS, LABEL_CELL_STYLE } from './clientConstants';
+import { INDUSTRIES, REGIONS } from './clientConstants';
+import { LABEL_CELL_STYLE } from '../../styles/colors';
 
 // ── 行业下拉选择器（Popover 实现，样式与点击选择器一致） ──
 

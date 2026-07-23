@@ -33,6 +33,7 @@ const DeliveryManagement: React.FC = () => {
     }
   };
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { fetchProjects(); }, []);
 
   const grouped = useMemo(() => {

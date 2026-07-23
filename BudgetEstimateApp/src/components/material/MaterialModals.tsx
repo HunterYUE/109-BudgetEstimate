@@ -4,7 +4,8 @@ import { CheckOutlined, CloseOutlined } from '@ant-design/icons';
 import MaterialTagSelector from '../MaterialTagSelector';
 import type { Component } from '../../types';
 import { COLORS } from '../../styles/colors';
-import { CATEGORIES, CATEGORY_OPTIONS, TYPE_ABBREV, SOURCES, UNITS, LABEL_CELL_STYLE } from './materialConstants';
+import { CATEGORIES, CATEGORY_OPTIONS, TYPE_ABBREV, SOURCES, UNITS } from './materialConstants';
+import { LABEL_CELL_STYLE } from '../../styles/colors';
 
 // ── Edit/Create Modal ──
 

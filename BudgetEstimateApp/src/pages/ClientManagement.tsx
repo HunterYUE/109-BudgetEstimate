@@ -6,9 +6,9 @@ import {
 } from '@ant-design/icons';
 import { clientService } from '../services/clientService';
 import type { Client, Contact, ClientGrade, CreditLevel } from '../types';
-import { COLORS } from '../styles/colors';
+import { COLORS, LABEL_CELL_STYLE } from '../styles/colors';
 import {
-  INDUSTRIES, REGIONS, SALESPEOPLE, LABEL_CELL_STYLE,
+  INDUSTRIES, REGIONS, SALESPEOPLE,
   gradeConfig, creditConfig, AREA_CODES, generateClientCode,
 } from '../components/client/clientConstants';
 import { ClientEditModal, ClientSubModal } from '../components/client/ClientModals';
@@ -43,10 +43,10 @@ const ClientManagement: React.FC = () => {
     }
   };
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { fetchClients(); }, []);
 
   // salesNo → quotationId 查找映射（暂未填充，后续可集成报价查询）
-  const quotationLookup = useMemo(() => new Map<string, string>(), []);
 
   // Edit modal
   const [editOpen, setEditOpen] = useState(false);
@@ -126,6 +126,7 @@ const ClientManagement: React.FC = () => {
       const newCode = generateClientCode(currentGrade, areaCode, editCity, clients.map(c => c.code));
       setEditForm(p => ({ ...p, code: newCode }));
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentGrade, areaCode, editCity, editingId]);
 
   const openEdit = async (client: Client) => {
@@ -469,7 +470,7 @@ const ClientManagement: React.FC = () => {
       <ClientDrawer
         drawerClient={drawerClient}
         clients={clients}
-        quotationLookup={quotationLookup}
+       
         onClose={() => setDrawerClient(null)}
       />
     </div>

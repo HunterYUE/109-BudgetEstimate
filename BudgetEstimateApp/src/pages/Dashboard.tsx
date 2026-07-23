@@ -4,8 +4,8 @@ import { Card, Tag } from 'antd';
 import {
   RightOutlined, TrophyOutlined, ClockCircleOutlined,
 } from '@ant-design/icons';
-import { parseFY } from '../utils/parseFY';
-import { COLORS } from '../styles/constants';
+import { parseFY } from '../utils/fiscalYear';
+import { COLORS } from '../styles/colors';
 import { opportunityService } from '../services/opportunityService';
 import { approvalService } from '../services/approvalService';
 import { deliveryService } from '../services/deliveryService';

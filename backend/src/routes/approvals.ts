@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { query } from '../db/index.js';
 import { AppError } from '../middleware/index.js';
-import { crudRoutes } from './helpers.js';
+import { crudRoutes, objKeysToSnake } from './helpers.js';
 
 const fields = [
   'id', 'approval_type', 'quotation_id', 'opportunity_id', 'delivery_id',
@@ -24,8 +24,9 @@ const router = Router();
 
 // 自定义 POST：创建审批时自动级联更新相关状态
 router.post('/', async (req, res, next) => {
+  const body = objKeysToSnake({ ...req.body });
   try {
-    const { approval_type, opportunity_id, delivery_id } = req.body;
+    const { approval_type, opportunity_id, delivery_id } = body;
 
     // 创建实施计划审批时，锁定交付项目
     if (approval_type === 'plan' && delivery_id) {
@@ -51,7 +52,7 @@ router.post('/', async (req, res, next) => {
       );
 
       // 从关联报价自动填充财务数据（如前端未提供）
-      if (!req.body.versionNo || !req.body.totalAccountingPrice) {
+      if (!body.version_no && !body.total_accounting_price) {
         try {
           const oppRows = await query(
             'SELECT quotation_id FROM sales_opportunities WHERE id = $1',
@@ -71,26 +72,29 @@ router.post('/', async (req, res, next) => {
               );
               const pv = pvRows.rows[0];
               if (pv) {
-                if (!req.body.versionNo) req.body.versionNo = qtRow.version_no;
-                if (!req.body.totalAccountingPrice) req.body.totalAccountingPrice = parseFloat(pv.total_accounting_price) || 0;
-                if (!req.body.discountedPrice) req.body.discountedPrice = parseFloat(pv.discounted_price) || 0;
-                if (!req.body.discountRate) req.body.discountRate = parseFloat(pv.discount_rate) || 0;
-                if (!req.body.gp3) req.body.gp3 = parseFloat(pv.gp3_profit_rate) || 0;
-                if (!req.body.totalCost) req.body.totalCost = parseFloat(pv.total_cost) || 0;
-                if (!req.body.taxRate) req.body.taxRate = parseFloat(pv.tax_rate) || 0.13;
-                if (!req.body.amount) req.body.amount = parseFloat(pv.discounted_price) || 0;
-                if (!req.body.gp3Amount) req.body.gp3Amount = parseFloat(pv.gp3_amount) || 0;
+                // 自动填充转机会财务数据（使用 snake_case 键名）
+                if (!body.version_no) body.version_no = qtRow.version_no;
+                if (!body.total_accounting_price) body.total_accounting_price = parseFloat(pv.total_accounting_price) || 0;
+                if (!body.discounted_price) body.discounted_price = parseFloat(pv.discounted_price) || 0;
+                if (!body.discount_rate) body.discount_rate = parseFloat(pv.discount_rate) || 0;
+                if (!body.gp3) body.gp3 = parseFloat(pv.gp3_profit_rate) || 0;
+                if (!body.total_cost) body.total_cost = parseFloat(pv.total_cost) || 0;
+                if (!body.tax_rate) body.tax_rate = parseFloat(pv.tax_rate) || 0.13;
+                if (!body.amount) body.amount = parseFloat(pv.discounted_price) || 0;
+                if (!body.gp3_amount) body.gp3_amount = parseFloat(pv.gp3_amount) || 0;
               }
             }
           }
         } catch (e) {
-          console.warn('[Approvals] 自动填充转机会财务数据失败:', (e as Error).message);
+          console.warn('[Approvals] 自动填充转机会数据失败:', (e as Error).message);
         }
       }
     }
   } catch (err) {
-    console.warn('[Approvals] 锁定机会失败:', (err as Error).message);
+    console.warn('[Approvals] 锁定机会/交付状态失败:', (err as Error).message);
   }
+  // 将可能被自动填充逻辑修改过的 body 写回 req.body
+  req.body = body;
   next();
 });
 
@@ -139,6 +143,9 @@ router.post('/:id/records', async (req, res, next) => {
     const { reviewer, action, comment } = req.body;
     if (!reviewer || !action) {
       throw new AppError(400, 'Missing required fields: reviewer, action');
+    }
+    if (!['approved', 'rejected'].includes(action)) {
+      throw new AppError(400, `Invalid action: ${action}. Must be 'approved' or 'rejected'`);
     }
 
     const ar = (await query('SELECT * FROM approval_requests WHERE id = $1', [id])).rows[0];

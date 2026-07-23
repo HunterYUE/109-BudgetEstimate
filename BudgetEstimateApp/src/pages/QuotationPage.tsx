@@ -167,11 +167,11 @@ const QuotationPage: React.FC = () => {
           const quotation = await quotationService.get(quoteId);
           const pid = (quotation as any).projectId || quotation.projectId;
           if (!pid) throw new Error('no project_id');
-          oppIdRef.current = (quotation as any).opportunityId || (quotation as any).opportunity_id || null;
+          oppIdRef.current = (quotation as any).opportunityId || null;
           const data = await projectService.getFull(pid);
           if (!cancelled) {
             // 取与报价版本号匹配的版本（若无匹配则用最新版）
-            const quoteVerNo = (quotation as any).versionNo || (quotation as any).version_no || '';
+            const quoteVerNo = (quotation as any).versionNo || '';
             const lv = data.versions?.find(v => v.versionNo === quoteVerNo) || data.versions?.[0];
             // ⚠️ 锁定规则：先根据 DB 字段和版本状态判断，最后检查机会签单状态（全覆盖）
             let shouldLock = (quotation as any).locked === true;
@@ -212,15 +212,15 @@ const QuotationPage: React.FC = () => {
               const opp = await opportunityService.get(oppId);
               if (opp.stage === '中标' && opp.status === '赢') { setQuotationLocked(true); }
               if (opp.terminated) { setQuotationLocked(true); }
-              const cn = opp.clientName || opp.client_name || '';
+              const cn = opp.clientName || '';
               // 从客户列表查找客户编号
               let cc = '';
               try {
                 const clients = await clientService.list();
-                const match = clients.find((c: any) => c.name === cn || c.client_name === cn);
+                const match = clients.find((c: any) => c.name === cn);
                 if (match) cc = match.code || match.clientCode || '';
               } catch { console.warn("[Caught]"); }
-              prefill = { salesNo: opp.salesNo || opp.sales_no || '', clientName: cn, clientCode: cc, expectedAwardDate: opp.expectedCloseDate || opp.expected_close_date || '', projectName: opp.projectName || opp.project_name || '' };
+              prefill = { salesNo: opp.salesNo || '', clientName: cn, clientCode: cc, expectedAwardDate: opp.expectedCloseDate || '', projectName: opp.projectName || '' };
             } catch { console.warn("[Caught]"); }
           }
           if (!cancelled) {
@@ -238,6 +238,8 @@ const QuotationPage: React.FC = () => {
   }, [quoteId]);
 
   /** 当物料编码匹配数据库时，自动填充成本/工时/质保/采购方式 */
+// 仅在 componentDB 加载后触发一次物料编码填充
+// eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!project || componentDB.length === 0) return;
     let changed = false;
@@ -466,10 +468,10 @@ const QuotationPage: React.FC = () => {
       const isNew = project.id.startsWith('proj-');
       if (isNew) {
         const created = await projectService.create({
-          sales_no: project.salesNo, version_no: curVer?.versionNo || 'V1.0', client_name: project.clientName, client_code: project.clientCode,
-          project_scope: project.projectScope, project_name: project.projectName || '', project_stage: project.projectStage,
-          expected_award_date: project.expectedAwardDate, project_layout: project.projectLayout,
-          delivery_period: project.deliveryPeriod, payment_terms: project.paymentTerms,
+          salesNo: project.salesNo, versionNo: curVer?.versionNo || 'V1.0', clientName: project.clientName, clientCode: project.clientCode,
+          projectScope: project.projectScope, projectName: project.projectName || '', projectStage: project.projectStage,
+          expectedAwardDate: project.expectedAwardDate, projectLayout: project.projectLayout,
+          deliveryPeriod: project.deliveryPeriod, paymentTerms: project.paymentTerms,
           postfix: project.postfix, note: project.note,
         });
         const newId = created.id;
@@ -508,10 +510,10 @@ const QuotationPage: React.FC = () => {
         if (qid && quoteId === 'new') navigate('/quotations/' + qid, { replace: true });
       } else {
         await projectService.update(project.id, {
-          client_name: project.clientName, client_code: project.clientCode,
-          project_scope: project.projectScope, project_name: project.projectName || '', project_stage: project.projectStage,
-          expected_award_date: project.expectedAwardDate, project_layout: project.projectLayout,
-          delivery_period: project.deliveryPeriod, payment_terms: project.paymentTerms,
+          clientName: project.clientName, clientCode: project.clientCode,
+          projectScope: project.projectScope, projectName: project.projectName || '', projectStage: project.projectStage,
+          expectedAwardDate: project.expectedAwardDate, projectLayout: project.projectLayout,
+          deliveryPeriod: project.deliveryPeriod, paymentTerms: project.paymentTerms,
           postfix: project.postfix, note: project.note,
         });
         const versionUntaxed = curVer.discountedPrice ? Math.round(curVer.discountedPrice / (1 + (curVer.taxRate || 0.13))) : undefined;
@@ -572,10 +574,10 @@ const QuotationPage: React.FC = () => {
       savingRef.current = true;
       setIsSaving(true); // ⚠️ 防止重复点击
       await projectService.update(project.id, {
-        client_name: project.clientName, client_code: project.clientCode,
-        project_scope: project.projectScope, project_stage: project.projectStage,
-        expected_award_date: project.expectedAwardDate, project_layout: project.projectLayout,
-        delivery_period: project.deliveryPeriod, payment_terms: project.paymentTerms,
+        clientName: project.clientName, clientCode: project.clientCode,
+        projectScope: project.projectScope, projectStage: project.projectStage,
+        expectedAwardDate: project.expectedAwardDate, projectLayout: project.projectLayout,
+        deliveryPeriod: project.deliveryPeriod, paymentTerms: project.paymentTerms,
         postfix: project.postfix, note: project.note,
       });
       // ⚠️ 必须先重新计算汇总值再保存版本，否则 curVer 中的 discountRate/gp3ProfitRate 是过期数据
@@ -636,7 +638,7 @@ const QuotationPage: React.FC = () => {
       savingRef.current = false;
       setIsSaving(false);
     }
-  }, [validateCodes, messageApi, project, isLocked, submitterName, syncQuotation]);
+  }, [validateCodes, messageApi, project, isLocked, submitterName]);
 
   // ⚠️ 所有 calcProjectSummary 调用必须传入未税 discountedPrice（已含税存储的 ÷(1+taxRate) 转换）
   const summary = useMemo(() => {

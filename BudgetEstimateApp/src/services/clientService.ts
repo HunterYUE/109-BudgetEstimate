@@ -18,12 +18,8 @@ export const clientService = {
 
   delete: (id: string) => api.delete(`/clients/${id}`),
 
-  addContact: (clientId: string, data: Partial<Contact>) =>
-    api.post<Contact>(`/clients/${clientId}/contacts`, data),
 
   getContactCounts: () =>
     api.get<Record<string, number>>('/clients/stats/contacts'),
 
-  addHistory: (clientId: string, data: Partial<ClientHistoryRecord>) =>
-    api.post<ClientHistoryRecord>(`/clients/${clientId}/history`, data),
 };

@@ -8,7 +8,6 @@ import opportunities from './opportunities.js';
 import quotations from './quotations.js';
 import approvals from './approvals.js';
 import deliveries from './deliveries.js';
-import deliveryFiles from './deliveryFiles.js';
 import clients from './clients.js';
 import tags from './tags.js';
 import auditLogs from './auditLogs.js';
@@ -35,7 +34,6 @@ router.use('/opportunities', requireAuth, opportunities);
 router.use('/quotations', requireAuth, quotations);
 router.use('/approvals', requireAuth, approvals);
 router.use('/deliveries', requireAuth, deliveries);
-router.use('/deliveries', requireAuth, deliveryFiles);
 router.use('/clients', requireAuth, clients);
 router.use('/tags', requireAuth, tags);
 router.use('/audit-logs', requireAuth, requireRole('director', 'admin'), auditLogs);
@@ -92,7 +90,7 @@ router.post('/project-versions', requireAuth, async (req, res, next) => {
        total_cost, warranty_cost, risk_cost, material_cost, labor_cost, project_expense]
     );
 
-    logAudit(req, '版本迭代', 'project', `项目 ${project_id.slice(0,8)} 创建版本 ${version_no}`);
+    logAudit(req, '版本迭代', 'project', `项目版本 ${version_no} 已保存`);
 
     res.status(201).json(result.rows[0]);
   } catch (err) { next(err); }

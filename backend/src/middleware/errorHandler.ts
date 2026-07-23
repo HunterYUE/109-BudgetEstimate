@@ -29,7 +29,7 @@ export function errorHandler(
   }
 
   // 处理 PostgreSQL 错误（不暴露具体错误详情给客户端）
-  const pgErr = err as any;
+  const pgErr = err as { code?: string; severity?: string; message?: string; detail?: string };
   if (pgErr.code && pgErr.severity) {
     console.error(`[DB ERROR] ${requestInfo} — ${pgErr.code}: ${pgErr.message}`, pgErr.detail || '');
     res.status(400).json({

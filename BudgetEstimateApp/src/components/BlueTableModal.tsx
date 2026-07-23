@@ -4,7 +4,7 @@ import { CloseOutlined, CheckOutlined, DeleteOutlined, PlusOutlined, RiseOutline
 import type { ColumnsType } from 'antd/es/table';
 import type { BlueTable, BlueTableRole, VetoBudgetOption, TimelineOption, InfluenceLevel, PricingLevel, ReactionMode, SalesOpportunity, RoleType } from '../types';
 import { PRICING_ADJUSTMENTS, PRICING_LABELS, POSITIONING_LABELS, POSITIONING_EXPLANATIONS, REACTION_LABELS, REACTION_EXPLANATIONS, calcBlueTableWinRate, getDefaultWeight } from '../utils/blueTableCalculation';
-import { COLORS } from '../styles/constants';
+import { COLORS } from '../styles/colors';
 
 interface BlueTableModalProps {
   open: boolean;
@@ -185,10 +185,8 @@ const BlueTableModal: React.FC<BlueTableModalProps> = ({ open, opportunity, onSa
     if (src) {
       // 加载时按角色类型重新计算权重（修复残值）
       const bt = { ...src, roles: src.roles.map(r => ({ ...r, influenceWeight: getDefaultWeight(r.roleType, r.influence) })) };
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setBt(bt);
     } else {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setBt(createEmptyBlueTable());
     }
   }, [open, opportunity?.id]);

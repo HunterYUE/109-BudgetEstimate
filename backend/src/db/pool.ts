@@ -34,7 +34,7 @@ pool.on('error', (err) => {
   console.error('[DB] Unexpected pool error:', err.message);
 });
 
-export async function query<T extends pg.QueryResultRow = any>(text: string, params?: any[]): Promise<pg.QueryResult<T>> {
+export async function query<T extends pg.QueryResultRow = any>(text: string, params?: unknown[]): Promise<pg.QueryResult<T>> {
   const start = Date.now();
   const result = await pool.query<T>(text, params);
   const elapsed = Date.now() - start;

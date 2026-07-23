@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Table, Button, Modal, message, Switch } from 'antd';
 import { PlusOutlined, EditOutlined, KeyOutlined, CheckOutlined, CloseOutlined, SettingOutlined, DeleteOutlined } from '@ant-design/icons';
-import { COLORS } from '../styles/colors';
+import { COLORS, LABEL_CELL_STYLE } from '../styles/colors';
+import { formatBeijing } from '../utils/timeFormat';
 import { userService, type UserRecord } from '../services/userService';
 import { auditLogService, type AuditLog } from '../services/auditLogService';
 import type { TableProps } from 'antd';
@@ -12,14 +13,8 @@ const DEFAULT_USER_PASSWORD = '123456';
 /* ============================================================
    角色颜色映射
    ============================================================ */
-const LABEL_CELL_STYLE: React.CSSProperties = {
-  padding: '7px 12px', fontSize: 12, border: '1px solid #e8e8e8',
-  verticalAlign: 'middle', fontWeight: 600, background: '#f7f8fa',
-  whiteSpace: 'nowrap', color: '#555',
-};
-
 const VAL_CELL_STYLE: React.CSSProperties = {
-  padding: '7px 12px', fontSize: 12, border: '1px solid #e8e8e8',
+  padding: '7px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`,
   verticalAlign: 'middle',
 };
 
@@ -56,12 +51,21 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
 /* ============================================================
    Component
    ============================================================ */
-  const TITLE_PERMISSIONS: Record<string, string[]> = {
-    '销售经理': ['销售机会管理', '新建信息/线索/机会', '编辑销售机会', '转线索/转机会', '销售蓝表编辑', '客户管理', '新建客户', '报价列表查看', '仪表盘查看'],
-    '方案经理': ['物料管理', '新增物料', '新建标签', '报价编制', '报价列表查看', '仪表盘查看', '销售机会管理', '客户管理'],
-    '交付经理': ['交付管理', '交付分析', '成本录入', '物料管理', '仪表盘查看', '报价列表查看', '销售机会管理', '客户管理'],
-    '部门总监': ['全部查看权限', '审批管理', '用户管理', '系统配置', '仪表盘查看', '销售机会管理', '报价编制', '物料管理', '新增物料', '新建标签', '交付管理', '交付分析', '客户管理', '新建客户', '新建信息/线索/机会', '编辑销售机会', '转线索/转机会', '销售蓝表编辑', '成本录入'],
-  };
+
+const TITLE_PERMISSIONS: Record<string, string[]> = {
+  '销售经理': ['销售机会管理', '新建信息/线索/机会', '编辑销售机会', '转线索/转机会', '销售蓝表编辑', '客户管理', '新建客户', '报价列表查看', '仪表盘查看'],
+  '方案经理': ['物料管理', '新增物料', '新建标签', '报价编制', '报价列表查看', '仪表盘查看', '销售机会管理', '客户管理'],
+  '交付经理': ['交付管理', '交付分析', '成本录入', '物料管理', '仪表盘查看', '报价列表查看', '销售机会管理', '客户管理'],
+  '部门总监': ['全部查看权限', '审批管理', '用户管理', '系统配置', '仪表盘查看', '销售机会管理', '报价编制', '物料管理', '新增物料', '新建标签', '交付管理', '交付分析', '客户管理', '新建客户', '新建信息/线索/机会', '编辑销售机会', '转线索/转机会', '销售蓝表编辑', '成本录入'],
+};
+
+/** 职务→角色映射（职务决定后端鉴权角色，用户无需手动选择） */
+const TITLE_ROLE_MAP: Record<string, string> = {
+  '部门总监': 'director',
+  '销售经理': 'user',
+  '方案经理': 'user',
+  '交付经理': 'user',
+};
 
 const SystemManagement: React.FC = () => {
   const [tab, setTab] = useState<TabKey>('users');
@@ -84,6 +88,7 @@ const SystemManagement: React.FC = () => {
     }
   };
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { fetchUsers(); }, []);
 
   // 弹窗状态
@@ -96,7 +101,6 @@ const SystemManagement: React.FC = () => {
 
   // 新增用户表单
   const [newName, setNewName] = useState('');
-  const [newRole, setNewRole] = useState('user');
   const [newTitle, setNewTitle] = useState('销售经理');
   const [newPhone, setNewPhone] = useState('');
   const [newEmail, setNewEmail] = useState('');
@@ -112,7 +116,6 @@ const SystemManagement: React.FC = () => {
   const [confirmPwd, setConfirmPwd] = useState('');
 
   // 角色权限
-  const [permRole, setPermRole] = useState('user');
   const [permTitle, setPermTitle] = useState('');
   const [checkedPerms, setCheckedPerms] = useState<string[]>([]);
 
@@ -149,7 +152,7 @@ const SystemManagement: React.FC = () => {
   };
 
   const openAddModal = () => {
-    setNewName(''); setNewRole('user'); setNewTitle('销售经理');
+    setNewName(''); setNewTitle('销售经理');
     setNewPhone(''); setNewEmail('');
     setAddOpen(true);
   };
@@ -166,9 +169,12 @@ const SystemManagement: React.FC = () => {
         title: newTitle,
         phone: newPhone.trim(),
         password: DEFAULT_USER_PASSWORD,
-        role: newRole,
+        role: TITLE_ROLE_MAP[newTitle] || 'user',
       });
-      setUsers(prev => [...prev, created]);
+      // 为新用户初始化默认权限（基于选择的职务）
+      const defaultPerms = TITLE_PERMISSIONS[newTitle] || [];
+      await userService.updateRole(created.id, TITLE_ROLE_MAP[newTitle] || 'user', newTitle, defaultPerms).catch(() => {});
+      setUsers(prev => [...prev, { ...created, permissions: defaultPerms }]);
       setAddOpen(false);
       messageApi.success(`用户 ${created.displayName} 添加成功（初始密码 ${DEFAULT_USER_PASSWORD}）`);
     } catch (err: unknown) {
@@ -238,7 +244,6 @@ const SystemManagement: React.FC = () => {
 
   const openPermModal = (u: UserRecord) => {
     setEditTarget(u);
-    setPermRole(u.role);
     setPermTitle(u.title);
     // 优先使用数据库已保存的权限，否则用职务预设
     setCheckedPerms(u.permissions && u.permissions.length > 0
@@ -251,7 +256,7 @@ const SystemManagement: React.FC = () => {
     if (!editTarget) return;
     setSaving(true);
     try {
-      const updated = await userService.updateRole(editTarget.id, permRole, permTitle, checkedPerms);
+      const updated = await userService.updateRole(editTarget.id, TITLE_ROLE_MAP[permTitle] || 'user', permTitle, checkedPerms);
       setUsers(prev => prev.map(u => u.id === updated.id ? updated : u));
       setPermOpen(false);
       setEditTarget(null);
@@ -338,11 +343,19 @@ const SystemManagement: React.FC = () => {
   }, [logs, logModuleFilter]);
 
   const logColumns: TableProps<AuditLog>['columns'] = [
-    { title: '时间', dataIndex: 'time', key: 'time', width: 160 },
-    { title: '操作人', dataIndex: 'userName', key: 'userName', width: 72 },
+    { title: '时间', dataIndex: 'time', key: 'time', width: 160,
+      render: (v: string) => <span style={{ fontSize: 12, color: COLORS.textDark }}>{formatBeijing(v)}</span>,
+    },
+    { title: '操作人', dataIndex: 'userName', key: 'userName', width: 100,
+      render: (_: string, rec: any) => (
+        <span style={{ color: COLORS.textDark, fontSize: 13 }}>{rec.displayName || rec.userName || '—'}</span>
+      ),
+    },
     { title: '模块', dataIndex: 'module', key: 'module', width: 88 },
     { title: '操作', dataIndex: 'action', key: 'action', width: 88 },
-    { title: '详情', dataIndex: 'detail', key: 'detail' },
+    { title: '详情', dataIndex: 'detail', key: 'detail',
+      render: (v: string) => <span style={{ fontSize: 12, color: COLORS.textSecondary, lineHeight: 1.5 }}>{v}</span>,
+    },
   ];
 
 
@@ -597,7 +610,12 @@ const SystemManagement: React.FC = () => {
                   <div style={{ fontSize: 13, color: COLORS.textSecondary, marginBottom: 8 }}>职务：</div>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     {['销售经理', '方案经理', '交付经理', '部门总监'].map(t => (
-                      <div key={t} onClick={() => setPermTitle(t)}
+                      <div key={t} onClick={() => {
+                            setPermTitle(t);
+                            // 切换职务时自动填充该职务的默认权限（用户可再手动微调）
+                            const template = TITLE_PERMISSIONS[t] || [];
+                            setCheckedPerms([...template]);
+                          }}
                         style={{
                           padding: '4px 14px', borderRadius: 4, cursor: 'pointer', fontSize: 13,
                           border: `1.5px solid ${permTitle === t ? COLORS.primary : '#d0d0d0'}`,

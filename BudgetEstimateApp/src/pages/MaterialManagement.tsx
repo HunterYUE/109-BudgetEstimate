@@ -10,13 +10,13 @@ import { tagService } from '../services/tagService';
 import { collectTagPaths, collectDescendantIds } from '../utils/tagHelpers';
 import { formatMoney } from '../utils/calculations';
 import type { Component, ItemType, SourcingType, ReviewStatus, TagNode } from '../types';
-import { COLORS } from '../styles/colors';
+import { COLORS, LABEL_CELL_STYLE } from '../styles/colors';
 import {
   MaterialEditModal, MaterialDeleteModal,
 } from '../components/material/MaterialModals';
 import {
   CATEGORY_OPTIONS, CATEGORIES, CATEGORY_LABELS,
-  SOURCES, UNITS, STATUS_CONFIG, LABEL_CELL_STYLE, validateCodeFormat,
+  SOURCES, UNITS, STATUS_CONFIG, validateCodeFormat,
 } from '../components/material/materialConstants';
 import { MaterialDrawer } from '../components/material/MaterialDrawer';
 
@@ -61,6 +61,7 @@ const MaterialManagement: React.FC = () => {
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     loadMaterials();
   }, []);
 

@@ -46,8 +46,3 @@ export function makeId(): string {
   return 'cl-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6);
 }
 
-export const LABEL_CELL_STYLE = {
-  padding: '6px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`,
-  verticalAlign: 'middle', fontWeight: 600, background: COLORS.bgLight,
-  whiteSpace: 'nowrap', color: COLORS.labelDark,
-} as const;

@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import { query } from '../db/index.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { AppError } from '../middleware/index.js';
-import { logAudit } from './helpers.js';
+import { logAudit, objKeysToSnake } from './helpers.js';
 
 const router = Router();
 
@@ -11,7 +11,7 @@ const router = Router();
 router.use(requireAuth);
 router.use(requireRole('director', 'admin'));
 
-const USER_FIELDS = 'id, email, display_name as "displayName", title, phone, role, is_active as "isActive", created_at as "createdAt", permissions';
+const USER_FIELDS = 'id, email, display_name, title, phone, role, is_active, created_at, permissions';
 
 /** GET /api/users - 获取用户列表 */
 router.get('/', async (_req, res, next) => {
@@ -24,8 +24,9 @@ router.get('/', async (_req, res, next) => {
 /** POST /api/users - 创建新用户 */
 router.post('/', async (req, res, next) => {
   try {
-    const { email, displayName, password, title = '', phone = '', role = 'user' } = req.body;
-    if (!email || !displayName || !password) {
+    // 统一转换为 snake_case（兼容前端 api.ts toSnake 或直接调用）
+    const { display_name, email, password, title = '', phone = '', role = 'user' } = objKeysToSnake({ ...req.body });
+    if (!email || !display_name || !password) {
       throw new AppError(400, '缺少必填字段：email, displayName, password');
     }
 
@@ -43,10 +44,10 @@ router.post('/', async (req, res, next) => {
     const result = await query(
       `INSERT INTO users (email, display_name, title, phone, password_hash, role)
        VALUES ($1, $2, $3, $4, $5, $6) RETURNING ${USER_FIELDS}`,
-      [email, displayName, title, phone, passwordHash, role]
+      [email, display_name, title, phone, passwordHash, role]
     );
 
-    logAudit(req, '创建用户', 'user', `创建用户 ${email} (${displayName}) 角色:${role}`);
+    logAudit(req, '创建用户', 'user', `创建用户 ${email} (${display_name}) 角色:${role}`);
 
     res.status(201).json(result.rows[0]);
   } catch (err) { next(err); }
@@ -56,7 +57,7 @@ router.post('/', async (req, res, next) => {
 router.put('/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { displayName, email, title, phone, isActive } = req.body;
+    const { display_name, email, title, phone, is_active } = objKeysToSnake({ ...req.body });
 
     const existing = await query('SELECT id FROM users WHERE id = $1', [id]);
     if (existing.rows.length === 0) throw new AppError(404, '用户不存在');
@@ -70,11 +71,11 @@ router.put('/:id', async (req, res, next) => {
     const values: any[] = [];
     let idx = 1;
 
-    if (displayName !== undefined) { fields.push(`display_name = $${idx++}`); values.push(displayName); }
+    if (display_name !== undefined) { fields.push(`display_name = $${idx++}`); values.push(display_name); }
     if (email !== undefined) { fields.push(`email = $${idx++}`); values.push(email); }
     if (title !== undefined) { fields.push(`title = $${idx++}`); values.push(title); }
     if (phone !== undefined) { fields.push(`phone = $${idx++}`); values.push(phone); }
-    if (isActive !== undefined) { fields.push(`is_active = $${idx++}`); values.push(isActive); }
+    if (is_active !== undefined) { fields.push(`is_active = $${idx++}`); values.push(is_active); }
 
     if (fields.length === 0) throw new AppError(400, '没有要更新的字段');
 
@@ -98,13 +99,13 @@ router.put('/:id/password', async (req, res, next) => {
       throw new AppError(400, '密码至少6位');
     }
 
-    const existing = await query('SELECT id FROM users WHERE id = $1', [id]);
+    const existing = await query('SELECT id, email, display_name FROM users WHERE id = $1', [id]);
     if (existing.rows.length === 0) throw new AppError(404, '用户不存在');
 
     const passwordHash = await bcrypt.hash(password, 10);
     await query('UPDATE users SET password_hash = $1 WHERE id = $2', [passwordHash, id]);
 
-    logAudit(req, '重置密码', 'user', `用户 ${id.slice(0,8)} 密码已重置`);
+    logAudit(req, '重置密码', 'user', `用户 ${existing.rows[0].display_name || existing.rows[0].email} 密码已重置`);
 
     res.json({ success: true });
   } catch (err) { next(err); }
@@ -114,15 +115,15 @@ router.put('/:id/password', async (req, res, next) => {
 router.put('/:id/role', async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { role, title } = req.body;
+    const { role, title, permissions } = objKeysToSnake({ ...req.body });
 
     const validRoles = ['admin', 'director', 'manager', 'user'];
     if (role && !validRoles.includes(role)) {
       throw new AppError(400, `无效角色，允许值：${validRoles.join(', ')}`);
     }
 
-    const existing = await query('SELECT id FROM users WHERE id = $1', [id]);
-    if (existing.rows.length === 0) throw new AppError(404, '用户不存在');
+    const userRow = (await query('SELECT email, display_name FROM users WHERE id = $1', [id])).rows[0];
+    if (!userRow) throw new AppError(404, '用户不存在');
 
     const fields: string[] = [];
     const values: any[] = [];
@@ -130,7 +131,7 @@ router.put('/:id/role', async (req, res, next) => {
 
     if (role) { fields.push(`role = $${idx++}`); values.push(role); }
     if (title !== undefined) { fields.push(`title = $${idx++}`); values.push(title); }
-    if (req.body.permissions !== undefined) { fields.push(`permissions = $${idx++}`); values.push(req.body.permissions); }
+    if (permissions !== undefined) { fields.push(`permissions = $${idx++}`); values.push(permissions); }
 
     if (fields.length === 0) throw new AppError(400, '没有要更新的字段');
 
@@ -140,7 +141,7 @@ router.put('/:id/role', async (req, res, next) => {
       values
     );
 
-    logAudit(req, '变更角色', 'user', `用户 ${id.slice(0,8)} 角色/权限已更新`);
+    logAudit(req, '变更角色', 'user', `用户 ${userRow.display_name || userRow.email} 角色/权限已更新`);
 
     res.json(result.rows[0]);
   } catch (err) { next(err); }
@@ -159,7 +160,7 @@ router.delete('/:id', async (req, res, next) => {
     const result = await query('DELETE FROM users WHERE id = $1 RETURNING id, email', [id]);
     if (result.rows.length === 0) throw new AppError(404, '用户不存在');
 
-    logAudit(req, '删除用户', 'user', `删除用户 ${result.rows[0].email} (${id.slice(0,8)})`);
+    logAudit(req, '删除用户', 'user', `删除用户 ${result.rows[0].email}`);
 
     res.json({ success: true, id });
   } catch (err) { next(err); }

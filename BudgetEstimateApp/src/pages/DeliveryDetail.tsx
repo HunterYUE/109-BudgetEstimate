@@ -45,13 +45,13 @@ const DeliveryDetail: React.FC = () => {
     try {
       const saved = sessionStorage.getItem('delivery_tab');
       if (saved === 'plan' || saved === 'cost' || saved === 'files') return saved;
-    } catch {}
+    } catch { /* sessionStorage 不可用时忽略 */ }
     return (location.state as { tab?: 'plan' | 'cost' | 'files' })?.tab || 'plan';
   });
   // tab 切换时持久化
   const handleTabChange = useCallback((t: 'plan' | 'cost' | 'files') => {
     setTab(t);
-    try { sessionStorage.setItem('delivery_tab', t); } catch {}
+    try { sessionStorage.setItem('delivery_tab', t); } catch { /* sessionStorage 不可用时忽略 */ }
   }, []);
   const [project, setProject] = useState<DeliveryProject | null>(null);
   const [loading, setLoading] = useState(true);
@@ -130,7 +130,7 @@ const DeliveryDetail: React.FC = () => {
     try {
       const data = await deliveryFileService.list(id);
       setDeliveryFiles(data);
-    } catch {}
+    } catch { /* 文件加载失败时保持空列表 */ }
   }, [id]);
 
   useEffect(() => { loadFiles(); }, [loadFiles]);
