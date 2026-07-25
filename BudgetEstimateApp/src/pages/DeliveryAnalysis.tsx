@@ -291,7 +291,8 @@ const DeliveryAnalysis: React.FC = () => {
       { label: '节点按时率', value: `${onTimeRate}%`, color: onTimeRate >= 80 ? COLORS.success : onTimeRate >= 50 ? COLORS.warning : COLORS.danger, icon: '🎯' },
       { label: '成本偏差率', value: costDevDenominator > 0 ? `${costDevRate > 0 ? '+' : ''}${costDevRate.toFixed(1)}%` : '—', color: costDevRate <= 0 ? COLORS.success : COLORS.danger, icon: '💰' },
     ];
-  }, [fyFiltered, fyRange, projectEstimates]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fyFiltered, fyRange]);
 
   // ── 按月交付 KPI（最近3个完整月） ──
   const monthlyDelKpi = useMemo(() => {
@@ -319,7 +320,8 @@ const DeliveryAnalysis: React.FC = () => {
       return { total: mp.length, tAmt, active, aAmt, completed, cAmt, delayed, dAmt, avgDelay: dCnt > 0 ? Math.round(tDelay / dCnt) : 0, onTimeRate: tN > 0 ? Math.round(onT / tN * 100) : 100 };
     };
     return [calcMonth(1), calcMonth(2), calcMonth(3)];
-  }, [fyFiltered, projectEstimates]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fyFiltered]);
 
   // ── 甘特图数据（12个月时间线：前1个月 + 后10个月）──
   const ganttData = useMemo(() => {
@@ -372,7 +374,8 @@ const DeliveryAnalysis: React.FC = () => {
       };
     });
     return { tlStart, totalDays, months, todayPos, projectRows, DAY_MS };
-  }, [fyFiltered, projectEstimates]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fyFiltered]);
 
   // ── 各项目未税金额查找表（甘特图交付负荷按节点级计算时需要）──
   const projectExTaxLookup = useMemo(() => {
