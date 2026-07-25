@@ -291,7 +291,6 @@ const DeliveryAnalysis: React.FC = () => {
       { label: '节点按时率', value: `${onTimeRate}%`, color: onTimeRate >= 80 ? COLORS.success : onTimeRate >= 50 ? COLORS.warning : COLORS.danger, icon: '🎯' },
       { label: '成本偏差率', value: costDevDenominator > 0 ? `${costDevRate > 0 ? '+' : ''}${costDevRate.toFixed(1)}%` : '—', color: costDevRate <= 0 ? COLORS.success : COLORS.danger, icon: '💰' },
     ];
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fyFiltered, fyRange]);
 
   // ── 按月交付 KPI（最近3个完整月） ──
@@ -374,7 +373,6 @@ const DeliveryAnalysis: React.FC = () => {
       };
     });
     return { tlStart, totalDays, months, todayPos, projectRows, DAY_MS };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fyFiltered]);
 
   // ── 各项目未税金额查找表（甘特图交付负荷按节点级计算时需要）──
