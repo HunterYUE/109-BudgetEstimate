@@ -32,9 +32,9 @@ interface GanttSlot {
   plannedStartDate: Date;
   plannedEndDate: Date;
   actualDate?: Date;
-  /** 初始计划时间（第一次制定时的计划，从 history 推算，无变更时=当前计划） */
-  initStartDate: Date;
+  /** 当前计划结束日（无基线时作为延期计算回退） */
   initEndDate: Date;
+  baselineDate?: Date;
 }
 
 export interface BubbleDataItem {
@@ -48,6 +48,7 @@ export interface BubbleDataItem {
 
 interface GanttHoverInfo {
   slot: GanttSlot;
+  projectKey: string;
   sx: number; ex: number; w: number;
   cy: number; barH: number; color: string;
 }
@@ -64,23 +65,25 @@ interface BubbleHoverInfo {
 /** 格式化日期为短格式 "M/d" */
 const fmtShort = (d: Date) => `${d.getMonth() + 1}/${d.getDate()}`;
 
-const fmtWan = (v: number) => Math.round(v / 10000).toLocaleString() + '万';
+const fmtWan = (v: number) => Math.round(v / 10000).toLocaleString();
 
 /** 节点状态标签 & 条颜色（三类：未开始/进行中/已完成） */
 const GANTT_STATUS_COLOR: Record<string, string> = {
-  pending: COLORS.barPending, in_progress: COLORS.purple, delayed: COLORS.purple, completed: COLORS.success,
+  pending: '#1a4f83', in_progress: '#593b73', delayed: '#ab4242', completed: '#275d3e',
 };
 
-/** 计算某节点的延期天数（与初始计划完成时间比） */
+/** 计算某节点的延期天数（与基线计划完成时间比，正=延期，负=提前，无基线时用当前计划） */
 function calcNodeDelay(s: GanttSlot): number {
+  const refEnd = s.baselineDate || s.initEndDate;
   if (s.status === 'completed') {
     if (!s.actualDate) return 0;
-    return Math.max(0, Math.round((s.actualDate.getTime() - s.initEndDate.getTime()) / (1000 * 60 * 60 * 24)));
+    return Math.round((s.actualDate.getTime() - refEnd.getTime()) / (1000 * 60 * 60 * 24));
   }
-  if (s.status === 'in_progress' || s.status === 'delayed') {
-    return Math.max(0, Math.round((Date.now() - s.initEndDate.getTime()) / (1000 * 60 * 60 * 24)));
-  }
-  return 0;
+  // 非完成节点（含 pending）：与交付管理页实施计划一致，均计算延期
+  // 但提前天数仅在存在基准（审批通过的计划）时显示
+  const dd = Math.round((Date.now() - refEnd.getTime()) / (1000 * 60 * 60 * 24));
+  if (dd < 0 && !s.baselineDate) return 0;
+  return dd;
 }
 
 /* ============================================================
@@ -106,6 +109,7 @@ export const VerticalBarChart: React.FC<{
   cardBorder?: boolean;
   barLabelGap?: number;
 }> = ({ title, data, format = 'num', height = 220, topN = 10, contentOffset = 0, barWidthRatio = 0.55, maxBarWidth = 36, noCard, chartWidth = 460, disableSort, targetValue, targetLabel, padTop = 32, padBottom = 28, hideAvgLine, cardBorder = true, barLabelGap = 18 }) => {
+  const [hoveredTip, setHoveredTip] = useState<{ lines: string[]; cx: number; barTop: number } | null>(null);
   const working = disableSort ? data : [...data].sort((a, b) => b.value - a.value);
   const top = working.slice(0, topN);
   const rawMax = Math.max(...top.map(d => d.value), 0);
@@ -133,6 +137,7 @@ export const VerticalBarChart: React.FC<{
     <>
       {title && <span style={{ position: 'absolute', top: 6, right: 10, fontSize: 11, color: COLORS.chartGray, zIndex: 1 }}>{title}</span>}
       <svg width="100%" height={height} viewBox={`0 0 ${W} ${height}`} style={{ display: 'block' }}>
+        <defs><filter id="bar-shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="1" dy="2" stdDeviation="2" flood-opacity="0.15" /></filter></defs>
         {gridVals.map((gv, i) => {
           const y = pad.top + (1 - gv / effectiveMax) * chartH;
           return (
@@ -187,8 +192,9 @@ export const VerticalBarChart: React.FC<{
           const barTop = pad.top + chartH - barH;
 
           return (
-            <g key={item.name + '-' + i}>
-              {item.tooltip && <title>{item.tooltip}</title>}
+            <g key={item.name + '-' + i}
+              onMouseEnter={() => item.tooltip && setHoveredTip({ lines: item.tooltip.split('\n'), cx, barTop })}
+              onMouseLeave={() => setHoveredTip(null)}>
               <text x={cx} y={barTop - barLabelGap} textAnchor="middle" fontSize={9}
                 fill={color} fontWeight={600}>{label}</text>
               {item.subValue != null && item.subValue > 0 && (
@@ -213,6 +219,18 @@ export const VerticalBarChart: React.FC<{
             </g>
           );
         })}
+        {/* 样式化 tooltip（类似甘特图 tooltip） */}
+        {hoveredTip && (
+          <g>
+            <rect x={hoveredTip.cx + 8} y={hoveredTip.barTop - 16} width={170} height={18 + hoveredTip.lines.length * 18} rx={5} ry={5}
+              fill="#fff" stroke={COLORS.border} strokeWidth={1} filter="url(#bar-shadow)" />
+            <text x={hoveredTip.cx + 16} y={hoveredTip.barTop + 2} fontSize={12} fontWeight={700} fill={COLORS.textDark}>{hoveredTip.lines[0]}</text>
+            <line x1={hoveredTip.cx + 16} y1={hoveredTip.barTop + 10} x2={hoveredTip.cx + 170} y2={hoveredTip.barTop + 10} stroke={COLORS.borderLight} strokeWidth={1} />
+            {hoveredTip.lines.slice(1).map((line, li) => (
+              <text key={li} x={hoveredTip.cx + 16} y={hoveredTip.barTop + 32 + li * 18} fontSize={11} fill="#444">{line}</text>
+            ))}
+          </g>
+        )}
       </svg>
     </>
   );
@@ -290,6 +308,7 @@ export const ProfitChart: React.FC<{
             <line x1={pad.left} y1={avgEstY} x2={W - 47} y2={avgEstY}
               stroke={COLORS.primary} strokeWidth={1} strokeDasharray="4,3" />
             <text x={W - 21} y={avgEstY - 1} textAnchor="middle" fontSize={9} fill={COLORS.primary}>
+              <title>{'平均概算 GP3（' + data.length + ' 个项目）'}</title>
               <tspan x={W - 21} dy={0}>{fmtKNum(avgEstProfit)}</tspan>
               <tspan x={W - 21} dy={11}>（{(avgEstGP3 * 100).toFixed(1)}%）</tspan>
             </text>
@@ -302,6 +321,7 @@ export const ProfitChart: React.FC<{
             <line x1={pad.left} y1={avgActY} x2={W - 47} y2={avgActY}
               stroke={COLORS.purple} strokeWidth={1} strokeDasharray="4,3" />
             <text x={W - 21} y={avgActY - 1} textAnchor="middle" fontSize={9} fill={COLORS.purple}>
+              <title>{'平均实际 GP3（' + data.length + ' 个项目）'}</title>
               <tspan x={W - 21} dy={0}>{fmtKNum(avgActProfit)}</tspan>
               <tspan x={W - 21} dy={11}>（{(avgActGP3! * 100).toFixed(1)}%）</tspan>
             </text>
@@ -390,31 +410,36 @@ export const ProfitChart: React.FC<{
 /** 单条甘特节点条（hover 提升到父组件） */
 const GanttNode: React.FC<{
   slot: GanttSlot;
+  projectKey: string;
   sx: number; ex: number; w: number;
   cy: number; barH: number;
-  hovered: boolean;
   onHover: (info: GanttHoverInfo | null) => void;
-}> = ({ slot, sx, ex, w, cy, barH, hovered, onHover }) => {
+}> = ({ slot, projectKey, sx, ex, w, cy, barH, onHover }) => {
   const color = slot.status === 'completed'
     ? GANTT_STATUS_COLOR.completed
     : (slot.status === 'in_progress' || slot.status === 'delayed')
     ? GANTT_STATUS_COLOR.in_progress
     : GANTT_STATUS_COLOR.pending;
-  const active = slot.status === 'in_progress' || slot.status === 'delayed';
-  const opacity = slot.status === 'completed' ? 1 : active ? 0.7 : 0.35;
+  const delayDays = calcNodeDelay(slot);
   return (
     <g style={{ cursor: 'pointer' }}
-      onMouseEnter={() => onHover({ slot, sx, ex, w, cy, barH, color })}
+      onMouseEnter={() => onHover({ slot, projectKey, sx, ex, w, cy, barH, color })}
       onMouseLeave={() => onHover(null)}>
       {/* 透明捕获区 */}
       <rect x={sx} y={cy - 4} width={w} height={barH + 8} fill="transparent" stroke="none" />
-      {/* 可见条 */}
-      <rect x={sx} y={cy} width={w} height={barH} rx={0} ry={0}
-        fill="none" stroke={color} strokeWidth={2.5} opacity={hovered ? 1 : opacity} />
+      {/* 可见条（圆角，淡淡填充色） */}
+      <rect x={sx} y={cy} width={w} height={barH} rx={3} ry={3}
+        fill={color} fillOpacity={0.5} />
       {w > 16 && (
-        <text x={sx + w / 2} y={cy + barH / 2 + 2.5} textAnchor="middle" fontSize={7}
-          fill={color} opacity={opacity} fontWeight={600}>{slot.nodeNo}</text>
+        <text x={sx + w / 2} y={cy + barH / 2 + 3} textAnchor="middle" fontSize={8}
+          fill={color} fontWeight={700}>{slot.nodeNo}</text>
       )}
+      {/* 延期天数上方标注（+延期/-提前/0准时） */}
+      <text x={sx + w / 2} y={cy - 4} textAnchor="middle" fontSize={8}
+        fill={delayDays > 0 ? COLORS.danger : delayDays < 0 ? COLORS.success : COLORS.textLight}
+        fontWeight={400}>
+        {delayDays > 0 ? `+${delayDays}d` : delayDays < 0 ? `${delayDays}d` : '0d'}
+      </text>
     </g>
   );
 };
@@ -422,12 +447,11 @@ const GanttNode: React.FC<{
 /** 甘特 tooltip（单独渲染到 SVG 末尾，确保在最上层） */
 const GanttTooltip: React.FC<{
   hovered: GanttHoverInfo | null;
-  W: number; H: number;
+  W: number;
 }> = ({ hovered, W }) => {
   if (!hovered) return null;
   const { slot, sx, ex, cy, barH } = hovered;
-  const delayDays = calcNodeDelay(slot);
-  const tooltipW = 250, tooltipH = delayDays > 0 ? 105 : 80;
+  const tooltipW = 180, tooltipH = 72;
   let ttx = ex + 8;
   let tty = cy - tooltipH - 4;
   if (ttx + tooltipW > W - 6) ttx = sx - 8 - tooltipW;
@@ -443,29 +467,16 @@ const GanttTooltip: React.FC<{
         fill="#fff" stroke={COLORS.border} strokeWidth={1} />
       <text x={ttx + 12} y={tty + 20} fontSize={12} fontWeight={700} fill={COLORS.textDark}>{slot.name.replace('\n', '')}</text>
       <line x1={ttx + 12} y1={tty + 27} x2={ttx + tooltipW - 12} y2={tty + 27} stroke={COLORS.borderLight} strokeWidth={1} />
-      {/* 初始计划 */}
-      <text x={ttx + 12} y={tty + 46} fontSize={11} fill={COLORS.textLight}>初始计划</text>
+      {/* 基线计划 */}
+      <text x={ttx + 12} y={tty + 46} fontSize={11} fill={COLORS.textLight}>基线计划</text>
       <text x={ttx + tooltipW - 12} y={tty + 46} fontSize={11} fill="#444" textAnchor="end">
-        {fmtShort(slot.initStartDate)} → {fmtShort(slot.initEndDate)}
+        {slot.baselineDate ? `${fmtShort(slot.plannedStartDate)}~${fmtShort(slot.baselineDate)}` : '—'}
       </text>
-      {/* 更新计划 / 完成时间 */}
-      <text x={ttx + 12} y={tty + 68} fontSize={11} fill={COLORS.textLight}>
-        {slot.status === 'completed' ? '完成时间' : '更新计划'}
+      {/* 最新计划 */}
+      <text x={ttx + 12} y={tty + 66} fontSize={11} fill={COLORS.textLight}>最新计划</text>
+      <text x={ttx + tooltipW - 12} y={tty + 66} fontSize={11} fill="#444" textAnchor="end">
+        {fmtShort(slot.plannedStartDate)}~{fmtShort(slot.plannedEndDate)}
       </text>
-      <text x={ttx + tooltipW - 12} y={tty + 68} fontSize={11} fill="#444" textAnchor="end">
-        {slot.status === 'completed'
-          ? `${fmtShort(slot.startDate)} → ${fmtShort(slot.endDate)}`
-          : `${fmtShort(slot.plannedStartDate)} → ${fmtShort(slot.plannedEndDate)}`}
-      </text>
-      {/* 延期天数 */}
-      {delayDays > 0 && (
-        <>
-          <text x={ttx + 12} y={tty + 90} fontSize={11} fill={COLORS.textLight}>延期天数</text>
-          <text x={ttx + tooltipW - 12} y={tty + 90} fontSize={11} fill={COLORS.danger} textAnchor="end" fontWeight={600}>
-            +{delayDays} 天
-          </text>
-        </>
-      )}
     </g>
   );
 };
@@ -473,48 +484,61 @@ const GanttTooltip: React.FC<{
 /* ============================================================
    项目时间节点分布（甘特图）
    ============================================================ */
+/** 甘特图项目行数据 */
+interface GanttProject {
+  name: string;
+  slots: GanttSlot[];
+  doneCount: number;
+  totalCount: number;
+  status: string;
+}
+
 export const ProjectGantt: React.FC<{
-  data: Array<{ name: string; slots: GanttSlot[] }>;
+  data: GanttProject[];
   tlStart: Date;
   totalDays: number;
   months: string[];
   todayPos: number;
-  lifecycles: { id: string; start: Date; end: Date; exTax: number }[];
+  lifecycles: { projectId: string; exTax: number }[];
   height?: number;
 }> = ({ data, tlStart, totalDays, months, todayPos, lifecycles, height = 500 }) => {
   const [hoveredGantt, setHoveredGantt] = useState<GanttHoverInfo | null>(null);
   const [lineX, setLineX] = useState<number | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const W = 1800;
-  const labelW = 70;
+  const labelW = 80;
   const chartW = W - labelW;
   const projCount = Math.max(data.length, 1);
   const barH = 20;
-  const rowGap = 10;
-  const projH = barH + rowGap; // =26
+  const rowGap = 28;
+  const projH = barH + rowGap; // =48
   const baseH = 100;
   const H = Math.max(height, baseH + projCount * projH);
-
+  /** 内容中心位置（行分隔线间的中点） */
+  const rowCenter = (pi: number) => 73 +pi * projH + projH / 2;
   const posX = (d: Date) => labelW + Math.max(0, Math.min(1, (d.getTime() - tlStart.getTime()) / (1000 * 60 * 60 * 24) / totalDays)) * chartW;
   const todayX = labelW + todayPos / totalDays * chartW;
 
-  // ── 负载压力线 ──
+  // ── 交付负荷线 ──
   const loadInfo = useMemo(() => {
     if (lineX == null) return null;
     const dayOffset = (lineX - labelW) / chartW * totalDays;
     const lineDate = new Date(tlStart.getTime() + dayOffset * 86400000);
     const t = lineDate.getTime();
+    // 交付负荷 = 时间线该时刻有节点活跃的所有项目的全额 exTax
     let wAmt = 0, wCnt = 0;
-    for (const lc of lifecycles) {
-      if (t >= lc.start.getTime() && t <= lc.end.getTime()) {
-        wAmt += lc.exTax;
-        wCnt += 1;
+    for (const proj of data) {
+      const hasActive = proj.slots.some(s => t >= s.startDate.getTime() && t <= s.endDate.getTime());
+      if (hasActive) {
+        const projExTax = lifecycles.find(lc => lc.projectId === proj.name)?.exTax || 0;
+        wAmt += projExTax;
+        wCnt++;
       }
     }
     const k = 0.2;
     const raw = wAmt * (1 + k * Math.max(0, wCnt - 1));
     return { value: Math.round(raw / 10000), date: lineDate, count: wCnt };
-  }, [lineX, lifecycles, tlStart, labelW, chartW, totalDays]);
+  }, [lineX, data, lifecycles, tlStart, labelW, chartW, totalDays]);
 
   const svgToX = (clientX: number, svgEl: SVGSVGElement) => {
     const rect = svgEl.getBoundingClientRect();
@@ -523,7 +547,7 @@ export const ProjectGantt: React.FC<{
 
   return (
     <Card size="small" style={{ borderRadius: 8, border: `1px solid ${COLORS.borderLight}`, height: '100%' }} styles={{ body: { padding: '12px 0 0', height: '100%' } }}>
-      <span style={{ position: 'absolute', top: 6, right: 10, fontSize: 11, color: COLORS.chartGray, zIndex: 1 }}>项目节点</span>
+      <span style={{ position: 'absolute', top: 6, right: 10, fontSize: 12, color: COLORS.chartGray, zIndex: 1 }}>项目节点</span>
       <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} style={{ display: 'block', userSelect: 'none' }}
         onMouseDown={(e) => {
           const x = svgToX(e.clientX, e.currentTarget);
@@ -541,21 +565,39 @@ export const ProjectGantt: React.FC<{
           const x = labelW + i / 12 * chartW;
           return (
             <g key={`m-${i}`}>
-              <line x1={x} y1={42} x2={x} y2={H - 4} stroke={COLORS.borderLight} strokeWidth={1} />
-              {i < 12 && <text x={x + chartW / 24 - 20} y={21} textAnchor="middle" fontSize={10} fill="#444">{months[i]}</text>}
+              <line x1={x} y1={67} x2={x} y2={H - 4} stroke={COLORS.borderLight} strokeWidth={1} />
+              {i < 12 && <text x={x + chartW / 24} y={36} textAnchor="middle" fontSize={12} fill="#444">{months[i]}</text>}
             </g>
           );
         })}
-        <line x1={todayX} y1={42} x2={todayX} y2={H - 4} stroke={COLORS.danger} strokeWidth={1} strokeDasharray="4,3" />
+        {/* 行分隔横线 */}
+        {data.map((proj, pi) => (
+          <line key={'hr-' + pi} x1={labelW} y1={73 +(pi + 1) * projH} x2={W} y2={73 +(pi + 1) * projH}
+            stroke={COLORS.borderLight} strokeWidth={1.5} opacity={0.9} />
+        ))}
+        <line x1={todayX} y1={67} x2={todayX} y2={H - 4} stroke={COLORS.danger} strokeWidth={1} strokeDasharray="4,3" />
         {data.map((proj, pi) => {
-          const cy = 48 + pi * projH;
+          const cy = rowCenter(pi) - barH / 2; // 居中于行分隔线之间
+          const badgeCx = 0;
+          const badgeR = 14;
+          const badgeBg = proj.status === '已完成' ? '#e8f5e9' : proj.status === '已延期' ? '#ffebee' : '#e6f0fa';
+          const badgeColor = proj.status === '已完成' ? COLORS.success : proj.status === '已延期' ? COLORS.danger : COLORS.primary;
           return (
             <g key={proj.name + '-' + pi}>
-              <text fontSize={10} fill="#444">
-                {proj.name.length > 4 ? (
-                  <><tspan x={4} y={cy + barH / 2 - 4}>{proj.name.slice(0, 4)}</tspan><tspan x={4} y={cy + barH / 2 + 10}>{proj.name.slice(4)}</tspan></>
+              {/* 完成度圆形徽标 */}
+              <g>
+                <circle cx={badgeCx} cy={rowCenter(pi)} r={badgeR} fill={badgeBg} />
+                <text x={badgeCx} y={rowCenter(pi) + 4} textAnchor="middle" fontSize={9} fontWeight={700}
+                  fill={badgeColor}>
+                  {proj.doneCount}/{proj.totalCount}
+                </text>
+              </g>
+              {/* 项目编号 */}
+              <text fontSize={11} fill="#444">
+                {proj.name.length > 8 ? (
+                  <><tspan x={16} y={rowCenter(pi) - 4}>{proj.name.slice(0, 4)}</tspan><tspan x={16} y={rowCenter(pi) + 10}>{proj.name.slice(4)}</tspan></>
                 ) : (
-                  <tspan x={4} y={cy + barH / 2 + 4}>{proj.name}</tspan>
+                  <tspan x={16} y={rowCenter(pi) + 4}>{proj.name}</tspan>
                 )}
               </text>
               {proj.slots.map(s => {
@@ -564,10 +606,9 @@ export const ProjectGantt: React.FC<{
                 const w = Math.max(4, ex - sx);
                 return (
                   <GanttNode key={s.nodeNo}
-                    slot={s}
+                    slot={s} projectKey={proj.name}
                     sx={sx} ex={ex} w={w}
                     cy={cy} barH={barH}
-                    hovered={hoveredGantt?.slot.nodeNo === s.nodeNo && hoveredGantt?.cy === cy}
                     onHover={setHoveredGantt} />
                 );
               })}
@@ -575,18 +616,15 @@ export const ProjectGantt: React.FC<{
           );
         })}
         {/* tooltip 末尾渲染 = 最上层 */}
-        <GanttTooltip hovered={hoveredGantt} W={W} H={H} />
-        {/* ── 负载压力虚线（最上层，无背景） ── */}
+        <GanttTooltip hovered={hoveredGantt} W={W} />
+        {/* ── 交付负荷虚线（最上层，无背景） ── */}
         {lineX != null && (
           <g>
-            <line x1={lineX} y1={42} x2={lineX} y2={H - 4}
+            <line x1={lineX} y1={67} x2={lineX} y2={H - 4}
               stroke={COLORS.danger} strokeWidth={1} strokeDasharray="4,3"
               style={{ stroke: COLORS.purple }} />
-            <text x={lineX} y={35} textAnchor="middle" fontSize={12} fill={COLORS.purple}
+            <text x={lineX} y={60} textAnchor="middle" fontSize={11} fill={COLORS.purple} fontWeight={700}
               stroke="#fff" strokeWidth={2.5} paintOrder="stroke">
-              {loadInfo ? loadInfo.value.toLocaleString() : '—'}
-            </text>
-            <text x={lineX} y={35} textAnchor="middle" fontSize={12} fill={COLORS.purple}>
               {loadInfo ? loadInfo.value.toLocaleString() : '—'}
             </text>
           </g>
@@ -614,14 +652,12 @@ const BubbleNode: React.FC<{
       onMouseLeave={() => onHover(null)}>
       {/* 透明大区域方便鼠标捕获 */}
       <circle cx={cx} cy={cy} r={r + 10} fill="transparent" stroke="none" />
-      {/* 气泡本体 */}
+      {/* 气泡本体 + 项目编号由 SVG title 展示 */}
       <circle cx={cx} cy={cy} r={r} fill={color} fillOpacity={fillOpacity}
         stroke={color} strokeWidth={2.5} opacity={hovered ? 1 : 0.85}
-        style={{ transition: 'opacity 0.15s, stroke-width 0.15s' }} />
-      {/* 标签始终显示 */}
-      <text x={cx} y={cy - r - 4} textAnchor="middle" fontSize={9} fill="#222">
-        {item.name.length > 4 ? item.name.slice(0, 4) : item.name}
-      </text>
+        style={{ transition: 'opacity 0.15s, stroke-width 0.15s' }}>
+        <title>{item.name}</title>
+      </circle>
       <text x={cx} y={cy + r + 10} textAnchor="middle" fontSize={9} fill="#222">
         {item.delayDays}d / {item.costDeviation.toFixed(1)}%
       </text>
@@ -671,7 +707,7 @@ const BubbleTooltip: React.FC<{
       <text x={ttx + tooltipW - 12} y={tty + 95} fontSize={12} fill={colorLabel} textAnchor="end" fontWeight={600}>
         {item.costDeviation > 0 ? '+' : ''}{item.costDeviation.toFixed(1)}%
       </text>
-      <text x={ttx + 12} y={tty + 118} fontSize={11} fill={COLORS.textLight}>产能压力</text>
+      <text x={ttx + 12} y={tty + 118} fontSize={11} fill={COLORS.textLight}>并行压力</text>
       <text x={ttx + tooltipW - 12} y={tty + 118} fontSize={12} fill={COLORS.purple} textAnchor="end" fontWeight={600}>
         {Math.round(item.capacityPressure).toLocaleString()}
       </text>
@@ -733,9 +769,9 @@ export const BubbleChart: React.FC<{
         {data.map(d => {
           const cx = pad.left + chartW / 2 + (d.delayDays / maxDelay) * chartW / 2;
           const cy = pad.top + (1 - (d.costDeviation + maxCost) / (maxCost * 2)) * chartH;
-          // 直径 = 15 + 每增加100万+5px，每减少100万-5px，以200万为基准
+          // 直径 = 15 + (金额 - 200万) / 100万 × 5，连续线性映射，钳制 [3, 25]
           const diff = d.contractAmount - 2000000;
-          const dia = 15 + Math.floor(diff / 1000000) * 5 - Math.floor(Math.max(0, -diff) / 1000000) * 5;
+          const dia = 15 + diff / 1000000 * 5;
           const r = Math.max(3, Math.min(25, Math.round(dia / 2)));
           const fillOpacity = Math.max(0.1, Math.min(0.6, (d.capacityPressure / maxPressure) * 0.5 + 0.1));
           return (

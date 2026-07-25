@@ -64,8 +64,8 @@ router.get('/', async (req, res, next) => {
       sql += ` WHERE ${conditions.join(' OR ')}`;
       params.push(`%${search}%`);
     }
-    sql += ` ORDER BY dp.project_name DESC LIMIT ${limitNum} OFFSET ${offsetNum}`;
-    const result = await query(sql, params);
+    sql += ` ORDER BY dp.project_name DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+    const result = await query(sql, [...params, limitNum, offsetNum]);
     res.json(result.rows);
   } catch (err) { next(err); }
 });

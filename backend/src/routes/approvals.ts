@@ -113,8 +113,8 @@ router.get('/', async (req, res, next) => {
     const result = await query(
       `SELECT ar.*,
         (SELECT row_to_json(ar2.*) FROM approval_records ar2 WHERE ar2.approval_request_id = ar.id ORDER BY ar2.created_at DESC LIMIT 1) as latest_record
-       FROM approval_requests ar${where} ORDER BY ar.updated_at DESC LIMIT ${limitNum} OFFSET ${offsetNum}`,
-      params
+       FROM approval_requests ar${where} ORDER BY ar.updated_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      [...params, limitNum, offsetNum]
     );
     res.json(result.rows);
   } catch (err) { next(err); }
@@ -232,7 +232,7 @@ router.post('/:id/records', async (req, res, next) => {
         if (qt?.opportunity_id && qt?.amount > 0) {
           await query(
             'UPDATE sales_opportunities SET amount = $1, updated_at = now() WHERE id = $2',
-            [Math.round(parseFloat(qt.amount)), qt.opportunity_id]
+            [Math.round(parseFloat(qt.amount) || 0), qt.opportunity_id]
           );
         }
       }

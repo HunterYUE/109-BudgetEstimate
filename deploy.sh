@@ -14,6 +14,6 @@ echo "前端部署完成"
 
 echo "=== 部署后端 ==="
 cd ../../backend
-tar czf - src/ --exclude='*.bak' | ssh tencent-budget "cd /opt/budget-estimate-api && tar xzf -"
+tar czf - --exclude='*.bak' src/ | ssh tencent-budget "cd /opt/budget-estimate-api && tar xzf -"
 ssh tencent-budget "systemctl restart budget-estimate-api.service"
 echo "后端部署完成"

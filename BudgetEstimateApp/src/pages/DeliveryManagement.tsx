@@ -18,7 +18,7 @@ const DeliveryManagement: React.FC = () => {
   const [filter, setFilter] = useState<'active' | 'completed'>('active');
 
   const [projects, setProjects] = useState<DeliveryProject[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [messageApi, msgContextHolder] = message.useMessage();
 
   const fetchProjects = async () => {

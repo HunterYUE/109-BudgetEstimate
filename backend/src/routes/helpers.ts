@@ -77,8 +77,8 @@ export function crudRoutes(table: string, fields: string[], options?: {
     }
     const limitNum = Math.min(1000, Math.max(1, parseInt(limit as string, 10) || 100));
     const offsetNum = Math.max(0, parseInt(offset as string, 10) || 0);
-    sql += ` ORDER BY ${orderBy} LIMIT ${limitNum} OFFSET ${offsetNum}`;
-    const result = await query(sql, params);
+    sql += ` ORDER BY ${orderBy} LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+    const result = await query(sql, [...params, limitNum, offsetNum]);
     res.json(result.rows);
   }));
 
