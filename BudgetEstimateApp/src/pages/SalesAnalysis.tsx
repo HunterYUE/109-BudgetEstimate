@@ -147,11 +147,11 @@ const SalesAnalysis: React.FC = () => {
   const [annualSalesTarget, setAnnualSalesTarget] = useState(() => { try { return localStorage.getItem('sa_annualSalesTarget') || ''; } catch { return ''; } });
   const [salesTargetEditing, setSalesTargetEditing] = useState(false);
   const salesTargetRef = React.useRef<HTMLInputElement>(null);
-  const saveSalesTarget = (v: string) => { setAnnualSalesTarget(v); try { localStorage.setItem('sa_annualSalesTarget', v); } catch { console.warn("[Caught]"); }; };
+  const saveSalesTarget = (v: string) => { setAnnualSalesTarget(v); try { localStorage.setItem('sa_annualSalesTarget', v); } catch (e) { console.warn('[SalesAnalysis] 保存销售指标失败:', e); }; };
 
   // 保存到 localStorage
-  const saveAnnualTarget = (v: string) => { setAnnualTargetInput(v); try { localStorage.setItem('sa_annualTarget', v); } catch { console.warn("[Caught]"); }; };
-  const saveGp3 = (v: string) => { setGp3Input(v); try { localStorage.setItem('sa_targetGP3', v); } catch { console.warn("[Caught]"); }; };
+  const saveAnnualTarget = (v: string) => { setAnnualTargetInput(v); try { localStorage.setItem('sa_annualTarget', v); } catch (e) { console.warn('[SalesAnalysis] 保存年度订单目标失败:', e); }; };
+  const saveGp3 = (v: string) => { setGp3Input(v); try { localStorage.setItem('sa_targetGP3', v); } catch (e) { console.warn('[SalesAnalysis] 保存GP3目标失败:', e); }; };
 
   // ── 月度订单数据（当月转交付项目的合同金额之和，按财年月汇总）──
   const monthlyOrderData = useMemo(() => {
@@ -247,16 +247,14 @@ const SalesAnalysis: React.FC = () => {
     return { cumulative, expectedCumulative, profitCumulative, expectedProfitCumulative, elapsedMonths, annualProfitTarget, gp3 };
   }, [monthlyOrderData, annualTargetInput, gp3Input, elapsedMonths]);
 
-  // ── 过去12个月范围（不随财年变化） ──
-  const past12mRange = useMemo(() => {
-    const now = new Date();
-    const end = new Date(now.getFullYear(), now.getMonth(), 0);
-    const start = new Date(end);
-    start.setFullYear(start.getFullYear() - 1);
-    start.setMonth(start.getMonth() + 1);
-    start.setDate(1);
-    return { start, end };
-  }, []);
+  // ── 过去12个月范围（计算开销极小，无需 useMemo）──
+  const now = new Date();
+  const rangeEnd = new Date(now.getFullYear(), now.getMonth(), 0);
+  const rangeStart = new Date(rangeEnd);
+  rangeStart.setFullYear(rangeStart.getFullYear() - 1);
+  rangeStart.setMonth(rangeStart.getMonth() + 1);
+  rangeStart.setDate(1);
+  const past12mRange = { start: rangeStart, end: rangeEnd };
 
   // ── 当前活跃管道（不过滤财年，仅 status='过程中'）──
   const currentPipeline = useMemo(() =>
@@ -271,7 +269,7 @@ const SalesAnalysis: React.FC = () => {
       const updated = new Date(o.updatedAt);
       return created <= r.end && updated >= r.start;
     });
-  }, [past12mRange]);
+  }, [past12mRange, allOpps]);
 
   // ── 漏斗：当前快照 ──
   const funnelSnapshot = useMemo(() =>
@@ -290,7 +288,7 @@ const SalesAnalysis: React.FC = () => {
       const d = new Date(o.updatedAt);
       return d >= fyRange.start && d <= fyRange.end;
     });
-  }, [fySelect]);
+  }, [fySelect, allOpps]);
 
   // ── 订单加权 GP3（财年内交付项目的加权平均 GP3，取自交付管理概算 GP3）──
   const orderWeightedGP3 = useMemo(() => {
@@ -348,7 +346,7 @@ const SalesAnalysis: React.FC = () => {
       const d = new Date(o.updatedAt);
       return d >= fyRange.start && d <= fyRange.end;
     });
-  }, [fySelect]);
+  }, [fySelect, allOpps]);
 
   // ── 财年各阶段汇总（用于漏斗右侧 FY 累计显示）──
   const fyInfo = useMemo(() => {
@@ -360,7 +358,7 @@ const SalesAnalysis: React.FC = () => {
       return created <= fyRange.end && effectiveEnd >= fyRange.start;
     });
     return { count: inFy.length, amount: inFy.reduce((s, o) => s + o.amount, 0) };
-  }, [fySelect]);
+  }, [fySelect, allOpps]);
 
   const fyLead = useMemo(() => {
     const items = fyFiltered.filter(o => stageIdx(o.stage) >= stageIdx('线索') || o.status === '赢');
