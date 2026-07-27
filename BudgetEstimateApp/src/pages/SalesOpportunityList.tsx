@@ -235,7 +235,7 @@ const SalesOpportunityList: React.FC = () => {
       notes: reasonModal.comment || '',
       updatedAt: nowISO(),
     };
-    if (action === 'win') updates.wonAt = nowISO();
+    // wonAt 在转交付时采集，此处不设置
     if (action === 'loss' && reasonModal.winner) {
       updates.winner = reasonModal.winner;
     }

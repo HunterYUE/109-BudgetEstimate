@@ -200,8 +200,8 @@ router.put('/:id', async (req, res, next) => {
     if (updateCols.length === 0) throw new AppError(400, '没有要更新的字段');
     let setClause = updateCols.map((f, i) => `"${f}" = $${i + 1}`).join(', ');
     const rawValues = updateCols.map(f => body[f]);
-    // 首次赢单时写入 won_at（后续编辑不覆盖）
-    if (body.status === '赢') {
+    // 转交付时写入 won_at（后续编辑不覆盖），转交付确定性最高
+    if (body.terminated) {
       setClause += `, won_at = COALESCE(won_at, now())`;
     }
     rawValues.push(id);
