@@ -87,7 +87,7 @@ const SalesAnalysis: React.FC = () => {
   const [deliveryProjects, setDeliveryProjects] = useState<DeliveryProject[]>([]);
   const [loading, setLoading] = useState(true);
   const defaultFy = `FY${String(new Date().getFullYear() % 100).padStart(2,'0')}${String((new Date().getFullYear() + 1) % 100).padStart(2,'0')}`;
-const [fySelect, setFySelect] = useState(defaultFy);
+  const [fySelect, setFySelect] = useState(defaultFy);
 
   const loadAll = useCallback(async () => {
     try {
@@ -109,15 +109,28 @@ const [fySelect, setFySelect] = useState(defaultFy);
     }
   }, [msg]);
 
-  // 交付项目加载完成后，预加载报价数据到缓存
-  useEffect(() => {
-    const ids = (deliveryProjects||[]).filter(p => p.quotationId).map(p => p.quotationId);
-    if (ids.length > 0) preloadQuotationGroupsBatch(ids);
-  }, [deliveryProjects]);
-
   useEffect(() => {
     loadAll();
   }, [loadAll]);
+
+  const [preloadReady, setPreloadReady] = useState(0);
+  useEffect(() => {
+    const ids = (deliveryProjects||[]).filter(p => p.quotationId).map(p => p.quotationId);
+    if (ids.length > 0) preloadQuotationGroupsBatch(ids).then(() => setPreloadReady(v => v + 1));
+  }, [deliveryProjects]);
+
+  // ── 报价估算缓存（避免重复调用 loadQuotationGroups）──
+  const projectEstimates = useMemo(() => {
+    void preloadReady;
+    const map = new Map<string, ReturnType<typeof computeDeliveryEstGP3>>();
+    for (const p of (deliveryProjects||[])) {
+      if (!p.quotationId) continue;
+      if (p.nodes.length === 0) continue; // 只缓存有节点数据的项目
+      const { groups, version } = loadQuotationGroups(p.quotationId);
+      map.set(p.id, computeDeliveryEstGP3(p.contractAmount, groups, version));
+    }
+    return map;
+  }, [deliveryProjects, preloadReady]);
 
   const fyFiltered = useFyFiltered(allOpps, fySelect);
 
@@ -143,21 +156,18 @@ const [fySelect, setFySelect] = useState(defaultFy);
   // ── 月度订单数据（当月转交付项目的合同金额之和，按财年月汇总）──
   const monthlyOrderData = useMemo(() => {
     const fyRange = parseFY(fySelect);
-    // 过滤在该财年内转交付的项目
     const inFy = (deliveryProjects||[]).filter(p => {
       const d = new Date(p.createdAt);
       return d >= fyRange.start && d <= fyRange.end;
     });
-    // 财年月：month=1 → 7月(Jul), month=12 → 6月(Jun)
     const byMonth = new Map<number, { amount: number; profit: number }>();
     for (const p of inFy) {
       const d = new Date(p.createdAt);
       const fyMonth = d.getMonth() < 6 ? d.getMonth() + 6 : d.getMonth() - 6;
       const prev = byMonth.get(fyMonth) || { amount: 0, profit: 0 };
-      const { groups, version } = loadQuotationGroups(p.quotationId);
-      const { exTax, grandEstimated } = computeDeliveryEstGP3(p.contractAmount, groups, version);
-      // 除销售管理外均用未税口径
-      const estProfit = exTax - grandEstimated;
+      const est = projectEstimates.get(p.id);
+      const exTax = est ? est.exTax : Math.round(p.contractAmount / 1.13);
+      const estProfit = est ? (exTax - est.grandEstimated) : 0;
       byMonth.set(fyMonth, { amount: prev.amount + exTax, profit: prev.profit + estProfit });
     }
     const MONTH_LABELS = ['Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar','Apr','May','Jun'];
@@ -169,7 +179,7 @@ const [fySelect, setFySelect] = useState(defaultFy);
         subValue: m ? m.profit : undefined,
       };
     });
-  }, [fySelect]);
+  }, [fySelect, projectEstimates]);
 
   // ── 月度销售数据（已完成项目总结的交付项目按月汇总）──
   const monthlySalesData = useMemo(() => {
@@ -184,8 +194,8 @@ const [fySelect, setFySelect] = useState(defaultFy);
       if (d < fyRange.start || d > fyRange.end) continue;
       const fyMonth = d.getMonth() < 6 ? d.getMonth() + 6 : d.getMonth() - 6;
       const prev = byMonth.get(fyMonth) || { amount: 0, profit: 0 };
-      const { groups, version } = loadQuotationGroups(p.quotationId);
-      const { exTax } = computeDeliveryEstGP3(p.contractAmount, groups, version);
+      const est = projectEstimates.get(p.id);
+      const exTax = est ? est.exTax : Math.round(p.contractAmount / 1.13);
       const actualProfit = p.totalActualCost != null ? (exTax - p.totalActualCost) : Math.round(exTax * 0.20);
       byMonth.set(fyMonth, { amount: prev.amount + exTax, profit: prev.profit + actualProfit });
     }
@@ -193,7 +203,7 @@ const [fySelect, setFySelect] = useState(defaultFy);
       const m = byMonth.get(i);
       return { name: MONTH_LABELS[i], value: m ? m.amount : 0, subValue: m ? m.profit : undefined };
     });
-  }, [fySelect]);
+  }, [fySelect, projectEstimates]);
 
   // ── 共享：财年已过月数 ──
   const elapsedMonths = useMemo(() => {
@@ -292,13 +302,13 @@ const [fySelect, setFySelect] = useState(defaultFy);
     if (inFy.length === 0) return 0;
     let totalAmt = 0, weighted = 0;
     for (const p of inFy) {
-      const { groups, version } = loadQuotationGroups(p.quotationId);
-      const { estGP3 } = computeDeliveryEstGP3(p.contractAmount, groups, version);
+      const est = projectEstimates.get(p.id);
+      if (!est) continue;
       totalAmt += p.contractAmount;
-      weighted += p.contractAmount * estGP3;
+      weighted += p.contractAmount * est.estGP3;
     }
     return totalAmt > 0 ? (weighted / totalAmt * 100) : 0;
-  }, [fySelect]);
+  }, [fySelect, projectEstimates]);
 
   // ── 已交付项目实际 GP3（已完成项目总结且成本审批通过的项目的加权平均实际 GP3）──
   const deliveredActualGP3 = useMemo(() => {
@@ -314,15 +324,15 @@ const [fySelect, setFySelect] = useState(defaultFy);
     if (delivered.length === 0) return 0;
     let totalAmt = 0, weighted = 0;
     for (const p of delivered) {
-      const taxRate = loadQuotationGroups(p.quotationId).version?.taxRate ?? 0.13;
-      const exTax = Math.round(p.contractAmount / (1 + taxRate));
+      const est = projectEstimates.get(p.id);
+      const exTax = est ? est.exTax : Math.round(p.contractAmount / 1.13);
       totalAmt += exTax;
-      const actProfit = exTax - p.totalActualCost;
+      const actProfit = exTax - p.totalActualCost!;
       const actGP3 = exTax > 0 ? actProfit / exTax : 0;
       weighted += exTax * actGP3;
     }
     return totalAmt > 0 ? (weighted / totalAmt * 100) : 0;
-  }, [fySelect]);
+  }, [fySelect, projectEstimates]);
 
   // ── 漏斗右侧 FY 累计用 ──
   const fyWon = useMemo(() => ({
@@ -355,12 +365,12 @@ const [fySelect, setFySelect] = useState(defaultFy);
   const fyLead = useMemo(() => {
     const items = fyFiltered.filter(o => stageIdx(o.stage) >= stageIdx('线索') || o.status === '赢');
     return { count: items.length, amount: items.reduce((s, o) => s + o.amount, 0) };
-  }, [fyFiltered, quotationSummaries]);
+  }, [fyFiltered]);
 
   const fyOpp = useMemo(() => {
     const items = fyFiltered.filter(o => stageIdx(o.stage) >= stageIdx('机会') || o.status === '赢');
     return { count: items.length, amount: items.reduce((s, o) => s + o.amount, 0) };
-  }, [fyFiltered, quotationSummaries]);
+  }, [fyFiltered]);
 
   // ── 过去12个月各阶段汇总（用于转化率）──
   const p12mInfo = useMemo(() => ({
@@ -416,65 +426,39 @@ const [fySelect, setFySelect] = useState(defaultFy);
   }, [fyFiltered, quotationSummaries]);
 
   // ── 输单原因柱状图（按输单时间归入财年）──
-  const dimLossReasons: BarItem[] = useMemo(() => {
-    const lossCompGroup = REASON_TAXONOMY.loss.groups.find(g => g.groupLabel === '竞对');
-    const allReasons: string[] = [];
-    if (lossCompGroup) {
-      for (const item of lossCompGroup.items) {
-        if (item.items && item.items.length > 0) {
-          for (const sub of item.items) allReasons.push(sub.label);
-        } else {
-          allReasons.push(item.label);
+  /** 抽取指定分组的原因统计柱状图数据 */
+  function useDimReasons(groupLabel: string): BarItem[] {
+    return useMemo(() => {
+      const grp = REASON_TAXONOMY.loss.groups.find(g => g.groupLabel === groupLabel);
+      const allReasons: string[] = [];
+      if (grp) {
+        for (const item of grp.items) {
+          if (item.items && item.items.length > 0) {
+            for (const sub of item.items) allReasons.push(sub.label);
+          } else {
+            allReasons.push(item.label);
+          }
         }
       }
-    }
-    const countMap = new Map<string, number>();
-    for (const name of allReasons) countMap.set(name, 0);
-    for (const opp of fyLostByTime) {
-      if (!opp.reasons) continue;
-      for (const r of parseReasons(opp.reasons)) {
-        if (r.groupLabel !== '竞对') continue;
-        if (r.detailItems.length > 0) {
-          for (const item of r.detailItems) { if (countMap.has(item)) countMap.set(item, countMap.get(item)! + 1); }
-        } else {
-          if (countMap.has(r.subLabel)) countMap.set(r.subLabel, countMap.get(r.subLabel)! + 1);
+      const countMap = new Map<string, number>();
+      for (const name of allReasons) countMap.set(name, 0);
+      for (const opp of fyLostByTime) {
+        if (!opp.reasons) continue;
+        for (const r of parseReasons(opp.reasons)) {
+          if (r.groupLabel !== groupLabel) continue;
+          if (r.detailItems.length > 0) {
+            for (const item of r.detailItems) { if (countMap.has(item)) countMap.set(item, countMap.get(item)! + 1); }
+          } else {
+            if (countMap.has(r.subLabel)) countMap.set(r.subLabel, countMap.get(r.subLabel)! + 1);
+          }
         }
       }
-    }
-    return allReasons.map((name, i) => ({ name, value: countMap.get(name) || 0, color: i % 2 === 0 ? COLORS.primary : COLORS.purple }));
-  }, [fyLostByTime]);
-
-  const dimCancelReasons: BarItem[] = useMemo(() => {
-    const grp = REASON_TAXONOMY.loss.groups.find(g => g.groupLabel === '取消');
-    const allReasons: string[] = grp ? grp.items.map(i => i.label) : [];
-    const countMap = new Map<string, number>();
-    for (const name of allReasons) countMap.set(name, 0);
-    for (const opp of fyLostByTime) {
-      if (!opp.reasons) continue;
-      for (const r of parseReasons(opp.reasons)) {
-        if (r.groupLabel !== '取消') continue;
-        if (r.detailItems.length > 0) { for (const item of r.detailItems) { if (countMap.has(item)) countMap.set(item, countMap.get(item)! + 1); } }
-        else { if (countMap.has(r.subLabel)) countMap.set(r.subLabel, countMap.get(r.subLabel)! + 1); }
-      }
-    }
-    return allReasons.map((name, i) => ({ name, value: countMap.get(name) || 0, color: i % 2 === 0 ? COLORS.primary : COLORS.purple }));
-  }, [fyLostByTime]);
-
-  const dimAbandonReasons: BarItem[] = useMemo(() => {
-    const grp = REASON_TAXONOMY.loss.groups.find(g => g.groupLabel === '放弃');
-    const allReasons: string[] = grp ? grp.items.map(i => i.label) : [];
-    const countMap = new Map<string, number>();
-    for (const name of allReasons) countMap.set(name, 0);
-    for (const opp of fyLostByTime) {
-      if (!opp.reasons) continue;
-      for (const r of parseReasons(opp.reasons)) {
-        if (r.groupLabel !== '放弃') continue;
-        if (r.detailItems.length > 0) { for (const item of r.detailItems) { if (countMap.has(item)) countMap.set(item, countMap.get(item)! + 1); } }
-        else { if (countMap.has(r.subLabel)) countMap.set(r.subLabel, countMap.get(r.subLabel)! + 1); }
-      }
-    }
-    return allReasons.map((name, i) => ({ name, value: countMap.get(name) || 0, color: i % 2 === 0 ? COLORS.primary : COLORS.purple }));
-  }, [fyLostByTime]);
+      return allReasons.map((name, i) => ({ name, value: countMap.get(name) || 0, color: i % 2 === 0 ? COLORS.primary : COLORS.purple }));
+    }, [fyLostByTime]);
+  }
+  const dimLossReasons = useDimReasons('竞对');
+  const dimCancelReasons = useDimReasons('取消');
+  const dimAbandonReasons = useDimReasons('放弃');
 
   // ── 销售员统一统计 ──
   const salesmenStats = useMemo(() => {
