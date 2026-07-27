@@ -28,6 +28,14 @@ const safeParseInt = (val: string | undefined | null): number => {
 
 const stageIdx = (s: string) => STAGES.indexOf(s as typeof STAGES[number]);
 
+/** 编辑输入框共用样式 */
+const EDIT_INPUT_STYLE: React.CSSProperties = {
+  border: 'none', borderRadius: 0, padding: 0, margin: 0,
+  boxSizing: 'content-box', fontSize: 12, outline: 'none',
+  textAlign: 'right', background: 'transparent',
+  fontFamily: 'inherit', fontWeight: 700, height: 18,
+};
+
 /** 根据财年过滤机会列表 */
 function useFyFiltered(allOpps: SalesOpportunity[], fy: string) {
   return useMemo(() => {
@@ -153,6 +161,11 @@ const SalesAnalysis: React.FC = () => {
   const saveAnnualTarget = (v: string) => { setAnnualTargetInput(v); try { localStorage.setItem('sa_annualTarget', v); } catch (e) { console.warn('[SalesAnalysis] 保存年度订单目标失败:', e); }; };
   const saveGp3 = (v: string) => { setGp3Input(v); try { localStorage.setItem('sa_targetGP3', v); } catch (e) { console.warn('[SalesAnalysis] 保存GP3目标失败:', e); }; };
 
+  // ── 预解析目标输入值（避免渲染中重复 parseInt）──
+  const parsedAnnualTarget = useMemo(() => safeParseInt(annualTargetInput), [annualTargetInput]);
+  const parsedSalesTarget = useMemo(() => safeParseInt(annualSalesTarget), [annualSalesTarget]);
+  const parsedGp3 = useMemo(() => parseFloat(gp3Input) || 0, [gp3Input]);
+
   // ── 月度订单数据（当月转交付项目的合同金额之和，按财年月汇总）──
   const monthlyOrderData = useMemo(() => {
     const fyRange = parseFY(fySelect);
@@ -219,33 +232,25 @@ const SalesAnalysis: React.FC = () => {
   const salesCumulative = useMemo(() => {
     const cumulative = monthlySalesData.slice(0, elapsedMonths).reduce((s, m) => s + m.value, 0);
     const profitCumulative = monthlySalesData.slice(0, elapsedMonths).reduce((s, m) => s + (m.subValue || 0), 0);
-    const parsedAnnualTarget = parseInt(annualSalesTarget, 10);
-    const validAnnualTarget = !isNaN(parsedAnnualTarget) ? parsedAnnualTarget : 0;
-    const avgMonthly = annualSalesTarget ? Math.round(validAnnualTarget * 1000 / 12) : 0;
+    const avgMonthly = parsedSalesTarget ? Math.round(parsedSalesTarget * 1000 / 12) : 0;
     const expectedCumulative = avgMonthly * elapsedMonths;
-    const gp3 = parseFloat(gp3Input) || 0;
-    const annualProfitTarget = annualSalesTarget && gp3 ? Math.round(validAnnualTarget * gp3 / 100) : 0;
+    const annualProfitTarget = parsedSalesTarget && parsedGp3 ? Math.round(parsedSalesTarget * parsedGp3 / 100) : 0;
     const avgMonthlyProfit = annualProfitTarget ? Math.round(annualProfitTarget * 1000 / 12) : 0;
     const expectedProfitCumulative = avgMonthlyProfit * elapsedMonths;
     return { cumulative, expectedCumulative, profitCumulative, expectedProfitCumulative, annualProfitTarget };
-  }, [monthlySalesData, annualSalesTarget, gp3Input, elapsedMonths]);
+  }, [monthlySalesData, parsedSalesTarget, parsedGp3, elapsedMonths]);
 
   // ── 月度订单累计 + 利润累计 ──
   const monthlyCumulative = useMemo(() => {
     const cumulative = monthlyOrderData.slice(0, elapsedMonths).reduce((s, m) => s + m.value, 0);
     const profitCumulative = monthlyOrderData.slice(0, elapsedMonths).reduce((s, m) => s + (m.subValue || 0), 0);
-    const parsedTargetInput = parseInt(annualTargetInput, 10);
-    const validTargetInput = !isNaN(parsedTargetInput) ? parsedTargetInput : 0;
-    const avgMonthly = annualTargetInput ? Math.round(validTargetInput * 1000 / 12) : 0;
+    const avgMonthly = parsedAnnualTarget ? Math.round(parsedAnnualTarget * 1000 / 12) : 0;
     const expectedCumulative = avgMonthly * elapsedMonths;
-
-    const gp3 = parseFloat(gp3Input) || 0;
-    const annualProfitTarget = annualTargetInput && gp3 ? Math.round(validTargetInput * gp3 / 100) : 0;
+    const annualProfitTarget = parsedAnnualTarget && parsedGp3 ? Math.round(parsedAnnualTarget * parsedGp3 / 100) : 0;
     const avgMonthlyProfit = annualProfitTarget ? Math.round(annualProfitTarget * 1000 / 12) : 0;
     const expectedProfitCumulative = avgMonthlyProfit * elapsedMonths;
-
-    return { cumulative, expectedCumulative, profitCumulative, expectedProfitCumulative, elapsedMonths, annualProfitTarget, gp3 };
-  }, [monthlyOrderData, annualTargetInput, gp3Input, elapsedMonths]);
+    return { cumulative, expectedCumulative, profitCumulative, expectedProfitCumulative, elapsedMonths, annualProfitTarget, gp3: parsedGp3 };
+  }, [monthlyOrderData, parsedAnnualTarget, parsedGp3, elapsedMonths]);
 
   // ── 过去12个月范围 ──
   const past12mRange = useMemo(() => {
@@ -575,21 +580,13 @@ const SalesAnalysis: React.FC = () => {
                 onChange={e => saveAnnualTarget(e.target.value.replace(/\D/g, '').slice(0, 10))}
                 onBlur={() => setTargetEditing(false)}
                 onKeyDown={e => { if (e.key === 'Enter') setTargetEditing(false); }}
-                style={{
-                  width: `${Math.max(annualTargetInput.length || 1, 1)}ch`,
-                  minWidth: '14ch', height: 18,
-                  border: 'none', borderRadius: 0,
-                  padding: 0, margin: 0, boxSizing: 'content-box',
-                  fontSize: 12, outline: 'none', textAlign: 'right',
-                  background: 'transparent', color: COLORS.primary, fontFamily: 'inherit',
-                  fontWeight: 700,
-                }}
+                style={{ ...EDIT_INPUT_STYLE, color: COLORS.primary, minWidth: '14ch', width: `${Math.max(annualTargetInput.length || 1, 1)}ch` }}
                 autoFocus
               />
             ) : (
               <span style={{ fontSize: 10, cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: 700 }}
                 onClick={() => { setTargetEditing(true); setTimeout(() => targetRef.current?.focus(), 0); }}>
-                <span style={{ color: COLORS.primary }}>{annualTargetInput ? `${safeParseInt(annualTargetInput).toLocaleString()}K` : '—'}</span>
+                <span style={{ color: COLORS.primary }}>{annualTargetInput ? `${parsedAnnualTarget.toLocaleString()}K` : '—'}</span>
                 {annualTargetInput ? (
                   <span style={{ color: monthlyCumulative.cumulative >= monthlyCumulative.expectedCumulative ? COLORS.primary : COLORS.danger, fontSize: 10 }}>
                     {`(${Math.round(monthlyCumulative.cumulative / 1000).toLocaleString()}K)`}
@@ -617,15 +614,7 @@ const SalesAnalysis: React.FC = () => {
                 onChange={e => saveGp3(e.target.value.replace(/[^\d.]/g, '').replace(/(\.\d).*/, '$1').slice(0, 5))}
                 onBlur={() => setOrderGp3Editing(false)}
                 onKeyDown={e => { if (e.key === 'Enter') setOrderGp3Editing(false); }}
-                style={{
-                  width: `${Math.max(gp3Input.length || 1, 1)}ch`,
-                  minWidth: '4ch', height: 18,
-                  border: 'none', borderRadius: 0,
-                  padding: 0, margin: 0, boxSizing: 'content-box',
-                  fontSize: 10, outline: 'none', textAlign: 'right',
-                  background: 'transparent', color: COLORS.purple, fontFamily: 'inherit',
-                  fontWeight: 700,
-                }}
+                style={{ ...EDIT_INPUT_STYLE, fontSize: 10, color: COLORS.purple, minWidth: '4ch', width: `${Math.max(gp3Input.length || 1, 1)}ch` }}
                 autoFocus
               />
             ) : (
@@ -641,8 +630,8 @@ const SalesAnalysis: React.FC = () => {
             </span>
           </div>
           <VerticalBarChart title="" data={monthlyOrderData} format="K" height={290} topN={12} barWidthRatio={0.6} maxBarWidth={120} contentOffset={25} chartWidth={620} disableSort padTop={32} cardBorder={false}
-            targetValue={annualTargetInput ? Math.round(safeParseInt(annualTargetInput) * 1000 / 12) : undefined}
-            targetLabel={annualTargetInput ? `${Math.round(safeParseInt(annualTargetInput) / 12)}K` : undefined}
+            targetValue={annualTargetInput ? Math.round(parsedAnnualTarget * 1000 / 12) : undefined}
+            targetLabel={annualTargetInput ? `${Math.round(parsedAnnualTarget / 12)}K` : undefined}
           />
         </Card>
 
@@ -671,21 +660,13 @@ const SalesAnalysis: React.FC = () => {
                 onChange={e => saveSalesTarget(e.target.value.replace(/\D/g, '').slice(0, 10))}
                 onBlur={() => setSalesTargetEditing(false)}
                 onKeyDown={e => { if (e.key === 'Enter') setSalesTargetEditing(false); }}
-                style={{
-                  width: `${Math.max(annualSalesTarget.length || 1, 1)}ch`,
-                  minWidth: '14ch', height: 18,
-                  border: 'none', borderRadius: 0,
-                  padding: 0, margin: 0, boxSizing: 'content-box',
-                  fontSize: 12, outline: 'none', textAlign: 'right',
-                  background: 'transparent', color: COLORS.success, fontFamily: 'inherit',
-                  fontWeight: 700,
-                }}
+                style={{ ...EDIT_INPUT_STYLE, color: COLORS.success, minWidth: '14ch', width: `${Math.max(annualSalesTarget.length || 1, 1)}ch` }}
                 autoFocus
               />
             ) : (
               <span style={{ fontSize: 10, cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: 700 }}
                 onClick={() => { setSalesTargetEditing(true); setTimeout(() => salesTargetRef.current?.focus(), 0); }}>
-                <span style={{ color: COLORS.success }}>{annualSalesTarget ? `${safeParseInt(annualSalesTarget).toLocaleString()}K` : '—'}</span>
+                <span style={{ color: COLORS.success }}>{annualSalesTarget ? `${parsedSalesTarget.toLocaleString()}K` : '—'}</span>
                 {annualSalesTarget ? (
                   <span style={{ color: salesCumulative.cumulative >= salesCumulative.expectedCumulative ? COLORS.success : COLORS.danger, fontSize: 10 }}>
                     {`(${Math.round(salesCumulative.cumulative / 1000).toLocaleString()}K)`}
@@ -713,15 +694,7 @@ const SalesAnalysis: React.FC = () => {
                 onChange={e => saveGp3(e.target.value.replace(/[^\d.]/g, '').replace(/(\.\d).*/, '$1').slice(0, 5))}
                 onBlur={() => setSalesGp3Editing(false)}
                 onKeyDown={e => { if (e.key === 'Enter') setSalesGp3Editing(false); }}
-                style={{
-                  width: `${Math.max(gp3Input.length || 1, 1)}ch`,
-                  minWidth: '4ch', height: 18,
-                  border: 'none', borderRadius: 0,
-                  padding: 0, margin: 0, boxSizing: 'content-box',
-                  fontSize: 10, outline: 'none', textAlign: 'right',
-                  background: 'transparent', color: COLORS.danger, fontFamily: 'inherit',
-                  fontWeight: 700,
-                }}
+                style={{ ...EDIT_INPUT_STYLE, fontSize: 10, color: COLORS.danger, minWidth: '4ch', width: `${Math.max(gp3Input.length || 1, 1)}ch` }}
                 autoFocus
               />
             ) : (
@@ -737,8 +710,8 @@ const SalesAnalysis: React.FC = () => {
             </span>
           </div>
           <VerticalBarChart title="" data={monthlySalesData} format="K" height={290} topN={12} barWidthRatio={0.6} maxBarWidth={120} contentOffset={25} chartWidth={620} disableSort padTop={32} cardBorder={false}
-            targetValue={annualSalesTarget ? Math.round(safeParseInt(annualSalesTarget) * 1000 / 12) : undefined}
-            targetLabel={annualSalesTarget ? `${Math.round(safeParseInt(annualSalesTarget) / 12)}K` : undefined}
+            targetValue={annualSalesTarget ? Math.round(parsedSalesTarget * 1000 / 12) : undefined}
+            targetLabel={annualSalesTarget ? `${Math.round(parsedSalesTarget / 12)}K` : undefined}
           />
         </Card>
       </div>
