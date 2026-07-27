@@ -61,8 +61,8 @@ const MaterialManagement: React.FC = () => {
   };
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     loadMaterials();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // 搜索与筛选

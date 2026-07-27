@@ -239,7 +239,6 @@ const QuotationPage: React.FC = () => {
 
   /** 当物料编码匹配数据库时，自动填充成本/工时/质保/采购方式 */
 // 仅在 componentDB 加载后触发一次物料编码填充
-// eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!project || componentDB.length === 0) return;
     let changed = false;

@@ -38,7 +38,6 @@ interface FlatRow {
 
 const ItemCostTable: React.FC<Props> = ({ groups, actualCosts, onActualCostChange, locked, version, laborRates }) => {
 // laborRates 变化不改变成本对比计算逻辑
-// eslint-disable-next-line react-hooks/exhaustive-deps
 const rows: FlatRow[] = useMemo(() => {
     const result: FlatRow[] = [];
 
@@ -401,6 +400,8 @@ const rows: FlatRow[] = useMemo(() => {
     }
 
     return result;
+  // laborRates 变化不改变成本对比计算逻辑
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groups, actualCosts, version]);
 
   // ---- Totals ----
