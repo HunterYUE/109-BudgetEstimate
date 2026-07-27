@@ -7,7 +7,7 @@ const fields = [
   'id', 'sales_no', 'client_name', 'project_name', 'amount',
   'stage', 'win_rate', 'status', 'salesman', 'competitor', 'winner',
   'expected_close_date', 'notes', 'reasons', 'quotation_id',
-  'terminated', 'promote_locked', 'created_at', 'updated_at',
+  'terminated', 'promote_locked', 'won_at', 'created_at', 'updated_at',
 ];
 
 // 标准 CRUD（不含 GET / 和 extra 中的自定义端点）
@@ -195,11 +195,15 @@ router.put('/:id', async (req, res, next) => {
     }
     // 通过检查后交给标准 CRUD PUT 处理（复用上面的 body 转换结果）
     const updateCols = fields.filter(f =>
-      !['id', 'created_at', 'updated_at'].includes(f) && body[f] !== undefined
+      !['id', 'created_at', 'updated_at', 'won_at'].includes(f) && body[f] !== undefined
     );
     if (updateCols.length === 0) throw new AppError(400, '没有要更新的字段');
-    const setClause = updateCols.map((f, i) => `"${f}" = $${i + 1}`).join(', ');
+    let setClause = updateCols.map((f, i) => `"${f}" = $${i + 1}`).join(', ');
     const rawValues = updateCols.map(f => body[f]);
+    // 首次赢单时写入 won_at（后续编辑不覆盖）
+    if (body.status === '赢') {
+      setClause += `, won_at = COALESCE(won_at, now())`;
+    }
     rawValues.push(id);
     const result = await query(
       `UPDATE sales_opportunities SET ${setClause}, updated_at = now() WHERE id = $${rawValues.length} RETURNING *`,

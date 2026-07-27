@@ -292,7 +292,7 @@ const SalesAnalysis: React.FC = () => {
     const fyRange = parseFY(fySelect);
     return allOpps.filter(o => {
       if (o.status !== '赢') return false;
-      const d = new Date(o.updatedAt);
+      const d = new Date(o.wonAt || o.updatedAt);
       return d >= fyRange.start && d <= fyRange.end;
     });
   }, [fySelect, allOpps]);
@@ -410,7 +410,7 @@ const SalesAnalysis: React.FC = () => {
         const effectiveEnd = (o.status === '过程中' || o.status === '冻结') ? new Date() : new Date(o.updatedAt);
         return created <= monthEnd && effectiveEnd >= monthStart;
       });
-      const wonOpps = activeOpps.filter(o => o.status === '赢' && new Date(o.updatedAt) >= monthStart && new Date(o.updatedAt) <= monthEnd);
+      const wonOpps = activeOpps.filter(o => o.status === '赢' && new Date(o.wonAt || o.updatedAt) >= monthStart && new Date(o.wonAt || o.updatedAt) <= monthEnd);
       const lostOpps = activeOpps.filter(o => o.status === '输' && new Date(o.updatedAt) >= monthStart && new Date(o.updatedAt) <= monthEnd);
       const pipelineOpps = activeOpps.filter(o => (o.status === '过程中' || o.status === '冻结') && stageIdx(o.stage) >= stageIdx('机会'));
       let weighted = 0, profit = 0;
@@ -421,7 +421,7 @@ const SalesAnalysis: React.FC = () => {
         profit += Math.round(w * (q ? (q.profitRate ?? 0) / 100 : 0.15));
       }
       const cycle = wonOpps.length > 0 ? Math.round(wonOpps.reduce((s, o) => {
-        return s + Math.round((new Date(o.updatedAt).getTime() - new Date(o.createdAt).getTime()) / (1000 * 60 * 60 * 24));
+        return s + Math.round((new Date(o.wonAt || o.updatedAt).getTime() - new Date(o.createdAt).getTime()) / (1000 * 60 * 60 * 24));
       }, 0) / wonOpps.length) : 0;
       const total = wonOpps.length + lostOpps.length;
       const convRate = total > 0 ? wonOpps.length / total * 100 : 0;

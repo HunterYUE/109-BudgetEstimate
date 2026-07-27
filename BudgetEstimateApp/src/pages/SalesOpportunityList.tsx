@@ -235,6 +235,7 @@ const SalesOpportunityList: React.FC = () => {
       notes: reasonModal.comment || '',
       updatedAt: nowISO(),
     };
+    if (action === 'win') updates.wonAt = nowISO();
     if (action === 'loss' && reasonModal.winner) {
       updates.winner = reasonModal.winner;
     }

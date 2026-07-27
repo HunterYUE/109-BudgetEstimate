@@ -128,6 +128,8 @@ export interface SalesOpportunity {
   reasons: string;              // 状态变更原因，格式：大类:子类:具体项;大类:子类
   createdAt: string;
   updatedAt: string;
+  /** 首次标记为'赢'的时间（后续编辑不覆盖） */
+  wonAt?: string;
   quotationId?: string;
   /** 是否存在报价（后端返回） */
   hasQuote?: boolean;
