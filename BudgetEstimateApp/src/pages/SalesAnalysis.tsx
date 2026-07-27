@@ -247,14 +247,16 @@ const SalesAnalysis: React.FC = () => {
     return { cumulative, expectedCumulative, profitCumulative, expectedProfitCumulative, elapsedMonths, annualProfitTarget, gp3 };
   }, [monthlyOrderData, annualTargetInput, gp3Input, elapsedMonths]);
 
-  // ── 过去12个月范围（计算开销极小，无需 useMemo）──
-  const now = new Date();
-  const rangeEnd = new Date(now.getFullYear(), now.getMonth(), 0);
-  const rangeStart = new Date(rangeEnd);
-  rangeStart.setFullYear(rangeStart.getFullYear() - 1);
-  rangeStart.setMonth(rangeStart.getMonth() + 1);
-  rangeStart.setDate(1);
-  const past12mRange = { start: rangeStart, end: rangeEnd };
+  // ── 过去12个月范围 ──
+  const past12mRange = useMemo(() => {
+    const now = new Date();
+    const end = new Date(now.getFullYear(), now.getMonth(), 0);
+    const start = new Date(end);
+    start.setFullYear(start.getFullYear() - 1);
+    start.setMonth(start.getMonth() + 1);
+    start.setDate(1);
+    return { start, end };
+  }, []);
 
   // ── 当前活跃管道（不过滤财年，仅 status='过程中'）──
   const currentPipeline = useMemo(() =>
