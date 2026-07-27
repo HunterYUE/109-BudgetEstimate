@@ -227,8 +227,8 @@ const Dashboard: React.FC = () => {
         const effEnd = (o.status === '过程中' || o.status === '冻结') ? new Date() : new Date(o.updatedAt);
         return created <= mEnd && effEnd >= mStart;
       });
-      const monthWins = monthOpps.filter(o => o.status === '赢' && new Date(o.wonAt || o.updatedAt) >= mStart && new Date(o.updatedAt) <= mEnd);
-      const monthLosses = monthOpps.filter(o => o.status === '输' && new Date(o.wonAt || o.updatedAt) >= mStart && new Date(o.updatedAt) <= mEnd);
+      const monthWins = monthOpps.filter(o => o.status === '赢' && new Date(o.wonAt || o.updatedAt) >= mStart && new Date(o.wonAt || o.updatedAt) <= mEnd);
+      const monthLosses = monthOpps.filter(o => o.status === '输' && new Date(o.updatedAt) >= mStart && new Date(o.updatedAt) <= mEnd);
       const monthNew = opportunities.filter(o => new Date(o.createdAt) >= mStart && new Date(o.createdAt) <= mEnd);
       const activeDel = deliveries.filter(p => p.status !== '已完成');
       const winCnt = monthWins.length, lossCnt = monthLosses.length;
@@ -248,7 +248,7 @@ const Dashboard: React.FC = () => {
     opportunities.filter(o => o.status === '赢').sort((a, b) => new Date(b.wonAt || b.updatedAt).getTime() - new Date(a.wonAt || a.updatedAt).getTime()).slice(0, 5), [opportunities]);
 
   const recentLosses = useMemo(() =>
-    opportunities.filter(o => o.status === '输').sort((a, b) => new Date(b.wonAt || b.updatedAt).getTime() - new Date(a.wonAt || a.updatedAt).getTime()).slice(0, 5), [opportunities]);
+    opportunities.filter(o => o.status === '输').sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()).slice(0, 5), [opportunities]);
 
   const pendingItems = useMemo(() => approvals.filter(r => r.status === 'pending').slice(0, 5), [approvals]);
 
