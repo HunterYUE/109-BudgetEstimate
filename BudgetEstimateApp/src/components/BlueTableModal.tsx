@@ -189,7 +189,7 @@ const BlueTableModal: React.FC<BlueTableModalProps> = ({ open, opportunity, onSa
     } else {
       setBt(createEmptyBlueTable());
     }
-  }, [open, opportunity?.id]);
+  }, [open, opportunity?.id, opportunity?.blueTable]);
 
   // ── 角色操作 ──
   const updateRole = useCallback((roleId: string, updates: Partial<BlueTableRole>) => {

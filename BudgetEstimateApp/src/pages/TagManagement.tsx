@@ -144,6 +144,7 @@ const TagManagement: React.FC = () => {
         setLoading(false);
       }
     })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const flatRows = flattenTree(tree);

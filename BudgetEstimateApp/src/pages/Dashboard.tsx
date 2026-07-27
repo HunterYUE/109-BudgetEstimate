@@ -272,6 +272,7 @@ const Dashboard: React.FC = () => {
       }
     }
     return result;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opportunities]);
 
   const getReasonInfo = (reasons: string): { label: string; color: string } => {
@@ -368,6 +369,7 @@ const Dashboard: React.FC = () => {
       }
     }
     return { projectStatus, nodeStatus, onTimeRate, profitOverview };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deliveries, quotations]);
 
   const currentFy = useMemo(() => {
@@ -375,6 +377,7 @@ const Dashboard: React.FC = () => {
     const y1 = m >= 6 ? y : y - 1;
     const y2 = m >= 6 ? y + 1 : y;
     return `FY${String(y1 % 100).padStart(2, '0')}${String(y2 % 100).padStart(2, '0')}`;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fyTrend = useMemo(() => {

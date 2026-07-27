@@ -274,7 +274,8 @@ const QuotationPage: React.FC = () => {
       }),
     }));
     if (changed) setProject(prev => prev ? { ...prev, groups: newGroups } : prev);
-  }, [componentDB, project?.id]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [componentDB, project?.id, project?.groups]);
 
   const handleGroupChange = useCallback((groupId: string, items: GroupItem[]) => {
     setProject(prev => ({

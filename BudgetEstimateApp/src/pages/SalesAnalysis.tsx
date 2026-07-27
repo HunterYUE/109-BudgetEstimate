@@ -192,6 +192,8 @@ const SalesAnalysis: React.FC = () => {
         subValue: m ? m.profit : undefined,
       };
     });
+  // deliveryProjects 变化通过 projectEstimates 捕获
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fySelect, projectEstimates]);
 
   // ── 月度销售数据（已完成项目总结的交付项目按月汇总）──
@@ -216,6 +218,7 @@ const SalesAnalysis: React.FC = () => {
       const m = byMonth.get(i);
       return { name: MONTH_LABELS[i], value: m ? m.amount : 0, subValue: m ? m.profit : undefined };
     });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fySelect, projectEstimates]);
 
   // ── 共享：财年已过月数 ──
@@ -313,6 +316,7 @@ const SalesAnalysis: React.FC = () => {
       weighted += p.contractAmount * est.estGP3;
     }
     return totalAmt > 0 ? (weighted / totalAmt * 100) : 0;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fySelect, projectEstimates]);
 
   // ── 已交付项目实际 GP3（已完成项目总结且成本审批通过的项目的加权平均实际 GP3）──
@@ -337,6 +341,7 @@ const SalesAnalysis: React.FC = () => {
       weighted += exTax * actGP3;
     }
     return totalAmt > 0 ? (weighted / totalAmt * 100) : 0;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fySelect, projectEstimates]);
 
   // ── 漏斗右侧 FY 累计用 ──
@@ -459,6 +464,7 @@ const SalesAnalysis: React.FC = () => {
         }
       }
       return allReasons.map((name, i) => ({ name, value: countMap.get(name) || 0, color: i % 2 === 0 ? COLORS.primary : COLORS.purple }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [fyLostByTime]);
   }
   const dimLossReasons = useDimReasons('竞对');

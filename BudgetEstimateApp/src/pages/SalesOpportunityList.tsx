@@ -819,7 +819,7 @@ const SalesOpportunityList: React.FC = () => {
     },
     { title: '操作日期', dataIndex: 'updatedAt', width: 100,
       render: (v: string) => <span style={{ fontSize: 13, color: COLORS.textLight }}>{formatBeijing(v)}</span> },
-  ], [tabFilter, touch, handlePromote, handleConfirmTerminate, handleWinDeliver, opportunities, handleStatusAction, navigate]);
+  ], [tabFilter, touch, handlePromote, handleConfirmTerminate, handleWinDeliver, opportunities, handleStatusAction, navigate, blueTableOpp]);
 
 
 
