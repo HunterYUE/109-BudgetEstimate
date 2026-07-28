@@ -230,7 +230,6 @@ const Dashboard: React.FC = () => {
       const monthLosses = monthOpps.filter(o => o.status === '输' && new Date(o.lostAt) >= mStart && new Date(o.lostAt) <= mEnd);
       const monthNew = opportunities.filter(o => new Date(o.createdAt) >= mStart && new Date(o.createdAt) <= mEnd);
       const activeDel = deliveries.filter(p => {
-        const created = new Date(p.createdAt);
         if (created > mEnd) return false;
         if (p.status === '已完成') {
           const node15 = (p.nodes||[]).find((n: any) => n.nodeNo === 15);
@@ -245,7 +244,7 @@ const Dashboard: React.FC = () => {
         const d = new Date(node15.actualDate || p.updatedAt);
         return d >= mStart && d <= mEnd;
       });
-      const winCnt = monthWins.length, lossCnt = monthLosses.length;
+      const winCnt = monthWins.length;
       return {
         amt: monthOpps.reduce((s, o) => s + exAmount(o.amount, o.taxRate), 0), cnt: monthOpps.length,
         winAmt: monthWins.reduce((s, o) => s + exAmount(o.amount, o.taxRate), 0), winCnt,
