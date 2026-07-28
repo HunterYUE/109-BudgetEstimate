@@ -210,10 +210,7 @@ const SalesAnalysis: React.FC = () => {
   // ── 月度订单数据（当月转交付项目的合同金额之和，按财年月汇总）──
   const monthlyOrderData = useMemo(() => {
     const fyRange = parseFY(fySelect);
-    const inFy = (deliveryProjects||[]).filter(p => {
-      const d = new Date(p.createdAt);
-      return d >= fyRange.start && d <= fyRange.end;
-    });
+    const inFy = (deliveryProjects||[]).filter(p => isProjActiveInFy(p, fyRange));
     const byMonth = new Map<number, { amount: number; profit: number }>();
     for (const p of inFy) {
       const d = new Date(p.createdAt);
@@ -330,10 +327,7 @@ const SalesAnalysis: React.FC = () => {
   // ── 订单加权 GP3（财年内交付项目的加权平均 GP3，取自交付管理概算 GP3）──
   const orderWeightedGP3 = useMemo(() => {
     const fyRange = parseFY(fySelect);
-    const inFy = (deliveryProjects||[]).filter(p => {
-      const d = new Date(p.createdAt);
-      return d >= fyRange.start && d <= fyRange.end;
-    });
+    const inFy = (deliveryProjects||[]).filter(p => isProjActiveInFy(p, fyRange));
     if (inFy.length === 0) return 0;
     let totalAmt = 0, weighted = 0;
     for (const p of inFy) {
@@ -350,9 +344,8 @@ const SalesAnalysis: React.FC = () => {
   const deliveredActualGP3 = useMemo(() => {
     const fyRange = parseFY(fySelect);
     const delivered = (deliveryProjects||[]).filter(p => {
-      const d = new Date(p.createdAt);
-      if (d < fyRange.start || d > fyRange.end) return false;
-      const node15 = (p.nodes||[]).find(n => n.nodeNo === 15);
+      if (!isProjActiveInFy(p, fyRange)) return false;
+      const node15 = (p.nodes||[]).find((n: any) => n.nodeNo === 15);
       if (!node15 || (node15.status !== 'completed' && node15.status !== 'delayed')) return false;
       if (p.costStatus !== 'approved' || !p.totalActualCost) return false;
       return true;
@@ -408,6 +401,22 @@ const SalesAnalysis: React.FC = () => {
     const items = fyFiltered.filter(o => stageIdx(o.stage) >= stageIdx('机会') || o.wonAt);
     return { count: items.length, amount: items.reduce((s, o) => s + o.amount, 0) };
   }, [fyFiltered]);
+
+  // ── 判断交付项目是否属于某财年（创建、活动、完成任一环节落入则属之）──
+  const isProjActiveInFy = (p: DeliveryProject, fyR: { start: Date; end: Date }): boolean => {
+    const created = new Date(p.createdAt);
+    if (created > fyR.end) return false;
+    const node15 = (p.nodes||[]).find((n: any) => n.nodeNo === 15);
+    let effEnd: Date;
+    if (node15?.actualDate) {
+      effEnd = new Date(node15.actualDate);
+    } else if (p.status === '已完成' || p.status === '已延期') {
+      effEnd = new Date(p.updatedAt);
+    } else {
+      effEnd = new Date();
+    }
+    return effEnd >= fyR.start;
+  };
 
   // ── 滚动12个月指标（销售周期、赢单转化率，用于概览卡片）──
   const rolling12mKpi = useMemo(() => {

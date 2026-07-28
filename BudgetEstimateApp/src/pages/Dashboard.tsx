@@ -229,15 +229,30 @@ const Dashboard: React.FC = () => {
       const monthWins = monthOpps.filter(o => o.status === '赢' && new Date(o.wonAt) >= mStart && new Date(o.wonAt) <= mEnd);
       const monthLosses = monthOpps.filter(o => o.status === '输' && new Date(o.lostAt) >= mStart && new Date(o.lostAt) <= mEnd);
       const monthNew = opportunities.filter(o => new Date(o.createdAt) >= mStart && new Date(o.createdAt) <= mEnd);
-      const activeDel = deliveries.filter(p => p.status !== '已完成');
+      const activeDel = deliveries.filter(p => {
+        const created = new Date(p.createdAt);
+        if (created > mEnd) return false;
+        if (p.status === '已完成') {
+          const node15 = (p.nodes||[]).find((n: any) => n.nodeNo === 15);
+          const doneDate = node15?.actualDate ? new Date(node15.actualDate) : new Date(p.updatedAt);
+          if (doneDate < mStart) return false;
+        }
+        return true;
+      });
+      const monthDelivered = deliveries.filter(p => {
+        const node15 = (p.nodes||[]).find((n: any) => n.nodeNo === 15);
+        if (!node15 || (node15.status !== 'completed' && node15.status !== 'delayed')) return false;
+        const d = new Date(node15.actualDate || p.updatedAt);
+        return d >= mStart && d <= mEnd;
+      });
       const winCnt = monthWins.length, lossCnt = monthLosses.length;
-      const total = winCnt + lossCnt;
       return {
         amt: monthOpps.reduce((s, o) => s + exAmount(o.amount, o.taxRate), 0), cnt: monthOpps.length,
         winAmt: monthWins.reduce((s, o) => s + exAmount(o.amount, o.taxRate), 0), winCnt,
         newAmt: monthNew.reduce((s, o) => s + exAmount(o.amount, o.taxRate), 0), newCnt: monthNew.length,
-        winRate: total > 0 ? Math.round(winCnt / total * 100) : 0,
         delAmt: activeDel.reduce((s, p) => s + exAmount(p.contractAmount), 0), delCnt: activeDel.length,
+        deliveredAmt: monthDelivered.reduce((s, p) => s + exAmount(p.contractAmount), 0),
+        deliveredCnt: monthDelivered.length,
       };
     };
     return [calcMonth(1), calcMonth(2), calcMonth(3)];
@@ -284,15 +299,36 @@ const Dashboard: React.FC = () => {
     return map[cat] || { label: cat, color: COLORS.textSecondary };
   };
 
+  const currentFy = useMemo(() => {
+    const y = now.getFullYear(), m = now.getMonth();
+    const y1 = m >= 6 ? y : y - 1;
+    const y2 = m >= 6 ? y + 1 : y;
+    return `FY${String(y1 % 100).padStart(2, '0')}${String(y2 % 100).padStart(2, '0')}`;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const deliveryStats = useMemo(() => {
     const allNodes = deliveries.flatMap(p => p.nodes || []);
+    // 项目延期判断（以第15节点为准，与 DeliveryDetail 一致）
+    // 项目延期判断：仅在项目进行中且已过基准截止日期时算延期中
+    const getProjDelayedAt = (p: typeof deliveries[0], refDate: Date): boolean => {
+      const node15 = (p.nodes||[]).find((n: any) => n.nodeNo === 15);
+      if (!node15 || node15.status === 'completed') return false; // 已完成不算延期
+      const baseline = node15.baselineEndDate || node15.baselinePlannedEndDate || node15.plannedEndDate;
+      return !!baseline && new Date(baseline) <= refDate;
+    };
     const getStatusInMonth = (p: typeof deliveries[0], monthEnd: Date): string | null => {
-      if (new Date(p.createdAt) > monthEnd) return null;
-      if (new Date(p.updatedAt) <= monthEnd) return p.status;
+      const created = new Date(p.createdAt);
+      if (created > monthEnd) return null;
+      const node15 = (p.nodes||[]).find((n: any) => n.nodeNo === 15);
+      if (node15?.actualDate && new Date(node15.actualDate) <= monthEnd) return '已完成';
+      if (getProjDelayedAt(p, monthEnd)) return '已延期';
       return '进行中';
     };
     const changedThisMonth = (p: typeof deliveries[0], monthEnd: Date): boolean => {
-      const d = new Date(p.updatedAt);
+      const node15 = (p.nodes||[]).find((n: any) => n.nodeNo === 15);
+      if (!node15?.actualDate) return false;
+      const d = new Date(node15.actualDate);
       const monthStart = new Date(monthEnd.getFullYear(), monthEnd.getMonth(), 1);
       return d >= monthStart && d <= monthEnd;
     };
@@ -327,7 +363,22 @@ const Dashboard: React.FC = () => {
         nodeStatus.push({ label: monthLabels[3 - mi], value: count, color: nodeStColors[si] });
       }
     }
-    const onTimeRate = deliveries.map(p => {
+    const fyRange = parseFY(currentFy);
+    const inFyDels = deliveries.filter(p => {
+      const created = new Date(p.createdAt);
+      if (created > fyRange.end) return false;
+      const node15 = (p.nodes||[]).find((n: any) => n.nodeNo === 15);
+      let effEnd: Date;
+      if (node15?.actualDate) {
+        effEnd = new Date(node15.actualDate);
+      } else if (p.status === '已完成' || p.status === '已延期') {
+        effEnd = new Date(p.updatedAt);
+      } else {
+        effEnd = new Date();
+      }
+      return effEnd >= fyRange.start;
+    });
+    const onTimeRate = inFyDels.map(p => {
       const done = (p.nodes || []).filter(n => n.status === 'completed' || n.status === 'delayed');
       const delayed = done.filter(n => n.status === 'delayed').length;
       const onTime = done.length - delayed;
@@ -335,7 +386,7 @@ const Dashboard: React.FC = () => {
       return {
         label: p.clientName.length > 5 ? p.clientName.slice(0, 4) + '…' : p.clientName,
         value: rate,
-        color: rate >= 90 ? COLORS.success : rate >= 70 ? COLORS.warning : COLORS.danger,
+        color: p.status === '已完成' ? COLORS.chartGray : (rate >= 90 ? COLORS.success : rate >= 70 ? COLORS.warning : COLORS.danger),
       };
     });
     const getEstProfit = (p: typeof deliveries[0]) => {
@@ -371,19 +422,14 @@ const Dashboard: React.FC = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deliveries, quotations]);
 
-  const currentFy = useMemo(() => {
-    const y = now.getFullYear(), m = now.getMonth();
-    const y1 = m >= 6 ? y : y - 1;
-    const y2 = m >= 6 ? y + 1 : y;
-    return `FY${String(y1 % 100).padStart(2, '0')}${String(y2 % 100).padStart(2, '0')}`;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+
 
   const fyTrend = useMemo(() => {
     const fyRange = parseFY(currentFy);
     const fyOpps = opportunities.filter(o => {
-      const d = new Date(o.createdAt);
-      return d >= fyRange.start && d <= fyRange.end;
+      const created = new Date(o.createdAt);
+      const effectiveEnd = (o.status === '过程中' || o.status === '冻结') ? new Date() : new Date(o.updatedAt);
+      return created <= fyRange.end && effectiveEnd >= fyRange.start;
     });
     const monthLabels = ['Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar','Apr','May','Jun'];
     return Array.from({ length: 12 }, (_, i) => {
@@ -417,6 +463,15 @@ const Dashboard: React.FC = () => {
     return sorted.slice(0, 6).map(([label, value], i) => ({ label, value, color: colors[i] || COLORS.chartGray }));
   }, [clients, opportunities, currentFy]);
 
+  // −− 当前交付中快照（未完成的项目，不过滤月份）−−
+  const currentActiveDel = useMemo(() => {
+    const active = deliveries.filter(p => p.status !== '已完成');
+    return {
+      amt: active.reduce((s, p) => s + exAmount(p.contractAmount), 0),
+      cnt: active.length,
+    };
+  }, [deliveries]);
+
   return (
     <div className="dashboard-container">
       {/* ── 标题 ── */}
@@ -426,30 +481,30 @@ const Dashboard: React.FC = () => {
 
       {/* ── KPI 卡片行（等宽铺满，与销售分析一致） ── */}
       <div style={{ display: 'flex', gap: 16, marginBottom: 10 }}>
-        <KpiCard label="销售机会" value={`${fmtK(monthlyKpi[0].amt)} / ${monthlyKpi[0].cnt}`} color={COLORS.primary} icon="📊"
+        <KpiCard label="上月机会" value={`${fmtK(monthlyKpi[0].amt)} / ${monthlyKpi[0].cnt}`} color={COLORS.primary} icon="📊"
           prevValues={[
             { value: `${fmtK(monthlyKpi[1].amt)} / ${monthlyKpi[1].cnt}`, color: COLORS.primary },
             { value: `${fmtK(monthlyKpi[2].amt)} / ${monthlyKpi[2].cnt}`, color: COLORS.primary },
           ]} />
-        <KpiCard label="本月赢单" value={`${fmtK(monthlyKpi[0].winAmt)} / ${monthlyKpi[0].winCnt}`} color={COLORS.success} icon="🏆"
+        <KpiCard label="上月赢单" value={`${fmtK(monthlyKpi[0].winAmt)} / ${monthlyKpi[0].winCnt}`} color={COLORS.success} icon="🏆"
           prevValues={[
             { value: `${fmtK(monthlyKpi[1].winAmt)} / ${monthlyKpi[1].winCnt}`, color: COLORS.success },
             { value: `${fmtK(monthlyKpi[2].winAmt)} / ${monthlyKpi[2].winCnt}`, color: COLORS.success },
           ]} />
-        <KpiCard label="新增机会" value={`${fmtK(monthlyKpi[0].newAmt)} / ${monthlyKpi[0].newCnt}`} color={COLORS.amber} icon="✨"
+        <KpiCard label="上月新增" value={`${fmtK(monthlyKpi[0].newAmt)} / ${monthlyKpi[0].newCnt}`} color={COLORS.amber} icon="✨"
           prevValues={[
             { value: `${fmtK(monthlyKpi[1].newAmt)} / ${monthlyKpi[1].newCnt}`, color: COLORS.amber },
             { value: `${fmtK(monthlyKpi[2].newAmt)} / ${monthlyKpi[2].newCnt}`, color: COLORS.amber },
           ]} />
-        <KpiCard label="赢单率" value={`${monthlyKpi[0].winRate}%`} color={monthlyKpi[0].winRate >= 50 ? COLORS.success : COLORS.warning} icon="🎯"
+        <KpiCard label="上月交付" value={`${fmtK(monthlyKpi[0].deliveredAmt)} / ${monthlyKpi[0].deliveredCnt}`} color={COLORS.success} icon="🚚"
           prevValues={[
-            { value: `${monthlyKpi[1].winRate}%`, color: monthlyKpi[1].winRate >= 50 ? COLORS.success : COLORS.warning },
-            { value: `${monthlyKpi[2].winRate}%`, color: monthlyKpi[2].winRate >= 50 ? COLORS.success : COLORS.warning },
+            { value: `${fmtK(monthlyKpi[1].deliveredAmt)} / ${monthlyKpi[1].deliveredCnt}`, color: COLORS.success },
+            { value: `${fmtK(monthlyKpi[2].deliveredAmt)} / ${monthlyKpi[2].deliveredCnt}`, color: COLORS.success },
           ]} />
-        <KpiCard label="交付中" value={`${fmtK(monthlyKpi[0].delAmt)} / ${monthlyKpi[0].delCnt}`} color={COLORS.purple} icon="🚧"
+        <KpiCard label="交付中" value={`${fmtK(currentActiveDel.amt)} / ${currentActiveDel.cnt}`} color={COLORS.purple} icon="🚧"
           prevValues={[
+            { value: `${fmtK(monthlyKpi[0].delAmt)} / ${monthlyKpi[0].delCnt}`, color: COLORS.purple },
             { value: `${fmtK(monthlyKpi[1].delAmt)} / ${monthlyKpi[1].delCnt}`, color: COLORS.purple },
-            { value: `${fmtK(monthlyKpi[2].delAmt)} / ${monthlyKpi[2].delCnt}`, color: COLORS.purple },
           ]} />
       </div>
 
