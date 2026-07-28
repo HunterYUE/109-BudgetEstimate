@@ -182,7 +182,7 @@ const DeliveryNodeTimeline: React.FC<Props> = ({
                         background: '#fff', border: `1px solid ${COLORS.borderInput}`, borderRadius: 4,
                         minWidth: 72, boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
                       }}>
-                        {(node.status === 'pending' ? ['in_progress'] : node.status === 'in_progress' ? ['completed'] : node.status === 'delayed' ? ['completed', 'in_progress'] : ['pending', 'in_progress']).map(st => (
+                        {(node.status === 'pending' ? ['in_progress'] : node.status === 'in_progress' ? ['completed'] : node.status === 'delayed' ? ['completed', 'in_progress'] : ['in_progress']).map(st => (
                           <div key={st} onClick={() => { onNodeStatusClick?.(node.id, st); setStatusDropdown(null); }}
                             style={{
                               padding: '4px 12px', cursor: 'pointer', fontSize: 12,

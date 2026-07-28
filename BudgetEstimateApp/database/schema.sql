@@ -475,6 +475,21 @@ CREATE INDEX IF NOT EXISTS idx_delivery_nodes_project_id ON delivery_nodes(deliv
 COMMENT ON COLUMN delivery_nodes.history IS '变更历史：[{"id":"...","field":"status","oldValue":"...","newValue":"...","changedAt":"..."}]';
 
 -- ============================================================
+-- 14.5 交付文件（Delivery Files）
+-- ============================================================
+CREATE TABLE IF NOT EXISTS delivery_files (
+  id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  delivery_project_id UUID NOT NULL REFERENCES delivery_projects(id) ON DELETE CASCADE,
+  file_type           VARCHAR(50) NOT NULL,
+  file_name           VARCHAR(255) NOT NULL,
+  file_size           INTEGER NOT NULL,
+  file_path           TEXT NOT NULL,
+  created_at          TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_delivery_files_project ON delivery_files(delivery_project_id);
+
+-- ============================================================
 -- 15. 客户（Client）
 -- ============================================================
 CREATE TABLE IF NOT EXISTS clients (

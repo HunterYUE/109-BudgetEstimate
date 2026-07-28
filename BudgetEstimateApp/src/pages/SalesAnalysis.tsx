@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { Card, Spin, message } from 'antd';
 import type { SalesOpportunity, QuotationSummary, DeliveryProject } from '../types';
 import { parseReasons, REASON_TAXONOMY } from '../reasonTaxonomy';
@@ -10,6 +10,7 @@ import { COLORS } from '../styles/colors';
 import { computeDeliveryEstGP3 } from '../utils/calculations';
 import { parseFY, FYSelector } from '../utils/fiscalYear';
 import { fmtK, loadQuotationGroups, preloadQuotationGroupsBatch } from '../utils/analysisShared';
+import { settingsService } from '../services/settingsService';
 
 /* ============================================================
    常量
@@ -127,6 +128,16 @@ const SalesAnalysis: React.FC = () => {
     if (ids.length > 0) preloadQuotationGroupsBatch(ids).then(() => setPreloadReady(v => v + 1));
   }, [deliveryProjects]);
 
+  // ── 从服务端加载用户设置（年度目标等）──
+  useEffect(() => {
+    if (loading) return;
+    settingsService.get().then(settings => {
+      if (settings.saAnnualTarget) setAnnualTargetInput(settings.saAnnualTarget);
+      if (settings.saTargetGP3) setGp3Input(settings.saTargetGP3);
+      if (settings.saAnnualSalesTarget) setAnnualSalesTarget(settings.saAnnualSalesTarget);
+    }).catch(() => {});
+  }, [loading]);
+
   // ── 报价估算缓存（避免重复调用 loadQuotationGroups）──
   const projectEstimates = useMemo(() => {
     void preloadReady;
@@ -143,23 +154,52 @@ const SalesAnalysis: React.FC = () => {
   const fyFiltered = useFyFiltered(allOpps, fySelect);
 
   // ── 年度订单指标 + 目标GP3 ──
-  const [annualTargetInput, setAnnualTargetInput] = useState(() => { try { return localStorage.getItem('sa_annualTarget') || ''; } catch { return ''; } });
+  const [annualTargetInput, setAnnualTargetInput] = useState(() => { try { return localStorage.getItem('saAnnualTarget') || ''; } catch { return ''; } });
   const [targetEditing, setTargetEditing] = useState(false);
   const targetRef = React.useRef<HTMLInputElement>(null);
-  const [gp3Input, setGp3Input] = useState(() => { try { return localStorage.getItem('sa_targetGP3') || ''; } catch { return ''; } });
+  const [gp3Input, setGp3Input] = useState(() => { try { return localStorage.getItem('saTargetGP3') || ''; } catch { return ''; } });
   const [orderGp3Editing, setOrderGp3Editing] = useState(false);
   const orderGp3Ref = React.useRef<HTMLInputElement>(null);
   const [salesGp3Editing, setSalesGp3Editing] = useState(false);
   const salesGp3Ref = React.useRef<HTMLInputElement>(null);
   // ── 月度销售指标 ──
-  const [annualSalesTarget, setAnnualSalesTarget] = useState(() => { try { return localStorage.getItem('sa_annualSalesTarget') || ''; } catch { return ''; } });
+  const [annualSalesTarget, setAnnualSalesTarget] = useState(() => { try { return localStorage.getItem('saAnnualSalesTarget') || ''; } catch { return ''; } });
   const [salesTargetEditing, setSalesTargetEditing] = useState(false);
   const salesTargetRef = React.useRef<HTMLInputElement>(null);
-  const saveSalesTarget = (v: string) => { setAnnualSalesTarget(v); try { localStorage.setItem('sa_annualSalesTarget', v); } catch (e) { console.warn('[SalesAnalysis] 保存销售指标失败:', e); }; };
+  // 保存到 localStorage + 服务端持久化
+  const settingsRef = useRef({ annualTargetInput, gp3Input, annualSalesTarget });
+  settingsRef.current = { annualTargetInput, gp3Input, annualSalesTarget };
 
-  // 保存到 localStorage
-  const saveAnnualTarget = (v: string) => { setAnnualTargetInput(v); try { localStorage.setItem('sa_annualTarget', v); } catch (e) { console.warn('[SalesAnalysis] 保存年度订单目标失败:', e); }; };
-  const saveGp3 = (v: string) => { setGp3Input(v); try { localStorage.setItem('sa_targetGP3', v); } catch (e) { console.warn('[SalesAnalysis] 保存GP3目标失败:', e); }; };
+  const saveToServer = useCallback(() => {
+    const cur = settingsRef.current;
+    const payload: Record<string, string> = {};
+    if (cur.annualTargetInput) payload.saAnnualTarget = cur.annualTargetInput;
+    if (cur.gp3Input) payload.saTargetGP3 = cur.gp3Input;
+    if (cur.annualSalesTarget) payload.saAnnualSalesTarget = cur.annualSalesTarget;
+    if (Object.keys(payload).length > 0) {
+      settingsService.save(payload).catch(e => console.warn('[Settings] 保存到服务端失败:', e));
+    }
+  }, []); // 空依赖：通过 ref 读取最新值
+
+  const saveSalesTarget = (v: string) => {
+    setAnnualSalesTarget(v);
+    try { localStorage.setItem('saAnnualSalesTarget', v); } catch (e) { console.warn('[SalesAnalysis] 保存销售指标失败:', e); };
+    clearTimeout((window as any)._settingsTimer);
+    (window as any)._settingsTimer = setTimeout(saveToServer, 3000);
+  };
+
+  const saveAnnualTarget = (v: string) => {
+    setAnnualTargetInput(v);
+    try { localStorage.setItem('saAnnualTarget', v); } catch (e) { console.warn('[SalesAnalysis] 保存年度订单目标失败:', e); };
+    clearTimeout((window as any)._settingsTimer);
+    (window as any)._settingsTimer = setTimeout(saveToServer, 3000);
+  };
+  const saveGp3 = (v: string) => {
+    setGp3Input(v);
+    try { localStorage.setItem('saTargetGP3', v); } catch (e) { console.warn('[SalesAnalysis] 保存GP3目标失败:', e); };
+    clearTimeout((window as any)._settingsTimer);
+    (window as any)._settingsTimer = setTimeout(saveToServer, 3000);
+  };
 
   // ── 预解析目标输入值（避免渲染中重复 parseInt）──
   const parsedAnnualTarget = useMemo(() => safeParseInt(annualTargetInput), [annualTargetInput]);
@@ -255,47 +295,33 @@ const SalesAnalysis: React.FC = () => {
     return { cumulative, expectedCumulative, profitCumulative, expectedProfitCumulative, elapsedMonths, annualProfitTarget, gp3: parsedGp3 };
   }, [monthlyOrderData, parsedAnnualTarget, parsedGp3, elapsedMonths]);
 
-  // ── 过去12个月范围 ──
-  const past12mRange = useMemo(() => {
-    const now = new Date();
-    const end = new Date(now.getFullYear(), now.getMonth(), 0);
-    const start = new Date(end);
-    start.setFullYear(start.getFullYear() - 1);
-    start.setMonth(start.getMonth() + 1);
-    start.setDate(1);
-    return { start, end };
-  }, []);
-
   // ── 当前活跃管道（不过滤财年，仅 status='过程中'）──
   const currentPipeline = useMemo(() =>
     allOpps.filter(o => o.status === '过程中'),
   [allOpps]);
 
-  // ── 过去12个月活跃的机会（用于转化率等）──
-  const past12mOpps = useMemo(() => {
-    const r = past12mRange;
-    return allOpps.filter(o => {
-      const created = new Date(o.createdAt);
-      const updated = new Date(o.updatedAt);
-      return created <= r.end && updated >= r.start;
-    });
-  }, [past12mRange, allOpps]);
-
   // ── 漏斗：当前快照 ──
-  const funnelSnapshot = useMemo(() =>
-    STAGES.map(stage => ({
+  const funnelSnapshot = useMemo(() => {
+    const byStage = new Map<string, { count: number; amount: number }>();
+    for (const s of STAGES) byStage.set(s, { count: 0, amount: 0 });
+    for (const o of currentPipeline) {
+      const entry = byStage.get(o.stage);
+      if (entry) { entry.count++; entry.amount += o.amount; }
+    }
+    return STAGES.map(stage => ({
       stage,
-      count: currentPipeline.filter(o => o.stage === stage).length,
-      amount: currentPipeline.filter(o => o.stage === stage).reduce((s, o) => s + o.amount, 0),
+      count: byStage.get(stage)!.count,
+      amount: byStage.get(stage)!.amount,
       color: stageColors[stage] || COLORS.textLight,
-    })), [currentPipeline]);
+    }));
+  }, [currentPipeline]);
 
-  // ── 中标（按赢单时间 updatedAt 归入财年）──
+  // ── 中标（按转交付时间 wonAt 归入财年，与其他卡片赢单标准一致）──
   const fyWonByTime = useMemo(() => {
     const fyRange = parseFY(fySelect);
     return allOpps.filter(o => {
-      if (o.status !== '赢') return false;
-      const d = new Date(o.wonAt || o.updatedAt);
+      if (!o.wonAt) return false;
+      const d = new Date(o.wonAt);
       return d >= fyRange.start && d <= fyRange.end;
     });
   }, [fySelect, allOpps]);
@@ -355,7 +381,7 @@ const SalesAnalysis: React.FC = () => {
     const fyRange = parseFY(fySelect);
     return allOpps.filter(o => {
       if (o.status !== '输') return false;
-      const d = new Date(o.updatedAt);
+      const d = new Date(o.lostAt || o.updatedAt);
       return d >= fyRange.start && d <= fyRange.end;
     });
   }, [fySelect, allOpps]);
@@ -373,35 +399,38 @@ const SalesAnalysis: React.FC = () => {
   }, [fySelect, allOpps]);
 
   const fyLead = useMemo(() => {
-    const items = fyFiltered.filter(o => stageIdx(o.stage) >= stageIdx('线索') || o.status === '赢');
+    const items = fyFiltered.filter(o => stageIdx(o.stage) >= stageIdx('线索') || o.wonAt);
     return { count: items.length, amount: items.reduce((s, o) => s + o.amount, 0) };
   }, [fyFiltered]);
 
   const fyOpp = useMemo(() => {
-    const items = fyFiltered.filter(o => stageIdx(o.stage) >= stageIdx('机会') || o.status === '赢');
+    const items = fyFiltered.filter(o => stageIdx(o.stage) >= stageIdx('机会') || o.wonAt);
     return { count: items.length, amount: items.reduce((s, o) => s + o.amount, 0) };
   }, [fyFiltered]);
 
-  // ── 过去12个月各阶段汇总（用于转化率）──
-  const p12mInfo = useMemo(() => ({
-    count: past12mOpps.length,
-    amount: past12mOpps.reduce((s, o) => s + o.amount, 0),
-  }), [past12mOpps]);
-
-  const p12mLead = useMemo(() => {
-    const items = past12mOpps.filter(o => stageIdx(o.stage) >= stageIdx('线索') || o.status === '赢');
-    return { count: items.length, amount: items.reduce((s, o) => s + o.amount, 0) };
-  }, [past12mOpps]);
-
-  const p12mOpp = useMemo(() => {
-    const items = past12mOpps.filter(o => stageIdx(o.stage) >= stageIdx('机会') || o.status === '赢');
-    return { count: items.length, amount: items.reduce((s, o) => s + o.amount, 0) };
-  }, [past12mOpps]);
-
-  const p12mWon = useMemo(() => {
-    const items = past12mOpps.filter(o => o.status === '赢');
-    return { count: items.length, amount: items.reduce((s, o) => s + o.amount, 0) };
-  }, [past12mOpps]);
+  // ── 滚动12个月指标（销售周期、赢单转化率，用于概览卡片）──
+  const rolling12mKpi = useMemo(() => {
+    const now = new Date();
+    const calcWindow = (offset: number) => {
+      // 12个月窗口：结束于 offset 个月前最后一天
+      const wEnd = new Date(now.getFullYear(), now.getMonth() - offset + 1, 0);
+      const wStart = new Date(wEnd);
+      wStart.setFullYear(wStart.getFullYear() - 1);
+      wStart.setDate(1);
+      const won = allOpps.filter(o =>
+        o.wonAt && new Date(o.wonAt) >= wStart && new Date(o.wonAt) <= wEnd
+      );
+      const lost = allOpps.filter(o =>
+        o.status === '输' && new Date(o.lostAt || o.updatedAt) >= wStart && new Date(o.lostAt || o.updatedAt) <= wEnd
+      );
+      const cycle = won.length > 0 ? Math.round(won.reduce((s, o) => {
+        return s + Math.round((new Date(o.wonAt).getTime() - new Date(o.createdAt).getTime()) / (1000 * 60 * 60 * 24));
+      }, 0) / won.length) : 0;
+      const total = won.length + lost.length;
+      return { salesCycle: cycle, leadToWonRate: total > 0 ? won.length / total * 100 : 0, wonDecided: total };
+    };
+    return [calcWindow(1), calcWindow(2), calcWindow(3)];
+  }, [allOpps]);
 
   // ── 按月 KPI（最近3个完整月） ──
   const monthlyKpi = useMemo(() => {
@@ -410,13 +439,13 @@ const SalesAnalysis: React.FC = () => {
       const d = new Date(now.getFullYear(), now.getMonth() - offset, 1);
       const monthStart = new Date(d.getFullYear(), d.getMonth(), 1);
       const monthEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0);
-      const activeOpps = fyFiltered.filter(o => {
+      const activeOpps = allOpps.filter(o => {
         const created = new Date(o.createdAt);
         const effectiveEnd = (o.status === '过程中' || o.status === '冻结') ? new Date() : new Date(o.updatedAt);
         return created <= monthEnd && effectiveEnd >= monthStart;
       });
-      const wonOpps = activeOpps.filter(o => o.status === '赢' && new Date(o.wonAt || o.updatedAt) >= monthStart && new Date(o.wonAt || o.updatedAt) <= monthEnd);
-      const lostOpps = activeOpps.filter(o => o.status === '输' && new Date(o.updatedAt) >= monthStart && new Date(o.updatedAt) <= monthEnd);
+      const wonOpps = activeOpps.filter(o => o.wonAt && new Date(o.wonAt) >= monthStart && new Date(o.wonAt) <= monthEnd);
+      const lostOpps = activeOpps.filter(o => o.status === '输' && new Date(o.lostAt || o.updatedAt) >= monthStart && new Date(o.lostAt || o.updatedAt) <= monthEnd);
       const pipelineOpps = activeOpps.filter(o => (o.status === '过程中' || o.status === '冻结') && stageIdx(o.stage) >= stageIdx('机会'));
       let weighted = 0, profit = 0;
       for (const o of pipelineOpps) {
@@ -426,14 +455,14 @@ const SalesAnalysis: React.FC = () => {
         profit += Math.round(w * (q ? (q.profitRate ?? 0) / 100 : 0.15));
       }
       const cycle = wonOpps.length > 0 ? Math.round(wonOpps.reduce((s, o) => {
-        return s + Math.round((new Date(o.wonAt || o.updatedAt).getTime() - new Date(o.createdAt).getTime()) / (1000 * 60 * 60 * 24));
+        return s + Math.round((new Date(o.wonAt).getTime() - new Date(o.createdAt).getTime()) / (1000 * 60 * 60 * 24));
       }, 0) / wonOpps.length) : 0;
       const total = wonOpps.length + lostOpps.length;
       const convRate = total > 0 ? wonOpps.length / total * 100 : 0;
-      return { weightedPipeline: weighted, weightedProfit: profit, weightedProfitRate: weighted > 0 ? profit / weighted * 100 : 0, salesCycle: cycle, leadToWonRate: convRate };
+      return { weightedPipeline: weighted, weightedProfit: profit, weightedProfitRate: weighted > 0 ? profit / weighted * 100 : 0, salesCycle: cycle, leadToWonRate: convRate, wonDecided: total };
     };
     return [calcMonth(1), calcMonth(2), calcMonth(3)];
-  }, [fyFiltered, quotationSummaries]);
+  }, [allOpps, quotationSummaries]);
 
   // ── 输单原因柱状图（按输单时间归入财年）──
   /** 抽取指定分组的原因统计柱状图数据 */
@@ -475,23 +504,24 @@ const SalesAnalysis: React.FC = () => {
   const salesmenStats = useMemo(() => {
     const map = new Map<string, {
       name: string; wins: number; orderAmount: number; totalAmount: number;
-      pipelinePotential: number; profitTotal: number;
+      pipelinePotential: number; profitTotal: number; totalCount: number;
     }>();
     // 订单金额/利润：财年赢单（按 time 归入）
     for (const o of fyWonByTime) {
       if (!o.salesman) continue;
       let s = map.get(o.salesman);
-      if (!s) { s = { name: o.salesman, wins: 0, orderAmount: 0, totalAmount: 0, pipelinePotential: 0, profitTotal: 0 }; map.set(o.salesman, s); }
+      if (!s) { s = { name: o.salesman, wins: 0, orderAmount: 0, totalAmount: 0, pipelinePotential: 0, profitTotal: 0, totalCount: 0 }; map.set(o.salesman, s); }
       s.wins++;
       s.orderAmount += o.amount;
     }
     for (const o of fyFiltered) {
       if (!o.salesman) continue;
       let s = map.get(o.salesman);
-      if (!s) { s = { name: o.salesman, wins: 0, orderAmount: 0, totalAmount: 0, pipelinePotential: 0, profitTotal: 0 }; map.set(o.salesman, s); }
+      if (!s) { s = { name: o.salesman, wins: 0, orderAmount: 0, totalAmount: 0, pipelinePotential: 0, profitTotal: 0, totalCount: 0 }; map.set(o.salesman, s); }
       s.totalAmount += o.amount;
-      // 利润：仅对已赢单累加
-      if (o.status === '赢') {
+      s.totalCount++;
+      // 利润：仅对已转交付（有 wonAt）的机会累加
+      if (o.wonAt) {
         let profitRate = 0.15;
         if (o.quotationId) {
           const q = (quotationSummaries||[]).find(q => q.id === o.quotationId);
@@ -504,7 +534,7 @@ const SalesAnalysis: React.FC = () => {
     for (const o of currentPipeline) {
       if (!o.salesman) continue;
       let s = map.get(o.salesman);
-      if (!s) { s = { name: o.salesman, wins: 0, orderAmount: 0, pipelinePotential: 0, profitTotal: 0 }; map.set(o.salesman, s); }
+      if (!s) { s = { name: o.salesman, wins: 0, orderAmount: 0, totalAmount: 0, pipelinePotential: 0, profitTotal: 0, totalCount: 0 }; map.set(o.salesman, s); }
       const idx = stageIdx(o.stage);
       if (idx >= stageIdx('机会')) {
         s.pipelinePotential += Math.round(o.amount * o.winRate / 100);
@@ -513,7 +543,7 @@ const SalesAnalysis: React.FC = () => {
         return [...map.values()].map(s => ({
       ...s,
       avgOrderAmount: s.wins > 0 ? Math.round(s.orderAmount / s.wins) : 0,
-      conversionEff: s.totalAmount > 0 ? s.orderAmount / s.totalAmount * 100 : 0,
+      conversionEff: s.totalCount > 0 ? s.wins / s.totalCount * 100 : 0,
     }));
   }, [fyWonByTime, currentPipeline, quotationSummaries, fyFiltered]);
 
@@ -543,17 +573,23 @@ const SalesAnalysis: React.FC = () => {
         { value: `${monthlyKpi[1].weightedProfitRate.toFixed(1)}%`, color: monthlyKpi[1].weightedProfitRate >= 15 ? COLORS.success : COLORS.warning },
         { value: `${monthlyKpi[2].weightedProfitRate.toFixed(1)}%`, color: monthlyKpi[2].weightedProfitRate >= 15 ? COLORS.success : COLORS.warning },
       ] },
-    { label: '销售周期', value: `${monthlyKpi[0].salesCycle} 天`,
-      color: monthlyKpi[0].salesCycle > 0 && monthlyKpi[0].salesCycle <= 120 ? COLORS.success : COLORS.warning, icon: '⏱️',
+    { label: '销售周期',
+      value: rolling12mKpi[0].salesCycle > 0 ? `${rolling12mKpi[0].salesCycle} 天` : '—',
+      color: rolling12mKpi[0].salesCycle > 0 ? (rolling12mKpi[0].salesCycle <= 120 ? COLORS.success : COLORS.warning) : COLORS.textLight, icon: '⏱️',
       prevValues: [
-        { value: `${monthlyKpi[1].salesCycle} 天`, color: monthlyKpi[1].salesCycle > 0 && monthlyKpi[1].salesCycle <= 120 ? COLORS.success : COLORS.warning },
-        { value: `${monthlyKpi[2].salesCycle} 天`, color: monthlyKpi[2].salesCycle > 0 && monthlyKpi[2].salesCycle <= 120 ? COLORS.success : COLORS.warning },
+        { value: rolling12mKpi[1].salesCycle > 0 ? `${rolling12mKpi[1].salesCycle} 天` : '—',
+          color: rolling12mKpi[1].salesCycle > 0 ? (rolling12mKpi[1].salesCycle <= 120 ? COLORS.success : COLORS.warning) : COLORS.textLight },
+        { value: rolling12mKpi[2].salesCycle > 0 ? `${rolling12mKpi[2].salesCycle} 天` : '—',
+          color: rolling12mKpi[2].salesCycle > 0 ? (rolling12mKpi[2].salesCycle <= 120 ? COLORS.success : COLORS.warning) : COLORS.textLight },
       ] },
-    { label: '赢单转化率', value: `${monthlyKpi[0].leadToWonRate.toFixed(1)}%`,
-      color: monthlyKpi[0].leadToWonRate >= 20 ? COLORS.success : COLORS.warning, icon: '🎯',
+    { label: '赢单转化率',
+      value: rolling12mKpi[0].wonDecided > 0 ? `${rolling12mKpi[0].leadToWonRate.toFixed(1)}%` : '—',
+      color: rolling12mKpi[0].wonDecided > 0 ? (rolling12mKpi[0].leadToWonRate >= 20 ? COLORS.success : COLORS.warning) : COLORS.textLight, icon: '🎯',
       prevValues: [
-        { value: `${monthlyKpi[1].leadToWonRate.toFixed(1)}%`, color: monthlyKpi[1].leadToWonRate >= 20 ? COLORS.success : COLORS.warning },
-        { value: `${monthlyKpi[2].leadToWonRate.toFixed(1)}%`, color: monthlyKpi[2].leadToWonRate >= 20 ? COLORS.success : COLORS.warning },
+        { value: rolling12mKpi[1].wonDecided > 0 ? `${rolling12mKpi[1].leadToWonRate.toFixed(1)}%` : '—',
+          color: rolling12mKpi[1].wonDecided > 0 ? (rolling12mKpi[1].leadToWonRate >= 20 ? COLORS.success : COLORS.warning) : COLORS.textLight },
+        { value: rolling12mKpi[2].wonDecided > 0 ? `${rolling12mKpi[2].leadToWonRate.toFixed(1)}%` : '—',
+          color: rolling12mKpi[2].wonDecided > 0 ? (rolling12mKpi[2].leadToWonRate >= 20 ? COLORS.success : COLORS.warning) : COLORS.textLight },
       ] },
   ];
 
@@ -604,11 +640,11 @@ const SalesAnalysis: React.FC = () => {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginBottom: 2, minHeight: 18 }}>
             <span style={{ fontSize: 10, whiteSpace: 'nowrap', fontWeight: 700 }}>
               <span style={{ color: COLORS.purple }}>
-                {annualTargetInput && gp3Input ? `${monthlyCumulative.annualProfitTarget.toLocaleString()}` : '—'}
+                {annualTargetInput && gp3Input ? `${monthlyCumulative.annualProfitTarget.toLocaleString()}K` : '—'}
               </span>
               {annualTargetInput && gp3Input ? (
                 <span style={{ color: monthlyCumulative.profitCumulative >= monthlyCumulative.expectedProfitCumulative ? COLORS.purple : COLORS.danger, fontSize: 10 }}>
-                  &nbsp;{`(${Math.round(monthlyCumulative.profitCumulative / 1000).toLocaleString()}K)`}
+                  {`(${Math.round(monthlyCumulative.profitCumulative / 1000).toLocaleString()}K)`}
                 </span>
               ) : null}
             </span>
@@ -635,9 +671,8 @@ const SalesAnalysis: React.FC = () => {
               ({orderWeightedGP3 > 0 ? orderWeightedGP3.toFixed(1) : '—'})
             </span>
           </div>
-          <VerticalBarChart title="" data={monthlyOrderData} format="K" height={290} topN={12} barWidthRatio={0.6} maxBarWidth={120} contentOffset={25} chartWidth={620} disableSort padTop={32} cardBorder={false}
+          <VerticalBarChart title="" data={monthlyOrderData} format="K" height={260} topN={12} barWidthRatio={0.6} maxBarWidth={120} contentOffset={0} chartWidth={620} disableSort padTop={12} cardBorder={false}
             targetValue={annualTargetInput ? Math.round(parsedAnnualTarget * 1000 / 12) : undefined}
-            targetLabel={annualTargetInput ? `${Math.round(parsedAnnualTarget / 12)}K` : undefined}
           />
         </Card>
 
@@ -649,7 +684,6 @@ const SalesAnalysis: React.FC = () => {
           <SalesFunnel
             funnelData={funnelSnapshot}
             fyInfo={fyInfo} fyLead={fyLead} fyOpp={fyOpp} fyWon={fyWon}
-            convInfo={p12mInfo} convLead={p12mLead} convOpp={p12mOpp} convWon={p12mWon}
           />
         </Card>
 
@@ -684,11 +718,11 @@ const SalesAnalysis: React.FC = () => {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginBottom: 2, minHeight: 18 }}>
             <span style={{ fontSize: 10, whiteSpace: 'nowrap', fontWeight: 700 }}>
               <span style={{ color: COLORS.purple }}>
-                {annualSalesTarget && gp3Input ? `${salesCumulative.annualProfitTarget.toLocaleString()}` : '—'}
+                {annualSalesTarget && gp3Input ? `${salesCumulative.annualProfitTarget.toLocaleString()}K` : '—'}
               </span>
               {annualSalesTarget && gp3Input ? (
                 <span style={{ color: salesCumulative.profitCumulative >= salesCumulative.expectedProfitCumulative ? COLORS.purple : COLORS.danger, fontSize: 10 }}>
-                  &nbsp;{`(${Math.round(salesCumulative.profitCumulative / 1000).toLocaleString()}K)`}
+                  {`(${Math.round(salesCumulative.profitCumulative / 1000).toLocaleString()}K)`}
                 </span>
               ) : null}
             </span>
@@ -715,9 +749,8 @@ const SalesAnalysis: React.FC = () => {
               ({deliveredActualGP3 > 0 ? deliveredActualGP3.toFixed(1) : '—'})
             </span>
           </div>
-          <VerticalBarChart title="" data={monthlySalesData} format="K" height={290} topN={12} barWidthRatio={0.6} maxBarWidth={120} contentOffset={25} chartWidth={620} disableSort padTop={32} cardBorder={false}
+          <VerticalBarChart title="" data={monthlySalesData} format="K" height={260} topN={12} barWidthRatio={0.6} maxBarWidth={120} contentOffset={0} chartWidth={620} disableSort padTop={12} cardBorder={false}
             targetValue={annualSalesTarget ? Math.round(parsedSalesTarget * 1000 / 12) : undefined}
-            targetLabel={annualSalesTarget ? `${Math.round(parsedSalesTarget / 12)}K` : undefined}
           />
         </Card>
       </div>
@@ -725,9 +758,9 @@ const SalesAnalysis: React.FC = () => {
       {/* Row 3: 销售排行 4×2 网格 */}
       <div style={{ display: 'flex', flexDirection: 'column' }}>
         <div style={{ display: 'flex', gap: 16, justifyContent: 'center', marginTop: 10 }}>
-          <div style={{ flex: '0 0 calc(25% - 12px)' }}><VerticalBarChart title="竞对" data={dimLossReasons} format="num" height={220} topN={7} barWidthRatio={0.6} maxBarWidth={26} hideAvgLine contentOffset={30} padBottom={28} /></div>
-          <div style={{ flex: '0 0 calc(25% - 12px)' }}><VerticalBarChart title="取消" data={dimCancelReasons} format="num" height={220} topN={4} barWidthRatio={0.6} maxBarWidth={26} hideAvgLine contentOffset={30} padBottom={28} /></div>
-          <div style={{ flex: '0 0 calc(25% - 12px)' }}><VerticalBarChart title="放弃" data={dimAbandonReasons} format="num" height={220} topN={6} barWidthRatio={0.6} maxBarWidth={26} hideAvgLine contentOffset={30} padBottom={28} /></div>
+          <div style={{ flex: '0 0 calc(33.33% - 12px)' }}><VerticalBarChart title="竞对" data={dimLossReasons} format="num" height={220} topN={7} barWidthRatio={0.6} maxBarWidth={26} hideAvgLine contentOffset={30} padBottom={28} /></div>
+          <div style={{ flex: '0 0 calc(33.33% - 12px)' }}><VerticalBarChart title="取消" data={dimCancelReasons} format="num" height={220} topN={4} barWidthRatio={0.6} maxBarWidth={26} hideAvgLine contentOffset={30} padBottom={28} /></div>
+          <div style={{ flex: '0 0 calc(33.33% - 12px)' }}><VerticalBarChart title="放弃" data={dimAbandonReasons} format="num" height={220} topN={6} barWidthRatio={0.6} maxBarWidth={26} hideAvgLine contentOffset={30} padBottom={28} /></div>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 16, marginTop: 15, gridAutoRows: 270 }}>
           <VerticalBarChart title="订单金额" data={dimOrderAmount} format="K" contentOffset={35} />

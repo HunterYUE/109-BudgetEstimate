@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { query } from '../db/index.js';
 import { AppError } from '../middleware/index.js';
+import { requireRole } from '../middleware/auth.js';
 import { crudRoutes, objKeysToSnake } from './helpers.js';
 
 const fields = [
@@ -91,7 +92,9 @@ router.post('/', async (req, res, next) => {
       }
     }
   } catch (err) {
-    console.warn('[Approvals] 锁定机会/交付状态失败:', (err as Error).message);
+    // 锁定操作失败（plan_status / cost_status / promote_locked）→ 拒绝创建审批，
+    // 避免产生 opportunity_id 为 null 的不一致数据
+    return next(new AppError(500, `审批预检查失败: ${(err as Error).message}`));
   }
   // 将可能被自动填充逻辑修改过的 body 写回 req.body
   req.body = body;
@@ -150,6 +153,10 @@ router.post('/:id/records', async (req, res, next) => {
 
     const ar = (await query('SELECT * FROM approval_requests WHERE id = $1', [id])).rows[0];
     if (!ar) throw new AppError(404, 'Approval request not found');
+
+    if (!['director', 'admin'].includes(req.user?.role || '')) {
+      throw new AppError(403, '仅部门总监和管理员可审批');
+    }
 
     const record = (await query(
       `INSERT INTO approval_records (approval_request_id, reviewer, action, comment)
@@ -240,6 +247,14 @@ router.post('/:id/records', async (req, res, next) => {
 
     res.status(201).json(record);
   } catch (err) { next(err); }
+});
+
+// 标准 CRUD 更新/删除需角色验证
+router.use((req, res, next) => {
+  if (req.method === 'PUT' || req.method === 'DELETE') {
+    return requireRole('director', 'admin')(req, res, next);
+  }
+  next();
 });
 
 // 挂载标准 CRUD 路由（创建、读取单条、更新、删除）

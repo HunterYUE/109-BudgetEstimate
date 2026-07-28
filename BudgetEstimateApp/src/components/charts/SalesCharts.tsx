@@ -67,9 +67,9 @@ export const SalesFunnel: React.FC<FunnelProps> = ({ funnelData, fyInfo, fyLead,
   ];
 
   return (
-    <div style={{ position: 'relative', padding: '12px 0' }}>
-      <svg width="100%" height="360" viewBox="0 0 680 360" style={{ display: 'block' }}>
-        <g transform="translate(250, 40)">
+    <div style={{ position: 'relative', padding: '0' }}>
+      <svg width="100%" height="324" viewBox="0 0 680 324" style={{ display: 'block' }}>
+        <g transform="translate(260, 25)">
           {/* 漏斗填充 */}
           <polygon
             points={pts.map(p => `${-p.w / 2},${p.x} `).join('') +
@@ -175,12 +175,12 @@ export const VerticalBarChart: React.FC<{
   chartWidth?: number;
   disableSort?: boolean;
   targetValue?: number;
-  targetLabel?: string;
   padTop?: number;
   padBottom?: number;
   hideAvgLine?: boolean;
   cardBorder?: boolean;
-}> = ({ title, data, format = 'num', height = 220, topN = 10, contentOffset = 0, barWidthRatio = 0.55, maxBarWidth = 36, noCard, chartWidth = 460, disableSort, targetValue, targetLabel, padTop = 32, padBottom = 28, hideAvgLine, cardBorder = true }) => {
+  barLabelGap?: number;
+}> = ({ title, data, format = 'num', height = 220, topN = 10, contentOffset = 0, barWidthRatio = 0.55, maxBarWidth = 36, noCard, chartWidth = 460, disableSort, targetValue, padTop = 32, padBottom = 28, hideAvgLine, cardBorder = true, barLabelGap = 18 }) => {
   const working = disableSort ? data : [...data].sort((a, b) => b.value - a.value);
   const top = working.slice(0, topN);
   const rawMax = Math.max(...top.map(d => d.value), 0);
@@ -228,8 +228,6 @@ export const VerticalBarChart: React.FC<{
             <g>
               <line x1={pad.left} y1={tgtY} x2={W - pad.right} y2={tgtY}
                 stroke={COLORS.warning} strokeWidth={1} strokeDasharray="5,3" />
-              <text x={W - pad.right + 2} y={tgtY + 3}
-                textAnchor="start" fontSize={9} fill={COLORS.warning}>{targetLabel || fmtAxis(targetValue)}</text>
             </g>
           );
         })() : (!hideAvgLine && avg > 0 && data.some(d => d.value > 0) && (() => {
@@ -238,12 +236,7 @@ export const VerticalBarChart: React.FC<{
             <g>
               <line x1={pad.left} y1={avgY} x2={W - pad.right} y2={avgY}
                 stroke={COLORS.warning} strokeWidth={1} strokeDasharray="5,3" />
-              <text x={W - pad.right + 2} y={avgY + 3}
-                textAnchor="start" fontSize={9} fill={COLORS.warning}>{(() => {
-                if (format === 'K') return fmtAxis(avg);
-                if (format === '%') return avg.toFixed(1) + '%';
-                return String(Math.round(avg));
-              })()}</text>
+
             </g>
           );
         })())}
@@ -266,7 +259,7 @@ export const VerticalBarChart: React.FC<{
 
           return (
             <g key={item.name + '-' + i}>
-              <text x={cx} y={barTop - 18} textAnchor="middle" fontSize={10}
+              <text x={cx} y={barTop - barLabelGap} textAnchor="middle" fontSize={10}
                 fill={color} fontWeight={600}>{label}</text>
               {item.subValue != null && item.subValue > 0 && (
                 <text x={cx} y={barTop - 6} textAnchor="middle" fontSize={9}

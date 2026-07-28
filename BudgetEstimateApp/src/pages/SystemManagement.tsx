@@ -8,7 +8,7 @@ import { auditLogService, type AuditLog } from '../services/auditLogService';
 import type { TableProps } from 'antd';
 
 /** 新建用户的默认初始密码（建议用户在首次登录后修改） */
-const DEFAULT_USER_PASSWORD = '123456';
+const DEFAULT_USER_PASSWORD = 'ChangeMe@2024';
 
 /* ============================================================
    角色颜色映射
@@ -121,7 +121,7 @@ const SystemManagement: React.FC = () => {
 
   // 操作日志
   const [logs, setLogs] = useState<AuditLog[]>([]);
-  const [, setLogLoading] = useState(false);
+  const [, setLogLoading] = useState(false); // 只需要 setter，状态值未使用
   const [logModuleFilter, setLogModuleFilter] = useState<string | null>(null);
 
   const loadLogs = useCallback(async () => {

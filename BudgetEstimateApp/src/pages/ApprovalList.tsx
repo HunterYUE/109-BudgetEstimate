@@ -52,7 +52,6 @@ const ApprovalList: React.FC = () => {
   const [filter, setFilter] = useState<'draft' | 'pending' | 'done' | 'all' | 'mine'>('pending');
   const [searchText, setSearchText] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('');
-  const [detailModal, setDetailModal] = useState<ApprovalRequest | null>(null);
 
   const filtered = useMemo(() => {
     const q = searchText.toLowerCase();
@@ -359,23 +358,6 @@ const ApprovalList: React.FC = () => {
         )}
       </Modal>
 
-      {/* 详情 Modal */}
-      <Modal title="项目详情" open={!!detailModal} onCancel={() => setDetailModal(null)} footer={null} width={480}>
-        {detailModal && (
-          <div style={{ fontSize: 13 }}>
-            <div style={detailRow}><span style={detailLabel}>客户</span><span>{detailModal.clientName}</span></div>
-            <div style={detailRow}><span style={detailLabel}>项目</span><span>{detailModal.projectName}</span></div>
-            <div style={detailRow}><span style={detailLabel}>销售编号</span><span>{detailModal.salesNo}</span></div>
-            <div style={detailRow}><span style={detailLabel}>版本号</span><span>{detailModal.versionNo || '—'}</span></div>
-            <div style={detailRow}><span style={detailLabel}>预期售价</span><span>&yen;{formatMoney(detailModal.totalAccountingPrice)}</span></div>
-            <div style={detailRow}><span style={detailLabel}>折后报价</span><span>&yen;{formatMoney(detailModal.discountedPrice || 0)}{detailModal.discountRate !== undefined ? <span style={{ color: COLORS.textLight, marginLeft: 4 }}>({(() => { const v = (-detailModal.discountRate * 100); return (v > 0 ? '+' : '') + v.toFixed(1); })()}%)</span> : null}</span></div>
-            <div style={detailRow}><span style={detailLabel}>项目利润</span><span>&yen;{formatMoney(detailModal.gp3Amount || 0)} <span style={{ color: COLORS.textLight }}>(<Gauge value={detailModal.gp3 * 100} />%)</span></span></div>
-            <div style={detailRow}><span style={detailLabel}>提交人</span><span>{detailModal.submitter}</span></div>
-            <div style={detailRow}><span style={detailLabel}>提交时间</span><span>{formatBeijing(detailModal.submitTime)}</span></div>
-          </div>
-        )}
-      </Modal>
-
     </div>
   );
 };
@@ -383,14 +365,6 @@ const ApprovalList: React.FC = () => {
 const Gauge: React.FC<{ value: number }> = ({ value }) => {
   const color = value >= 20 ? COLORS.success : value >= 15 ? COLORS.amber : COLORS.danger;
   return <span style={{ fontWeight: 600, color }}>{value.toFixed(1)}</span>;
-};
-
-const detailRow: React.CSSProperties = {
-  display: 'flex', justifyContent: 'space-between', padding: '6px 0',
-  borderBottom: `1px solid ${COLORS.borderLight}`,
-};
-const detailLabel: React.CSSProperties = {
-  fontWeight: 600, color: COLORS.textSecondary, minWidth: 80,
 };
 
 export default ApprovalList;

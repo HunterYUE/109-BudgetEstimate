@@ -101,7 +101,7 @@ const AppLayout: React.FC = () => {
   const location = useLocation();
 
   const activeKey = MENU_ITEMS.find(item =>
-    item.key === '/' ? location.pathname === '/' : location.pathname.startsWith(item.key)
+    item.key === '/' ? location.pathname === '/' : (location.pathname === item.key || location.pathname.startsWith(item.key + '/'))
   )?.key || '/';
 
   return (

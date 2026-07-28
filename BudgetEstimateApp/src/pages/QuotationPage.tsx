@@ -600,7 +600,10 @@ const QuotationPage: React.FC = () => {
       };
       const savedVer = await projectService.saveVersion(project.id, updatedVersion);
       const savedVerId = savedVer.id;
-      // 注意：组数据已在 handleSave 中保存，此处不再重复保存，避免翻倍
+      // 保存组数据（与 handleSave 逻辑一致），确保审批时组数据是最新的
+      for (const g of project.groups) {
+        await projectService.saveGroup(project.id, savedVerId, { ...g, items: g.items });
+      }
       const synced = await quotationService.sync({
         projectId: project.id, versionNo: curVer.versionNo,
         salesNo: project.salesNo, clientName: project.clientName,

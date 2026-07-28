@@ -4,6 +4,7 @@ import { Popover } from 'antd';
 import { flattenTree, collectTagPaths } from '../utils/tagHelpers';
 import { tagService } from '../services/tagService';
 import { COLORS } from '../styles/colors';
+import type { TagNode } from '../types';
 
 const LEVEL_COLORS = [COLORS.labelDark, COLORS.primary, COLORS.purple, '#008080', '#d46b08'];
 
@@ -14,7 +15,7 @@ interface Props {
 
 const MaterialTagSelector: React.FC<Props> = ({ value, onChange }) => {
   const [open, setOpen] = useState(false);
-  const [tagTree, setTagTree] = useState<any[]>([]);
+  const [tagTree, setTagTree] = useState<TagNode[]>([]);
   useEffect(() => {
     tagService.getTree().then(data => { if (data) setTagTree(data); }).catch(() => {});
   }, []);

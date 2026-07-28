@@ -20,12 +20,15 @@ const ROLE_LABELS: Record<string, string> = {
   COACH: 'COACH',
 };
 
+/** crypto.randomUUID() 降级方案（不支持的环境回退到时间戳+随机数） */
+const safeId = () => { try { return crypto.randomUUID(); } catch { return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8); } };
+
 // ── 默认角色 ──
 function defaultRole(overrides?: Partial<BlueTableRole>): BlueTableRole {
   const roleType = overrides?.roleType || 'EB';
   const influence = overrides?.influence || 'medium';
   return {
-    id: 'role-' + crypto.randomUUID().slice(0, 6),
+    id: 'role-' + safeId().slice(0, 6),
     roleType,
     name: '',
     influence,

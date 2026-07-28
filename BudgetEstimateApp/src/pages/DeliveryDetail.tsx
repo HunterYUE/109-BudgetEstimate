@@ -364,8 +364,18 @@ const DeliveryDetail: React.FC = () => {
     setSubmitPlanOpen(true);
   }, [project, msg]);
 
-  const confirmSubmitPlan = useCallback(() => {
+  const confirmSubmitPlan = useCallback(async () => {
     if (!project) return;
+    // 先保存节点数据（防止用户编辑了计划时间后未点保存直接提交，导致变更丢失）
+    try {
+      const flushed = flushPendingDateChanges(project);
+      await deliveryService.saveNodes(project.id, flushed.nodes);
+      setProject(flushed);
+      setHasChanges(false);
+    } catch {
+      msg.error('保存节点数据失败，请重试');
+      return;
+    }
     const ver = quotationVersionFull;
     const totalAccountingPrice = ver?.totalAccountingPrice || 0;
     const discountedPrice = ver?.discountedPrice || 0;
@@ -399,7 +409,7 @@ const DeliveryDetail: React.FC = () => {
     }).catch((err: any) => {
       msg.error('提交审批失败：' + (err.message || '未知错误'));
     });
-  }, [project, msg, quotationVersionFull, quotationVersion, modifierName]);
+  }, [project, msg, quotationVersionFull, quotationVersion, modifierName, flushPendingDateChanges, deliveryService, setHasChanges]);
 
   const handleOpenSubmitCost = useCallback(() => {
     if (!project) return;

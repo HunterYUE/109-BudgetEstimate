@@ -130,6 +130,8 @@ export interface SalesOpportunity {
   updatedAt: string;
   /** 首次标记为'赢'的时间（后续编辑不覆盖） */
   wonAt?: string;
+  /** 首次标记为'输'的时间（后续编辑不覆盖），与 wonAt 对称 */
+  lostAt?: string;
   quotationId?: string;
   /** 是否存在报价（后端返回） */
   hasQuote?: boolean;

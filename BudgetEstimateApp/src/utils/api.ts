@@ -86,11 +86,16 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const token = getToken();
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
-  const res = await fetch(url, {
-    method: options?.method,
-    body: options?.body,
-    headers: { ...headers, ...(options?.headers as Record<string, string> || {}) },
-  });
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: options?.method,
+      body: options?.body,
+      headers: { ...headers, ...(options?.headers as Record<string, string> || {}) },
+    });
+  } catch (err) {
+    throw new ApiError(0, '网络请求失败：' + (err instanceof Error ? err.message : '未知错误'));
+  }
 
   // 401 token 过期 → 清除登录状态并跳转
   if (res.status === 401) {
@@ -115,7 +120,8 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     setCache(cacheKey, result);
   } else {
     // 非 GET 请求（POST/PUT/DELETE）清除相关前缀缓存
-    const resourcePrefix = path.split('/')[1] || path.split('/')[0] || '';
+    const resourcePrefix = path.split('?')[0].split('/')[1] || '';
+    if (!resourcePrefix) return result;
     clearCache('/' + resourcePrefix);
   }
 
@@ -143,26 +149,3 @@ export const api = {
     request<T>(path, { method: 'DELETE' }),
 };
 
-/* ---- 通用 CRUD 服务 ---- */
-
-/** 通用列表/详情查询 */
-export async function fetchList<T>(resource: string, params?: Record<string, string>): Promise<T[]> {
-  const qs = params ? '?' + new URLSearchParams(params).toString() : '';
-  return api.get<T[]>(`/${resource}${qs}`);
-}
-
-export async function fetchById<T>(resource: string, id: string): Promise<T> {
-  return api.get<T>(`/${resource}/${id}`);
-}
-
-export async function createItem<T>(resource: string, data: Partial<T>): Promise<T> {
-  return api.post<T>(`/${resource}`, data);
-}
-
-export async function updateItem<T>(resource: string, id: string, data: Partial<T>): Promise<T> {
-  return api.put<T>(`/${resource}/${id}`, data);
-}
-
-export async function deleteItem(resource: string, id: string): Promise<void> {
-  await api.delete(`/${resource}/${id}`);
-}

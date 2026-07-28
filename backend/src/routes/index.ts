@@ -12,7 +12,9 @@ import clients from './clients.js';
 import tags from './tags.js';
 import auditLogs from './auditLogs.js';
 import timerecording from './timerecording.js';
+import settings from './settings.js';
 import { query, getClient } from '../db/index.js';
+import type { PoolClient } from 'pg';
 import { AppError } from '../middleware/index.js';
 import { logAudit, objKeysToSnake } from './helpers.js';
 
@@ -37,6 +39,9 @@ router.use('/deliveries', requireAuth, deliveries);
 router.use('/clients', requireAuth, clients);
 router.use('/tags', requireAuth, tags);
 router.use('/audit-logs', requireAuth, requireRole('director', 'admin'), auditLogs);
+
+// 用户设置
+router.use('/settings', settings);
 
 // ── 项目版本保存 ──
 router.post('/project-versions', requireAuth, async (req, res, next) => {
@@ -98,7 +103,7 @@ router.post('/project-versions', requireAuth, async (req, res, next) => {
 
 // ── 项目组和明细保存（事务保护） ──
 router.post('/project-groups', requireAuth, async (req, res, next) => {
-  let client: any;
+  let client: PoolClient | undefined;
   try {
     client = await getClient();
     const body = objKeysToSnake(req.body);

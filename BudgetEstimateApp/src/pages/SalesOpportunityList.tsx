@@ -133,7 +133,11 @@ const SalesOpportunityList: React.FC = () => {
     setTabFilter(tab);
     localStorage.setItem('sales_tab_filter', tab);
   }, []);
-  const defaultFy = `FY${String(new Date().getFullYear() % 100).padStart(2,'0')}${String((new Date().getFullYear() + 1) % 100).padStart(2,'0')}`;
+  const now = new Date();
+  const y = now.getFullYear(), m = now.getMonth();
+  const y1 = m >= 6 ? y : y - 1;
+  const y2 = m >= 6 ? y + 1 : y;
+  const defaultFy = `FY${String(y1 % 100).padStart(2,'0')}${String(y2 % 100).padStart(2,'0')}`;
   const [fySelect, setFySelect] = useState(defaultFy);
   const [showTerminated, setShowTerminated] = useState(false);
 

@@ -7,7 +7,7 @@ const fields = [
   'id', 'sales_no', 'client_name', 'project_name', 'amount',
   'stage', 'win_rate', 'status', 'salesman', 'competitor', 'winner',
   'expected_close_date', 'notes', 'reasons', 'quotation_id',
-  'terminated', 'promote_locked', 'won_at', 'created_at', 'updated_at',
+  'terminated', 'promote_locked', 'won_at', 'lost_at', 'created_at', 'updated_at',
 ];
 
 // 标准 CRUD（不含 GET / 和 extra 中的自定义端点）
@@ -195,14 +195,27 @@ router.put('/:id', async (req, res, next) => {
     }
     // 通过检查后交给标准 CRUD PUT 处理（复用上面的 body 转换结果）
     const updateCols = fields.filter(f =>
-      !['id', 'created_at', 'updated_at', 'won_at'].includes(f) && body[f] !== undefined
+      !['id', 'created_at', 'updated_at', 'won_at', 'lost_at'].includes(f) && body[f] !== undefined
     );
     if (updateCols.length === 0) throw new AppError(400, '没有要更新的字段');
     let setClause = updateCols.map((f, i) => `"${f}" = $${i + 1}`).join(', ');
     const rawValues = updateCols.map(f => body[f]);
-    // 转交付时写入 won_at（后续编辑不覆盖），转交付确定性最高
-    if (body.terminated) {
+    // 状态变"赢"时写入 won_at（首次写入后不覆盖）
+    if (body.status === '赢') {
       setClause += `, won_at = COALESCE(won_at, now())`;
+    }
+    // 状态变"输"时写入 lost_at（首次写入后不覆盖）
+    if (body.status === '输') {
+      setClause += `, lost_at = COALESCE(lost_at, now())`;
+    }
+    // 转交付时补充写入（状态未变时也有机会采集）
+    if (body.terminated) {
+      const cur = (await query('SELECT status FROM sales_opportunities WHERE id = $1', [id])).rows[0];
+      if (cur?.status === '赢') {
+        setClause += `, won_at = COALESCE(won_at, now())`;
+      } else if (cur?.status === '输') {
+        setClause += `, lost_at = COALESCE(lost_at, now())`;
+      }
     }
     rawValues.push(id);
     const result = await query(
