@@ -80,7 +80,6 @@ const CELL_INPUT: React.CSSProperties = {
 
 const OPP_STAGES = ['机会', '投标', '议价', '中标'];
 
-const now = () => new Date().toISOString().slice(0, 10);
 const nowISO = () => new Date().toISOString();
 
 // SalesOpportunity state is local; SalesAnalysis reads from mockOpportunities directly
@@ -318,7 +317,7 @@ const SalesOpportunityList: React.FC = () => {
     const opp = deliveryOpp;
     if (!opp) return;
     if (opp.terminated) { msg.warning('该项目已转交付'); setDeliveryOpp(null); return; }
-    const d = now();
+    const d = new Date();
 
     // 取机会关联的报价ID
     const bestQuoteId = opp.quotationId || '';

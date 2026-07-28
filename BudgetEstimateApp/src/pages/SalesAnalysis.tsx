@@ -128,16 +128,6 @@ const SalesAnalysis: React.FC = () => {
     if (ids.length > 0) preloadQuotationGroupsBatch(ids).then(() => setPreloadReady(v => v + 1));
   }, [deliveryProjects]);
 
-  // ── 从服务端加载用户设置（年度目标等）──
-  useEffect(() => {
-    if (loading) return;
-    settingsService.get().then(settings => {
-      if (settings.saAnnualTarget) setAnnualTargetInput(settings.saAnnualTarget);
-      if (settings.saTargetGP3) setGp3Input(settings.saTargetGP3);
-      if (settings.saAnnualSalesTarget) setAnnualSalesTarget(settings.saAnnualSalesTarget);
-    }).catch(() => {});
-  }, [loading]);
-
   // ── 报价估算缓存（避免重复调用 loadQuotationGroups）──
   const projectEstimates = useMemo(() => {
     void preloadReady;
@@ -166,9 +156,20 @@ const SalesAnalysis: React.FC = () => {
   const [annualSalesTarget, setAnnualSalesTarget] = useState(() => { try { return localStorage.getItem('saAnnualSalesTarget') || ''; } catch { return ''; } });
   const [salesTargetEditing, setSalesTargetEditing] = useState(false);
   const salesTargetRef = React.useRef<HTMLInputElement>(null);
+
+  // ── 从服务端加载用户设置（必须在所有 setState 声明之后）──
+  useEffect(() => {
+    if (loading) return;
+    settingsService.get().then(settings => {
+      if (settings.saAnnualTarget) setAnnualTargetInput(settings.saAnnualTarget);
+      if (settings.saTargetGP3) setGp3Input(settings.saTargetGP3);
+      if (settings.saAnnualSalesTarget) setAnnualSalesTarget(settings.saAnnualSalesTarget);
+    }).catch(() => {});
+  }, [loading]);
+
   // 保存到 localStorage + 服务端持久化
-  const settingsRef = useRef({ annualTargetInput, gp3Input, annualSalesTarget });
-  settingsRef.current = { annualTargetInput, gp3Input, annualSalesTarget };
+  const settingsRef = useRef({ annualTargetInput: '', gp3Input: '', annualSalesTarget: '' });
+  useEffect(() => { settingsRef.current = { annualTargetInput, gp3Input, annualSalesTarget }; });
 
   const saveToServer = useCallback(() => {
     const cur = settingsRef.current;
