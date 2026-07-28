@@ -210,14 +210,13 @@ const Dashboard: React.FC = () => {
       setDeliveries(dels);
       setClients(clis);
       setQuotations(quots);
-    }).catch(() => {});
+    }).catch(() => console.warn('[Dashboard] 加载数据失败'));
   }, []);
 
   const now = useMemo(() => new Date(), []);
 
   // ── 按月 KPI（最近3个完整月） ──
   const monthlyKpi = useMemo(() => {
-    const now = new Date();
     const calcMonth = (offset: number) => {
       const d = new Date(now.getFullYear(), now.getMonth() - offset, 1);
       const mStart = new Date(d.getFullYear(), d.getMonth(), 1);
@@ -227,8 +226,8 @@ const Dashboard: React.FC = () => {
         const effEnd = (o.status === '过程中' || o.status === '冻结') ? new Date() : new Date(o.updatedAt);
         return created <= mEnd && effEnd >= mStart;
       });
-      const monthWins = monthOpps.filter(o => o.status === '赢' && new Date(o.wonAt || o.updatedAt) >= mStart && new Date(o.wonAt || o.updatedAt) <= mEnd);
-      const monthLosses = monthOpps.filter(o => o.status === '输' && new Date(o.lostAt || o.updatedAt) >= mStart && new Date(o.lostAt || o.updatedAt) <= mEnd);
+      const monthWins = monthOpps.filter(o => o.status === '赢' && new Date(o.wonAt) >= mStart && new Date(o.wonAt) <= mEnd);
+      const monthLosses = monthOpps.filter(o => o.status === '输' && new Date(o.lostAt) >= mStart && new Date(o.lostAt) <= mEnd);
       const monthNew = opportunities.filter(o => new Date(o.createdAt) >= mStart && new Date(o.createdAt) <= mEnd);
       const activeDel = deliveries.filter(p => p.status !== '已完成');
       const winCnt = monthWins.length, lossCnt = monthLosses.length;
@@ -245,10 +244,10 @@ const Dashboard: React.FC = () => {
   }, [opportunities, deliveries]);
 
   const recentWins = useMemo(() =>
-    opportunities.filter(o => o.status === '赢').sort((a, b) => new Date(b.wonAt || b.updatedAt).getTime() - new Date(a.wonAt || a.updatedAt).getTime()).slice(0, 5), [opportunities]);
+    opportunities.filter(o => o.status === '赢').sort((a, b) => new Date(b.wonAt).getTime() - new Date(a.wonAt).getTime()).slice(0, 5), [opportunities]);
 
   const recentLosses = useMemo(() =>
-    opportunities.filter(o => o.status === '输').sort((a, b) => new Date(b.lostAt || b.updatedAt).getTime() - new Date(a.lostAt || a.updatedAt).getTime()).slice(0, 5), [opportunities]);
+    opportunities.filter(o => o.status === '输').sort((a, b) => new Date(b.lostAt).getTime() - new Date(a.lostAt).getTime()).slice(0, 5), [opportunities]);
 
   const pendingItems = useMemo(() => approvals.filter(r => r.status === 'pending').slice(0, 5), [approvals]);
 
@@ -329,7 +328,7 @@ const Dashboard: React.FC = () => {
       }
     }
     const onTimeRate = deliveries.map(p => {
-      const done = (p.nodes || []).filter((n: any) => n.status === 'completed' || n.status === 'delayed');
+      const done = (p.nodes || []).filter(n => n.status === 'completed' || n.status === 'delayed');
       const delayed = done.filter(n => n.status === 'delayed').length;
       const onTime = done.length - delayed;
       const rate = done.length > 0 ? Math.round((onTime / done.length) * 100) : 0;
