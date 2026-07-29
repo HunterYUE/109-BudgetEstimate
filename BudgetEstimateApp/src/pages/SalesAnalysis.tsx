@@ -157,6 +157,7 @@ const SalesAnalysis: React.FC = () => {
   const [annualSalesTarget, setAnnualSalesTarget] = useState(() => { try { return localStorage.getItem('saAnnualSalesTarget') || ''; } catch { return ''; } });
   const [salesTargetEditing, setSalesTargetEditing] = useState(false);
   const salesTargetRef = React.useRef<HTMLInputElement>(null);
+  const settingsTimerRef = useRef<ReturnType<typeof setTimeout>>();
 
   // ── 从服务端加载用户设置（必须在所有 setState 声明之后）──
   useEffect(() => {
@@ -186,21 +187,21 @@ const SalesAnalysis: React.FC = () => {
   const saveSalesTarget = (v: string) => {
     setAnnualSalesTarget(v);
     try { localStorage.setItem('saAnnualSalesTarget', v); } catch (e) { console.warn('[SalesAnalysis] 保存销售指标失败:', e); };
-    clearTimeout((window as any)._settingsTimer);
-    (window as any)._settingsTimer = setTimeout(saveToServer, 3000);
+    if (settingsTimerRef.current) clearTimeout(settingsTimerRef.current);
+    settingsTimerRef.current = setTimeout(saveToServer, 3000);
   };
 
   const saveAnnualTarget = (v: string) => {
     setAnnualTargetInput(v);
     try { localStorage.setItem('saAnnualTarget', v); } catch (e) { console.warn('[SalesAnalysis] 保存年度订单目标失败:', e); };
-    clearTimeout((window as any)._settingsTimer);
-    (window as any)._settingsTimer = setTimeout(saveToServer, 3000);
+    if (settingsTimerRef.current) clearTimeout(settingsTimerRef.current);
+    settingsTimerRef.current = setTimeout(saveToServer, 3000);
   };
   const saveGp3 = (v: string) => {
     setGp3Input(v);
     try { localStorage.setItem('saTargetGP3', v); } catch (e) { console.warn('[SalesAnalysis] 保存GP3目标失败:', e); };
-    clearTimeout((window as any)._settingsTimer);
-    (window as any)._settingsTimer = setTimeout(saveToServer, 3000);
+    if (settingsTimerRef.current) clearTimeout(settingsTimerRef.current);
+    settingsTimerRef.current = setTimeout(saveToServer, 3000);
   };
 
   // ── 预解析目标输入值（避免渲染中重复 parseInt）──

@@ -44,7 +44,7 @@ customRouter.put('/sync', async (req, res, next) => {
       opportunity_id = null } = body;
 
     if (!project_id || !version_no) {
-      throw new AppError(400, 'Missing required: project_id, version_no');
+      throw new AppError(400, '缺少必填字段：project_id, version_no');
     }
 
     const result = await query(

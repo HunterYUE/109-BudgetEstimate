@@ -95,8 +95,8 @@ router.put('/:id/password', async (req, res, next) => {
     const { id } = req.params;
     const { password } = req.body;
 
-    if (!password || password.length < 6) {
-      throw new AppError(400, '密码至少6位');
+    if (!password || password.length < 8) {
+      throw new AppError(400, '密码至少8位');
     }
 
     const existing = await query('SELECT id, email, display_name FROM users WHERE id = $1', [id]);

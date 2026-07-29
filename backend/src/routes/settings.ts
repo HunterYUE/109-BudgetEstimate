@@ -1,13 +1,10 @@
 import { Router } from 'express';
 import { query } from '../db/index.js';
-import { requireAuth } from '../middleware/auth.js';
 import { AppError } from '../middleware/index.js';
 
 const router = Router();
 
 // 所有接口需要登录
-router.use(requireAuth);
-
 /** GET /api/settings - 获取当前用户的所有设置 */
 router.get('/', async (req, res, next) => {
   try {

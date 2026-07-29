@@ -72,7 +72,8 @@ export function crudRoutes(table: string, fields: string[], options?: {
     const params: any[] = [];
     if (search && searchFields.length > 0) {
       const conditions = searchFields.map((f, i) => `"${f}"::text ILIKE $${i + 1}`);
-      for (let i = 0; i < searchFields.length; i++) params.push(`%${search}%`);
+      const escaped = typeof search === 'string' ? search.replace(/[%_]/g, '\\$&') : search;
+      for (let i = 0; i < searchFields.length; i++) params.push(`%${escaped}%`);
       sql += ` WHERE ${conditions.join(' OR ')}`;
     }
     const limitNum = Math.min(1000, Math.max(1, parseInt(limit as string, 10) || 100));

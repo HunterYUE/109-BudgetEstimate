@@ -18,7 +18,7 @@ const router = crudRoutes('clients', fields, {
       try {
         const { id } = req.params;
         const client = (await query('SELECT * FROM clients WHERE id = $1', [id])).rows[0];
-        if (!client) throw new AppError(404, 'Client not found');
+        if (!client) throw new AppError(404, '客户未找到');
 
         const contacts = (await query(
           'SELECT * FROM client_contacts WHERE client_id = $1 ORDER BY name',
@@ -120,7 +120,7 @@ const router = crudRoutes('clients', fields, {
         const { id } = req.params;
         const body = objKeysToSnake(req.body);
         const { name, position, phone, email, decision_role, superior } = body;
-        if (!name) throw new AppError(400, 'Contact name is required');
+        if (!name) throw new AppError(400, '联系人姓名必填');
 
         const contact = (await query(
           `INSERT INTO client_contacts (client_id, name, position, phone, email, decision_role, superior)
@@ -139,7 +139,7 @@ const router = crudRoutes('clients', fields, {
         const body = objKeysToSnake(req.body);
         const { project_name, sales_no, amount, status, date } = body;
         if (!project_name || !sales_no) {
-          throw new AppError(400, 'project_name and sales_no are required');
+          throw new AppError(400, '项目名称和销售编号必填');
         }
 
         const record = (await query(

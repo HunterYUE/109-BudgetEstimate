@@ -56,7 +56,7 @@ router.post('/project-versions', requireAuth, async (req, res, next) => {
       material_cost = 0, labor_cost = 0, project_expense = 0 } = snakeBody;
 
     if (!project_id || !version_no) {
-      throw new AppError(400, 'Missing required fields: project_id, version_no');
+      throw new AppError(400, '缺少必填字段：project_id, version_no');
     }
 
     const result = await query(

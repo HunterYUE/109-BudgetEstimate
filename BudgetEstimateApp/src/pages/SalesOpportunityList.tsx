@@ -82,6 +82,16 @@ const OPP_STAGES = ['机会', '投标', '议价', '中标'];
 
 const nowISO = () => new Date().toISOString();
 
+/** 构建状态 tooltip：审批锁定中 / 输赢原因 */
+const buildStatusTooltip = (rec: SalesOpportunity, status: string, isLocked?: boolean): string | undefined => {
+  if (isLocked && rec.promoteLocked) return '审批锁定中';
+  if (!rec.reasons && !rec.winner) return undefined;
+  const parts: string[] = [];
+  if (rec.reasons) parts.push(rec.reasons);
+  if (status === '输' && rec.winner) parts.push(rec.winner);
+  return parts.join(' | ') || undefined;
+};
+
 
 
 const SalesOpportunityList: React.FC = () => {
@@ -693,14 +703,7 @@ const SalesOpportunityList: React.FC = () => {
       onFilter: (value: string, record: SalesOpportunity) => value === '__all__' || record.status === value,
       render: (v: string, rec: SalesOpportunity) => {
         if (rec.terminated || rec.promoteLocked) return (
-          <Tooltip title={(() => {
-            if (rec.promoteLocked) return '审批锁定中';
-            if (!rec.reasons && !rec.winner) return undefined;
-            const parts: string[] = [];
-            if (rec.reasons) parts.push(rec.reasons);
-            if (v === '输' && rec.winner) parts.push(rec.winner);
-            return parts.join(' | ') || undefined;
-          })()}>
+          <Tooltip title={buildStatusTooltip(rec, v, true)}>
             <Tag color={COLORS.textLight} style={{ margin: 0, fontSize: 12 }}>{v}</Tag>
           </Tooltip>
         );
@@ -720,13 +723,7 @@ const SalesOpportunityList: React.FC = () => {
               onClick: () => handleStatusAction(rec, a.action as 'win' | 'loss' | 'freeze' | 'resume'),
             })),
           }} trigger={['click']}>
-            <Tooltip title={(() => {
-              if (!rec.reasons && !rec.winner) return undefined;
-              const parts: string[] = [];
-              if (rec.reasons) parts.push(rec.reasons);
-              if (v === '输' && rec.winner) parts.push(rec.winner);
-              return parts.join(' | ') || undefined;
-            })()}>
+            <Tooltip title={buildStatusTooltip(rec, v)}>
               <Tag color={statusColors[v] || COLORS.textLight}
                 style={{ cursor: 'pointer', margin: 0, fontSize: 12 }}>
                 {v} <span style={{ fontSize: 10, marginLeft: 2 }}>▼</span>

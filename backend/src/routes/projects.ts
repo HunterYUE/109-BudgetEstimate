@@ -20,7 +20,7 @@ const router = crudRoutes('projects', projectsFields, {
         const { id } = req.params;
 
         const project = (await query('SELECT * FROM projects WHERE id = $1', [id])).rows[0];
-        if (!project) throw new AppError(404, 'Project not found');
+        if (!project) throw new AppError(404, '项目未找到');
 
         const versions = (await query('SELECT * FROM project_versions WHERE project_id = $1 ORDER BY created_at DESC', [id])).rows;
 
@@ -65,13 +65,13 @@ const router = crudRoutes('projects', projectsFields, {
         const { id, versionNo } = req.params;
         const { review_status, reviewStatus } = req.body;
         const status = review_status || reviewStatus;
-        if (!status) throw new AppError(400, 'Missing required: review_status');
+        if (!status) throw new AppError(400, '缺少必填字段：review_status');
         const result = await query(
           `UPDATE project_versions SET review_status = $1, updated_at = now()
            WHERE project_id = $2 AND version_no = $3 RETURNING *`,
           [status, id, versionNo]
         );
-        if (result.rows.length === 0) throw new AppError(404, 'Version not found');
+        if (result.rows.length === 0) throw new AppError(404, '版本未找到');
         res.json(result.rows[0]);
       } catch (err) { next(err); }
     });

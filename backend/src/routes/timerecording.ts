@@ -93,7 +93,7 @@ router.get('/profiles', requireAuth, async (_req, res, next) => {
 router.get('/profiles/:id', requireAuth, async (req, res, next) => {
   try {
     const rows = (await query('SELECT id, employee_id, name, email, role, is_active FROM timerecording.profiles WHERE id = $1', [req.params.id])).rows;
-    if (!rows[0]) throw new AppError(404, 'Profile not found');
+    if (!rows[0]) throw new AppError(404, '档案未找到');
     res.json(rows[0]);
   } catch (err) { next(err); }
 });
@@ -106,13 +106,13 @@ router.put('/profiles/:id', requireAuth, async (req, res, next) => {
     for (const f of ['name', 'email', 'role', 'is_active']) {
       if (req.body[f] !== undefined) { fields.push(`${f} = $${idx++}`); values.push(req.body[f]); }
     }
-    if (!fields.length) throw new AppError(400, 'No fields');
+    if (!fields.length) throw new AppError(400, '没有要更新的字段');
     values.push(req.params.id);
     const r = (await query(
       `UPDATE timerecording.profiles SET ${fields.join(', ')} WHERE id = $${idx} RETURNING id, employee_id, name, email, role, is_active`,
       values
     )).rows[0];
-    if (!r) throw new AppError(404, 'Not found');
+    if (!r) throw new AppError(404, '未找到');
     res.json(r);
   } catch (err) { next(err); }
 });
@@ -144,7 +144,7 @@ router.get('/time-records', requireAuth, async (req, res, next) => {
 router.post('/time-records', requireAuth, async (req, res, next) => {
   try {
     const { user_id, date, week_number, year, start_time, end_time, hours, hour_type, cost_center, task_description } = req.body;
-    if (!user_id || !date || hours == null) throw new AppError(400, 'Missing required fields');
+    if (!user_id || !date || hours == null) throw new AppError(400, '缺少必填字段');
 
     const r = (await query(
       `INSERT INTO timerecording.time_records (user_id, date, week_number, year, start_time, end_time, hours, hour_type, cost_center, task_description)
@@ -164,13 +164,13 @@ router.put('/time-records/:id', requireAuth, async (req, res, next) => {
     for (const f of fields) {
       if (req.body[f] !== undefined) { updates.push(`${f} = $${idx++}`); values.push(req.body[f]); }
     }
-    if (!updates.length) throw new AppError(400, 'No fields');
+    if (!updates.length) throw new AppError(400, '没有要更新的字段');
     values.push(req.params.id);
     const r = (await query(
       `UPDATE timerecording.time_records SET ${updates.join(', ')} WHERE id = $${idx} RETURNING *`,
       values
     )).rows[0];
-    if (!r) throw new AppError(404, 'Not found');
+    if (!r) throw new AppError(404, '未找到');
     res.json(r);
   } catch (err) { next(err); }
 });
@@ -200,7 +200,7 @@ router.put('/time-records/:id/submit', requireAuth, async (req, res, next) => {
 router.post('/time-records/submit-batch', requireAuth, async (req, res, next) => {
   try {
     const { ids } = req.body;
-    if (!Array.isArray(ids) || !ids.length) throw new AppError(400, 'ids required');
+    if (!Array.isArray(ids) || !ids.length) throw new AppError(400, 'ids 必填');
     const rows = (await query(
       `UPDATE timerecording.time_records SET status = 'submitted' WHERE id = ANY($1::uuid[]) AND status = 'draft' RETURNING *`,
       [ids]
@@ -213,7 +213,7 @@ router.post('/time-records/submit-batch', requireAuth, async (req, res, next) =>
 router.put('/time-records/:id/review', requireAuth, async (req, res, next) => {
   try {
     const { action, review_notes } = req.body;
-    if (!['approved', 'rejected'].includes(action)) throw new AppError(400, 'action must be approved or rejected');
+    if (!['approved', 'rejected'].includes(action)) throw new AppError(400, '操作必须是 approved 或 rejected');
     const reviewer = req.user!;
     const r = (await query(
       `UPDATE timerecording.time_records SET status = $1, review_notes = $2, reviewed_by = $3, reviewed_at = now() WHERE id = $4 AND status = 'submitted' RETURNING *`,
@@ -261,13 +261,13 @@ router.put('/task-assignments/:id', requireAuth, async (req, res, next) => {
     for (const f of fields) {
       if (req.body[f] !== undefined) { updates.push(`${f} = $${idx++}`); values.push(req.body[f]); }
     }
-    if (!updates.length) throw new AppError(400, 'No fields');
+    if (!updates.length) throw new AppError(400, '没有要更新的字段');
     values.push(req.params.id);
     const r = (await query(
       `UPDATE timerecording.task_assignments SET ${updates.join(', ')} WHERE id = $${idx} RETURNING *`,
       values
     )).rows[0];
-    if (!r) throw new AppError(404, 'Not found');
+    if (!r) throw new AppError(404, '未找到');
     res.json(r);
   } catch (err) { next(err); }
 });
@@ -318,7 +318,7 @@ router.post('/notifications', requireAuth, async (req, res, next) => {
 router.post('/admin/users', requireAuth, requireRole('director', 'admin'), async (req, res, next) => {
   try {
     const { email, name, password, employee_id, role = 'employee' } = req.body;
-    if (!email || !name || !password) throw new AppError(400, 'Missing required fields');
+    if (!email || !name || !password) throw new AppError(400, '缺少必填字段');
 
     // 创建系统用户
     const passwordHash = await bcrypt.hash(password, 10);
@@ -345,7 +345,7 @@ router.post('/admin/users/:id/reset-password', requireAuth, requireRole('directo
   try {
     const { id } = req.params;
     const { password } = req.body;
-    if (!password || password.length < 6) throw new AppError(400, 'Password at least 6 chars');
+    if (!password || password.length < 6) throw new AppError(400, '密码至少6个字符');
     const passwordHash = await bcrypt.hash(password, 10);
     await query('UPDATE public.users SET password_hash = $1 WHERE id = $2', [passwordHash, id]);
     res.json({ success: true });
@@ -367,7 +367,7 @@ router.post('/admin/lock-week', requireAuth, requireRole('director', 'admin'), a
   try {
     const { year, week_number, action } = req.body;
     const newStatus = action === 'lock' ? 'locked' : (action === 'unlock' ? 'draft' : null);
-    if (!newStatus) throw new AppError(400, 'action must be lock or unlock');
+    if (!newStatus) throw new AppError(400, '操作必须是 lock 或 unlock');
     await query(
       `UPDATE timerecording.time_records SET status = $1 WHERE year = $2 AND week_number = $3 AND status IN ('draft', 'submitted', 'locked')`,
       [newStatus, year, week_number]

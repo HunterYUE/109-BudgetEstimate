@@ -109,7 +109,7 @@ router.get('/:id/detail', async (req, res, next) => {
   try {
     const { id } = req.params;
     const ar = (await query('SELECT * FROM approval_requests WHERE id = $1', [id])).rows[0];
-    if (!ar) throw new AppError(404, 'Approval request not found');
+    if (!ar) throw new AppError(404, '审批请求未找到');
 
     const records = (await query(
       'SELECT * FROM approval_records WHERE approval_request_id = $1 ORDER BY created_at ASC',
@@ -126,10 +126,10 @@ router.post('/:id/records', async (req, res, next) => {
   try {
     const { id } = req.params;
     const { reviewer, action, comment } = req.body;
-    if (!reviewer || !action) throw new AppError(400, 'Missing required fields: reviewer, action');
-    if (!['approved', 'rejected'].includes(action)) throw new AppError(400, `Invalid action: ${action}`);
+    if (!reviewer || !action) throw new AppError(400, '缺少必填字段：reviewer, action');
+    if (!['approved', 'rejected'].includes(action)) throw new AppError(400, `无效操作: ${action}`);
     const ar = (await query('SELECT * FROM approval_requests WHERE id = $1', [id])).rows[0];
-    if (!ar) throw new AppError(404, 'Approval request not found');
+    if (!ar) throw new AppError(404, '审批请求未找到');
     if (!['director', 'admin'].includes(req.user?.role || '')) throw new AppError(403, '仅部门总监和管理员可审批');
     client = await getClient();
     await client.query('BEGIN');

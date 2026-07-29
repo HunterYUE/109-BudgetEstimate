@@ -88,7 +88,7 @@ router.get('/:id/detail', async (req, res, next) => {
   try {
     const { id } = req.params;
     const opp = (await query('SELECT * FROM sales_opportunities WHERE id = $1', [id])).rows[0];
-    if (!opp) throw new AppError(404, 'Opportunity not found');
+    if (!opp) throw new AppError(404, '机会未找到');
 
     const blueTable = (await query('SELECT * FROM blue_tables WHERE opportunity_id = $1', [id])).rows[0] || null;
 
@@ -107,13 +107,12 @@ router.put('/:id/blue-table', async (req, res, next) => {
   try {
     const { id } = req.params;
     const oppRow = (await query('SELECT sales_no FROM sales_opportunities WHERE id = $1', [id])).rows[0];
-    logAudit(req, '保存蓝表', 'opportunity', `机会 ${oppRow?.sales_no || id.slice(0,8)} 蓝表已更新`);
     const body = objKeysToSnake({ ...req.body });
     const { veto_budget, budget_amount, timeline_plan, timeline_option,
             pricing, positioning, reaction_mode, strategy, targets, roles } = body;
 
     const opp = (await query('SELECT id FROM sales_opportunities WHERE id = $1', [id])).rows[0];
-    if (!opp) throw new AppError(404, 'Opportunity not found');
+    if (!opp) throw new AppError(404, '机会未找到');
 
     tx = await getClient();
     await tx.query('BEGIN');
@@ -171,6 +170,8 @@ router.put('/:id/blue-table', async (req, res, next) => {
       ? (await query('SELECT * FROM blue_table_roles WHERE blue_table_id = $1 ORDER BY influence_weight DESC', [bt.id])).rows
       : [];
 
+    logAudit(req, '保存蓝表', 'opportunity', `机会 ${oppRow?.sales_no || id.slice(0,8)} 蓝表已更新`);
+
     res.json({ ...savedBt, roles: savedRoles });
   } catch (e) {
     if (tx) await tx.query('ROLLBACK').catch(() => {});
@@ -187,7 +188,11 @@ router.put('/:id', async (req, res, next) => {
     const body = objKeysToSnake({ ...req.body });
     // 如果只改 promote_locked（锁定/解锁），跳过检查
     const isOnlyLockToggle = Object.keys(body).length === 1 && 'promote_locked' in body;
-    if (!isOnlyLockToggle) {
+    if (isOnlyLockToggle) {
+      if (!['director', 'admin'].includes(req.user?.role || '')) {
+        throw new AppError(403, '仅部门总监和管理员可锁定/解锁机会');
+      }
+    } else {
       const existing = (await query('SELECT promote_locked FROM sales_opportunities WHERE id = $1', [id])).rows[0];
       if (existing?.promote_locked) {
         throw new AppError(403, '该机会已提交转机会审批，审批完成前不可修改');

@@ -89,7 +89,7 @@ const crudRouter = crudRoutes('delivery_projects', fields, {
       try {
         const { id } = req.params;
         const dp = (await query('SELECT * FROM delivery_projects WHERE id = $1', [id])).rows[0];
-        if (!dp) throw new AppError(404, 'Delivery project not found');
+        if (!dp) throw new AppError(404, '交付项目未找到');
 
         const nodes = (await query(
           'SELECT * FROM delivery_nodes WHERE delivery_project_id = $1 ORDER BY node_no',
@@ -109,10 +109,10 @@ const crudRouter = crudRoutes('delivery_projects', fields, {
         // ⚠️ 节点字段必须转 snake_case（前端发 camelCase nodeNo → node_no）
         const rawNodes = (req.body.nodes || req.body);
         const nodes = Array.isArray(rawNodes) ? rawNodes.map((n: any) => objKeysToSnake(n)) : rawNodes;
-        if (!Array.isArray(nodes)) throw new AppError(400, 'nodes must be an array');
+        if (!Array.isArray(nodes)) throw new AppError(400, '节点数据必须为数组');
 
         const dp = (await client.query('SELECT id FROM delivery_projects WHERE id = $1', [id])).rows[0];
-        if (!dp) throw new AppError(404, 'Delivery project not found');
+        if (!dp) throw new AppError(404, '交付项目未找到');
 
         // 备份基线（基线日期一旦审批通过写入，永不被覆盖）
         const existingBaselines = (await client.query(
@@ -226,7 +226,7 @@ router.delete('/:deliveryId/files/:fileId', async (req, res, next) => {
 
     try { if (fs.existsSync(file.file_path)) fs.unlinkSync(file.file_path); } catch { /* 物理文件可能已被移动或删除 */ }
     await query('DELETE FROM delivery_files WHERE id = $1', [fileId]);
-    res.json({ deleted: true });
+    res.json({ deleted: true, id: fileId });
   } catch (err) { next(err); }
 });
 

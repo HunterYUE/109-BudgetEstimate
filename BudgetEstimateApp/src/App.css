@@ -29,6 +29,11 @@ body {
 html { overflow-y: scroll; }
 .ant-table-wrapper { overflow-x: auto; overflow-y: hidden; width: 100%; }
 table.proj-header { min-width: 900px; }
+.app-content { overflow-x: hidden; max-width: 100%; box-sizing: border-box; }
+.app-content svg { max-width: 100%; height: auto; }
+.app-content > div { max-width: 100%; }
+.app-content .ant-card { max-width: 100%; }
+.kpi-row { flex-wrap: wrap; }
 
 @media (max-width: 1200px) {
   .ant-table-wrapper { overflow-x: auto; }
@@ -36,7 +41,13 @@ table.proj-header { min-width: 900px; }
 }
 
 @media (max-width: 1100px) {
-  .app-content { transform-origin: top left; }
+  .app-content { overflow-x: auto; }
+}
+
+@media (max-width: 768px) {
+  .dashboard-container { padding: 0 12px; }
+  .app-content { padding: 12px !important; }
+  .ant-card { margin-bottom: 8px; }
 }
 
 /* ── Table input overrides ── */
