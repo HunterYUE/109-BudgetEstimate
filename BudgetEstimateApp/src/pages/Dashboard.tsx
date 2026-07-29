@@ -517,7 +517,7 @@ const Dashboard: React.FC = () => {
   return (
     <div className="dashboard-container">
       {/* ── 标题 ── */}
-      <div style={{ fontSize: 17, fontWeight: 700, color: COLORS.textDark, marginBottom: 10, letterSpacing: 0.5 }}>
+      <div style={{ fontSize: 17, fontWeight: 700, color: COLORS.textDark, marginBottom: 20, letterSpacing: 0.5 }}>
         仪表盘
       </div>
 
