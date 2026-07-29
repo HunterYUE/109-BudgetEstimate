@@ -26,6 +26,8 @@ const safeParseInt = (val: string | undefined | null): number => {
   const n = parseInt(val ?? '', 10);
   return isNaN(n) ? 0 : n;
 };
+/** 含税→未税（统一使用未税口径） */
+const exAmt = (o: SalesOpportunity) => Math.round(o.amount / (1 + (o.taxRate ?? 0.13)));
 
 const stageIdx = (s: string) => STAGES.indexOf(s as typeof STAGES[number]);
 
@@ -322,7 +324,7 @@ const SalesAnalysis: React.FC = () => {
     for (const s of STAGES) byStage.set(s, { count: 0, amount: 0 });
     for (const o of currentPipeline) {
       const entry = byStage.get(o.stage);
-      if (entry) { entry.count++; entry.amount += o.amount; }
+      if (entry) { entry.count++; entry.amount += exAmt(o); }
     }
     return STAGES.map(stage => ({
       stage,
@@ -385,7 +387,7 @@ const SalesAnalysis: React.FC = () => {
   // ── 漏斗右侧 FY 累计用 ──
   const fyWon = useMemo(() => ({
     count: fyWonByTime.length,
-    amount: fyWonByTime.reduce((s, o) => s + o.amount, 0),
+    amount: fyWonByTime.reduce((s, o) => s + exAmt(o), 0),
   }), [fyWonByTime]);
 
   // ── 输单（按输单时间 updatedAt 归入财年）──
@@ -407,17 +409,17 @@ const SalesAnalysis: React.FC = () => {
       const effectiveEnd = (o.status === '过程中' || o.status === '冻结') ? new Date() : updated;
       return created <= fyRange.end && effectiveEnd >= fyRange.start;
     });
-    return { count: inFy.length, amount: inFy.reduce((s, o) => s + o.amount, 0) };
+    return { count: inFy.length, amount: inFy.reduce((s, o) => s + exAmt(o), 0) };
   }, [fySelect, allOpps]);
 
   const fyLead = useMemo(() => {
     const items = fyFiltered.filter(o => stageIdx(o.stage) >= stageIdx('线索') || o.wonAt);
-    return { count: items.length, amount: items.reduce((s, o) => s + o.amount, 0) };
+    return { count: items.length, amount: items.reduce((s, o) => s + exAmt(o), 0) };
   }, [fyFiltered]);
 
   const fyOpp = useMemo(() => {
     const items = fyFiltered.filter(o => stageIdx(o.stage) >= stageIdx('机会') || o.wonAt);
-    return { count: items.length, amount: items.reduce((s, o) => s + o.amount, 0) };
+    return { count: items.length, amount: items.reduce((s, o) => s + exAmt(o), 0) };
   }, [fyFiltered]);
 
   // ── 滚动12个月指标（销售周期、赢单转化率，用于概览卡片）──
@@ -461,7 +463,7 @@ const SalesAnalysis: React.FC = () => {
       const pipelineOpps = activeOpps.filter(o => (o.status === '过程中' || o.status === '冻结') && stageIdx(o.stage) >= stageIdx('机会'));
       let weighted = 0, profit = 0;
       for (const o of pipelineOpps) {
-        const w = Math.round(o.amount * o.winRate / 100);
+        const w = Math.round(exAmt(o) * o.winRate / 100);
         weighted += w;
         const q = o.quotationId ? (quotationSummaries||[]).find(q => q.id === o.quotationId) : undefined;
         profit += Math.round(w * (q ? (q.profitRate ?? 0) / 100 : 0.15));
@@ -518,8 +520,6 @@ const SalesAnalysis: React.FC = () => {
       name: string; wins: number; orderAmount: number; totalAmount: number;
       pipelinePotential: number; profitTotal: number; totalCount: number;
     }>();
-    // 统一使用未税（ex-tax）口径：o.amount / (1 + taxRate)
-    const exAmt = (o: SalesOpportunity) => Math.round(o.amount / (1 + (o.taxRate ?? 0.13)));
     // 订单金额/利润：财年赢单（按 time 归入）
     for (const o of fyWonByTime) {
       if (!o.salesman) continue;
