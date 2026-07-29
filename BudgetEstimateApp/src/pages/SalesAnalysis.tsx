@@ -518,24 +518,26 @@ const SalesAnalysis: React.FC = () => {
       name: string; wins: number; orderAmount: number; totalAmount: number;
       pipelinePotential: number; profitTotal: number; totalCount: number;
     }>();
+    // 统一使用未税（ex-tax）口径：o.amount / (1 + taxRate)
+    const exAmt = (o: SalesOpportunity) => Math.round(o.amount / (1 + (o.taxRate ?? 0.13)));
     // 订单金额/利润：财年赢单（按 time 归入）
     for (const o of fyWonByTime) {
       if (!o.salesman) continue;
       let s = map.get(o.salesman);
       if (!s) { s = { name: o.salesman, wins: 0, orderAmount: 0, totalAmount: 0, pipelinePotential: 0, profitTotal: 0, totalCount: 0 }; map.set(o.salesman, s); }
       s.wins++;
-      s.orderAmount += o.amount;
+      s.orderAmount += exAmt(o);
     }
     for (const o of fyFiltered) {
       if (!o.salesman) continue;
       let s = map.get(o.salesman);
       if (!s) { s = { name: o.salesman, wins: 0, orderAmount: 0, totalAmount: 0, pipelinePotential: 0, profitTotal: 0, totalCount: 0 }; map.set(o.salesman, s); }
-      s.totalAmount += o.amount;
+      s.totalAmount += exAmt(o);
       s.totalCount++;
-      // 利润：直接读取报价的含税GP3利润金额，不使用利润率计算
+      // 利润：GP3 利润金额（报价 gp3Amount 已是未税口径），fallback 用未税金额 × 15%
       if (o.wonAt && o.quotationId) {
         const q = (quotationSummaries||[]).find(q => q.id === o.quotationId);
-        s.profitTotal += q?.gp3Amount != null ? Math.round(q.gp3Amount) : Math.round(o.amount * 0.15);
+        s.profitTotal += q?.gp3Amount != null ? Math.round(q.gp3Amount) : Math.round(exAmt(o) * 0.15);
       }
     }
     // 管道潜力：当前活跃管道（不过滤财年）
@@ -545,7 +547,7 @@ const SalesAnalysis: React.FC = () => {
       if (!s) { s = { name: o.salesman, wins: 0, orderAmount: 0, totalAmount: 0, pipelinePotential: 0, profitTotal: 0, totalCount: 0 }; map.set(o.salesman, s); }
       const idx = stageIdx(o.stage);
       if (idx >= stageIdx('机会')) {
-        s.pipelinePotential += Math.round(o.amount * o.winRate / 100);
+        s.pipelinePotential += Math.round(exAmt(o) * o.winRate / 100);
       }
     }
         return [...map.values()].map(s => ({
