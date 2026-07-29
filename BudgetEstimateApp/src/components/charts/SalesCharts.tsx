@@ -68,7 +68,7 @@ export const SalesFunnel: React.FC<FunnelProps> = ({ funnelData, fyInfo, fyLead,
 
   return (
     <div style={{ position: 'relative', padding: '0' }}>
-      <svg width="100%" height="324" viewBox="0 0 680 324" style={{ display: 'block' }}>
+      <svg width="100%" height="346" viewBox="0 0 680 346" style={{ display: 'block' }}>
         <g transform="translate(260, 25)">
           {/* 漏斗填充 */}
           <polygon

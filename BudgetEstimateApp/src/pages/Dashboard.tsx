@@ -1,22 +1,28 @@
 import React, { useMemo, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, Tag } from 'antd';
+import { Card } from 'antd';
 import {
-  RightOutlined, TrophyOutlined, ClockCircleOutlined,
+  RightOutlined,
 } from '@ant-design/icons';
 import { parseFY } from '../utils/fiscalYear';
+import { formatBeijing } from '../utils/timeFormat';
 import { COLORS } from '../styles/colors';
 import { opportunityService } from '../services/opportunityService';
-import { approvalService } from '../services/approvalService';
 import { deliveryService } from '../services/deliveryService';
 import { clientService } from '../services/clientService';
 import { quotationService } from '../services/quotationService';
-import type { SalesOpportunity, ApprovalRequest, DeliveryProject, Client, QuotationSummary } from '../types';
+import type { SalesOpportunity, DeliveryProject, Client, QuotationSummary } from '../types';
 
 const fmtK = (v: number) => Math.round(v / 1000).toLocaleString() + 'K';
 /** 含税→未税（Dashboard 统一使用未税口径） */
 /** 含税→未税：优先使用机会自带的税率，默认 13% */
 const exAmount = (v: number, taxRate?: number) => Math.round(v / (1 + (taxRate ?? 0.13)));
+/** 压缩销售编号：A2026-07-003-S → 2607003S，A2026-07-009-E → 2607009E */
+const compressNo = (sn: string | undefined | null): string => {
+  const m = sn && sn.match(/^A(\d{4})-(\d{2})-(\d{3})-(.)(-.)?$/);
+  if (m) return m[1].slice(2) + m[2] + m[3] + m[4] + (m[5] || '');
+  return sn || '';
+};
 
 /* ── KPI 卡片（与销售分析完全一致） ── */
 const KpiCard: React.FC<{
@@ -93,6 +99,7 @@ const VerticalBars: React.FC<{
               display: 'flex', flexDirection: 'column', alignItems: 'center',
               flex: 1, justifyContent: 'flex-end', alignSelf: 'stretch',
               marginLeft: groupGaps?.includes(i - 1) ? gapSize : 0,
+              position: 'relative', zIndex: 1,
             }}>
               {item && item.color !== 'transparent' ? (
                 <>
@@ -158,7 +165,9 @@ const PieChart: React.FC<{
   });
   return (
     <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ display: 'block', overflow: 'visible' }}>
-      {slices.map(s => {
+      {slices.length === 1 ? (
+        <circle cx={cx} cy={cy} r={r} fill={slices[0].color} opacity={0.85} />
+      ) : slices.map(s => {
         const p1 = polar(s.start, r), p2 = polar(s.end, r);
         const large = s.end - s.start > 180 ? 1 : 0;
         return <path key={s.label} d={`M${cx} ${cy} L${p1.x} ${p1.y} A${r} ${r} 0 ${large} 1 ${p2.x} ${p2.y} Z`} fill={s.color} opacity={0.85} />;
@@ -192,21 +201,18 @@ const Dashboard: React.FC = () => {
   const navigate = useNavigate();
 
   const [opportunities, setOpportunities] = useState<SalesOpportunity[]>([]);
-  const [approvals, setApprovals] = useState<ApprovalRequest[]>([]);
-  const [deliveries, setDeliveries] = useState<DeliveryProject[]>([]);
+    const [deliveries, setDeliveries] = useState<DeliveryProject[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [quotations, setQuotations] = useState<QuotationSummary[]>([]);
 
   useEffect(() => {
     Promise.all([
       opportunityService.list(),
-      approvalService.list(),
       deliveryService.list(),
       clientService.list(),
       quotationService.list(),
-    ]).then(([opps, apprs, dels, clis, quots]) => {
+    ]).then(([opps, dels, clis, quots]) => {
       setOpportunities(opps);
-      setApprovals(apprs);
       setDeliveries(dels);
       setClients(clis);
       setQuotations(quots);
@@ -227,9 +233,9 @@ const Dashboard: React.FC = () => {
         return created <= mEnd && effEnd >= mStart;
       });
       const monthWins = monthOpps.filter(o => o.status === '赢' && new Date(o.wonAt) >= mStart && new Date(o.wonAt) <= mEnd);
-      const monthLosses = monthOpps.filter(o => o.status === '输' && new Date(o.lostAt) >= mStart && new Date(o.lostAt) <= mEnd);
       const monthNew = opportunities.filter(o => new Date(o.createdAt) >= mStart && new Date(o.createdAt) <= mEnd);
       const activeDel = deliveries.filter(p => {
+        const created = new Date(p.createdAt);
         if (created > mEnd) return false;
         if (p.status === '已完成') {
           const node15 = (p.nodes||[]).find((n: any) => n.nodeNo === 15);
@@ -257,21 +263,25 @@ const Dashboard: React.FC = () => {
     return [calcMonth(1), calcMonth(2), calcMonth(3)];
   }, [opportunities, deliveries]);
 
-  const recentWins = useMemo(() =>
-    opportunities.filter(o => o.status === '赢').sort((a, b) => new Date(b.wonAt).getTime() - new Date(a.wonAt).getTime()).slice(0, 5), [opportunities]);
+  const recentWins = useMemo(() => {
+    const cutoff = new Date(); cutoff.setMonth(cutoff.getMonth() - 2);
+    return opportunities.filter(o => o.status === '赢' && o.wonAt && new Date(o.wonAt) >= cutoff).sort((a, b) => new Date(b.wonAt).getTime() - new Date(a.wonAt).getTime()).slice(0, 5);
+  }, [opportunities]);
 
-  const recentLosses = useMemo(() =>
-    opportunities.filter(o => o.status === '输').sort((a, b) => new Date(b.lostAt).getTime() - new Date(a.lostAt).getTime()).slice(0, 5), [opportunities]);
+  const recentLosses = useMemo(() => {
+    const cutoff = new Date(); cutoff.setMonth(cutoff.getMonth() - 2);
+    return opportunities.filter(o => o.status === '输' && o.lostAt && new Date(o.lostAt) >= cutoff).sort((a, b) => new Date(b.lostAt).getTime() - new Date(a.lostAt).getTime()).slice(0, 5);
+  }, [opportunities]);
 
-  const pendingItems = useMemo(() => approvals.filter(r => r.status === 'pending').slice(0, 5), [approvals]);
 
   const stageDist = useMemo(() => {
     const stages = ['信息', '线索', '机会', '投标', '议价'];
     const colors = [COLORS.chartGray, COLORS.primary, COLORS.purple, COLORS.warning, COLORS.amber];
-    const monthLabels = [2,1,0].map(i => new Date(now.getFullYear(), now.getMonth() - i, 1).toLocaleString('en', {month:'short'}));
+    const monthLabels = [3,2,1].map(i => new Date(now.getFullYear(), now.getMonth() - i, 1).toLocaleString('en', {month:'short'}));
     const getPipelineStage = (o: typeof opportunities[0], monthEnd: Date) => {
       if (new Date(o.createdAt) > monthEnd) return null;
-      if ((o.status === '赢' || o.status === '输') && new Date(o.updatedAt) <= monthEnd) return null;
+      if (o.status === '赢' && o.wonAt && new Date(o.wonAt) <= monthEnd) return null;
+      if (o.status === '输' && o.lostAt && new Date(o.lostAt) <= monthEnd) return null;
       return o.stage;
     };
     const result: { label: string; value: number; color: string }[] = [];
@@ -288,15 +298,21 @@ const Dashboard: React.FC = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opportunities]);
 
-  const getReasonInfo = (reasons: string): { label: string; color: string } => {
-    const cat = reasons.split(':')[0];
-    const map: Record<string, { label: string; color: string }> = {
-      '竞对': { label: '竞对丢单', color: COLORS.danger },
-      '取消': { label: '客户取消', color: COLORS.warning },
-      '放弃': { label: '我方放弃', color: COLORS.textSecondary },
-    };
-    return map[cat] || { label: cat, color: COLORS.textSecondary };
-  };
+  // −− 近期交付（已完成的项目，按第15节点实际完成时间倒序）−−
+  const recentDeliveries = useMemo(() => {
+    const cutoff = new Date(); cutoff.setMonth(cutoff.getMonth() - 2);
+    const done = deliveries.filter(p => {
+      const node15 = (p.nodes||[]).find((n: any) => n.nodeNo === 15);
+      if (!node15 || node15.status !== 'completed') return false;
+      return node15.actualDate && new Date(node15.actualDate) >= cutoff;
+    }).sort((a, b) => {
+      const da = new Date((a.nodes||[]).find((n: any) => n.nodeNo === 15)?.actualDate || 0).getTime();
+      const db = new Date((b.nodes||[]).find((n: any) => n.nodeNo === 15)?.actualDate || 0).getTime();
+      return db - da;
+    }).slice(0, 5);
+    return done;
+  }, [deliveries]);
+
 
   const currentFy = useMemo(() => {
     const y = now.getFullYear(), m = now.getMonth();
@@ -307,7 +323,6 @@ const Dashboard: React.FC = () => {
   }, []);
 
   const deliveryStats = useMemo(() => {
-    const allNodes = deliveries.flatMap(p => p.nodes || []);
     // 项目延期判断（以第15节点为准，与 DeliveryDetail 一致）
     // 项目延期判断：仅在项目进行中且已过基准截止日期时算延期中
     const getProjDelayedAt = (p: typeof deliveries[0], refDate: Date): boolean => {
@@ -331,7 +346,7 @@ const Dashboard: React.FC = () => {
       const monthStart = new Date(monthEnd.getFullYear(), monthEnd.getMonth(), 1);
       return d >= monthStart && d <= monthEnd;
     };
-    const monthLabels = [2,1,0].map(i => new Date(now.getFullYear(), now.getMonth() - i, 1).toLocaleString('en', {month:'short'}));
+    const monthLabels = [3,2,1].map(i => new Date(now.getFullYear(), now.getMonth() - i, 1).toLocaleString('en', {month:'short'}));
     const statusNames = ['已完成', '进行中', '已延期'] as const;
     const statusColors = [COLORS.success, COLORS.primary, COLORS.danger] as const;
     const projectStatus: { label: string; value: number; color: string }[] = [];
@@ -343,17 +358,19 @@ const Dashboard: React.FC = () => {
         projectStatus.push({ label: monthLabels[3 - mi], value: count, color: statusColors[si] });
       }
     }
-    const getNodeStatusInMonth = (node: typeof allNodes[0], monthEnd: Date): string | null => {
-      const start = new Date(node.plannedStartDate);
-      if (start > monthEnd) return null;
-      if (node.actualDate && new Date(node.actualDate) <= monthEnd) {
-        return node.status === 'delayed' ? 'delayed' : 'completed';
+    const getNodeStatusInMonth = (node: any, monthEnd: Date): string | null => {
+      if (node.status === 'completed' && node.actualDate && new Date(node.actualDate) <= monthEnd) return 'completed';
+      if (new Date(node.plannedStartDate) > monthEnd) return null;
+      if (node.status !== 'completed') {
+        const baseline = node.baselineEndDate || node.baselinePlannedEndDate || node.plannedEndDate;
+        if (baseline && new Date(baseline) <= monthEnd) return 'delayed';
       }
-      return new Date(node.plannedEndDate) <= monthEnd ? 'delayed' : 'in_progress';
+      return node.status === 'in_progress' ? 'in_progress' : 'pending';
     };
     const nodeStNames = ['completed', 'in_progress', 'delayed', 'pending'] as const;
     const nodeStColors = [COLORS.success, COLORS.primary, COLORS.danger, COLORS.chartGray];
     const nodeStatus: { label: string; value: number; color: string }[] = [];
+    const allNodes = (deliveries||[]).flatMap(p => p.nodes || []);
     for (let si = 0; si < 4; si++) {
       for (let mi = 3; mi >= 1; mi--) {
         const d = new Date(now.getFullYear(), now.getMonth() - mi, 1);
@@ -377,13 +394,20 @@ const Dashboard: React.FC = () => {
       }
       return effEnd >= fyRange.start;
     });
-    const onTimeRate = inFyDels.map(p => {
-      const done = (p.nodes || []).filter(n => n.status === 'completed' || n.status === 'delayed');
-      const delayed = done.filter(n => n.status === 'delayed').length;
-      const onTime = done.length - delayed;
-      const rate = done.length > 0 ? Math.round((onTime / done.length) * 100) : 0;
+    const onTimeRate = [...inFyDels].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).map(p => {
+      const nowD = new Date();
+      const scheduled = (p.nodes || []).filter(n => n.actualDate || new Date(n.plannedEndDate) <= nowD);
+      const delayed = scheduled.filter(n => {
+        if (n.actualDate) {
+          const baseline = n.baselineEndDate || n.baselinePlannedEndDate || n.plannedEndDate;
+          return !!baseline && new Date(n.actualDate) > new Date(baseline);
+        }
+        return new Date(n.plannedEndDate) <= nowD;
+      });
+      const onTime = scheduled.length - delayed.length;
+      const rate = scheduled.length > 0 ? Math.round((onTime / scheduled.length) * 100) : 0;
       return {
-        label: p.clientName.length > 5 ? p.clientName.slice(0, 4) + '…' : p.clientName,
+        label: (() => { const s = compressNo(p.salesNo); return s.length > 4 ? s.slice(0, 4) + '\n' + s.slice(4) : s; })(),
         value: rate,
         color: p.status === '已完成' ? COLORS.chartGray : (rate >= 90 ? COLORS.success : rate >= 70 ? COLORS.warning : COLORS.danger),
       };
@@ -427,7 +451,16 @@ const Dashboard: React.FC = () => {
     const fyRange = parseFY(currentFy);
     const fyOpps = opportunities.filter(o => {
       const created = new Date(o.createdAt);
-      const effectiveEnd = (o.status === '过程中' || o.status === '冻结') ? new Date() : new Date(o.updatedAt);
+      let effectiveEnd: Date;
+      if (o.status === '过程中' || o.status === '冻结') {
+        effectiveEnd = new Date();
+      } else if (o.status === '赢' && o.wonAt) {
+        effectiveEnd = new Date(o.wonAt);
+      } else if (o.status === '输' && o.lostAt) {
+        effectiveEnd = new Date(o.lostAt);
+      } else {
+        effectiveEnd = new Date(o.updatedAt);
+      }
       return created <= fyRange.end && effectiveEnd >= fyRange.start;
     });
     const monthLabels = ['Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar','Apr','May','Jun'];
@@ -447,19 +480,29 @@ const Dashboard: React.FC = () => {
 
   const industryDist = useMemo(() => {
     const fyRange = parseFY(currentFy);
-    const clientIndustry = new Map(clients.map(c => [c.name, c.industry]));
+    const clientMap = new Map(clients.map(c => [c.name, { industry: c.industry, code: c.code }]));
     const counts: Record<string, number> = {};
     opportunities.forEach(o => {
       const created = new Date(o.createdAt);
-      const effectiveEnd = (o.status === '过程中' || o.status === '冻结') ? new Date() : new Date(o.updatedAt);
+      let effectiveEnd: Date;
+      if (o.status === '过程中' || o.status === '冻结') {
+        effectiveEnd = new Date();
+      } else if (o.status === '赢' && o.wonAt) {
+        effectiveEnd = new Date(o.wonAt);
+      } else if (o.status === '输' && o.lostAt) {
+        effectiveEnd = new Date(o.lostAt);
+      } else {
+        effectiveEnd = new Date(o.updatedAt);
+      }
       if (created <= fyRange.end && effectiveEnd >= fyRange.start) {
-        const industry = clientIndustry.get(o.clientName) || '其他';
+        const info = clientMap.get(o.clientName);
+        const industry = info?.industry || '其他';
         counts[industry] = (counts[industry] || 0) + 1;
       }
     });
     const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
     const colors = [COLORS.primary, COLORS.purple, COLORS.warning, COLORS.amber, COLORS.chartGray, COLORS.textSecondary, COLORS.danger];
-    return sorted.slice(0, 6).map(([label, value], i) => ({ label, value, color: colors[i] || COLORS.chartGray }));
+    return sorted.map(([label, value], i) => ({ label, value, color: colors[i] || COLORS.chartGray }));
   }, [clients, opportunities, currentFy]);
 
   // −− 当前交付中快照（未完成的项目，不过滤月份）−−
@@ -479,7 +522,7 @@ const Dashboard: React.FC = () => {
       </div>
 
       {/* ── KPI 卡片行（等宽铺满，与销售分析一致） ── */}
-      <div style={{ display: 'flex', gap: 16, marginBottom: 10 }}>
+      <div style={{ display: 'flex', gap: 16, marginBottom: 10, flexWrap: 'wrap' }}>
         <KpiCard label="上月机会" value={`${fmtK(monthlyKpi[0].amt)} / ${monthlyKpi[0].cnt}`} color={COLORS.primary} icon="📊"
           prevValues={[
             { value: `${fmtK(monthlyKpi[1].amt)} / ${monthlyKpi[1].cnt}`, color: COLORS.primary },
@@ -514,22 +557,22 @@ const Dashboard: React.FC = () => {
           styles={{ body: { padding: '18px 20px' } }}>
           <SectionTitle title="交付状态" />
           <div style={{ display: 'flex', gap: 8, alignItems: 'stretch', minHeight: 150, marginTop: -18 }}>
-            <div style={{ flex: 4, display: 'flex', flexDirection: 'column', marginLeft: -20 }}>
+            <div style={{ flex: 3.5, display: 'flex', flexDirection: 'column', marginLeft: -20 }}>
               <div style={{ fontSize: 10, color: COLORS.textLight, fontWeight: 500, textAlign: 'right', marginBottom: 2, paddingRight: 2 }}>项目状态</div>
               <VerticalBars items={deliveryStats.projectStatus} height={210} groupGaps={[2, 5]} gapSize={4} />
             </div>
             <div style={{ width: 1, background: COLORS.borderLight, flexShrink: 0 }} />
-            <div style={{ flex: 5, display: 'flex', flexDirection: 'column', marginLeft: -10 }}>
+            <div style={{ flex: 4.5, display: 'flex', flexDirection: 'column', marginLeft: -10 }}>
               <div style={{ fontSize: 10, color: COLORS.textLight, fontWeight: 500, textAlign: 'right', marginBottom: 2, paddingRight: 2 }}>节点执行</div>
               <VerticalBars items={deliveryStats.nodeStatus} height={210} groupGaps={[2, 5, 8]} gapSize={5} />
             </div>
             <div style={{ width: 1, background: COLORS.borderLight, flexShrink: 0 }} />
-            <div style={{ flex: 6, display: 'flex', flexDirection: 'column' }}>
+            <div style={{ flex: 7.5, display: 'flex', flexDirection: 'column' }}>
               <div style={{ fontSize: 10, color: COLORS.textLight, fontWeight: 500, textAlign: 'right', marginBottom: 2, paddingRight: 2 }}>节点准时率</div>
               <VerticalBars items={deliveryStats.onTimeRate} height={210} unit="%" maxSlots={18} />
             </div>
             <div style={{ width: 1, background: COLORS.borderLight, flexShrink: 0 }} />
-            <div style={{ flex: 4, display: 'flex', flexDirection: 'column' }}>
+            <div style={{ flex: 3.5, display: 'flex', flexDirection: 'column' }}>
               <div style={{ fontSize: 10, color: COLORS.textLight, fontWeight: 500, textAlign: 'right', marginBottom: 2, paddingRight: 2 }}>利润概览</div>
               <VerticalBars items={deliveryStats.profitOverview} height={210} unit="K" />
             </div>
@@ -540,20 +583,16 @@ const Dashboard: React.FC = () => {
       {/* ── 底栏：管道节点 | 行业分布 | 机会趋势 ── */}
       <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
         <Card size="small"
-          style={{ flex: '1 1 220px', minWidth: 190, borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
+          style={{ flex: '1 1 380px', minWidth: 300, borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
           styles={{ body: { padding: '16px 18px' } }}>
           <SectionTitle title="管道节点" />
-          {stageDist.every(s => s.value === 0) ? (
-            <div style={{ padding: 24, textAlign: 'center', color: COLORS.textLight, fontSize: 13 }}>暂无活跃管道</div>
-          ) : (
-            <div style={{ marginTop: 50, marginLeft: -20 }}>
-              <VerticalBars items={stageDist} height={250} groupGaps={[2, 5, 8, 11]} />
-            </div>
-          )}
+          <div style={{ marginTop: 50, marginLeft: -20 }}>
+            <VerticalBars items={stageDist} height={250} groupGaps={[2, 5, 8, 11]} />
+          </div>
         </Card>
 
         <Card size="small"
-          style={{ flex: '1 1 283px', minWidth: 233, borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
+          style={{ flex: '1 1 380px', minWidth: 300, borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
           styles={{ body: { padding: '16px 18px' } }}>
           <SectionTitle title="行业分布" count={industryDist.reduce((s, i) => s + i.value, 0)} />
           {industryDist.length === 0 ? (
@@ -576,7 +615,7 @@ const Dashboard: React.FC = () => {
         </Card>
 
         <Card size="small"
-          style={{ flex: '1 1 397px', minWidth: 337, borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
+          style={{ flex: '1 1 380px', minWidth: 300, borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
           styles={{ body: { padding: '16px 18px' } }}>
           <SectionTitle title="机会趋势" count={fyTrend.reduce((s, m) => s + m.value, 0)} />
           {fyTrend.every(m => m.value === 0) ? (
@@ -604,15 +643,15 @@ const Dashboard: React.FC = () => {
                   style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '4px 8px', borderRadius: 6, transition: 'background 0.12s' }}
                   onMouseEnter={e => e.currentTarget.style.background = COLORS.bgSelected}
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                  <span style={{ fontSize: 18, lineHeight: 1, color: COLORS.success }}><TrophyOutlined /></span>
+                  <span style={{ fontSize: 16, lineHeight: 1, color: COLORS.success }}>✔</span>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.textDark, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.clientName}</div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.textDark, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.salesNo}</div>
                     <div style={{ fontSize: 11, color: COLORS.textLight, display: 'flex', gap: 10, marginTop: 1 }}>
                       <span>{o.salesman}</span>
-                      <span>{o.updatedAt}</span>
+                      <span>{formatBeijing(o.wonAt)}</span>
                     </div>
                   </div>
-                  <span style={{ fontSize: 14, fontWeight: 700, color: COLORS.success, whiteSpace: 'nowrap' }}>¥{fmtK(exAmount(o.amount, o.taxRate))}</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: COLORS.success, whiteSpace: 'nowrap' }}>¥{fmtK(exAmount(o.amount, o.taxRate))}</span>
                   <RightOutlined style={{ color: COLORS.textLight, fontSize: 12 }} />
                 </div>
               ))}
@@ -620,40 +659,7 @@ const Dashboard: React.FC = () => {
           )}
         </Card>
 
-        <Card size="small"
-          style={{ flex: '1 1 380px', minWidth: 300, borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
-          styles={{ body: { padding: '4px 16px' } }}>
-          <SectionTitle title="待审批项" count={pendingItems.length} />
-          {pendingItems.length === 0 ? (
-            <div style={{ padding: 24, textAlign: 'center', color: COLORS.textLight, fontSize: 13 }}>暂无待审批项</div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-              {pendingItems.map(r => (
-                <div key={r.id} onClick={() => navigate('/approval')}
-                  style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '4px 8px', borderRadius: 6, transition: 'background 0.12s' }}
-                  onMouseEnter={e => e.currentTarget.style.background = COLORS.bgSelected}
-                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                  <span style={{ fontSize: 18, lineHeight: 1, color: COLORS.warning }}><ClockCircleOutlined /></span>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.textDark, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.clientName}</div>
-                    <div style={{ fontSize: 11, color: COLORS.textLight, display: 'flex', gap: 10, marginTop: 1 }}>
-                      <span>{r.submitter}</span>
-                      <span>{r.submitTime}</span>
-                      <span style={{ color: COLORS.textSecondary }}>¥{fmtK(r.amount)}</span>
-                    </div>
-                  </div>
-                  <Tag color={r.approvalType === 'quotation' ? COLORS.primary : r.approvalType === 'plan' ? COLORS.warning : COLORS.success}
-                    style={{ margin: 0, fontSize: 11, fontWeight: 600, border: 'none', borderRadius: 4, padding: '1px 8px' }}>
-                    {{ quotation: '报价', plan: '计划', cost: '成本' }[r.approvalType]}
-                  </Tag>
-                  <RightOutlined style={{ color: COLORS.textLight, fontSize: 12 }} />
-                </div>
-              ))}
-            </div>
-          )}
-        </Card>
-
-        <Card size="small"
+                <Card size="small"
           style={{ flex: '1 1 380px', minWidth: 300, borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
           styles={{ body: { padding: '4px 16px' } }}>
           <SectionTitle title="近期输单" count={recentLosses.length} />
@@ -662,33 +668,59 @@ const Dashboard: React.FC = () => {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
               {recentLosses.map(o => {
-                const reason = getReasonInfo(o.reasons || '');
                 return (
                   <div key={o.id} onClick={() => navigate('/opportunities')}
                     style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '4px 8px', borderRadius: 6, transition: 'background 0.12s' }}
                     onMouseEnter={e => e.currentTarget.style.background = COLORS.bgSelected}
                     onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                    <span style={{ fontSize: 14 }}>❌</span>
+                    <span style={{ fontSize: 16, lineHeight: 1, color: COLORS.danger }}>✘</span>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.textDark, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.clientName}</div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.textDark, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.salesNo}</div>
                       <div style={{ fontSize: 11, color: COLORS.textLight, display: 'flex', gap: 10, marginTop: 1 }}>
                         <span>{o.salesman}</span>
-                        <span>{o.updatedAt}</span>
+                        <span>{formatBeijing(o.lostAt || o.updatedAt)}</span>
                       </div>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-                      <span style={{ fontSize: 14, fontWeight: 700, color: COLORS.textSecondary, whiteSpace: 'nowrap' }}>¥{fmtK(exAmount(o.amount, o.taxRate))}</span>
-                      <Tag color={reason.color}
-                        style={{ margin: 0, fontSize: 11, fontWeight: 600, border: 'none', borderRadius: 4, padding: '1px 8px' }}>
-                        {reason.label}
-                      </Tag>
-                    </div>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: COLORS.textSecondary, whiteSpace: 'nowrap' }}>¥{fmtK(exAmount(o.amount, o.taxRate))}</span>
                   </div>
                 );
               })}
             </div>
           )}
         </Card>
+
+<Card size="small"
+          style={{ flex: '1 1 380px', minWidth: 300, borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
+          styles={{ body: { padding: '4px 16px' } }}>
+          <SectionTitle title="近期交付" count={recentDeliveries.length} />
+          {recentDeliveries.length === 0 ? (
+            <div style={{ padding: 24, textAlign: 'center', color: COLORS.textLight, fontSize: 13 }}>暂无已交付项目</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+              {recentDeliveries.map(p => {
+                const node15 = (p.nodes||[]).find((n: any) => n.nodeNo === 15);
+                return (
+                <div key={p.id} onClick={() => navigate('/delivery/' + p.id)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '4px 8px', borderRadius: 6, transition: 'background 0.12s' }}
+                  onMouseEnter={e => e.currentTarget.style.background = COLORS.bgSelected}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                  <span style={{ fontSize: 16, lineHeight: 1, color: COLORS.success }}>✔</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.textDark, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.salesNo}</div>
+                    <div style={{ fontSize: 11, color: COLORS.textLight, display: 'flex', gap: 10, marginTop: 1 }}>
+                      <span>{p.clientName}</span>
+                      <span>{formatBeijing(node15?.actualDate || p.updatedAt)}</span>
+                    </div>
+                  </div>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: COLORS.success, whiteSpace: 'nowrap' }}>¥{fmtK(exAmount(p.contractAmount))}</span>
+                  <RightOutlined style={{ color: COLORS.textLight, fontSize: 12 }} />
+                </div>
+              );})}
+            </div>
+          )}
+        </Card>
+
+        
       </div>
     </div>
   );

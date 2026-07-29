@@ -13,10 +13,10 @@ import type { ProfitItem, BubbleDataItem } from '../components/charts/DeliveryCh
 /* ============================================================
    财年工具
    ============================================================ */
-/** 压缩项目编号：A2026-07-002-E -> 2607002E */
+/** 压缩项目编号：A2026-07-003-S → 2607003S，A2026-07-009-E → 2607009E */
 function compressNo(sn: string | undefined | null): string {
-  const m = sn && sn.match(/^A(\d{4})-(\d{2})-(\d{3})-(.)$/);
-  if (m) return m[1].slice(2) + m[2] + m[3] + m[4];
+  const m = sn && sn.match(/^A(\d{4})-(\d{2})-(\d{3})-(.)(-.)?$/);
+  if (m) return m[1].slice(2) + m[2] + m[3] + m[4] + (m[5] || '');
   return sn || '';
 }
 
@@ -96,25 +96,14 @@ const DeliveryAnalysis: React.FC = () => {
   }, [deliveryProjects]);
 
   // ── 共享工具函数 ──
-  /** 计算某项目的最大延期天数 */
-  /** 计算某项目的历史最大延期天数（以基准计划为准，与交付管理页延期定义一致） */
-  const calcMaxDelay = (p: DeliveryProject, now: Date, fyRange?: { start: Date; end: Date }) => {
-    let maxDelay = 0;
-    for (const n of p.nodes) {
-      // 参考日期 = baselineEndDate → baselinePlannedEndDate → plannedEndDate（与交付管理页一致）
-      const refDate = n.baselineEndDate || n.baselinePlannedEndDate;
-      if (!refDate) continue;
-      // 如传入财年范围，只统计参考日期在财年内的节点（节点归属财年过滤）
-      if (fyRange) {
-        const d = new Date(refDate);
-        if (d < fyRange.start || d > fyRange.end) continue;
-      }
-      // completed 节点用实际完成日，其他节点用 now
-      const end = (n.status === 'completed' && n.actualDate) ? new Date(n.actualDate) : now;
-      const days = Math.round((end.getTime() - new Date(refDate).getTime()) / (1000 * 60 * 60 * 24));
-      if (days > maxDelay) maxDelay = days;
-    }
-    return maxDelay;
+  /** 计算项目延期天数（以第15节点基线为准，与交付管理页实施计划一致），负值表示提前 */
+  const calcProjDelay = (p: DeliveryProject): number => {
+    const n15 = p.nodes.find(n => n.nodeNo === 15);
+    if (!n15) return 0;
+    const refDate = n15.baselineEndDate || n15.baselinePlannedEndDate || n15.plannedEndDate;
+    if (!refDate) return 0;
+    const end = (n15.status === 'completed' && n15.actualDate) ? new Date(n15.actualDate) : new Date();
+    return Math.round((end.getTime() - new Date(refDate).getTime()) / (1000 * 60 * 60 * 24));
   };
   /** 判断项目节点15是否已完成且在财年范围内 */
   const isNode15CompletedInFy = (p: DeliveryProject, fyRange: ReturnType<typeof parseFY>) => {
@@ -140,22 +129,13 @@ const DeliveryAnalysis: React.FC = () => {
 
   // ── 各项目延期天数（项目级，节点15）──
   const projectDelayDays = useMemo(() => {
-    const now = new Date();
     return fyFiltered.map(p => {
-      // 项目级延期：取节点15实际完成日/今天 - 基线计划日
-      const n15 = p.nodes.find(n => n.nodeNo === 15);
-      let projDelay = 0;
-      if (n15) {
-        const refD = n15.baselineEndDate || n15.baselinePlannedEndDate;
-        if (refD) {
-          const end = (n15.status === 'completed' && n15.actualDate) ? new Date(n15.actualDate) : now;
-          projDelay = Math.round((end.getTime() - new Date(refD).getTime()) / (1000 * 60 * 60 * 24));
-        }
-      }
+      const delay = calcProjDelay(p);
+      const n15completed = p.nodes.find(n => n.nodeNo === 15)?.status === 'completed';
       return {
         name: (() => { const s = compressNo(p.salesNo); return s.length > 4 ? s.slice(0,4) + String.fromCharCode(10) + s.slice(4) : s; })(),
-        value: projDelay,
-        color: projDelay > 0 ? COLORS.danger : projDelay < 0 ? COLORS.success : COLORS.textLight,
+        value: delay,
+        color: n15completed ? COLORS.textLight : (delay > 0 ? COLORS.danger : delay < 0 ? COLORS.success : COLORS.textLight),
       };
     });
   }, [fyFiltered]);
@@ -229,15 +209,11 @@ const DeliveryAnalysis: React.FC = () => {
       const { exTax, grandEstimated, estGP3 } = est;
       const actProfit = p.totalActualCost != null ? (exTax - p.totalActualCost) : undefined;
       const actGP3 = actProfit != null && exTax > 0 ? actProfit / exTax : undefined;
-      return { exTax, estGP3, actGP3, actProfit, deviation: actGP3 != null ? actGP3 - estGP3 : 0, name: compressNo(p.salesNo), estProfit: exTax - grandEstimated };
+      return { exTax, estGP3, actGP3, actProfit, deviation: actGP3 != null ? actGP3 - estGP3 : 0, name: (() => { const s = compressNo(p.salesNo); return s.length > 4 ? s.slice(0, 4) + '\n' + s.slice(4) : s; })(), estProfit: exTax - grandEstimated };
     });
     const items: ProfitItem[] = itemData.filter(Boolean).map(d => ({ name: d.name!, estProfit: d.estProfit!, estGP3: d.estGP3, actProfit: d.actProfit, actGP3: d.actGP3, deviation: d.deviation }))
       .sort((a, b) => Math.abs(b.deviation) - Math.abs(a.deviation));
-    const totalAmt = itemData.reduce((s, d) => s + d.exTax, 0);
-    const avgEstGP3 = totalAmt > 0 ? itemData.reduce((s, d) => s + d.exTax * d.estGP3, 0) / totalAmt : 0;
-    const actItems = itemData.filter(d => d.actGP3 != null);
-    const avgActGP3 = actItems.length > 0 ? actItems.reduce((s, d) => s + d.exTax * d.actGP3!, 0) / actItems.reduce((s, d) => s + d.exTax, 0) : 0;
-    return { items, avgEstGP3, avgActGP3 };
+    return { items };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fyFiltered, fyRange, projectEstimates, preloadReady]);
 
@@ -261,29 +237,32 @@ const DeliveryAnalysis: React.FC = () => {
       if (!n15Done) activeAmt += exTax;
       if (p.status === '已延期') delayedAmt += exTax;
       if (isNode15CompletedInFy(p, fyRange)) completedAmt += exTax;
-      // 加权延期天数：各项目最大延期天数的平均
-      const maxDelay = calcMaxDelay(p, now);
-      if (maxDelay > 0) { totalDelayDays += maxDelay; delayProjectCount++; }
+      // 加权延期天数：仅统计有延期（正天数）的项目
+      const projDelay = calcProjDelay(p);
+      if (projDelay > 0) { totalDelayDays += projDelay; delayProjectCount++; }
 
-      // 节点按时完成率
+      // 节点按时完成率（与节点分析口径一致：计入所有应到达的节点，含进行中超期和pending超期）
       for (const n of p.nodes) {
-        if (n.status === 'completed' || n.status === 'delayed') {
-          totalCompleted++;
-          if (n.actualDate && new Date(n.actualDate) <= new Date(n.plannedEndDate)) onTimeCompleted++;
+        // 跳过未来节点：未完成且计划结束日未到
+        if (n.status !== 'completed' && new Date(n.plannedEndDate) > now) continue;
+        totalCompleted++;
+        // 按时：仅 completed 且实际日期 ≤ 计划结束日
+        if (n.status === 'completed' && n.actualDate && new Date(n.actualDate) <= new Date(n.plannedEndDate)) {
+          onTimeCompleted++;
         }
       }
 
-      // 成本偏差率
+      // 成本偏差率（与气泡图/利润分析使用一致的 grandEstimated 口径，含质保/风险/商业费用）
       if (p.costStatus === 'approved' && p.totalActualCost != null) {
         const { groups, version } = loadQuotationGroups(p.quotationId);
-        const { totalEstimated } = computeDeliveryEstGP3(p.contractAmount, groups, version);
-        costDevNumerator += (p.totalActualCost - totalEstimated);
-        costDevDenominator += totalEstimated;
+        const { grandEstimated } = computeDeliveryEstGP3(p.contractAmount, groups, version);
+        costDevNumerator += (p.totalActualCost - grandEstimated);
+        costDevDenominator += grandEstimated;
       }
     }
 
     const avgDelay = delayProjectCount > 0 ? Math.round(totalDelayDays / delayProjectCount) : 0;
-    const onTimeRate = totalCompleted > 0 ? Math.round(onTimeCompleted / totalCompleted * 100) : 100;
+    const onTimeRate = totalCompleted > 0 ? Math.round(onTimeCompleted / totalCompleted * 100) : -1;
     const costDevRate = costDevDenominator > 0 ? (costDevNumerator / costDevDenominator * 100) : 0;
 
     return [
@@ -292,10 +271,10 @@ const DeliveryAnalysis: React.FC = () => {
       { label: '已完成项目', value: fmtK(completedAmt) + ' / ' + completedCount, color: COLORS.success, icon: '✅' },
       { label: '延期项目', value: fmtK(delayedAmt) + ' / ' + delayedCount, color: delayedCount > 0 ? COLORS.danger : COLORS.success, icon: '🚨' },
       { label: '加权延期天数', value: `${avgDelay}天`, color: avgDelay > 0 ? COLORS.danger : COLORS.success, icon: '📅' },
-      { label: '节点按时率', value: `${onTimeRate}%`, color: onTimeRate >= 80 ? COLORS.success : onTimeRate >= 50 ? COLORS.warning : COLORS.danger, icon: '🎯' },
+      { label: '节点按时率', value: onTimeRate >= 0 ? `${onTimeRate}%` : '—', color: onTimeRate >= 0 ? (onTimeRate >= 80 ? COLORS.success : onTimeRate >= 50 ? COLORS.warning : COLORS.danger) : COLORS.textLight, icon: '🎯' },
       { label: '成本偏差率', value: costDevDenominator > 0 ? `${costDevRate > 0 ? '+' : ''}${costDevRate.toFixed(1)}%` : '—', color: costDevRate <= 0 ? COLORS.success : COLORS.danger, icon: '💰' },
     ];
-  }, [fyFiltered, fyRange]);
+  }, [fyFiltered, fyRange, preloadReady]);
 
   // ── 按月交付 KPI（最近3个完整月） ──
   const monthlyDelKpi = useMemo(() => {
@@ -314,13 +293,18 @@ const DeliveryAnalysis: React.FC = () => {
         const n15done = n15?.status === 'completed' && !!n15.actualDate && new Date(n15.actualDate) <= mEnd;
         if (n15done) { completed++; cAmt += ex; } else { active++; aAmt += ex; }
         if (p.status === '已延期') { delayed++; dAmt += ex; }
-        const md = calcMaxDelay(p, mEnd);
-        if (md > 0) { tDelay += md; dCnt++; }
+        const pd = calcProjDelay(p);
+        if (pd > 0) { tDelay += pd; dCnt++; }
         for (const n of p.nodes) {
-          if (n.status === 'completed' || n.status === 'delayed') { tN++; if (n.actualDate && new Date(n.actualDate) <= new Date(n.plannedEndDate)) onT++; }
+          // 跳过未来节点：未完成且计划结束日未到当月底
+          if (n.status !== 'completed' && new Date(n.plannedEndDate) > mEnd) continue;
+          tN++;
+          if (n.status === 'completed' && n.actualDate && new Date(n.actualDate) <= new Date(n.plannedEndDate)) {
+            onT++;
+          }
         }
       }
-      return { total: mp.length, tAmt, active, aAmt, completed, cAmt, delayed, dAmt, avgDelay: dCnt > 0 ? Math.round(tDelay / dCnt) : 0, onTimeRate: tN > 0 ? Math.round(onT / tN * 100) : 100 };
+      return { total: mp.length, tAmt, active, aAmt, completed, cAmt, delayed, dAmt, avgDelay: dCnt > 0 ? Math.round(tDelay / dCnt) : 0, onTimeRate: tN > 0 ? Math.round(onT / tN * 100) : -1 };
     };
     return [calcMonth(1), calcMonth(2), calcMonth(3)];
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -388,7 +372,7 @@ const DeliveryAnalysis: React.FC = () => {
     });
   }, [fyFiltered, projectEstimates]);
 
-  // ── 气泡图数据  // ── 气泡图数据（仅含当前财年内完成节点15的项目）──
+  // ── 气泡图数据（仅含当前财年内完成节点15的项目）──
   // 产能压力：按实际时间窗口计算并行项目的时间加权贡献
   // 公式：加权金额 × (1 + k × max(0, 加权个数 - 1))，k=0.2，显示值/10000
   const bubbleData = useMemo(() => {
@@ -420,7 +404,7 @@ const DeliveryAnalysis: React.FC = () => {
       // null items filtered below
       const projDuration = lc.end.getTime() - lc.start.getTime();
 
-      const maxDelay = calcMaxDelay(p, now, fyRange);
+      const projDelay = calcProjDelay(p);
       const est = projectEstimates.get(p.id);
       const exTax = est ? est.exTax : Math.round(p.contractAmount / 1.13);
       const estTotal = est ? est.grandEstimated : 0;
@@ -450,27 +434,21 @@ const DeliveryAnalysis: React.FC = () => {
       return {
         name: compressNo(p.salesNo),
         contractAmount: exTax,
-        delayDays: maxDelay,
+        delayDays: projDelay,
         costDeviation: costDev,
         status: p.status,
         capacityPressure: capacityRaw / 10000,
       };
     }).filter(Boolean) as BubbleDataItem[];
-  }, [fyFiltered, fyRange, projectEstimates]);  // ── 渲染 ──
-  // 左列每张卡片高度 = 边框2 + padding-top30 + SVG225 = 257px，间隔16px
-  const CARD_BORDER = 2, CARD_PAD_TOP = 30, SVG_H = 225, GAP = 16;
-  const CARD_TOTAL = CARD_BORDER + CARD_PAD_TOP + SVG_H; // 257
-  const LEFT_COL_H = CARD_TOTAL * 3 + GAP * 2; // 803
-  // 气泡图卡片
-  const BUBBLE_PAD_TOP = 37; // 原22 + 15
-  const BUBBLE_PAD_BOTTOM = 25; // 原10 + 15
-  const BUBBLE_SVG_H = LEFT_COL_H - 2 - BUBBLE_PAD_TOP - BUBBLE_PAD_BOTTOM; // 739
-  // 画布高度 = 左列总高 − 原始border(2) − 原始padding-bottom(10) − 原始padding-top(22) = 769
-  // 再 − 原缩减30px + 标签下移合计25px = 764
-  const BUBBLE_ORIG_PAD_TOP = 22, BUBBLE_ORIG_PAD_BOT = 10;
-  const BUBBLE_CANVAS_SHRINK = 30; // 原高度缩减
-  const BUBBLE_LABEL_OFFSET = 15 + 10; // "延期天数"标签两次下移
-  const BUBBLE_CANVAS_H = LEFT_COL_H - 2 - BUBBLE_ORIG_PAD_BOT - BUBBLE_ORIG_PAD_TOP - BUBBLE_CANVAS_SHRINK + BUBBLE_LABEL_OFFSET; // 764
+  }, [fyFiltered, fyRange, projectEstimates]);
+
+  // ── 布局常量 ──
+  // 左列 3 张卡片（利润分析/延期天数/节点分析），每张高225px，间距16px
+  const LEFT_COL_H = (2 + 30 + 225) * 3 + 16 * 2; // 803
+  // 气泡图卡片内容区高度
+  const BUBBLE_SVG_H = LEFT_COL_H - 2 - 37 - 25; // 739
+  // 气泡图画布高度（含外部标注空间）
+  const BUBBLE_CANVAS_H = LEFT_COL_H - 2 - 10 - 22 - 30 + 25; // 764
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
@@ -481,26 +459,24 @@ const DeliveryAnalysis: React.FC = () => {
 
       <OverviewCards items={overviewItems.map((item, i) => {
             const mk = monthlyDelKpi;
-            const v1 = [`${fmtK(mk[1].tAmt)} / ${mk[1].total}`, `${fmtK(mk[1].aAmt)} / ${mk[1].active}`, `${fmtK(mk[1].cAmt)} / ${mk[1].completed}`, `${fmtK(mk[1].dAmt)} / ${mk[1].delayed}`, `${mk[1].avgDelay}天`, `${mk[1].onTimeRate}%`, ''];
-            const v2 = [`${fmtK(mk[2].tAmt)} / ${mk[2].total}`, `${fmtK(mk[2].aAmt)} / ${mk[2].active}`, `${fmtK(mk[2].cAmt)} / ${mk[2].completed}`, `${fmtK(mk[2].dAmt)} / ${mk[2].delayed}`, `${mk[2].avgDelay}天`, `${mk[2].onTimeRate}%`, ''];
+            const v1 = [`${fmtK(mk[1].tAmt)} / ${mk[1].total}`, `${fmtK(mk[1].aAmt)} / ${mk[1].active}`, `${fmtK(mk[1].cAmt)} / ${mk[1].completed}`, `${fmtK(mk[1].dAmt)} / ${mk[1].delayed}`, `${mk[1].avgDelay}天`, `${mk[1].onTimeRate >= 0 ? mk[1].onTimeRate + '%' : '—'}`, ''];
+            const v2 = [`${fmtK(mk[2].tAmt)} / ${mk[2].total}`, `${fmtK(mk[2].aAmt)} / ${mk[2].active}`, `${fmtK(mk[2].cAmt)} / ${mk[2].completed}`, `${fmtK(mk[2].dAmt)} / ${mk[2].delayed}`, `${mk[2].avgDelay}天`, `${mk[2].onTimeRate >= 0 ? mk[2].onTimeRate + '%' : '—'}`, ''];
             return { ...item, prevValues: [{ value: v1[i] || '', color: item.color }, { value: v2[i] || '', color: item.color }] };
           })} />
 
           <div style={{ display: 'flex', gap: 16, marginTop: 16, alignItems: 'stretch' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16, flex: '0 0 calc(3 / 7 * (100% - 96px) + 32px)' }}>
               <ProfitChart data={profitChartData.items}
-                avgEstGP3={profitChartData.avgEstGP3}
-                avgActGP3={profitChartData.avgActGP3}
-                height={225} chartWidth={702} contentOffset={30} />
+                height={225} chartWidth={702} contentOffset={40} />
               <VerticalBarChart title="延期天数" data={projectDelayDays}
                 format="num" height={225} topN={15} barWidthRatio={0.75}
-                maxBarWidth={40} chartWidth={702} contentOffset={30} hideAvgLine padTop={27} padBottom={33} barLabelGap={10} />
+                maxBarWidth={40} chartWidth={702} contentOffset={40} hideAvgLine padTop={25} padBottom={35} barLabelGap={10} />
               <VerticalBarChart title="节点分析" data={nodeBottleneck}
                 format="num" height={225} topN={15} barWidthRatio={0.75}
-                maxBarWidth={40} chartWidth={702} contentOffset={30} hideAvgLine padTop={27} padBottom={33} disableSort />
+                maxBarWidth={40} chartWidth={702} contentOffset={40} hideAvgLine padTop={25} padBottom={35} disableSort />
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16, flex: 1, minWidth: 0 }}>
-              <BubbleChart data={bubbleData} height={BUBBLE_SVG_H} canvasHeight={BUBBLE_CANVAS_H} bodyPadTop={BUBBLE_PAD_TOP} bodyPadBottom={BUBBLE_PAD_BOTTOM} />
+              <BubbleChart data={bubbleData} height={BUBBLE_SVG_H} canvasHeight={BUBBLE_CANVAS_H} bodyPadTop={37} bodyPadBottom={25} />
             </div>
           </div>
 

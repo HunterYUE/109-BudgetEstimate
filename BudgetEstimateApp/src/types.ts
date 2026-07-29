@@ -155,6 +155,12 @@ export interface QuotationSummary {
   amount: number;
   totalCost: number;
   profitRate: number;
+  /** 含税GP3利润金额（来自 project_versions） */
+  gp3Amount?: number;
+  /** 折后报价（含税，来自 project_versions） */
+  discountedPrice?: number;
+  /** 税率（来自 project_versions） */
+  taxRate?: number;
   updatedAt: string;
   createdAt?: string;
   projectId?: string;

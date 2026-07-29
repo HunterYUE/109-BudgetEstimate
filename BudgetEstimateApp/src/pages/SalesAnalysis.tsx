@@ -207,6 +207,22 @@ const SalesAnalysis: React.FC = () => {
   const parsedSalesTarget = useMemo(() => safeParseInt(annualSalesTarget), [annualSalesTarget]);
   const parsedGp3 = useMemo(() => parseFloat(gp3Input) || 0, [gp3Input]);
 
+  // ── 判断交付项目是否属于某财年（创建、活动、完成任一环节落入则属之）──
+  const isProjActiveInFy = (p: DeliveryProject, fyR: { start: Date; end: Date }): boolean => {
+    const created = new Date(p.createdAt);
+    if (created > fyR.end) return false;
+    const node15 = (p.nodes||[]).find((n: any) => n.nodeNo === 15);
+    let effEnd: Date;
+    if (node15?.actualDate) {
+      effEnd = new Date(node15.actualDate);
+    } else if (p.status === '已完成' || p.status === '已延期') {
+      effEnd = new Date(p.updatedAt);
+    } else {
+      effEnd = new Date();
+    }
+    return effEnd >= fyR.start;
+  };
+
   // ── 月度订单数据（当月转交付项目的合同金额之和，按财年月汇总）──
   const monthlyOrderData = useMemo(() => {
     const fyRange = parseFY(fySelect);
@@ -402,22 +418,6 @@ const SalesAnalysis: React.FC = () => {
     return { count: items.length, amount: items.reduce((s, o) => s + o.amount, 0) };
   }, [fyFiltered]);
 
-  // ── 判断交付项目是否属于某财年（创建、活动、完成任一环节落入则属之）──
-  const isProjActiveInFy = (p: DeliveryProject, fyR: { start: Date; end: Date }): boolean => {
-    const created = new Date(p.createdAt);
-    if (created > fyR.end) return false;
-    const node15 = (p.nodes||[]).find((n: any) => n.nodeNo === 15);
-    let effEnd: Date;
-    if (node15?.actualDate) {
-      effEnd = new Date(node15.actualDate);
-    } else if (p.status === '已完成' || p.status === '已延期') {
-      effEnd = new Date(p.updatedAt);
-    } else {
-      effEnd = new Date();
-    }
-    return effEnd >= fyR.start;
-  };
-
   // ── 滚动12个月指标（销售周期、赢单转化率，用于概览卡片）──
   const rolling12mKpi = useMemo(() => {
     const now = new Date();
@@ -530,14 +530,10 @@ const SalesAnalysis: React.FC = () => {
       if (!s) { s = { name: o.salesman, wins: 0, orderAmount: 0, totalAmount: 0, pipelinePotential: 0, profitTotal: 0, totalCount: 0 }; map.set(o.salesman, s); }
       s.totalAmount += o.amount;
       s.totalCount++;
-      // 利润：仅对已转交付（有 wonAt）的机会累加
-      if (o.wonAt) {
-        let profitRate = 0.15;
-        if (o.quotationId) {
-          const q = (quotationSummaries||[]).find(q => q.id === o.quotationId);
-          if (q) profitRate = (q.profitRate ?? 0) / 100;
-        }
-        s.profitTotal += Math.round(o.amount * profitRate);
+      // 利润：直接读取报价的含税GP3利润金额，不使用利润率计算
+      if (o.wonAt && o.quotationId) {
+        const q = (quotationSummaries||[]).find(q => q.id === o.quotationId);
+        s.profitTotal += q?.gp3Amount != null ? Math.round(q.gp3Amount) : Math.round(o.amount * 0.15);
       }
     }
     // 管道潜力：当前活跃管道（不过滤财年）
@@ -557,7 +553,7 @@ const SalesAnalysis: React.FC = () => {
     }));
   }, [fyWonByTime, currentPipeline, quotationSummaries, fyFiltered]);
 
-  // ── 4 个维度提取 ──
+  // ── 4 个维度提取（图表通过 topN=10 自动排序取前10名）──
   const dimEfficiency: BarItem[] = salesmenStats.map(s => ({ name: s.name, value: Math.round(s.conversionEff * 10) / 10 }));
   const dimOrderAmount: BarItem[] = salesmenStats.map(s => ({ name: s.name, value: s.orderAmount }));
   const dimPipeline: BarItem[] = salesmenStats.map(s => ({ name: s.name, value: s.pipelinePotential }));
@@ -625,7 +621,7 @@ const SalesAnalysis: React.FC = () => {
           style={{ flex: 1, borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
           styles={{ body: { padding: '8px 12px' } }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginBottom: 2, minHeight: 18 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginBottom: 1, minHeight: 14 }}>
             {targetEditing ? (
               <input type="number" min={0} ref={targetRef}
                 value={annualTargetInput}
@@ -647,7 +643,7 @@ const SalesAnalysis: React.FC = () => {
               </span>
             )}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginBottom: 2, minHeight: 18 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginBottom: 1, minHeight: 14 }}>
             <span style={{ fontSize: 10, whiteSpace: 'nowrap', fontWeight: 700 }}>
               <span style={{ color: COLORS.purple }}>
                 {annualTargetInput && gp3Input ? `${monthlyCumulative.annualProfitTarget.toLocaleString()}K` : '—'}
@@ -659,7 +655,7 @@ const SalesAnalysis: React.FC = () => {
               ) : null}
             </span>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginBottom: 2, minHeight: 18 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginBottom: 1, minHeight: 14 }}>
             {orderGp3Editing ? (
               <input type="number" min={0} max={100} ref={orderGp3Ref}
                 value={gp3Input}
@@ -703,7 +699,7 @@ const SalesAnalysis: React.FC = () => {
           style={{ flex: 1, borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
           styles={{ body: { padding: '8px 12px' } }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginBottom: 2, minHeight: 18 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginBottom: 1, minHeight: 14 }}>
             {salesTargetEditing ? (
               <input type="number" min={0} ref={salesTargetRef}
                 value={annualSalesTarget}
@@ -725,7 +721,7 @@ const SalesAnalysis: React.FC = () => {
               </span>
             )}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginBottom: 2, minHeight: 18 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginBottom: 1, minHeight: 14 }}>
             <span style={{ fontSize: 10, whiteSpace: 'nowrap', fontWeight: 700 }}>
               <span style={{ color: COLORS.purple }}>
                 {annualSalesTarget && gp3Input ? `${salesCumulative.annualProfitTarget.toLocaleString()}K` : '—'}
@@ -737,7 +733,7 @@ const SalesAnalysis: React.FC = () => {
               ) : null}
             </span>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginBottom: 2, minHeight: 18 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginBottom: 1, minHeight: 14 }}>
             {salesGp3Editing ? (
               <input type="number" min={0} max={100} ref={salesGp3Ref}
                 value={gp3Input}
@@ -768,15 +764,15 @@ const SalesAnalysis: React.FC = () => {
       {/* Row 3: 销售排行 4×2 网格 */}
       <div style={{ display: 'flex', flexDirection: 'column' }}>
         <div style={{ display: 'flex', gap: 16, justifyContent: 'center', marginTop: 10 }}>
-          <div style={{ flex: '0 0 calc(33.33% - 12px)' }}><VerticalBarChart title="竞对" data={dimLossReasons} format="num" height={220} topN={7} barWidthRatio={0.6} maxBarWidth={26} hideAvgLine contentOffset={30} padBottom={28} /></div>
-          <div style={{ flex: '0 0 calc(33.33% - 12px)' }}><VerticalBarChart title="取消" data={dimCancelReasons} format="num" height={220} topN={4} barWidthRatio={0.6} maxBarWidth={26} hideAvgLine contentOffset={30} padBottom={28} /></div>
-          <div style={{ flex: '0 0 calc(33.33% - 12px)' }}><VerticalBarChart title="放弃" data={dimAbandonReasons} format="num" height={220} topN={6} barWidthRatio={0.6} maxBarWidth={26} hideAvgLine contentOffset={30} padBottom={28} /></div>
+          <div style={{ flex: '0 0 calc(25% - 12px)' }}><VerticalBarChart title="竞对" data={dimLossReasons} format="num" height={220} topN={7} barWidthRatio={0.6} maxBarWidth={26} hideAvgLine contentOffset={30} padBottom={28} /></div>
+          <div style={{ flex: '0 0 calc(25% - 12px)' }}><VerticalBarChart title="取消" data={dimCancelReasons} format="num" height={220} topN={4} barWidthRatio={0.6} maxBarWidth={26} hideAvgLine contentOffset={30} padBottom={28} /></div>
+          <div style={{ flex: '0 0 calc(25% - 12px)' }}><VerticalBarChart title="放弃" data={dimAbandonReasons} format="num" height={220} topN={6} barWidthRatio={0.6} maxBarWidth={26} hideAvgLine contentOffset={30} padBottom={28} /></div>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 16, marginTop: 15, gridAutoRows: 270 }}>
-          <VerticalBarChart title="订单金额" data={dimOrderAmount} format="K" contentOffset={35} />
-          <VerticalBarChart title="订单利润" data={dimProfit} format="K" contentOffset={35} />
-          <VerticalBarChart title="转化效率" data={dimEfficiency} format="%" contentOffset={35} />
-          <VerticalBarChart title="管道潜力" data={dimPipeline} format="K" contentOffset={35} />
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 16, marginTop: 15, gridAutoRows: 250 }}>
+          <div style={{ overflow: 'hidden' }}><VerticalBarChart title="订单金额" data={dimOrderAmount} format="K" contentOffset={35} /></div>
+          <div style={{ overflow: 'hidden' }}><VerticalBarChart title="订单利润" data={dimProfit} format="K" contentOffset={35} /></div>
+          <div style={{ overflow: 'hidden' }}><VerticalBarChart title="转化效率" data={dimEfficiency} format="%" contentOffset={35} /></div>
+          <div style={{ overflow: 'hidden' }}><VerticalBarChart title="管道潜力" data={dimPipeline} format="K" contentOffset={35} /></div>
         </div>
       </div>
     </div>

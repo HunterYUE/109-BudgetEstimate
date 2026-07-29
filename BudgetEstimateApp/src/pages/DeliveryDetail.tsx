@@ -420,13 +420,20 @@ const DeliveryDetail: React.FC = () => {
     setSubmitCostOpen(true);
   }, [project, actualCosts, msg]);
 
-  const handleSubmitCost = useCallback(() => {
+  const handleSubmitCost = useCallback(async () => {
     if (!project) return;
-    const ver = quotationVersionFull;
+    // 先持久化当前实际成本到 delivery_projects，确保 totalActualCost 与审批数据一致
     const totalActual = Object.values(actualCosts).reduce((s, v) => s + v, 0);
-    const taxRate = quotationVersion?.taxRate ?? 0.13;
     const { exTax, warrantyCost } = computeDeliveryEstGP3(project.contractAmount, quotationGroups, quotationVersion);
     const grandActual = totalActual + warrantyCost;
+    try {
+      await deliveryService.update(project.id, { totalActualCost: grandActual, actualCosts });
+    } catch {
+      msg.error('成本数据保存失败，请重试');
+      return;
+    }
+    const ver = quotationVersionFull;
+    const taxRate = quotationVersion?.taxRate ?? 0.13;
     const actProfit = exTax - grandActual;                // 未税利润（与概览条一致）
     const actGP3 = exTax > 0 ? actProfit / exTax : 0;    // GP3（未税=含税）
     // gp3Amount 存含税利润，gp3 存费率（未税/含税相同 totalCost 存未税值供对照）
