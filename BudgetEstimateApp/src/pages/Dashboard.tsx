@@ -517,7 +517,7 @@ const Dashboard: React.FC = () => {
   return (
     <div className="dashboard-container">
       {/* ── 标题 ── */}
-      <div style={{ fontSize: 20, fontWeight: 700, color: COLORS.textDark, marginBottom: 10, letterSpacing: 0.5 }}>
+      <div style={{ fontSize: 17, fontWeight: 700, color: COLORS.textDark, marginBottom: 10, letterSpacing: 0.5 }}>
         仪表盘
       </div>
 
@@ -583,7 +583,7 @@ const Dashboard: React.FC = () => {
       {/* ── 底栏：管道节点 | 行业分布 | 机会趋势 ── */}
       <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
         <Card size="small"
-          style={{ flex: '1 1 380px', minWidth: 300, borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
+          style={{ flex: 1, borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
           styles={{ body: { padding: '16px 18px' } }}>
           <SectionTitle title="管道节点" />
           <div style={{ marginTop: 50, marginLeft: -20 }}>
@@ -592,7 +592,7 @@ const Dashboard: React.FC = () => {
         </Card>
 
         <Card size="small"
-          style={{ flex: '1 1 380px', minWidth: 300, borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
+          style={{ flex: 1, borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
           styles={{ body: { padding: '16px 18px' } }}>
           <SectionTitle title="行业分布" count={industryDist.reduce((s, i) => s + i.value, 0)} />
           {industryDist.length === 0 ? (
@@ -615,7 +615,7 @@ const Dashboard: React.FC = () => {
         </Card>
 
         <Card size="small"
-          style={{ flex: '1 1 380px', minWidth: 300, borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
+          style={{ flex: 1, borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
           styles={{ body: { padding: '16px 18px' } }}>
           <SectionTitle title="机会趋势" count={fyTrend.reduce((s, m) => s + m.value, 0)} />
           {fyTrend.every(m => m.value === 0) ? (
@@ -631,7 +631,7 @@ const Dashboard: React.FC = () => {
       {/* ── 动态：近期赢单 | 待审批项 | 近期输单 ── */}
       <div style={{ display: 'flex', gap: 20, marginTop: 10, flexWrap: 'wrap' }}>
         <Card size="small"
-          style={{ flex: '1 1 380px', minWidth: 300, borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
+          style={{ flex: 1, borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
           styles={{ body: { padding: '4px 16px' } }}>
           <SectionTitle title="近期赢单" count={recentWins.length} />
           {recentWins.length === 0 ? (
@@ -660,7 +660,7 @@ const Dashboard: React.FC = () => {
         </Card>
 
                 <Card size="small"
-          style={{ flex: '1 1 380px', minWidth: 300, borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
+          style={{ flex: 1, borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
           styles={{ body: { padding: '4px 16px' } }}>
           <SectionTitle title="近期输单" count={recentLosses.length} />
           {recentLosses.length === 0 ? (
@@ -690,7 +690,7 @@ const Dashboard: React.FC = () => {
         </Card>
 
 <Card size="small"
-          style={{ flex: '1 1 380px', minWidth: 300, borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
+          style={{ flex: 1, borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
           styles={{ body: { padding: '4px 16px' } }}>
           <SectionTitle title="近期交付" count={recentDeliveries.length} />
           {recentDeliveries.length === 0 ? (

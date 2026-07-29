@@ -22,7 +22,7 @@ body {
 
 /* ── Dashboard 容器（全宽，与销售分析一致） ── */
 .dashboard-container {
-  padding: 0 24px;
+  padding: 0;
 }
 
 /* ── Responsive scaling ── */
@@ -45,7 +45,7 @@ table.proj-header { min-width: 900px; }
 }
 
 @media (max-width: 768px) {
-  .dashboard-container { padding: 0 12px; }
+  .dashboard-container { padding: 0; }
   .app-content { padding: 12px !important; }
   .ant-card { margin-bottom: 8px; }
 }
