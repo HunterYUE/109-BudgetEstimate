@@ -65,8 +65,6 @@ const DeliveryDetail: React.FC = () => {
   const [hasChanges, setHasChanges] = useState(false);
   const [submitPlanOpen, setSubmitPlanOpen] = useState(false);
   const [quotationProject, setQuotationProject] = useState<{ groups: Group[]; versions?: ProjectVersion[]; currentVersion?: ProjectVersion; [k: string]: unknown } | null>(null);
-  const projectRef = useRef<DeliveryProject | null>(null);
-  useEffect(() => { projectRef.current = project; }, [project]);
   const baselinesRef = useRef<Record<string, string>>({});
 
   // 待刷新的计划日期变更（审批通过后，3分钟内的多次编辑合并为一次历史记录）
@@ -224,6 +222,10 @@ const DeliveryDetail: React.FC = () => {
         // 状态变更不记录历史（仅当审批通过后的日期变更才记历史）
         if (nextStatus === 'in_progress') {
           updated.actualStartDate = today;
+          if (n.status === 'completed') {
+            updated.actualDate = undefined;
+            updated.actualEndDate = undefined;
+          }
         } else if (nextStatus === 'completed') {
           updated.actualDate = today;
           updated.actualEndDate = today;

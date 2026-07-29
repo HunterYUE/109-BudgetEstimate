@@ -586,8 +586,7 @@ export const ProjectGantt: React.FC<{
         {lineX != null && (
           <g>
             <line x1={lineX} y1={67} x2={lineX} y2={H - 4}
-              stroke={COLORS.danger} strokeWidth={1} strokeDasharray="4,3"
-              style={{ stroke: COLORS.purple }} />
+              stroke={COLORS.purple} strokeWidth={1} strokeDasharray="4,3" />
             <text x={lineX} y={60} textAnchor="middle" fontSize={11} fill={COLORS.purple} fontWeight={700}
               stroke="#fff" strokeWidth={2.5} paintOrder="stroke">
               {loadInfo ? loadInfo.value.toLocaleString() : '—'}

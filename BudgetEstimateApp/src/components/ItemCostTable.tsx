@@ -436,12 +436,12 @@ const rows: FlatRow[] = useMemo(() => {
             </span>
           );
         }
-        const isComputed = rec.key.startsWith('_labor:');
+        // _labor: 前缀预留（当前无匹配key）
         return (
           <span style={{
             paddingLeft: 16, fontSize: 13,
-            color: isComputed ? COLORS.textSecondary : COLORS.textPrimary,
-            fontStyle: isComputed ? 'italic' : 'normal',
+            color: COLORS.textPrimary,
+            fontStyle: 'normal',
           }}>
             {rec.code}
           </span>

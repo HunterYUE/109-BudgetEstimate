@@ -41,7 +41,7 @@ router.use('/tags', requireAuth, tags);
 router.use('/audit-logs', requireAuth, requireRole('director', 'admin'), auditLogs);
 
 // 用户设置
-router.use('/settings', settings);
+router.use('/settings', requireAuth, settings);
 
 // ── 项目版本保存 ──
 router.post('/project-versions', requireAuth, async (req, res, next) => {

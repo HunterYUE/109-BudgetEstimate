@@ -44,6 +44,16 @@ const fileUpload = multer({
 
 const router = Router();
 
+// 下载路由中间件：将 URL 查询参数中的 ?token= 转为 Authorization 头
+// 浏览器直接下载（<a href>/window.open）无法设置 Authorization 头，需通过 URL 传递 token
+router.use('/:deliveryId/files/:fileId/download', (req, _res, next) => {
+  const qToken = req.query.token as string | undefined;
+  if (qToken && !req.headers.authorization) {
+    req.headers.authorization = 'Bearer ' + qToken;
+  }
+  next();
+});
+
 // 自定义列表查询：包含节点完成统计（节点总数、已完成数）
 router.get('/', async (req, res, next) => {
   try {

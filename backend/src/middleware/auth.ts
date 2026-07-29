@@ -33,8 +33,6 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
   const header = req.headers.authorization;
   if (header && header.startsWith('Bearer ')) {
     token = header.slice(7);
-  } else if (req.query.token) {
-    token = req.query.token as string;
   } else {
     res.status(401).json({ error: '未登录，请先登录' });
     return;

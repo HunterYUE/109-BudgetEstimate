@@ -109,7 +109,8 @@ const SalesAnalysis: React.FC = () => {
       setQuotationSummaries(qs);
       setDeliveryProjects(dps);
     } catch (err: unknown) {
-      msg.error('加载销售分析数据失败：' + (err.message || '未知错误'));
+      const errMsg = err instanceof Error ? err.message : String(err);
+      msg.error('加载销售分析数据失败：' + errMsg);
       setAllOpps([]);
       setQuotationSummaries([]);
       setDeliveryProjects([]);
@@ -363,7 +364,7 @@ const SalesAnalysis: React.FC = () => {
       if (!isProjActiveInFy(p, fyRange)) return false;
       const node15 = (p.nodes||[]).find((n: any) => n.nodeNo === 15);
       if (!node15 || (node15.status !== 'completed' && node15.status !== 'delayed')) return false;
-      if (p.costStatus !== 'approved' || !p.totalActualCost) return false;
+      if (p.costStatus !== 'approved' || p.totalActualCost == null) return false;
       return true;
     });
     if (delivered.length === 0) return 0;
