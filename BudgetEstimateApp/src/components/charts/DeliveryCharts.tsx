@@ -393,7 +393,7 @@ const GanttNode: React.FC<{
     ? GANTT_STATUS_COLOR.in_progress
     : GANTT_STATUS_COLOR.pending;
   const delayDays = calcNodeDelay(slot);
-  const showContent = w > 16;
+  const showContent = w > 9;
   return (
     <g style={{ cursor: 'pointer' }}
       onMouseEnter={() => onHover({ slot, projectKey, sx, ex, w, cy, barH, color })}
