@@ -312,7 +312,11 @@ const DeliveryAnalysis: React.FC = () => {
       return true;
     }).map(p => {
       // 仅保留计划时间与 12 月时间线有交集的节点，超出范围的节点不绘制
-      const slots = p.nodes.filter(n => new Date(n.plannedEndDate) >= tlStart && new Date(n.plannedStartDate) <= tlEnd).map((n, ni, arr) => {
+      const slots = p.nodes.filter(n => {
+        // 已完成节点用实际完成日判断，其余用计划时间判断
+        if (n.status === 'completed' && n.actualDate) return new Date(n.actualDate) >= tlStart;
+        return new Date(n.plannedEndDate) >= tlStart && new Date(n.plannedStartDate) <= tlEnd;
+      }).map((n, ni, arr) => {
         const startH = n.history.find(h => h.field === 'status' && h.newValue === 'in_progress');
         let start: Date, end: Date;
         if (n.status === 'completed' && n.actualDate) {
