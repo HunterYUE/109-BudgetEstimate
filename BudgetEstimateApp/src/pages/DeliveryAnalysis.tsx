@@ -316,17 +316,14 @@ const DeliveryAnalysis: React.FC = () => {
         // 已完成节点用实际完成日判断，其余用计划时间判断
         if (n.status === 'completed' && n.actualDate) return new Date(n.actualDate) >= tlStart;
         return new Date(n.plannedEndDate) >= tlStart && new Date(n.plannedStartDate) <= tlEnd;
-      }).map((n, ni, arr) => {
+      }).map(n => {
         const startH = n.history.find(h => h.field === 'status' && h.newValue === 'in_progress');
         let start: Date, end: Date;
         if (n.status === 'completed' && n.actualDate) {
-          // 已完成节点：显示实际结束时间；开始时间用历史或前一节点实际结束+1天或计划开始
-          const aEnd = new Date(n.actualDate);
-          const prevActual = ni > 0 ? arr[ni - 1].actualDate : null;
-          start = startH ? new Date(startH.changedAt)
-            : (prevActual ? new Date(prevActual + ' 00:00:00') : new Date(n.plannedStartDate));
-          if (start > aEnd) start = new Date(aEnd.getTime() - 86400000);
-          end = aEnd;
+          // 已完成节点：开始=计划开始时间，结束=实际完成时间
+          start = startH ? new Date(startH.changedAt) : new Date(n.plannedStartDate);
+          end = new Date(n.actualDate);
+          if (start > end) start = end;
         } else if (n.status === 'in_progress' || n.status === 'delayed') {
           // 进行中/延期：开始用实际或计划，超期则结束=now
           start = startH ? new Date(startH.changedAt) : new Date(n.plannedStartDate);
