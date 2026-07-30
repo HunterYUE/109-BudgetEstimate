@@ -407,12 +407,14 @@ const GanttNode: React.FC<{
         <text x={sx + w / 2} y={cy + barH / 2 + 3} textAnchor="middle" fontSize={8}
           fill={color} fontWeight={700}>{slot.nodeNo}</text>
       )}
-      {/* 延期天数上方标注（+延期/-提前/0准时） */}
-      <text x={sx + w / 2} y={cy - 4} textAnchor="middle" fontSize={8}
-        fill={delayDays > 0 ? COLORS.danger : delayDays < 0 ? COLORS.success : COLORS.textLight}
-        fontWeight={400}>
-        {delayDays > 0 ? `+${delayDays}d` : delayDays < 0 ? `${delayDays}d` : '0d'}
-      </text>
+      {/* 延期天数上方标注：仅宽度足够时显示 */}
+      {w > 16 && (
+        <text x={sx + w / 2} y={cy - 4} textAnchor="middle" fontSize={8}
+          fill={delayDays > 0 ? COLORS.danger : delayDays < 0 ? COLORS.success : COLORS.textLight}
+          fontWeight={400}>
+          {delayDays > 0 ? `+${delayDays}d` : delayDays < 0 ? `${delayDays}d` : ''}
+        </text>
+      )}
     </g>
   );
 };
@@ -507,7 +509,11 @@ export const ProjectGantt: React.FC<{
   const H = Math.max(height, baseH + projCount * projH);
   /** 内容中心位置（行分隔线间的中点） */
   const rowCenter = (pi: number) => 73 +pi * projH + projH / 2;
-  const posX = (d: Date) => labelW + Math.max(0, Math.min(1, (d.getTime() - tlStart.getTime()) / (1000 * 60 * 60 * 24) / totalDays)) * chartW;
+  const posX = (d: Date) => {
+    const ms = d.getTime() - tlStart.getTime();
+    if (isNaN(ms)) return labelW;
+    return labelW + Math.max(0, Math.min(1, ms / 86400000 / totalDays)) * chartW;
+  };
   const todayX = labelW + todayPos / totalDays * chartW;
 
   // ── 交付负荷线 ──
