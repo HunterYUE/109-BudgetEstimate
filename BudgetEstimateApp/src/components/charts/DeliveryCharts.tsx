@@ -393,26 +393,28 @@ const GanttNode: React.FC<{
     ? GANTT_STATUS_COLOR.in_progress
     : GANTT_STATUS_COLOR.pending;
   const delayDays = calcNodeDelay(slot);
-  const hideTooltip = slot.name === '项目总结';
+  // 矩形条完全在标签区或宽度不足时隐藏全部内容（条本身保留为极小色块）
+  const showContent = w > 16 && sx >= 100;
   return (
-    <g style={{ cursor: 'pointer' }}
-      onMouseEnter={() => !hideTooltip && onHover({ slot, projectKey, sx, ex, w, cy, barH, color })}
-      onMouseLeave={() => onHover(null)}>
-      {/* 透明捕获区 */}
-      <rect x={sx} y={cy - 4} width={w} height={barH + 8} fill="transparent" stroke="none" />
-      {/* 可见条（圆角，淡淡填充色） */}
-      <rect x={sx} y={cy} width={w} height={barH} rx={3} ry={3}
+    <g>
+      {showContent && (
+        <rect x={sx - 2} y={cy - 2} width={w + 4} height={barH + 4} rx={4} ry={4}
+          fill="transparent" stroke="none" style={{ cursor: 'pointer' }}
+          onMouseEnter={() => slot.name !== '项目总结' && onHover({ slot, projectKey, sx, ex, w, cy, barH, color })}
+          onMouseLeave={() => onHover(null)} />
+      )}
+      {/* 可见条（淡淡填充色） */}
+      <rect x={sx} y={cy} width={w} height={barH} rx={2} ry={2}
         fill={color} fillOpacity={0.5} />
-      {w > 16 && (
+      {showContent && (
         <text x={sx + w / 2} y={cy + barH / 2 + 3} textAnchor="middle" fontSize={8}
           fill={color} fontWeight={700}>{slot.nodeNo}</text>
       )}
-      {/* 延期天数上方标注：仅宽度足够时显示 */}
-      {w > 16 && (
+      {showContent && delayDays !== 0 && (
         <text x={sx + w / 2} y={cy - 4} textAnchor="middle" fontSize={8}
           fill={delayDays > 0 ? COLORS.danger : delayDays < 0 ? COLORS.success : COLORS.textLight}
           fontWeight={400}>
-          {delayDays > 0 ? `+${delayDays}d` : delayDays < 0 ? `${delayDays}d` : ''}
+          {delayDays > 0 ? `+${delayDays}d` : `${delayDays}d`}
         </text>
       )}
     </g>
