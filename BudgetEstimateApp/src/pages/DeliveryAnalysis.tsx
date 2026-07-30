@@ -258,7 +258,7 @@ const DeliveryAnalysis: React.FC = () => {
         }
       }
       const costDevRate = costDevDenominator > 0 ? (costDevNumerator / costDevDenominator * 100) : 0;
-      return { total: totalCount, tAmt, active, aAmt, completed, cAmt, delayed, dAmt, avgDelay: dCnt > 0 ? Math.round(tDelay / dCnt) : 0, onTimeRate: tN > 0 ? Math.round(onT / tN * 100) : -1, costDev: costDevRate, costDevDenom: costDevDenominator };
+      return { total: totalCount, tAmt, active, aAmt, completed, cAmt, delayed, dAmt, avgDelay: dCnt > 0 ? (tDelay / dCnt >= 0 ? Math.round(tDelay / dCnt) : -Math.round(-tDelay / dCnt)) : 0, onTimeRate: tN > 0 ? Math.round(onT / tN * 100) : -1, costDev: costDevRate, costDevDenom: costDevDenominator };
     };
     return [calcCum(11), calcCum(10), calcCum(9)]; // Jun, May, Apr
   // eslint-disable-next-line react-hooks/exhaustive-deps
