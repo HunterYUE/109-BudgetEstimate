@@ -63,7 +63,7 @@ interface BubbleHoverInfo {
    工具
    ============================================================ */
 /** 格式化日期为短格式 "M/d" */
-const fmtShort = (d: Date) => `${d.getMonth() + 1}/${d.getDate()}`;
+const fmtShort = (d: Date) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 
 const toK = (v: number) => Math.round(v / 1000).toLocaleString() + 'K';
 

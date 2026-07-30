@@ -320,8 +320,8 @@ const DeliveryAnalysis: React.FC = () => {
         const startH = n.history.find(h => h.field === 'status' && h.newValue === 'in_progress');
         let start: Date, end: Date;
         if (n.status === 'completed' && n.actualDate) {
-          // 已完成节点：开始=计划开始时间，结束=实际完成时间
-          start = startH ? new Date(startH.changedAt) : new Date(n.plannedStartDate);
+          // 已完成节点：开始=实际开始(优先)或计划开始，结束=实际完成
+          start = n.actualStartDate ? new Date(n.actualStartDate) : new Date(n.plannedStartDate);
           end = new Date(n.actualDate);
           if (start > end) start = end;
         } else if (n.status === 'in_progress' || n.status === 'delayed') {
