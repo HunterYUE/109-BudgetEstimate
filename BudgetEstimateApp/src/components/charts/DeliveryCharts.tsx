@@ -784,7 +784,7 @@ export const BubbleChart: React.FC<{
         <text x={pad.left + chartW / 2} y={H + 21} textAnchor="middle" fontSize={10} fill="#444">延期天数</text>
         <text x={8} y={pad.top + chartH / 2} textAnchor="middle" fontSize={10} fill="#444" transform={`rotate(-90, 24, ${pad.top + chartH / 2})`}>成本偏差率</text>
         {data.map(d => {
-          const cx = pad.left + chartW / 2 + (d.delayDays / maxDelay) * chartW / 2;
+          const cx = pad.left + chartW / 2 + (d.delayDays / maxTick) * chartW / 2;
           const cy = pad.top + (1 - (d.costDeviation + maxCost) / (maxCost * 2)) * chartH;
           // 直径 = 15 + (金额 - 200万) / 100万 × 5，连续线性映射，钳制 [3, 25]
           const diff = d.contractAmount - 2000000;
