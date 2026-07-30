@@ -540,9 +540,14 @@ const SalesAnalysis: React.FC = () => {
         s.profitTotal += q?.gp3Amount != null ? Math.round(q.gp3Amount) : Math.round(exAmt(o) * 0.15);
       }
     }
-    // 管道潜力：当前活跃管道（不过滤财年）
+    // 管道潜力：按财年过滤（随财年切换更新）
+    const fyR = parseFY(fySelect);
     for (const o of currentPipeline) {
       if (!o.salesman) continue;
+      const oCreated = new Date(o.createdAt);
+      if (oCreated > fyR.end) continue;
+      const effEnd = new Date(o.updatedAt);
+      if (effEnd < fyR.start) continue;
       let s = map.get(o.salesman);
       if (!s) { s = { name: o.salesman, wins: 0, orderAmount: 0, totalAmount: 0, pipelinePotential: 0, profitTotal: 0, totalCount: 0 }; map.set(o.salesman, s); }
       const idx = stageIdx(o.stage);
@@ -555,7 +560,7 @@ const SalesAnalysis: React.FC = () => {
       avgOrderAmount: s.wins > 0 ? Math.round(s.orderAmount / s.wins) : 0,
       conversionEff: s.totalCount > 0 ? s.wins / s.totalCount * 100 : 0,
     }));
-  }, [fyWonByTime, currentPipeline, quotationSummaries, fyFiltered]);
+  }, [fyWonByTime, currentPipeline, quotationSummaries, fyFiltered, fySelect]);
 
   // ── 4 个维度提取（图表通过 topN=10 自动排序取前10名）──
   const dimEfficiency: BarItem[] = salesmenStats.map(s => ({ name: s.name, value: Math.round(s.conversionEff * 10) / 10 }));
@@ -681,7 +686,7 @@ const SalesAnalysis: React.FC = () => {
               ({orderWeightedGP3 > 0 ? orderWeightedGP3.toFixed(1) : '—'})
             </span>
           </div>
-          <VerticalBarChart title="" data={monthlyOrderData} format="K" height={260} topN={12} barWidthRatio={0.6} maxBarWidth={120} contentOffset={0} chartWidth={620} disableSort padTop={12} cardBorder={false}
+          <VerticalBarChart title="" data={monthlyOrderData} format="K" height={260} topN={12} barWidthRatio={0.6} maxBarWidth={120} contentOffset={0} chartWidth={620} disableSort padTop={30} cardBorder={false}
             targetValue={annualTargetInput ? Math.round(parsedAnnualTarget * 1000 / 12) : undefined}
           />
         </Card>
@@ -759,7 +764,7 @@ const SalesAnalysis: React.FC = () => {
               ({deliveredActualGP3 > 0 ? deliveredActualGP3.toFixed(1) : '—'})
             </span>
           </div>
-          <VerticalBarChart title="" data={monthlySalesData} format="K" height={260} topN={12} barWidthRatio={0.6} maxBarWidth={120} contentOffset={0} chartWidth={620} disableSort padTop={12} cardBorder={false}
+          <VerticalBarChart title="" data={monthlySalesData} format="K" height={260} topN={12} barWidthRatio={0.6} maxBarWidth={120} contentOffset={0} chartWidth={620} disableSort padTop={30} cardBorder={false}
             targetValue={annualSalesTarget ? Math.round(parsedSalesTarget * 1000 / 12) : undefined}
           />
         </Card>
