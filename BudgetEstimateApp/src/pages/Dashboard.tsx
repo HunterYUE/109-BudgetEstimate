@@ -6,6 +6,7 @@ import {
 } from '@ant-design/icons';
 import { parseFY } from '../utils/fiscalYear';
 import { formatBeijing } from '../utils/timeFormat';
+import { fmtK, compressNo } from '../utils/analysisShared';
 import { COLORS } from '../styles/colors';
 import { opportunityService } from '../services/opportunityService';
 import { deliveryService } from '../services/deliveryService';
@@ -13,16 +14,7 @@ import { clientService } from '../services/clientService';
 import { quotationService } from '../services/quotationService';
 import type { SalesOpportunity, DeliveryProject, Client, QuotationSummary } from '../types';
 
-const fmtK = (v: number) => Math.round(v / 1000).toLocaleString() + 'K';
-/** 含税→未税（Dashboard 统一使用未税口径） */
-/** 含税→未税：优先使用机会自带的税率，默认 13% */
 const exAmount = (v: number, taxRate?: number) => Math.round(v / (1 + (taxRate ?? 0.13)));
-/** 压缩销售编号：A2026-07-003-S → 2607003S，A2026-07-009-E → 2607009E */
-const compressNo = (sn: string | undefined | null): string => {
-  const m = sn && sn.match(/^A(\d{4})-(\d{2})-(\d{3})-(.)(-.)?$/);
-  if (m) return m[1].slice(2) + m[2] + m[3] + m[4] + (m[5] || '');
-  return sn || '';
-};
 
 /* ── KPI 卡片（与销售分析完全一致） ── */
 const KpiCard: React.FC<{

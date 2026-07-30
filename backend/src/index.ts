@@ -1,5 +1,7 @@
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 import routes from './routes/index.js';
 import { errorHandler } from './middleware/index.js';
 import { pool } from './db/index.js';
@@ -20,6 +22,17 @@ if (!corsOrigin) {
 app.use(cors({
   origin: corsOrigin.split(',').map(s => s.trim()),
 }));
+app.use(helmet());
+// 登录接口限速：每IP每15分钟最多20次尝试
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  message: { error: '登录尝试过于频繁，请15分钟后重试' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use('/api/v1/auth/login', loginLimiter);
+app.use('/api/auth/login', loginLimiter);
 app.use(express.json({ limit: '20mb' }));
 
 // 健康检查（含数据库状态）

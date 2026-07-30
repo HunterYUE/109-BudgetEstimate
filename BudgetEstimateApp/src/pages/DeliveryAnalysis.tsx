@@ -6,19 +6,9 @@ import { COLORS } from '../styles/colors';
 import { NODE_DISPLAY_NAMES } from '../utils/constants';
 import { computeDeliveryEstGP3 } from '../utils/calculations';
 import { parseFY, FYSelector } from '../utils/fiscalYear';
-import { fmtK, loadQuotationGroups, preloadQuotationGroupsBatch } from '../utils/analysisShared';
+import { fmtK, compressNo, loadQuotationGroups, preloadQuotationGroupsBatch } from '../utils/analysisShared';
 import { VerticalBarChart, ProfitChart, ProjectGantt, BubbleChart } from '../components/charts/DeliveryCharts';
 import type { ProfitItem, BubbleDataItem } from '../components/charts/DeliveryCharts';
-
-/* ============================================================
-   财年工具
-   ============================================================ */
-/** 压缩项目编号：A2026-07-003-S → 2607003S，A2026-07-009-E → 2607009E */
-function compressNo(sn: string | undefined | null): string {
-  const m = sn && sn.match(/^A(\d{4})-(\d{2})-(\d{3})-(.)(-.)?$/);
-  if (m) return m[1].slice(2) + m[2] + m[3] + m[4] + (m[5] || '');
-  return sn || '';
-}
 
 /* ============================================================
    子组件 — 概览卡片

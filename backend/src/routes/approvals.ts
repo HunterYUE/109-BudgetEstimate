@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { query, getClient } from '../db/index.js';
 import { AppError } from '../middleware/index.js';
 import { requireRole } from '../middleware/auth.js';
-import { crudRoutes, objKeysToSnake } from './helpers.js';
+import { crudRoutes, logAudit, objKeysToSnake } from './helpers.js';
 
 const fields = [
   'id', 'approval_type', 'quotation_id', 'opportunity_id', 'delivery_id',
@@ -159,6 +159,7 @@ router.post('/:id/records', async (req, res, next) => {
       }
     }
     await client.query('COMMIT');
+    logAudit(req, action === 'approved' ? 'å®¡æ¹éè¿' : 'å®¡æ¹é©³å', 'approval', 'å®¡æ¹ ID:' + id + ' ç±»å:' + (ar.approval_type || '') + ' ' + (action === 'approved' ? 'å·²éè¿' : 'å·²é©³å'));
     res.status(201).json(record);
   } catch (err) {
     if (client) await client.query('ROLLBACK').catch(() => {});
