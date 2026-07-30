@@ -320,9 +320,10 @@ const DeliveryAnalysis: React.FC = () => {
           start = startH ? new Date(startH.changedAt) : new Date(n.plannedStartDate);
           end = n.actualDate ? new Date(n.actualDate) : new Date(n.plannedEndDate);
         } else {
-          // pending / in_progress / delayed：一律使用最新计划时间
+          // 未完成节点：未开始/未超期按计划时间，已超期以当前时间为结束
           start = new Date(n.plannedStartDate);
-          end = new Date(n.plannedEndDate);
+          end = (n.status === 'in_progress' || n.status === 'delayed') && new Date(n.plannedEndDate) < now
+            ? now : new Date(n.plannedEndDate);
         }
         // 节点计划时间直接使用当前计划（调整后显示更新计划，未调整显示初始计划）
         // 基线日期仅用于 tooltip 延期计算，已在 calcNodeDelay 中处理

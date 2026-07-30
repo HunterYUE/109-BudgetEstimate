@@ -439,15 +439,33 @@ const GanttTooltip: React.FC<{
         fill="#fff" stroke={COLORS.border} strokeWidth={1} />
       <text x={ttx + 12} y={tty + 20} fontSize={12} fontWeight={700} fill={COLORS.textDark}>{slot.name.replace('\n', '')}</text>
       <line x1={ttx + 12} y1={tty + 27} x2={ttx + tooltipW - 12} y2={tty + 27} stroke={COLORS.borderLight} strokeWidth={1} />
-      {/* 基线计划 */}
-      <text x={ttx + 12} y={tty + 46} fontSize={11} fill={COLORS.textLight}>基线计划</text>
-      <text x={ttx + tooltipW - 12} y={tty + 46} fontSize={11} fill="#444" textAnchor="end">
-        {slot.baselineDate ? `${fmtShort(slot.plannedStartDate)}~${fmtShort(slot.baselineDate)}` : '—'}
-      </text>
-      {/* 最新计划 */}
-      <text x={ttx + 12} y={tty + 66} fontSize={11} fill={COLORS.textLight}>最新计划</text>
+      {/* 已完成节点→实际时间；未完成→最新计划；超期未完成→至今 */}
+      {slot.status === 'completed' && slot.actualDate ? (
+        <>
+          <text x={ttx + 12} y={tty + 46} fontSize={11} fill={COLORS.textLight}>实际时间</text>
+          <text x={ttx + tooltipW - 12} y={tty + 46} fontSize={11} fill="#444" textAnchor="end">
+            {fmtShort(slot.startDate)}~{fmtShort(slot.actualDate)}
+          </text>
+        </>
+      ) : slot.status === 'in_progress' || slot.status === 'delayed' ? (
+        <>
+          <text x={ttx + 12} y={tty + 46} fontSize={11} fill={COLORS.danger}>超期进行</text>
+          <text x={ttx + tooltipW - 12} y={tty + 46} fontSize={11} fill="#444" textAnchor="end">
+            {fmtShort(slot.plannedStartDate)}~至今
+          </text>
+        </>
+      ) : (
+        <>
+          <text x={ttx + 12} y={tty + 46} fontSize={11} fill={COLORS.textLight}>计划时间</text>
+          <text x={ttx + tooltipW - 12} y={tty + 46} fontSize={11} fill="#444" textAnchor="end">
+            {fmtShort(slot.plannedStartDate)}~{fmtShort(slot.plannedEndDate)}
+          </text>
+        </>
+      )}
+      {/* 基线参考 */}
+      <text x={ttx + 12} y={tty + 66} fontSize={11} fill={COLORS.textLight}>基线计划</text>
       <text x={ttx + tooltipW - 12} y={tty + 66} fontSize={11} fill="#444" textAnchor="end">
-        {fmtShort(slot.plannedStartDate)}~{fmtShort(slot.plannedEndDate)}
+        {slot.baselineDate ? `${fmtShort(slot.plannedStartDate)}~${fmtShort(slot.baselineDate)}` : '—'}
       </text>
     </g>
   );
