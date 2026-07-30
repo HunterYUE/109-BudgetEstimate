@@ -7,6 +7,7 @@ export interface UserInfo {
   displayName: string;
   title: string;
   role: string;
+  permissions?: string[];
 }
 
 interface AuthState {

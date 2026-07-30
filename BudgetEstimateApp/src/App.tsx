@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { lazy, Suspense } from 'react';
 import { AuthProvider, useAuth } from './utils/authContext';
+import { canAccessRoute } from './utils/permissions';
 import AppLayout from './layouts/AppLayout';
 
 const Dashboard = lazy(() => import('./pages/Dashboard'));
@@ -42,6 +43,23 @@ const App: React.FC = () => {
   );
 };
 
+/** 角色守卫：检查当前用户角色是否有权限访问该路径 */
+function RoleGuard({ path, children }: { path: string; children: React.ReactNode }) {
+  const { user } = useAuth();
+  const location = useLocation();
+
+  if (!user || !canAccessRoute(user.role, path)) {
+    // 无权限时重定向到仪表盘
+    return <Navigate to="/" state={{ from: location.pathname }} replace />;
+  }
+
+  return <>{children}</>;
+}
+
+function createRoute(path: string, element: React.ReactNode) {
+  return <Route path={path} element={<RoleGuard path={path}>{element}</RoleGuard>} />;
+}
+
 function AppRoutes() {
   const { user } = useAuth();
 
@@ -59,19 +77,19 @@ function AppRoutes() {
             <AppLayout />
         </ProtectedRoute>
       }>
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/opportunities" element={<SalesOpportunityList />} />
-        <Route path="/quotations" element={<QuotationList />} />
-        <Route path="/quotations/:id" element={<QuotationPage />} />
-        <Route path="/approval" element={<ApprovalList />} />
-        <Route path="/clients" element={<ClientManagement />} />
-        <Route path="/materials" element={<MaterialManagement />} />
-        <Route path="/tags" element={<TagManagement />} />
-        <Route path="/delivery" element={<DeliveryManagement />} />
-        <Route path="/delivery/:id" element={<DeliveryDetail />} />
-        <Route path="/delivery-analysis" element={<DeliveryAnalysis />} />
-        <Route path="/analysis" element={<SalesAnalysis />} />
-        <Route path="/settings" element={<SystemManagement />} />
+        {createRoute('/', <Dashboard />)}
+        {createRoute('/opportunities', <SalesOpportunityList />)}
+        {createRoute('/quotations', <QuotationList />)}
+        {createRoute('/quotations/:id', <QuotationPage />)}
+        {createRoute('/approval', <ApprovalList />)}
+        {createRoute('/clients', <ClientManagement />)}
+        {createRoute('/materials', <MaterialManagement />)}
+        {createRoute('/tags', <TagManagement />)}
+        {createRoute('/delivery', <DeliveryManagement />)}
+        {createRoute('/delivery/:id', <DeliveryDetail />)}
+        {createRoute('/delivery-analysis', <DeliveryAnalysis />)}
+        {createRoute('/analysis', <SalesAnalysis />)}
+        {createRoute('/settings', <SystemManagement />)}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

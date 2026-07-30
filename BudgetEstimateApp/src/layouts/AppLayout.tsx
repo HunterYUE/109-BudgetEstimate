@@ -2,6 +2,7 @@ import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { Layout, Tooltip, Dropdown } from 'antd';
 import ErrorBoundary from '../components/ErrorBoundary';
 import { useAuth } from '../utils/authContext';
+import { canSeeMenu } from '../utils/permissions';
 import { MdOutlineDashboard, MdOutlineSell, MdOutlineRequestQuote, MdOutlineFactCheck,
   MdOutlineCategory, MdOutlineFactory, MdOutlineBarChart, MdOutlineSettings,
   MdOutlineNotificationsNone, MdOutlineLabel, MdOutlineAssessment, MdOutlineBusinessCenter,
@@ -99,8 +100,12 @@ const HeaderUserMenu: React.FC = () => {
 const AppLayout: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const { user } = useAuth();
 
-  const activeKey = MENU_ITEMS.find(item =>
+  // 按权限过滤菜单
+  const visibleMenu = user ? MENU_ITEMS.filter(item => canSeeMenu(user.role, item.key)) : [];
+
+  const activeKey = visibleMenu.find(item =>
     item.key === '/' ? location.pathname === '/' : (location.pathname === item.key || location.pathname.startsWith(item.key + '/'))
   )?.key || '/';
 
@@ -119,7 +124,7 @@ const AppLayout: React.FC = () => {
           <span style={{ fontSize: 8, fontWeight: 500, color: 'rgba(255,255,255,0.45)', letterSpacing: 1.5 }}>AUTOMATION</span>
         </div>
 
-        {MENU_ITEMS.map(item => {
+        {visibleMenu.map(item => {
           const Icon = item.icon;
           const isActive = activeKey === item.key;
           return (

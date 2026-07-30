@@ -35,9 +35,9 @@ router.use('/projects', requireAuth, projects);
 router.use('/opportunities', requireAuth, opportunities);
 router.use('/quotations', requireAuth, quotations);
 router.use('/approvals', requireAuth, approvals);
-router.use('/deliveries', requireAuth, deliveries);
+router.use('/deliveries', requireAuth, requireRole('manager', 'admin', 'director'), deliveries);
 router.use('/clients', requireAuth, clients);
-router.use('/tags', requireAuth, tags);
+router.use('/tags', requireAuth, requireRole('manager', 'admin', 'director'), tags);
 router.use('/audit-logs', requireAuth, requireRole('director', 'admin'), auditLogs);
 
 // 用户设置

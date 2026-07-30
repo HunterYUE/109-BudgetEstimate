@@ -16,7 +16,7 @@ router.post('/login', async (req, res, next) => {
     }
 
     const result = await query(
-      'SELECT id, email, display_name, title, password_hash, role FROM users WHERE email = $1 AND is_active = true',
+      'SELECT id, email, display_name, title, password_hash, role, permissions FROM users WHERE email = $1 AND is_active = true',
       [email]
     );
 
@@ -51,6 +51,7 @@ router.post('/login', async (req, res, next) => {
         displayName: user.display_name,
         title: user.title || '',
         role: user.role,
+        permissions: user.permissions || [],
       },
     });
   } catch (err) { next(err); }
@@ -61,7 +62,7 @@ router.get('/me', requireAuth, async (req, res, next) => {
   try {
     const user = req.user!;
     const result = await query(
-      'SELECT id, email, display_name, title, role, created_at FROM users WHERE id = $1',
+      'SELECT id, email, display_name, title, role, permissions, created_at FROM users WHERE id = $1',
       [user.userId]
     );
     if (result.rows.length === 0) {
@@ -74,6 +75,7 @@ router.get('/me', requireAuth, async (req, res, next) => {
       displayName: u.display_name,
       title: u.title || '',
       role: u.role,
+      permissions: u.permissions || [],
       createdAt: u.created_at,
     });
   } catch (err) { next(err); }
