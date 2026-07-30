@@ -393,9 +393,10 @@ const GanttNode: React.FC<{
     ? GANTT_STATUS_COLOR.in_progress
     : GANTT_STATUS_COLOR.pending;
   const delayDays = calcNodeDelay(slot);
+  const hideTooltip = slot.name === '项目总结';
   return (
     <g style={{ cursor: 'pointer' }}
-      onMouseEnter={() => onHover({ slot, projectKey, sx, ex, w, cy, barH, color })}
+      onMouseEnter={() => !hideTooltip && onHover({ slot, projectKey, sx, ex, w, cy, barH, color })}
       onMouseLeave={() => onHover(null)}>
       {/* 透明捕获区 */}
       <rect x={sx} y={cy - 4} width={w} height={barH + 8} fill="transparent" stroke="none" />
