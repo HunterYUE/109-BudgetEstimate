@@ -395,12 +395,9 @@ const GanttNode: React.FC<{
   const delayDays = calcNodeDelay(slot);
   const showContent = w > 16;
   return (
-    <g>
-      {/* 透明鼠标热区：始终覆盖从 bar 左上到右下的完整区域 */}
-      <rect x={sx} y={cy - 4} width={w} height={barH + 8} fill="transparent" stroke="none"
-        style={{ cursor: 'pointer' }}
-        onMouseEnter={() => slot.name !== '项目总结' && onHover({ slot, projectKey, sx, ex, w, cy, barH, color })}
-        onMouseLeave={() => onHover(null)} />
+    <g style={{ cursor: 'pointer' }}
+      onMouseEnter={() => slot.name !== '项目总结' && onHover({ slot, projectKey, sx, ex, w, cy, barH, color })}
+      onMouseLeave={() => onHover(null)}>
       {/* 可见条 */}
       <rect x={sx} y={cy} width={w} height={barH} rx={2} ry={2}
         fill={color} fillOpacity={0.5} />
