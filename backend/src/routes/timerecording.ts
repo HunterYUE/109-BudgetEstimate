@@ -4,6 +4,7 @@ import { query } from '../db/index.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { signToken } from '../middleware/auth.js';
 import { AppError } from '../middleware/index.js';
+import { logAudit } from './helpers.js';
 
 const router = Router();
 
@@ -275,7 +276,6 @@ router.put('/task-assignments/:id', requireAuth, async (req, res, next) => {
 router.delete('/task-assignments/:id', requireAuth, async (req, res, next) => {
   try {
     await query('DELETE FROM timerecording.task_assignments WHERE id = $1', [req.params.id]);
-    logAudit(req, action === 'lock' ? '锁定周' : '解锁周', 'admin', year + 'W周 ' + week_number + ' ' + newStatus);
     res.json({ success: true });
   } catch (err) { next(err); }
 });
@@ -296,7 +296,6 @@ router.get('/notifications', requireAuth, async (req, res, next) => {
 router.put('/notifications/:id/read', requireAuth, async (req, res, next) => {
   try {
     await query("UPDATE timerecording.notifications SET is_read = true WHERE id = $1", [req.params.id]);
-    logAudit(req, action === 'lock' ? '锁定周' : '解锁周', 'admin', year + 'W周 ' + week_number + ' ' + newStatus);
     res.json({ success: true });
   } catch (err) { next(err); }
 });
@@ -351,7 +350,6 @@ router.post('/admin/users/:id/reset-password', requireAuth, requireRole('directo
     const passwordHash = await bcrypt.hash(password, 10);
     await query('UPDATE public.users SET password_hash = $1 WHERE id = $2', [passwordHash, id]);
     logAudit(req, '重置密码', 'admin', '用户 ' + id.slice(0,8) + ' 密码已重置');
-    logAudit(req, action === 'lock' ? '锁定周' : '解锁周', 'admin', year + 'W周 ' + week_number + ' ' + newStatus);
     res.json({ success: true });
   } catch (err) { next(err); }
 });
