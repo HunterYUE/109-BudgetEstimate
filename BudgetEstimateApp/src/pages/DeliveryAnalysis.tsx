@@ -227,9 +227,9 @@ const DeliveryAnalysis: React.FC = () => {
       if (!n15Done) activeAmt += exTax;
       if (p.status === '已延期') delayedAmt += exTax;
       if (isNode15CompletedInFy(p, fyRange)) completedAmt += exTax;
-      // 加权延期天数：所有已完成节点15的项目（正=延期，负=提前）
+      // 加权延期天数：仅统计已完成节点15的项目（正=延期，负=提前）
       const projDelay = calcProjDelay(p);
-      if (projDelay != 0) { totalDelayDays += projDelay; delayProjectCount++; }
+      if (n15Done && projDelay != 0) { totalDelayDays += projDelay; delayProjectCount++; }
 
       // 节点按时完成率（与节点分析口径一致：计入所有应到达的节点，含进行中超期和pending超期）
       for (const n of p.nodes) {
@@ -266,24 +266,27 @@ const DeliveryAnalysis: React.FC = () => {
     ];
   }, [fyFiltered, fyRange, preloadReady]);
 
-  // ── 财年累计KPI（按FY内月份累计：过去FY取最后3月，当前FY取到最近完整月）──
+  // ── 财年累计KPI（按FY内月份累计）──
   const monthlyCumKpi = useMemo(() => {
     const now = new Date();
     const calcCum = (fyMo: number) => {
-      // fyMo: 0=FY首月(Jul), 11=FY末月(Jun)。取值 9(Apr),10(May),11(Jun)
+      // fyMo: 0=FY首月(Jul)～11=FY末月(Jun)
       let mEnd: Date;
       if (now > fyRange.end) {
-        // 已完结FY：取FY内指定月份
+        // 已完结FY：取FY内指定月的月底
         const yr = fyRange.end.getFullYear();
         const jsMo = fyMo < 6 ? fyMo + 6 : fyMo - 6;
         mEnd = new Date(yr, jsMo + 1, 0);
       } else {
-        // 当前FY：取距今的月份
-        const offset = 11 - fyMo;
-        const d = new Date(now.getFullYear(), now.getMonth() - offset, 1);
-        mEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0);
-        if (mEnd < fyRange.start) return { total: 0, tAmt: 0, active: 0, aAmt: 0, completed: 0, cAmt: 0, delayed: 0, dAmt: 0, avgDelay: 0, onTimeRate: -1 };
+        // 当前FY：fyMo→JS月→判断是否已完结
+        const jsMo = fyMo < 6 ? fyMo + 6 : fyMo - 6;
+        const baseYr = fyRange.start.getFullYear() + (now.getMonth() >= 6 ? 0 : 0); // FY起始年
+        const dt = new Date(baseYr, jsMo, 1);
+        // 如果此月在当前月之后（尚未到来），返回0
+        if (dt > now) return { total: 0, tAmt: 0, active: 0, aAmt: 0, completed: 0, cAmt: 0, delayed: 0, dAmt: 0, avgDelay: 0, onTimeRate: -1 };
+        mEnd = new Date(baseYr, jsMo + 1, 0);
       }
+      if (mEnd < fyRange.start) return { total: 0, tAmt: 0, active: 0, aAmt: 0, completed: 0, cAmt: 0, delayed: 0, dAmt: 0, avgDelay: 0, onTimeRate: -1 };
       let tAmt = 0, aAmt = 0, cAmt = 0, dAmt = 0, tDelay = 0, dCnt = 0, onT = 0, tN = 0;
       let active = 0, completed = 0, delayed = 0, totalCount = 0;
       for (const p of fyFiltered) {
@@ -297,7 +300,7 @@ const DeliveryAnalysis: React.FC = () => {
         if (n15done) { completed++; cAmt += ex; } else { active++; aAmt += ex; }
         if (p.status === '已延期') { delayed++; dAmt += ex; }
         const pd = calcProjDelay(p);
-        if (pd != 0) { tDelay += pd; dCnt++; }
+        if (pd != 0 && n15?.status === 'completed') { tDelay += pd; dCnt++; }
         for (const n of p.nodes) {
           if (n.status !== 'completed' && new Date(n.plannedEndDate) > mEnd) continue;
           tN++;
