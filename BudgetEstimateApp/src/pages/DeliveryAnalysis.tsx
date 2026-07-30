@@ -267,7 +267,7 @@ const DeliveryAnalysis: React.FC = () => {
   }, [fyFiltered, fyRange, preloadReady]);
 
   // ── 按月交付 KPI（最近3个完整月） ──
-  const monthlyDelKpi = useMemo(() => {
+  const monthlyCumKpi = useMemo(() => {
     const now = new Date();
     const calcMonth = (offset: number) => {
       const d = new Date(now.getFullYear(), now.getMonth() - offset, 1);
@@ -448,7 +448,7 @@ const DeliveryAnalysis: React.FC = () => {
 
 
       <OverviewCards items={overviewItems.map((item, i) => {
-            const mk = monthlyDelKpi;
+            const mk = monthlyCumKpi;
             const v1 = [`${fmtK(mk[1].tAmt)} / ${mk[1].total}`, `${fmtK(mk[1].aAmt)} / ${mk[1].active}`, `${fmtK(mk[1].cAmt)} / ${mk[1].completed}`, `${fmtK(mk[1].dAmt)} / ${mk[1].delayed}`, `${mk[1].avgDelay}天`, `${mk[1].onTimeRate >= 0 ? mk[1].onTimeRate + '%' : '—'}`, ''];
             const v2 = [`${fmtK(mk[2].tAmt)} / ${mk[2].total}`, `${fmtK(mk[2].aAmt)} / ${mk[2].active}`, `${fmtK(mk[2].cAmt)} / ${mk[2].completed}`, `${fmtK(mk[2].dAmt)} / ${mk[2].delayed}`, `${mk[2].avgDelay}天`, `${mk[2].onTimeRate >= 0 ? mk[2].onTimeRate + '%' : '—'}`, ''];
             return { ...item, prevValues: [{ value: v1[i] || '', color: item.color }, { value: v2[i] || '', color: item.color }] };
