@@ -294,7 +294,7 @@ const DeliveryAnalysis: React.FC = () => {
       : new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const tlEnd = now > fyRange.end
       ? new Date(fyRange.end.getFullYear(), fyRange.end.getMonth() + 1, 0)
-      : new Date(now.getFullYear(), now.getMonth() + 10, 0);
+      : new Date(tlStart.getFullYear(), tlStart.getMonth() + 12, 0);
     const DAY_MS = 1000 * 60 * 60 * 24;
     const totalDays = Math.round((tlEnd.getTime() - tlStart.getTime()) / DAY_MS);
     const months = Array.from({ length: 12 }, (_, i) => {
@@ -319,6 +319,7 @@ const DeliveryAnalysis: React.FC = () => {
         if (n.status === 'completed') {
           start = startH ? new Date(startH.changedAt) : new Date(n.plannedStartDate);
           end = n.actualDate ? new Date(n.actualDate) : new Date(n.plannedEndDate);
+          if (start > end) { const t = start; start = end; end = t; }
         } else {
           // 未完成节点：未开始/未超期按计划时间，已超期以当前时间为结束
           start = new Date(n.plannedStartDate);
