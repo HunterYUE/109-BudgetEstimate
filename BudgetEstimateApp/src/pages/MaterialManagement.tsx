@@ -54,7 +54,7 @@ const MaterialManagement: React.FC = () => {
         setMaterials(res.map(c => deepClone(c)));
       }
     } catch (err: unknown) {
-      messageApi.error('加载物料数据失败：' + (err.message || '未知错误'));
+      messageApi.error('加载物料数据失败：' + ((err as Error).message || '未知错误'));
     } finally {
       setLoading(false);
     }

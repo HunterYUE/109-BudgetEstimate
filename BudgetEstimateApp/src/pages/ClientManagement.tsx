@@ -37,7 +37,7 @@ const ClientManagement: React.FC = () => {
       setClients(data);
       setContactCounts(counts);
     } catch (err: unknown) {
-      messageApi.error('加载客户数据失败：' + (err.message || '未知错误'));
+      messageApi.error('加载客户数据失败：' + ((err as Error).message || '未知错误'));
     } finally {
       setLoading(false);
     }
@@ -219,7 +219,7 @@ const ClientManagement: React.FC = () => {
       setEditOpen(false);
       await fetchClients();
     } catch (err: unknown) {
-      messageApi.error('保存失败：' + (err.message || '未知错误'));
+      messageApi.error('保存失败：' + ((err as Error).message || '未知错误'));
     }
   };
 
@@ -263,7 +263,7 @@ const ClientManagement: React.FC = () => {
       messageApi.success('子公司添加成功');
       await fetchClients();
     } catch (err: unknown) {
-      messageApi.error('添加失败：' + (err.message || '未知错误'));
+      messageApi.error('添加失败：' + ((err as Error).message || '未知错误'));
     }
   };
 
@@ -283,7 +283,7 @@ const ClientManagement: React.FC = () => {
           messageApi.success('已删除');
           await fetchClients();
         } catch (err: unknown) {
-          messageApi.error('删除失败：' + (err.message || '未知错误'));
+          messageApi.error('删除失败：' + ((err as Error).message || '未知错误'));
         }
       },
     });

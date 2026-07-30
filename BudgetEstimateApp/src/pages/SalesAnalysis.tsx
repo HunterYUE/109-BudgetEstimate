@@ -237,7 +237,7 @@ const SalesAnalysis: React.FC = () => {
       const fyMonth = d.getMonth() < 6 ? d.getMonth() + 6 : d.getMonth() - 6;
       const prev = byMonth.get(fyMonth) || { amount: 0, profit: 0 };
       const est = projectEstimates.get(p.id);
-      const exTax = est ? est.exTax : Math.round(p.contractAmount / 1.13);
+      const exTax = est ? est.exTax : Math.round(p.contractAmount / (1 + (loadQuotationGroups(p.quotationId).version?.taxRate ?? 0.13)));
       const estProfit = est ? (exTax - est.grandEstimated) : 0;
       byMonth.set(fyMonth, { amount: prev.amount + exTax, profit: prev.profit + estProfit });
     }
@@ -268,7 +268,7 @@ const SalesAnalysis: React.FC = () => {
       const fyMonth = d.getMonth() < 6 ? d.getMonth() + 6 : d.getMonth() - 6;
       const prev = byMonth.get(fyMonth) || { amount: 0, profit: 0 };
       const est = projectEstimates.get(p.id);
-      const exTax = est ? est.exTax : Math.round(p.contractAmount / 1.13);
+      const exTax = est ? est.exTax : Math.round(p.contractAmount / (1 + (loadQuotationGroups(p.quotationId).version?.taxRate ?? 0.13)));
       const actualProfit = p.totalActualCost != null ? (exTax - p.totalActualCost) : Math.round(exTax * 0.20);
       byMonth.set(fyMonth, { amount: prev.amount + exTax, profit: prev.profit + actualProfit });
     }
@@ -374,7 +374,7 @@ const SalesAnalysis: React.FC = () => {
     let totalAmt = 0, weighted = 0;
     for (const p of delivered) {
       const est = projectEstimates.get(p.id);
-      const exTax = est ? est.exTax : Math.round(p.contractAmount / 1.13);
+      const exTax = est ? est.exTax : Math.round(p.contractAmount / (1 + (loadQuotationGroups(p.quotationId).version?.taxRate ?? 0.13)));
       totalAmt += exTax;
       const actProfit = exTax - p.totalActualCost!;
       const actGP3 = exTax > 0 ? actProfit / exTax : 0;

@@ -100,7 +100,7 @@ export function calcProjectSummary(
     }
   }
 
-  const discountedPriceV = discountedPriceUntaxed ?? totalAccountingPrice;
+  const discountedPriceV = (discountedPriceUntaxed && discountedPriceUntaxed > 0) ? discountedPriceUntaxed : totalAccountingPrice;
   const discountRate = totalAccountingPrice > 0
     ? (totalAccountingPrice - discountedPriceV) / totalAccountingPrice
     : 0;

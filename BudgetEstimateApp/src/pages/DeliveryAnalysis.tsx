@@ -308,7 +308,7 @@ const DeliveryAnalysis: React.FC = () => {
     };
     return [calcMonth(1), calcMonth(2), calcMonth(3)];
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fyFiltered]);
+  }, [fyFiltered, preloadReady]);
 
   // ── 甘特图数据（12个月时间线：前1个月 + 后10个月）──
   const ganttData = useMemo(() => {
@@ -367,7 +367,7 @@ const DeliveryAnalysis: React.FC = () => {
   const projectExTaxLookup = useMemo(() => {
     return fyFiltered.map(p => {
       const est = projectEstimates.get(p.id);
-      const exTax = est ? est.exTax : Math.round(p.contractAmount / 1.13);
+      const exTax = est ? est.exTax : Math.round(p.contractAmount / (1 + (loadQuotationGroups(p.quotationId).version?.taxRate ?? 0.13)));
       return { projectId: compressNo(p.salesNo), exTax };
     });
   }, [fyFiltered, projectEstimates]);
@@ -395,7 +395,7 @@ const DeliveryAnalysis: React.FC = () => {
         ? new Date(node15.actualDate)
         : now;
       const est = projectEstimates.get(p.id);
-      const exTax = est ? est.exTax : Math.round(p.contractAmount / 1.13);
+      const exTax = est ? est.exTax : Math.round(p.contractAmount / (1 + (loadQuotationGroups(p.quotationId).version?.taxRate ?? 0.13)));
       lifecycles.set(p.id, { start, end, exTax });
     }
 
@@ -406,7 +406,7 @@ const DeliveryAnalysis: React.FC = () => {
 
       const projDelay = calcProjDelay(p);
       const est = projectEstimates.get(p.id);
-      const exTax = est ? est.exTax : Math.round(p.contractAmount / 1.13);
+      const exTax = est ? est.exTax : Math.round(p.contractAmount / (1 + (loadQuotationGroups(p.quotationId).version?.taxRate ?? 0.13)));
       const estTotal = est ? est.grandEstimated : 0;
       const costDev = p.totalActualCost != null && estTotal > 0
         ? (p.totalActualCost - estTotal) / estTotal * 100 : 0;

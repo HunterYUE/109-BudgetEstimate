@@ -655,3 +655,11 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 
 CREATE INDEX IF NOT EXISTS idx_audit_logs_time ON audit_logs(time DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_module ON audit_logs(module);
+
+-- ============================================================
+-- 迁移兼容：已部署数据库通过迁移添加的列
+-- ============================================================
+ALTER TABLE sales_opportunities ADD COLUMN IF NOT EXISTS won_at TIMESTAMPTZ;
+ALTER TABLE sales_opportunities ADD COLUMN IF NOT EXISTS lost_at TIMESTAMPTZ;
+ALTER TABLE delivery_projects ADD COLUMN IF NOT EXISTS actual_costs JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE project_versions ADD COLUMN IF NOT EXISTS gp3_amount NUMERIC(12,2) NOT NULL DEFAULT 0;

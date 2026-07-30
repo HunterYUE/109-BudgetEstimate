@@ -278,10 +278,10 @@ const QuotationPage: React.FC = () => {
   }, [componentDB, project?.id, project?.groups]);
 
   const handleGroupChange = useCallback((groupId: string, items: GroupItem[]) => {
-    setProject(prev => ({
-      ...prev,
-      groups: prev.groups.map(g => g.id === groupId ? { ...g, items } : g),
-    }));
+    setProject(prev => {
+      if (!prev) return prev;
+      return { ...prev, groups: prev.groups.map(g => g.id === groupId ? { ...g, items } : g) };
+    });
     setHasChanges(true);
   }, []);
 
@@ -289,9 +289,9 @@ const QuotationPage: React.FC = () => {
     // 从物料数据库动态获取工费费率
     const designRate = componentDB.find(c => c.code === 'SV-DESIGN-000000-V1.0')?.unitCost ?? 175;
     const assemblyRate = componentDB.find(c => c.code === 'SV-INSASS-000000-V1.0')?.unitCost ?? 85;
-    setProject(prev => ({
-      ...prev,
-      groups: prev.groups.map(g => {
+    setProject(prev => {
+      if (!prev) return prev;
+      const newGroups = prev.groups.map(g => {
         if (g.id !== groupId) return g;
         const maxNo = g.items.reduce((max, item) => Math.max(max, item.itemNo), 0);
         const newItem: GroupItem = {
@@ -317,8 +317,9 @@ const QuotationPage: React.FC = () => {
           note: '',
         };
         return { ...g, items: [...g.items, newItem] };
-      }),
-    }));
+      });
+      return { ...prev, groups: newGroups };
+    });
     setHasChanges(true);
   }, [componentDB]);
 
@@ -328,14 +329,14 @@ const QuotationPage: React.FC = () => {
 
   const confirmDeleteItem = useCallback(() => {
     if (!deleteItemId) return;
-    setProject(prev => ({
-      ...prev,
-      groups: prev.groups.map(g => {
+    setProject(prev => {
+      if (!prev) return prev;
+      return { ...prev, groups: prev.groups.map(g => {
         if (g.id !== deleteItemId.groupId) return g;
         const items = g.items.filter(i => i.id !== deleteItemId.itemId);
         return { ...g, items: items.map((i, idx) => ({ ...i, itemNo: idx + 1 })) };
-      }),
-    }));
+      })};
+    });
     setDeleteItemId(null);
     setHasChanges(true);
     messageApi.success('物料条目已删除');
@@ -348,6 +349,7 @@ const QuotationPage: React.FC = () => {
   const confirmDeleteGroup = useCallback(() => {
     if (!deleteGroupId) return;
     setProject(prev => {
+      if (!prev) return prev;
       const groups = renumberEquipGroups(prev.groups.filter(g => g.id !== deleteGroupId));
       return { ...prev, groups };
     });
@@ -362,6 +364,7 @@ const QuotationPage: React.FC = () => {
 
   const handleAddGroup = useCallback(() => {
     setProject(prev => {
+      if (!prev) return prev;
       const equipGroups = prev.groups.filter(g => g.groupType === 'EQUIPMENT');
       const newNo = equipGroups.length + 1;
       const newId = crypto.randomUUID();
@@ -383,15 +386,16 @@ const QuotationPage: React.FC = () => {
   }, [messageApi]);
 
   const handleDiscountChange = useCallback((value: number) => {
-    setProject(prev => ({
-      ...prev,
-      currentVersion: { ...prev.currentVersion, discountedPrice: value },
-    }));
+    setProject(prev => {
+      if (!prev) return prev;
+      return { ...prev, currentVersion: { ...prev.currentVersion, discountedPrice: value } };
+    });
     setHasChanges(true);
   }, []);
 
   const handleProjectUpdate = useCallback((field: string, value: string | number) => {
     setProject(prev => {
+      if (!prev) return prev;
       if (field === 'versionNo' || field === 'eurRate' || field === 'taxRate' || field === 'warrantyRate' || field === 'riskRate' || field === 'commercialCost') {
         return { ...prev, currentVersion: { ...prev.currentVersion, [field]: value } };
       }
@@ -401,10 +405,10 @@ const QuotationPage: React.FC = () => {
   }, []);
 
   const handleGroupNameChange = useCallback((groupId: string, name: string) => {
-    setProject(prev => ({
-      ...prev,
-      groups: prev.groups.map(g => g.id === groupId ? { ...g, name } : g),
-    }));
+    setProject(prev => {
+      if (!prev) return prev;
+      return { ...prev, groups: prev.groups.map(g => g.id === groupId ? { ...g, name } : g) };
+    });
     setHasChanges(true);
   }, []);
 
@@ -551,7 +555,7 @@ const QuotationPage: React.FC = () => {
       messageApi.success('概算表已保存');
     } catch (err: unknown) {
       console.error("[SaveError]", err);
-      messageApi.error('保存失败：' + (err.message || '未知错误'));
+      messageApi.error('保存失败：' + ((err as Error).message || '未知错误'));
     } finally {
       setIsSaving(false);
       savingRef.current = false;
@@ -636,7 +640,7 @@ const QuotationPage: React.FC = () => {
       messageApi.success('已提交审批');
     } catch (err: unknown) {
       console.error("[SaveError]", err);
-      messageApi.error('提交失败：' + (err.message || '未知错误'));
+      messageApi.error('提交失败：' + ((err as Error).message || '未知错误'));
     } finally {
       savingRef.current = false;
       setIsSaving(false);

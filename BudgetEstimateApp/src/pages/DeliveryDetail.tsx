@@ -409,7 +409,7 @@ const DeliveryDetail: React.FC = () => {
       setSubmitPlanOpen(false);
       msg.success('实施计划已提交审批');
     }).catch((err: any) => {
-      msg.error('提交审批失败：' + (err.message || '未知错误'));
+      msg.error('提交审批失败：' + ((err as Error).message || '未知错误'));
     });
   }, [project, msg, quotationVersionFull, quotationVersion, modifierName, flushPendingDateChanges, deliveryService, setHasChanges]);
 
@@ -464,7 +464,7 @@ const DeliveryDetail: React.FC = () => {
       setSubmitCostOpen(false);
       msg.success('成本对比已提交审批，请前往审批管理模块查看');
     }).catch((err: any) => {
-      msg.error('提交审批失败：' + (err.message || '未知错误'));
+      msg.error('提交审批失败：' + ((err as Error).message || '未知错误'));
     });
   }, [project, actualCosts, msg, quotationVersionFull, quotationVersion, quotationGroups, modifierName]);
 
@@ -683,7 +683,7 @@ const DeliveryDetail: React.FC = () => {
                       });
                       msg.success('项目已标记为已完成');
                     }).catch((err: any) => {
-                      msg.error('项目完成操作失败：' + (err.message || '未知错误'));
+                      msg.error('项目完成操作失败：' + ((err as Error).message || '未知错误'));
                     });
                   },
                 });
