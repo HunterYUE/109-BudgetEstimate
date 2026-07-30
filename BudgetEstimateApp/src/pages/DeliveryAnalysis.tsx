@@ -299,7 +299,7 @@ const DeliveryAnalysis: React.FC = () => {
     const totalDays = Math.round((tlEnd.getTime() - tlStart.getTime()) / DAY_MS);
     const months = Array.from({ length: 12 }, (_, i) => {
       const d = new Date(tlStart.getFullYear(), tlStart.getMonth() + i, 1);
-      return d.toLocaleString('en', { month: 'short' });
+      return d.toLocaleString('en', { month: 'short' }) + ' ' + String(d.getFullYear()).slice(2);
     });
     const todayPos = Math.round((now.getTime() - tlStart.getTime()) / DAY_MS);
     const projectRows = fyFiltered.filter(p => {
