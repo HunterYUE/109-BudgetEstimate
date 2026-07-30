@@ -266,16 +266,29 @@ const DeliveryAnalysis: React.FC = () => {
     ];
   }, [fyFiltered, fyRange, preloadReady]);
 
-  // ── 按月交付 KPI（最近3个完整月） ──
+  // ── 财年累计KPI（按FY内月份累计：过去FY取最后3月，当前FY取到最近完整月）──
   const monthlyCumKpi = useMemo(() => {
     const now = new Date();
-    const calcMonth = (offset: number) => {
-      const d = new Date(now.getFullYear(), now.getMonth() - offset, 1);
-      const mEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0);
-      const mp = deliveryProjects.filter(p => new Date(p.createdAt) <= mEnd);
+    const calcCum = (fyMo: number) => {
+      // fyMo: 0=FY首月(Jul), 11=FY末月(Jun)。取值 9(Apr),10(May),11(Jun)
+      let mEnd: Date;
+      if (now > fyRange.end) {
+        // 已完结FY：取FY内指定月份
+        const yr = fyRange.end.getFullYear();
+        const jsMo = fyMo < 6 ? fyMo + 6 : fyMo - 6;
+        mEnd = new Date(yr, jsMo + 1, 0);
+      } else {
+        // 当前FY：取距今的月份
+        const offset = 11 - fyMo;
+        const d = new Date(now.getFullYear(), now.getMonth() - offset, 1);
+        mEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+        if (mEnd < fyRange.start) return { total: 0, tAmt: 0, active: 0, aAmt: 0, completed: 0, cAmt: 0, delayed: 0, dAmt: 0, avgDelay: 0, onTimeRate: -1 };
+      }
       let tAmt = 0, aAmt = 0, cAmt = 0, dAmt = 0, tDelay = 0, dCnt = 0, onT = 0, tN = 0;
-      let active = 0, completed = 0, delayed = 0;
-      for (const p of mp) {
+      let active = 0, completed = 0, delayed = 0, totalCount = 0;
+      for (const p of fyFiltered) {
+        if (new Date(p.createdAt) > mEnd) continue;
+        totalCount++;
         const taxRate = loadQuotationGroups(p.quotationId).version?.taxRate ?? 0.13;
         const ex = Math.round(p.contractAmount / (1 + taxRate));
         tAmt += ex;
@@ -284,21 +297,18 @@ const DeliveryAnalysis: React.FC = () => {
         if (n15done) { completed++; cAmt += ex; } else { active++; aAmt += ex; }
         if (p.status === '已延期') { delayed++; dAmt += ex; }
         const pd = calcProjDelay(p);
-        if (pd > 0) { tDelay += pd; dCnt++; }
+        if (pd != 0) { tDelay += pd; dCnt++; }
         for (const n of p.nodes) {
-          // 跳过未来节点：未完成且计划结束日未到当月底
           if (n.status !== 'completed' && new Date(n.plannedEndDate) > mEnd) continue;
           tN++;
-          if (n.status === 'completed' && n.actualDate && new Date(n.actualDate) <= new Date(n.plannedEndDate)) {
-            onT++;
-          }
+          if (n.status === 'completed' && n.actualDate && new Date(n.actualDate) <= new Date(n.plannedEndDate)) onT++;
         }
       }
-      return { total: mp.length, tAmt, active, aAmt, completed, cAmt, delayed, dAmt, avgDelay: dCnt > 0 ? Math.round(tDelay / dCnt) : 0, onTimeRate: tN > 0 ? Math.round(onT / tN * 100) : -1 };
+      return { total: totalCount, tAmt, active, aAmt, completed, cAmt, delayed, dAmt, avgDelay: dCnt > 0 ? Math.round(tDelay / dCnt) : 0, onTimeRate: tN > 0 ? Math.round(onT / tN * 100) : -1 };
     };
-    return [calcMonth(1), calcMonth(2), calcMonth(3)];
+    return [calcCum(11), calcCum(10), calcCum(9)]; // Jun, May, Apr
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fyFiltered, preloadReady]);
+  }, [fyFiltered, preloadReady, fyRange]);
 
   // ── 甘特图数据（12个月时间线：前1个月 + 后10个月）──
   const ganttData = useMemo(() => {
