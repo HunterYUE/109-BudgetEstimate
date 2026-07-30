@@ -312,22 +312,26 @@ const DeliveryAnalysis: React.FC = () => {
       return true;
     }).map(p => {
       // 仅保留计划时间与 12 月时间线有交集的节点，超出范围的节点不绘制
-      const slots = p.nodes.filter(n => new Date(n.plannedEndDate) >= tlStart && new Date(n.plannedStartDate) <= tlEnd).map(n => {
+      const slots = p.nodes.filter(n => new Date(n.plannedEndDate) >= tlStart && new Date(n.plannedStartDate) <= tlEnd).map((n, ni, arr) => {
         const startH = n.history.find(h => h.field === 'status' && h.newValue === 'in_progress');
         let start: Date, end: Date;
-        // 节点条永远按最新计划时间显示位置和宽度；是否超期由上方延期标注(+Nd)和条颜色表达
-        if (n.status === 'completed') {
+        if (n.status === 'completed' && n.actualDate) {
+          // 已完成节点：显示实际结束时间；开始时间用历史或前一节点实际结束+1天或计划开始
+          const aEnd = new Date(n.actualDate);
+          const prevActual = ni > 0 ? arr[ni - 1].actualDate : null;
+          start = startH ? new Date(startH.changedAt)
+            : (prevActual ? new Date(prevActual + ' 00:00:00') : new Date(n.plannedStartDate));
+          if (start > aEnd) start = new Date(aEnd.getTime() - 86400000);
+          end = aEnd;
+        } else if (n.status === 'in_progress' || n.status === 'delayed') {
+          // 进行中/延期：开始用实际或计划，超期则结束=now
           start = startH ? new Date(startH.changedAt) : new Date(n.plannedStartDate);
-          end = n.actualDate ? new Date(n.actualDate) : new Date(n.plannedEndDate);
-          if (start > end) { const t = start; start = end; end = t; }
+          end = new Date(n.plannedEndDate) < now ? now : new Date(n.plannedEndDate);
         } else {
-          // 未完成节点：未开始/未超期按计划时间，已超期以当前时间为结束
+          // 未开始：按计划时间
           start = new Date(n.plannedStartDate);
-          end = (n.status === 'in_progress' || n.status === 'delayed') && new Date(n.plannedEndDate) < now
-            ? now : new Date(n.plannedEndDate);
+          end = new Date(n.plannedEndDate);
         }
-        // 节点计划时间直接使用当前计划（调整后显示更新计划，未调整显示初始计划）
-        // 基线日期仅用于 tooltip 延期计算，已在 calcNodeDelay 中处理
         return { nodeNo: n.nodeNo, startDate: start, endDate: end, status: n.status,
           name: n.name, plannedStartDate: new Date(n.plannedStartDate),
           plannedEndDate: new Date(n.plannedEndDate), actualDate: n.actualDate ? new Date(n.actualDate) : undefined,
