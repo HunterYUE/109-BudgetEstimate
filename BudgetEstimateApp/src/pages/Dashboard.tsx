@@ -453,7 +453,7 @@ const Dashboard: React.FC = () => {
       } else {
         effectiveEnd = new Date(o.updatedAt);
       }
-      return created <= fyRange.end && effectiveEnd >= fyRange.start;
+      return created >= fyRange.start && created <= fyRange.end && effectiveEnd >= fyRange.start;
     });
     const monthLabels = ['Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar','Apr','May','Jun'];
     return Array.from({ length: 12 }, (_, i) => {
