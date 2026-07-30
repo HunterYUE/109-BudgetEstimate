@@ -317,7 +317,6 @@ const DeliveryAnalysis: React.FC = () => {
         if (n.status === 'completed' && n.actualDate) return new Date(n.actualDate) >= tlStart;
         return new Date(n.plannedEndDate) >= tlStart && new Date(n.plannedStartDate) <= tlEnd;
       }).map(n => {
-        const startH = n.history.find(h => h.field === 'status' && h.newValue === 'in_progress');
         let start: Date, end: Date;
         if (n.status === 'completed' && n.actualDate) {
           // 已完成节点：开始=实际开始(优先)或计划开始，结束=实际完成
@@ -325,8 +324,8 @@ const DeliveryAnalysis: React.FC = () => {
           end = new Date(n.actualDate);
           if (start > end) start = end;
         } else if (n.status === 'in_progress' || n.status === 'delayed') {
-          // 进行中/延期：开始用实际或计划，超期则结束=now
-          start = startH ? new Date(startH.changedAt) : new Date(n.plannedStartDate);
+          // 进行中/延期：开始=计划开始，已超期则结束=now
+          start = new Date(n.plannedStartDate);
           end = new Date(n.plannedEndDate) < now ? now : new Date(n.plannedEndDate);
         } else {
           // 未开始：按计划时间

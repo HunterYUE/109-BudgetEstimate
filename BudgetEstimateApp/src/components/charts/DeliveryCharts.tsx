@@ -396,8 +396,11 @@ const GanttNode: React.FC<{
   const showContent = w > 16;
   return (
     <g style={{ cursor: 'pointer' }}
-      onMouseEnter={() => slot.name !== '项目总结' && onHover({ slot, projectKey, sx, ex, w, cy, barH, color })}
+      onMouseEnter={() => onHover({ slot, projectKey, sx, ex, w, cy, barH, color })}
       onMouseLeave={() => onHover(null)}>
+      {/* 透明热区（完整覆盖 bar 区域，确保鼠标捕获） */}
+      <rect x={sx} y={cy - 4} width={w} height={barH + 8} fill="transparent" stroke="none"
+        pointerEvents="all" />
       {/* 可见条 */}
       <rect x={sx} y={cy} width={w} height={barH} rx={2} ry={2}
         fill={color} fillOpacity={0.5} />
