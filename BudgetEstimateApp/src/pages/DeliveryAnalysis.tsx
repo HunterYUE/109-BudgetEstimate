@@ -227,9 +227,9 @@ const DeliveryAnalysis: React.FC = () => {
       if (!n15Done) activeAmt += exTax;
       if (p.status === '已延期') delayedAmt += exTax;
       if (isNode15CompletedInFy(p, fyRange)) completedAmt += exTax;
-      // 加权延期天数：仅统计有延期（正天数）的项目
+      // 加权延期天数：所有已完成节点15的项目（正=延期，负=提前）
       const projDelay = calcProjDelay(p);
-      if (projDelay > 0) { totalDelayDays += projDelay; delayProjectCount++; }
+      if (projDelay != 0) { totalDelayDays += projDelay; delayProjectCount++; }
 
       // 节点按时完成率（与节点分析口径一致：计入所有应到达的节点，含进行中超期和pending超期）
       for (const n of p.nodes) {
