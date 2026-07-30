@@ -12,13 +12,9 @@ export interface FunnelProps {
   fyLead: { count: number; amount: number };
   fyOpp: { count: number; amount: number };
   fyWon: { count: number; amount: number };
-  convInfo?: { count: number; amount: number };
-  convLead?: { count: number; amount: number };
-  convOpp?: { count: number; amount: number };
-  convWon?: { count: number; amount: number };
 }
 
-export const SalesFunnel: React.FC<FunnelProps> = ({ funnelData, fyInfo, fyLead, fyOpp, fyWon, convInfo, convLead, convOpp, convWon }) => {
+export const SalesFunnel: React.FC<FunnelProps> = ({ funnelData, fyInfo, fyLead, fyOpp, fyWon }) => {
   // 四阶段可视化数据
   const stages = [
     { key: 'info', label: '信息', color: COLORS.textLight },
@@ -58,12 +54,10 @@ export const SalesFunnel: React.FC<FunnelProps> = ({ funnelData, fyInfo, fyLead,
     info: fyInfo, lead: fyLead, opp: fyOpp, won: fyWon,
   };
 
-  // 转化率使用 conv*（过去12个月），回退到 fy* 兼容
-  const ci = convInfo || fyInfo, cl = convLead || fyLead, co = convOpp || fyOpp, cw = convWon || fyWon;
   const convData = [
-    { key: 'lead', cnt: ci.count > 0 ? cl.count / ci.count * 100 : 0, amt: ci.amount > 0 ? cl.amount / ci.amount * 100 : 0 },
-    { key: 'opp', cnt: cl.count > 0 ? co.count / cl.count * 100 : 0, amt: cl.amount > 0 ? co.amount / cl.amount * 100 : 0 },
-    { key: 'won', cnt: co.count > 0 ? cw.count / co.count * 100 : 0, amt: co.amount > 0 ? cw.amount / co.amount * 100 : 0 },
+    { key: 'lead', cnt: fyInfo.count > 0 ? fyLead.count / fyInfo.count * 100 : 0, amt: fyInfo.amount > 0 ? fyLead.amount / fyInfo.amount * 100 : 0 },
+    { key: 'opp', cnt: fyLead.count > 0 ? fyOpp.count / fyLead.count * 100 : 0, amt: fyLead.amount > 0 ? fyOpp.amount / fyLead.amount * 100 : 0 },
+    { key: 'won', cnt: fyOpp.count > 0 ? fyWon.count / fyOpp.count * 100 : 0, amt: fyOpp.amount > 0 ? fyWon.amount / fyOpp.amount * 100 : 0 },
   ];
 
   return (

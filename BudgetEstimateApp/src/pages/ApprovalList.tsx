@@ -124,7 +124,7 @@ const ApprovalList: React.FC = () => {
             // 更新报价表的 locked 和 status
             const updated = await quotationService.update(modal.req.quotationId, { status: newStatus, locked: false });
             // ⚠️ 同步更新项目版本的审核状态（否则 QuotationPage 加载时仍视为 pending 而锁定）
-            const pid = (updated as any).projectId;
+            const pid = updated.projectId;
             if (pid && modal.req.versionNo) {
               await projectService.updateVersionStatus(pid, modal.req.versionNo, newStatus);
             }

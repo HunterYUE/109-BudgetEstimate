@@ -169,15 +169,6 @@ export interface QuotationSummary {
 }
 
 // ===== 审批请求 =====
-/** @deprecated 不再使用，保留兼容 */
-export interface ReviewRecord {
-  id: string;
-  reviewer: string;
-  action: 'approved' | 'rejected';
-  comment: string;
-  createdAt: string;
-}
-
 /** 审批记录（planApproval / costApproval 共用） */
 export interface ApprovalInfo {
   reviewer: string;
@@ -214,9 +205,7 @@ export interface ApprovalRequest {
   submitTime: string;
   status: ReviewStatus;
   /** 最新审批记录（后端列表查询返回） */
-  latestRecord?: ReviewRecord;
-  /** @deprecated 不再使用，保留向后兼容 */
-  records?: ReviewRecord[];
+  latestRecord?: { reviewer: string; action: 'approved' | 'rejected'; comment: string; createdAt: string };
 }
 
 // ===== 交付管理 =====

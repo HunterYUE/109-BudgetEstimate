@@ -165,23 +165,23 @@ const QuotationPage: React.FC = () => {
       try {
         if (quoteId && quoteId !== 'new') {
           const quotation = await quotationService.get(quoteId);
-          const pid = (quotation as any).projectId || quotation.projectId;
+          const pid = quotation.projectId;
           if (!pid) throw new Error('no project_id');
-          oppIdRef.current = (quotation as any).opportunityId || null;
+          oppIdRef.current = quotation.opportunityId || null;
           const data = await projectService.getFull(pid);
           if (!cancelled) {
             // 取与报价版本号匹配的版本（若无匹配则用最新版）
-            const quoteVerNo = (quotation as any).versionNo || '';
+            const quoteVerNo = quotation.versionNo || '';
             const lv = data.versions?.find(v => v.versionNo === quoteVerNo) || data.versions?.[0];
             // ⚠️ 锁定规则：先根据 DB 字段和版本状态判断，最后检查机会签单状态（全覆盖）
-            let shouldLock = (quotation as any).locked === true;
+            let shouldLock = quotation.locked === true;
             // 版本状态规则：待审批锁定，审批通过/驳回后解锁
             if (lv?.reviewStatus === 'pending') shouldLock = true;
             if (lv?.reviewStatus === 'approved') shouldLock = false;
             if (lv?.reviewStatus === 'rejected') shouldLock = false;
             // ⚠️ 报价表自身状态兜底（兼容历史数据中版本状态未同步的情况）
-            if ((quotation as any).status === 'approved') shouldLock = false;
-            if ((quotation as any).status === 'rejected') shouldLock = false;
+            if (quotation.status === 'approved') shouldLock = false;
+            if (quotation.status === 'rejected') shouldLock = false;
             // 已签单（中标+赢）强制锁定，覆盖版本规则
             if (oppIdRef.current) {
               try {
@@ -509,7 +509,7 @@ const QuotationPage: React.FC = () => {
         // 新建报价保存后跳转到报价 URL，刷新不再丢失
         // 回写 opportunity.quotationId，使销售管理页面图标变为编辑
         if (qid && oppIdRef.current) {
-          opportunityService.update(oppIdRef.current, { quotationId: qid } as any).catch(() => {});
+          opportunityService.update(oppIdRef.current, { quotationId: qid }).catch(() => {});
         }
         if (qid && quoteId === 'new') navigate('/quotations/' + qid, { replace: true });
       } else {
@@ -546,7 +546,7 @@ const QuotationPage: React.FC = () => {
         const syncResult = await syncQuotation(versionForSave, statusForSave);
         const newQid = syncResult?.id || "";
         if (newQid && oppIdRef.current && quoteId) {
-          opportunityService.update(oppIdRef.current, { quotationId: newQid } as any).catch(() => {});
+          opportunityService.update(oppIdRef.current, { quotationId: newQid }).catch(() => {});
         }
         setProject(prev => prev ? { ...prev, currentVersion: { ...prev.currentVersion, ...versionSummary, id: savedVersionId, versionNo: versionForSave, reviewStatus: statusForSave } } : prev);
       }
@@ -616,7 +616,7 @@ const QuotationPage: React.FC = () => {
         profitRate: Math.round((submitSummary.gp3 || 0) * 10000) / 100,
         opportunityId: oppIdRef.current,
       });
-      const quotationId = (synced as any)?.id || '';
+      const quotationId = synced?.id || '';
       await approvalService.create({
         approvalType: 'quotation', quotationId: quotationId,
         salesNo: project.salesNo, versionNo: curVer?.versionNo || 'V1.0', clientName: project.clientName,
