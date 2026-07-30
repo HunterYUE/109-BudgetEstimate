@@ -109,7 +109,7 @@ export const VerticalBarChart: React.FC<{
   cardBorder?: boolean;
   barLabelGap?: number;
 }> = ({ title, data, format = 'num', height = 220, topN = 10, contentOffset = 0, barWidthRatio = 0.55, maxBarWidth = 36, noCard, chartWidth = 460, disableSort, targetValue, targetLabel, padTop = 32, padBottom = 28, hideAvgLine, cardBorder = true, barLabelGap = 18 }) => {
-  const [hoveredTip, setHoveredTip] = useState<{ lines: string[]; cx: number; barTop: number } | null>(null);
+  const [hoveredTip, setHoveredTip] = useState<{ lines: string[]; cx: number; barTop: number; chartW?: number } | null>(null);
   const working = disableSort ? data : [...data].sort((a, b) => b.value - a.value);
   const top = working.slice(0, topN);
   const rawMax = Math.max(...top.map(d => d.value), 0);
@@ -193,7 +193,7 @@ export const VerticalBarChart: React.FC<{
 
           return (
             <g key={item.name + '-' + i}
-              onMouseEnter={() => item.tooltip && setHoveredTip({ lines: item.tooltip.split('\n'), cx, barTop })}
+              onMouseEnter={() => item.tooltip && setHoveredTip({ lines: item.tooltip.split('\n'), cx, barTop, chartW: chartWidth })}
               onMouseLeave={() => setHoveredTip(null)}>
               <text x={cx} y={barTop - barLabelGap} textAnchor="middle" fontSize={9}
                 fill={color} fontWeight={600}>{label}</text>
@@ -219,18 +219,25 @@ export const VerticalBarChart: React.FC<{
             </g>
           );
         })}
-        {/* 样式化 tooltip（类似甘特图 tooltip） */}
-        {hoveredTip && (
-          <g>
-            <rect x={hoveredTip.cx + 8} y={hoveredTip.barTop - 16} width={170} height={18 + hoveredTip.lines.length * 18} rx={5} ry={5}
-              fill="#fff" stroke={COLORS.border} strokeWidth={1} filter="url(#bar-shadow)" />
-            <text x={hoveredTip.cx + 16} y={hoveredTip.barTop + 2} fontSize={12} fontWeight={700} fill={COLORS.textDark}>{hoveredTip.lines[0]}</text>
-            <line x1={hoveredTip.cx + 16} y1={hoveredTip.barTop + 10} x2={hoveredTip.cx + 170} y2={hoveredTip.barTop + 10} stroke={COLORS.borderLight} strokeWidth={1} />
-            {hoveredTip.lines.slice(1).map((line, li) => (
-              <text key={li} x={hoveredTip.cx + 16} y={hoveredTip.barTop + 32 + li * 18} fontSize={11} fill="#444">{line}</text>
-            ))}
-          </g>
-        )}
+        {/* 样式化 tooltip：靠右超出时自动翻转到左侧 */}
+        {hoveredTip && (() => {
+          const tw = 170;
+          const tipRight = hoveredTip.cx + 8 + tw;
+          const containerW = hoveredTip.chartW || chartWidth;
+          const flip = tipRight > containerW - 4;
+          const tx = flip ? hoveredTip.cx - 8 - tw : hoveredTip.cx + 8;
+          return (
+            <g>
+              <rect x={tx} y={hoveredTip.barTop - 16} width={tw} height={18 + hoveredTip.lines.length * 18} rx={5} ry={5}
+                fill="#fff" stroke={COLORS.border} strokeWidth={1} filter="url(#bar-shadow)" />
+              <text x={tx + 8} y={hoveredTip.barTop + 2} fontSize={12} fontWeight={700} fill={COLORS.textDark}>{hoveredTip.lines[0]}</text>
+              <line x1={tx + 8} y1={hoveredTip.barTop + 10} x2={tx + 8 + tw - 16} y2={hoveredTip.barTop + 10} stroke={COLORS.borderLight} strokeWidth={1} />
+              {hoveredTip.lines.slice(1).map((line, li) => (
+                <text key={li} x={tx + 8} y={hoveredTip.barTop + 32 + li * 18} fontSize={11} fill="#444">{line}</text>
+              ))}
+            </g>
+          );
+        })()}
       </svg>
     </>
   );
