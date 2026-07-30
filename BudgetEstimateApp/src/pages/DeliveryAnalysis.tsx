@@ -207,65 +207,6 @@ const DeliveryAnalysis: React.FC = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fyFiltered, fyRange, projectEstimates, preloadReady]);
 
-  // ── 健康 KPI 卡片 ──
-  const overviewItems = useMemo((): KpiCard[] => {
-    const now = new Date();
-    let totalDelayDays = 0, delayProjectCount = 0;
-    let onTimeCompleted = 0, totalCompleted = 0;
-    let costDevNumerator = 0, costDevDenominator = 0;
-
-    const totalCount = fyFiltered.length;
-    const activeCount = fyFiltered.filter(p => p.nodes.find(n => n.nodeNo === 15)?.status !== 'completed').length;
-    const delayedCount = fyFiltered.filter(p => p.status === '已延期').length;
-    const completedCount = fyFiltered.filter(p => isNode15CompletedInFy(p, fyRange)).length;
-    let totalAmt = 0, activeAmt = 0, completedAmt = 0, delayedAmt = 0;
-    for (const p of fyFiltered) {
-      const taxRate = loadQuotationGroups(p.quotationId).version?.taxRate ?? 0.13;
-      const exTax = Math.round(p.contractAmount / (1 + taxRate));
-      totalAmt += exTax;
-      const n15Done = p.nodes.find(n => n.nodeNo === 15)?.status === 'completed';
-      if (!n15Done) activeAmt += exTax;
-      if (p.status === '已延期') delayedAmt += exTax;
-      if (isNode15CompletedInFy(p, fyRange)) completedAmt += exTax;
-      // 加权延期天数：仅统计已完成节点15的项目（正=延期，负=提前）
-      const projDelay = calcProjDelay(p);
-      if (n15Done && projDelay != 0) { totalDelayDays += projDelay; delayProjectCount++; }
-
-      // 节点按时完成率（与节点分析口径一致：计入所有应到达的节点，含进行中超期和pending超期）
-      for (const n of p.nodes) {
-        // 跳过未来节点：未完成且计划结束日未到
-        if (n.status !== 'completed' && new Date(n.plannedEndDate) > now) continue;
-        totalCompleted++;
-        // 按时：仅 completed 且实际日期 ≤ 计划结束日
-        if (n.status === 'completed' && n.actualDate && new Date(n.actualDate) <= new Date(n.plannedEndDate)) {
-          onTimeCompleted++;
-        }
-      }
-
-      // 成本偏差率（与气泡图/利润分析使用一致的 grandEstimated 口径，含质保/风险/商业费用）
-      if (p.costStatus === 'approved' && p.totalActualCost != null) {
-        const { groups, version } = loadQuotationGroups(p.quotationId);
-        const { grandEstimated } = computeDeliveryEstGP3(p.contractAmount, groups, version);
-        costDevNumerator += (p.totalActualCost - grandEstimated);
-        costDevDenominator += grandEstimated;
-      }
-    }
-
-    const avgDelay = delayProjectCount > 0 ? Math.round(totalDelayDays / delayProjectCount) : 0;
-    const onTimeRate = totalCompleted > 0 ? Math.round(onTimeCompleted / totalCompleted * 100) : -1;
-    const costDevRate = costDevDenominator > 0 ? (costDevNumerator / costDevDenominator * 100) : 0;
-
-    return [
-      { label: '项目总数', value: fmtK(totalAmt) + ' / ' + totalCount, color: COLORS.primary, icon: '📊' },
-      { label: '进行中项目', value: fmtK(activeAmt) + ' / ' + activeCount, color: COLORS.primary, icon: '🚧' },
-      { label: '已完成项目', value: fmtK(completedAmt) + ' / ' + completedCount, color: COLORS.success, icon: '✅' },
-      { label: '延期项目', value: fmtK(delayedAmt) + ' / ' + delayedCount, color: delayedCount > 0 ? COLORS.danger : COLORS.success, icon: '🚨' },
-      { label: '加权延期天数', value: `${avgDelay}天`, color: avgDelay > 0 ? COLORS.danger : COLORS.success, icon: '📅' },
-      { label: '节点按时率', value: onTimeRate >= 0 ? `${onTimeRate}%` : '—', color: onTimeRate >= 0 ? (onTimeRate >= 80 ? COLORS.success : onTimeRate >= 50 ? COLORS.warning : COLORS.danger) : COLORS.textLight, icon: '🎯' },
-      { label: '成本偏差率', value: costDevDenominator > 0 ? `${costDevRate > 0 ? '+' : ''}${costDevRate.toFixed(1)}%` : '—', color: costDevRate <= 0 ? COLORS.success : COLORS.danger, icon: '💰' },
-    ];
-  }, [fyFiltered, fyRange, preloadReady]);
-
   // ── 财年累计KPI（按FY内月份累计）──
   const monthlyCumKpi = useMemo(() => {
     const now = new Date();
@@ -286,8 +227,8 @@ const DeliveryAnalysis: React.FC = () => {
         if (dt > now) return { total: 0, tAmt: 0, active: 0, aAmt: 0, completed: 0, cAmt: 0, delayed: 0, dAmt: 0, avgDelay: 0, onTimeRate: -1 };
         mEnd = new Date(baseYr, jsMo + 1, 0);
       }
-      if (mEnd < fyRange.start) return { total: 0, tAmt: 0, active: 0, aAmt: 0, completed: 0, cAmt: 0, delayed: 0, dAmt: 0, avgDelay: 0, onTimeRate: -1 };
-      let tAmt = 0, aAmt = 0, cAmt = 0, dAmt = 0, tDelay = 0, dCnt = 0, onT = 0, tN = 0;
+      if (mEnd < fyRange.start) return { total: 0, tAmt: 0, active: 0, aAmt: 0, completed: 0, cAmt: 0, delayed: 0, dAmt: 0, avgDelay: 0, onTimeRate: -1, costDev: 0, costDevDenom: 0 };
+      let tAmt = 0, aAmt = 0, cAmt = 0, dAmt = 0, tDelay = 0, dCnt = 0, onT = 0, tN = 0, costDevNumerator = 0, costDevDenominator = 0;
       let active = 0, completed = 0, delayed = 0, totalCount = 0;
       for (const p of fyFiltered) {
         if (new Date(p.createdAt) > mEnd) continue;
@@ -306,13 +247,44 @@ const DeliveryAnalysis: React.FC = () => {
           tN++;
           if (n.status === 'completed' && n.actualDate && new Date(n.actualDate) <= new Date(n.plannedEndDate)) onT++;
         }
+        // 成本偏差
+        if (p.costStatus === 'approved' && p.totalActualCost != null) {
+          const { groups, version } = loadQuotationGroups(p.quotationId);
+          const { grandEstimated } = computeDeliveryEstGP3(p.contractAmount, groups, version);
+          costDevNumerator += (p.totalActualCost - grandEstimated);
+          costDevDenominator += grandEstimated;
+        }
       }
-      return { total: totalCount, tAmt, active, aAmt, completed, cAmt, delayed, dAmt, avgDelay: dCnt > 0 ? Math.round(tDelay / dCnt) : 0, onTimeRate: tN > 0 ? Math.round(onT / tN * 100) : -1 };
+      const costDevRate = costDevDenominator > 0 ? (costDevNumerator / costDevDenominator * 100) : 0;
+      return { total: totalCount, tAmt, active, aAmt, completed, cAmt, delayed, dAmt, avgDelay: dCnt > 0 ? Math.round(tDelay / dCnt) : 0, onTimeRate: tN > 0 ? Math.round(onT / tN * 100) : -1, costDev: costDevRate, costDevDenom: costDevDenominator };
     };
     return [calcCum(11), calcCum(10), calcCum(9)]; // Jun, May, Apr
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fyFiltered, preloadReady, fyRange]);
 
+
+  // ── 健康 KPI 卡片（使用财年截止到各月月底的累计值）──
+  const overviewItems = useMemo((): KpiCard[] => {
+    const mk = monthlyCumKpi;
+    const main = mk[0]; // 截止到最近完整月（过去FY=Jun，当前FY可能为0）
+
+    const fmtVal = (amt: number, cnt: number) => fmtK(amt) + ' / ' + cnt;
+    const costShow = main.costDevDenom > 0 ? `${main.costDev > 0 ? '+' : ''}${main.costDev.toFixed(1)}%` : '—';
+    const delayShow = main.avgDelay !== 0 || main.dCnt > 0 ? `${main.avgDelay}天` : '—';
+    const onTimeShow = main.onTimeRate >= 0 ? `${main.onTimeRate}%` : '—';
+
+    return [
+      { label: '项目总数', value: fmtVal(main.tAmt, main.total), color: COLORS.primary, icon: '📊' },
+      { label: '进行中项目', value: fmtVal(main.aAmt, main.active), color: COLORS.primary, icon: '🚧' },
+      { label: '已完成项目', value: fmtVal(main.cAmt, main.completed), color: COLORS.success, icon: '✅' },
+      { label: '延期项目', value: fmtVal(main.dAmt, main.delayed), color: main.delayed > 0 ? COLORS.danger : COLORS.success, icon: '🚨' },
+      { label: '加权延期天数', value: delayShow, color: main.avgDelay > 0 ? COLORS.danger : COLORS.success, icon: '📅' },
+      { label: '节点按时率', value: onTimeShow, color: main.onTimeRate >= 0 ? (main.onTimeRate >= 80 ? COLORS.success : main.onTimeRate >= 50 ? COLORS.warning : COLORS.danger) : COLORS.textLight, icon: '🎯' },
+      { label: '成本偏差率', value: costShow, color: main.costDev <= 0 ? COLORS.success : COLORS.danger, icon: '💰' },
+    ];
+  }, [monthlyCumKpi]);
+
+  // ── 财年累计KPI（按FY内月份累计）──
   // ── 甘特图数据（12个月时间线：前1个月 + 后10个月）──
   const ganttData = useMemo(() => {
     const now = new Date();
@@ -462,9 +434,11 @@ const DeliveryAnalysis: React.FC = () => {
 
       <OverviewCards items={overviewItems.map((item, i) => {
             const mk = monthlyCumKpi;
-            const v1 = [`${fmtK(mk[1].tAmt)} / ${mk[1].total}`, `${fmtK(mk[1].aAmt)} / ${mk[1].active}`, `${fmtK(mk[1].cAmt)} / ${mk[1].completed}`, `${fmtK(mk[1].dAmt)} / ${mk[1].delayed}`, `${mk[1].avgDelay}天`, `${mk[1].onTimeRate >= 0 ? mk[1].onTimeRate + '%' : '—'}`, ''];
-            const v2 = [`${fmtK(mk[2].tAmt)} / ${mk[2].total}`, `${fmtK(mk[2].aAmt)} / ${mk[2].active}`, `${fmtK(mk[2].cAmt)} / ${mk[2].completed}`, `${fmtK(mk[2].dAmt)} / ${mk[2].delayed}`, `${mk[2].avgDelay}天`, `${mk[2].onTimeRate >= 0 ? mk[2].onTimeRate + '%' : '—'}`, ''];
-            return { ...item, prevValues: [{ value: v1[i] || '', color: item.color }, { value: v2[i] || '', color: item.color }] };
+            const val = (m: typeof mk[0], idx: number) => {
+              const arr = [`${fmtK(m.tAmt)} / ${m.total}`, `${fmtK(m.aAmt)} / ${m.active}`, `${fmtK(m.cAmt)} / ${m.completed}`, `${fmtK(m.dAmt)} / ${m.delayed}`, m.avgDelay !== 0 ? m.avgDelay + '天' : '—', m.onTimeRate >= 0 ? m.onTimeRate + '%' : '—', m.costDevDenom > 0 ? (m.costDev > 0 ? '+' : '') + m.costDev.toFixed(1) + '%' : '—'];
+              return arr[idx] || '—';
+            };
+            return { ...item, prevValues: [{ value: val(mk[1], i), color: item.color }, { value: val(mk[2], i), color: item.color }] };
           })} />
 
           <div style={{ display: 'flex', gap: 16, marginTop: 16, alignItems: 'stretch' }}>
