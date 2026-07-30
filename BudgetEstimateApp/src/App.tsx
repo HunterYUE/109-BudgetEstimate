@@ -43,12 +43,12 @@ const App: React.FC = () => {
   );
 };
 
-/** 角色守卫：检查当前用户角色是否有权限访问该路径 */
+/** 权限守卫：检查当前用户是否有权限访问该路径 */
 function RoleGuard({ path, children }: { path: string; children: React.ReactNode }) {
   const { user } = useAuth();
   const location = useLocation();
 
-  if (!user || !canAccessRoute(user.role, path)) {
+  if (!user || !canAccessRoute(user.permissions, path)) {
     // 无权限时重定向到仪表盘
     return <Navigate to="/" state={{ from: location.pathname }} replace />;
   }

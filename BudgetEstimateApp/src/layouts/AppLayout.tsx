@@ -102,8 +102,8 @@ const AppLayout: React.FC = () => {
   const location = useLocation();
   const { user } = useAuth();
 
-  // 按权限过滤菜单
-  const visibleMenu = user ? MENU_ITEMS.filter(item => canSeeMenu(user.role, item.key)) : [];
+  // 按权限过滤菜单（基于用户自定义 permissions 数组）
+  const visibleMenu = user ? MENU_ITEMS.filter(item => canSeeMenu(user.permissions, item.key)) : [];
 
   const activeKey = visibleMenu.find(item =>
     item.key === '/' ? location.pathname === '/' : (location.pathname === item.key || location.pathname.startsWith(item.key + '/'))

@@ -1,64 +1,51 @@
 /* ============================================================
-   权限系统 — 角色 → 页面可见性映射
-   用途：路由守卫、侧边栏过滤、按钮显隐
+   权限系统 — 按人员分配的可调权限
+   每个用户有自己的 permissions[]，可随时在系统管理中调整
    ============================================================ */
 
-/** 路由路径 → 允许访问的角色列表 */
-export const ROUTE_PERMISSIONS: Record<string, string[]> = {
-  // 所有登录用户可见
-  '/':              ['user', 'manager', 'admin', 'director'],
-  // 销售分析
-  '/analysis':      ['user', 'manager', 'admin', 'director'],
-  // 销售管理
-  '/opportunities': ['user', 'manager', 'admin', 'director'],
-  // 报价列表 & 报价编制
-  '/quotations':    ['user', 'manager', 'admin', 'director'],
-  // 交付分析
-  '/delivery-analysis': ['manager', 'admin', 'director'],
-  // 交付管理 & 交付详情
-  '/delivery':      ['manager', 'admin', 'director'],
-  // 审批管理
-  '/approval':      ['admin', 'director'],
-  // 标签管理
-  '/tags':          ['manager', 'admin', 'director'],
-  // 物料管理
-  '/materials':     ['manager', 'admin', 'director'],
-  // 客户管理
-  '/clients':       ['user', 'manager', 'admin', 'director'],
-  // 系统管理
-  '/settings':      ['admin', 'director'],
+/** 路由路径 → 所需的权限（满足其一即可） */
+const ROUTE_REQUIRED_PERMS: Record<string, string[]> = {
+  '/':                ['仪表盘查看'],
+  '/analysis':        ['销售分析', '全部查看权限'],
+  '/opportunities':   ['销售机会管理', '全部查看权限'],
+  '/quotations':      ['报价列表查看', '报价编制', '全部查看权限'],
+  '/delivery-analysis': ['交付分析', '全部查看权限'],
+  '/delivery':        ['交付管理', '全部查看权限'],
+  '/approval':        ['审批管理', '全部查看权限'],
+  '/tags':            ['新建标签', '全部查看权限'],
+  '/materials':       ['物料管理', '全部查看权限'],
+  '/clients':         ['客户管理', '全部查看权限'],
+  '/settings':        ['用户管理', '系统配置', '全部查看权限'],
 };
 
-/** 侧边栏菜单项对应的路由 key → 角色列表（与菜单结构一一对应） */
-export const MENU_ROLES: Record<string, string[]> = {
-  '/':                  ['user', 'manager', 'admin', 'director'],
-  '/analysis':          ['user', 'manager', 'admin', 'director'],
-  '/opportunities':     ['user', 'manager', 'admin', 'director'],
-  '/quotations':        ['user', 'manager', 'admin', 'director'],
-  '/delivery-analysis': ['manager', 'admin', 'director'],
-  '/delivery':          ['manager', 'admin', 'director'],
-  '/approval':          ['admin', 'director'],
-  '/tags':              ['manager', 'admin', 'director'],
-  '/materials':         ['manager', 'admin', 'director'],
-  '/clients':           ['user', 'manager', 'admin', 'director'],
-  '/settings':          ['admin', 'director'],
-};
+/** 侧边栏菜单项 → 所需的权限（与 ROUTE_REQUIRED_PERMS 一致） */
+const MENU_REQUIRED_PERMS: Record<string, string[]> = ROUTE_REQUIRED_PERMS;
 
-/** 检查某角色是否有权限访问指定路由 */
-export function canAccessRoute(role: string | undefined, path: string): boolean {
-  if (!role) return false;
+/**
+ * 检查用户的权限数组是否有权访问指定路由
+ * @param permissions 用户的权限列表（从 user.permissions 获取）
+ * @param path 请求的路由路径
+ */
+export function canAccessRoute(permissions: string[] | undefined, path: string): boolean {
+  if (!permissions || permissions.length === 0) return false;
   // 精确匹配
-  if (ROUTE_PERMISSIONS[path]) return ROUTE_PERMISSIONS[path].includes(role);
+  if (ROUTE_REQUIRED_PERMS[path]) {
+    return ROUTE_REQUIRED_PERMS[path].some(p => permissions.includes(p));
+  }
   // 前缀匹配（如 /delivery/xxx, /quotations/xxx）
   const prefix = '/' + path.split('/')[1];
-  if (ROUTE_PERMISSIONS[prefix]) return ROUTE_PERMISSIONS[prefix].includes(role);
-  // 默认允许（兜底）
+  const required = ROUTE_REQUIRED_PERMS[prefix];
+  if (required) return required.some(p => permissions.includes(p));
+  // 兜底：未知路径默认放行
   return true;
 }
 
-/** 检查某角色是否有权限查看侧边栏菜单项 */
-export function canSeeMenu(role: string | undefined, menuKey: string): boolean {
-  if (!role) return false;
-  const allowed = MENU_ROLES[menuKey];
-  return allowed ? allowed.includes(role) : true;
+/**
+ * 检查用户是否有权限查看侧边栏菜单项
+ */
+export function canSeeMenu(permissions: string[] | undefined, menuKey: string): boolean {
+  if (!permissions || permissions.length === 0) return false;
+  const required = MENU_REQUIRED_PERMS[menuKey];
+  if (!required) return true;
+  return required.some(p => permissions.includes(p));
 }
