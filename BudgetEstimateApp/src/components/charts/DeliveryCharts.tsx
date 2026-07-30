@@ -575,6 +575,19 @@ export const ProjectGantt: React.FC<{
           const badgeColor = proj.status === '已完成' ? COLORS.success : proj.status === '已延期' ? COLORS.danger : COLORS.primary;
           return (
             <g key={proj.name + '-' + pi}>
+              {/* 先绘矩形条（底层），再绘标签（顶层） */}
+              {proj.slots.map(s => {
+                const sx = posX(s.startDate);
+                const ex = posX(s.endDate);
+                const w = Math.max(4, ex - sx);
+                return (
+                  <GanttNode key={s.nodeNo}
+                    slot={s} projectKey={proj.name}
+                    sx={sx} ex={ex} w={w}
+                    cy={cy} barH={barH}
+                    onHover={setHoveredGantt} />
+                );
+              })}
               {/* 完成度圆形徽标 */}
               <g>
                 <circle cx={badgeCx} cy={rowCenter(pi)} r={badgeR} fill={badgeBg} />
@@ -591,18 +604,6 @@ export const ProjectGantt: React.FC<{
                   <tspan x={labelW - 8} y={rowCenter(pi) + 4}>{proj.name}</tspan>
                 )}
               </text>
-              {proj.slots.map(s => {
-                const sx = posX(s.startDate);
-                const ex = posX(s.endDate);
-                const w = Math.max(4, ex - sx);
-                return (
-                  <GanttNode key={s.nodeNo}
-                    slot={s} projectKey={proj.name}
-                    sx={sx} ex={ex} w={w}
-                    cy={cy} barH={barH}
-                    onHover={setHoveredGantt} />
-                );
-              })}
             </g>
           );
         })}
