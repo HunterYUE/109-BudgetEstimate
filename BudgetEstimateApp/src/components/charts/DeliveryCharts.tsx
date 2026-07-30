@@ -63,7 +63,7 @@ interface BubbleHoverInfo {
    工具
    ============================================================ */
 /** 格式化日期为短格式 "M/d" */
-const fmtShort = (d: Date) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+const fmtShort = (d: Date) => `${String(d.getFullYear()).slice(2)}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 
 const toK = (v: number) => Math.round(v / 1000).toLocaleString() + 'K';
 
@@ -393,17 +393,15 @@ const GanttNode: React.FC<{
     ? GANTT_STATUS_COLOR.in_progress
     : GANTT_STATUS_COLOR.pending;
   const delayDays = calcNodeDelay(slot);
-  // 矩形条完全在标签区或宽度不足时隐藏全部内容（条本身保留为极小色块）
-  const showContent = w > 16 && sx >= 100;
+  const showContent = w > 16;
   return (
     <g>
-      {showContent && (
-        <rect x={sx - 2} y={cy - 2} width={w + 4} height={barH + 4} rx={4} ry={4}
-          fill="transparent" stroke="none" style={{ cursor: 'pointer' }}
-          onMouseEnter={() => slot.name !== '项目总结' && onHover({ slot, projectKey, sx, ex, w, cy, barH, color })}
-          onMouseLeave={() => onHover(null)} />
-      )}
-      {/* 可见条（淡淡填充色） */}
+      {/* 透明鼠标热区：始终覆盖从 bar 左上到右下的完整区域 */}
+      <rect x={sx} y={cy - 4} width={w} height={barH + 8} fill="transparent" stroke="none"
+        style={{ cursor: 'pointer' }}
+        onMouseEnter={() => slot.name !== '项目总结' && onHover({ slot, projectKey, sx, ex, w, cy, barH, color })}
+        onMouseLeave={() => onHover(null)} />
+      {/* 可见条 */}
       <rect x={sx} y={cy} width={w} height={barH} rx={2} ry={2}
         fill={color} fillOpacity={0.5} />
       {showContent && (

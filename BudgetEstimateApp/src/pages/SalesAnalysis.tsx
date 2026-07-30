@@ -97,7 +97,10 @@ const SalesAnalysis: React.FC = () => {
   const [quotationSummaries, setQuotationSummaries] = useState<QuotationSummary[]>([]);
   const [deliveryProjects, setDeliveryProjects] = useState<DeliveryProject[]>([]);
   const [loading, setLoading] = useState(true);
-  const defaultFy = `FY${String(new Date().getFullYear() % 100).padStart(2,'0')}${String((new Date().getFullYear() + 1) % 100).padStart(2,'0')}`;
+  const nowY = new Date().getFullYear(), nowM = new Date().getMonth();
+  const fyY1 = nowM >= 6 ? nowY : nowY - 1;
+  const fyY2 = nowM >= 6 ? nowY + 1 : nowY;
+  const defaultFy = `FY${String(fyY1 % 100).padStart(2,'0')}${String(fyY2 % 100).padStart(2,'0')}`;
   const [fySelect, setFySelect] = useState(defaultFy);
 
   const loadAll = useCallback(async () => {
