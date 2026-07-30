@@ -298,7 +298,7 @@ const DeliveryAnalysis: React.FC = () => {
     const DAY_MS = 1000 * 60 * 60 * 24;
     const totalDays = Math.round((tlEnd.getTime() - tlStart.getTime()) / DAY_MS);
     const months = Array.from({ length: 12 }, (_, i) => {
-      const d = new Date(now.getFullYear(), now.getMonth() - 1 + i, 1);
+      const d = new Date(tlStart.getFullYear(), tlStart.getMonth() + i, 1);
       return d.toLocaleString('en', { month: 'short' });
     });
     const todayPos = Math.round((now.getTime() - tlStart.getTime()) / DAY_MS);
