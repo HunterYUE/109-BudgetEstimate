@@ -11,7 +11,7 @@ import type { TableProps } from 'antd';
 const DEFAULT_USER_PASSWORD = 'ChangeMe@2024';
 
 /* ============================================================
-   角色颜色映射
+   共用样式
    ============================================================ */
 const VAL_CELL_STYLE: React.CSSProperties = {
   padding: '7px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`,
@@ -22,6 +22,10 @@ const INP_STYLE: React.CSSProperties = {
   width: '100%', border: 'none', background: 'transparent', outline: 'none',
   fontSize: 13, padding: '2px 0', margin: 0, display: 'block',
   boxSizing: 'border-box', lineHeight: 1.3,
+};
+
+const BTN_BASE: React.CSSProperties = {
+  borderRadius: 3, width: 36, height: 36,
 };
 
 type TabKey = 'users' | 'logs';
@@ -41,17 +45,6 @@ const ALL_PERMISSIONS = [
   '用户管理', '系统配置', '全部查看权限',
 ];
 
-const ROLE_PERMISSIONS: Record<string, string[]> = {
-  user: ['销售机会管理', '报价列表查看', '销售分析', '客户管理', '仪表盘查看'],
-  manager: ['交付管理', '交付分析', '成本录入', '物料管理', '仪表盘查看', '报价列表查看', '销售机会管理', '客户管理'],
-  admin: ['审批管理', '用户管理', '系统配置', '全部查看权限', '仪表盘查看', '销售机会管理', '报价编制', '物料管理', '交付管理', '客户管理'],
-  director: ['审批管理', '用户管理', '系统配置', '全部查看权限', '仪表盘查看', '销售机会管理', '报价编制', '物料管理', '交付管理', '客户管理', '新增物料', '新建标签', '新建客户', '新建信息/线索/机会', '编辑销售机会', '转线索/转机会', '销售蓝表编辑', '交付分析', '成本录入'],
-};
-
-/* ============================================================
-   Component
-   ============================================================ */
-
 const TITLE_PERMISSIONS: Record<string, string[]> = {
   '销售经理': ['销售机会管理', '新建信息/线索/机会', '编辑销售机会', '转线索/转机会', '销售蓝表编辑', '客户管理', '新建客户', '报价列表查看', '仪表盘查看'],
   '方案经理': ['物料管理', '新增物料', '新建标签', '报价编制', '报价列表查看', '仪表盘查看', '销售机会管理', '客户管理'],
@@ -67,6 +60,11 @@ const TITLE_ROLE_MAP: Record<string, string> = {
   '交付经理': 'user',
 };
 
+/* ============================================================
+   静态表格列定义（无状态依赖）
+   ============================================================ */
+const TITLE_OPTIONS = ['销售经理', '方案经理', '交付经理', '部门总监'];
+
 const SystemManagement: React.FC = () => {
   const [tab, setTab] = useState<TabKey>('users');
   const [messageApi, msgContextHolder] = message.useMessage();
@@ -76,20 +74,15 @@ const SystemManagement: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  const fetchUsers = async () => {
+  useEffect(() => {
+    let cancelled = false;
     setLoading(true);
-    try {
-      const data = await userService.list();
-      setUsers(data);
-    } catch (err: unknown) {
-      messageApi.error('加载用户列表失败：' + (err.message || '未知错误'));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { fetchUsers(); }, []);
+    userService.list()
+      .then(data => { if (!cancelled) setUsers(data); })
+      .catch((err: unknown) => messageApi.error('加载用户列表失败：' + ((err as Error).message || '未知错误')))
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [messageApi]);
 
   // 弹窗状态
   const [addOpen, setAddOpen] = useState(false);
@@ -121,7 +114,7 @@ const SystemManagement: React.FC = () => {
 
   // 操作日志
   const [logs, setLogs] = useState<AuditLog[]>([]);
-  const [, setLogLoading] = useState(false); // 只需要 setter，状态值未使用
+  const [logLoading, setLogLoading] = useState(false);
   const [logModuleFilter, setLogModuleFilter] = useState<string | null>(null);
 
   const loadLogs = useCallback(async () => {
@@ -140,6 +133,12 @@ const SystemManagement: React.FC = () => {
     if (tab === 'logs') loadLogs();
   }, [tab, loadLogs]);
 
+  /** 通用：清除编辑目标并关闭弹窗 */
+  const closeModal = (setter: (v: boolean) => void) => {
+    setter(false);
+    setEditTarget(null);
+  };
+
   /* ---- 用户管理操作 ---- */
 
   const toggleUserActive = async (user: UserRecord) => {
@@ -147,14 +146,8 @@ const SystemManagement: React.FC = () => {
       const updated = await userService.update(user.id, { isActive: !user.isActive });
       setUsers(prev => prev.map(u => u.id === updated.id ? updated : u));
     } catch (err: unknown) {
-      messageApi.error('操作失败：' + (err.message || ''));
+      messageApi.error('操作失败：' + ((err as Error).message || ''));
     }
-  };
-
-  const openAddModal = () => {
-    setNewName(''); setNewTitle('销售经理');
-    setNewPhone(''); setNewEmail('');
-    setAddOpen(true);
   };
 
   const handleAddUser = async () => {
@@ -178,7 +171,7 @@ const SystemManagement: React.FC = () => {
       setAddOpen(false);
       messageApi.success(`用户 ${created.displayName} 添加成功（初始密码 ${DEFAULT_USER_PASSWORD}）`);
     } catch (err: unknown) {
-      messageApi.error(err.message || '添加失败');
+      messageApi.error((err as Error).message || '添加失败');
     } finally {
       setSaving(false);
     }
@@ -206,11 +199,10 @@ const SystemManagement: React.FC = () => {
         phone: editPhone.trim(),
       });
       setUsers(prev => prev.map(u => u.id === updated.id ? updated : u));
-      setEditOpen(false);
-      setEditTarget(null);
+      closeModal(setEditOpen);
       messageApi.success('用户信息已更新');
     } catch (err: unknown) {
-      messageApi.error(err.message || '更新失败');
+      messageApi.error((err as Error).message || '更新失败');
     } finally {
       setSaving(false);
     }
@@ -225,22 +217,20 @@ const SystemManagement: React.FC = () => {
   const handlePwdReset = async () => {
     if (!editTarget) return;
     if (!resetPwd.trim()) { messageApi.warning('请输入新密码'); return; }
-    if (resetPwd.length < 6) { messageApi.warning('密码长度不能少于6位'); return; }
+    if (resetPwd.length < 8) { messageApi.warning('密码长度不能少于8位'); return; }
     if (resetPwd !== confirmPwd) { messageApi.warning('两次输入的密码不一致'); return; }
 
     setSaving(true);
     try {
       await userService.resetPassword(editTarget.id, resetPwd);
-      setPwdOpen(false);
-      setEditTarget(null);
+      closeModal(setPwdOpen);
       messageApi.success('密码已重置');
     } catch (err: unknown) {
-      messageApi.error(err.message || '密码重置失败');
+      messageApi.error((err as Error).message || '密码重置失败');
     } finally {
       setSaving(false);
     }
   };
-
 
   const openPermModal = (u: UserRecord) => {
     setEditTarget(u);
@@ -248,7 +238,7 @@ const SystemManagement: React.FC = () => {
     // 优先使用数据库已保存的权限，否则用职务预设
     setCheckedPerms(u.permissions && u.permissions.length > 0
       ? [...u.permissions]
-      : [...(TITLE_PERMISSIONS[u.title] || ROLE_PERMISSIONS[u.role] || [])]);
+      : [...(TITLE_PERMISSIONS[u.title] || [])]);
     setPermOpen(true);
   };
 
@@ -258,11 +248,10 @@ const SystemManagement: React.FC = () => {
     try {
       const updated = await userService.updateRole(editTarget.id, TITLE_ROLE_MAP[permTitle] || 'user', permTitle, checkedPerms);
       setUsers(prev => prev.map(u => u.id === updated.id ? updated : u));
-      setPermOpen(false);
-      setEditTarget(null);
+      closeModal(setPermOpen);
       messageApi.success('角色权限已更新');
     } catch (err: unknown) {
-      messageApi.error(err.message || '更新失败');
+      messageApi.error((err as Error).message || '更新失败');
     } finally {
       setSaving(false);
     }
@@ -277,7 +266,7 @@ const SystemManagement: React.FC = () => {
       setDeleteTarget(null);
       messageApi.success('用户已删除');
     } catch (err: unknown) {
-      messageApi.error(err.message || '删除失败');
+      messageApi.error((err as Error).message || '删除失败');
     } finally {
       setSaving(false);
     }
@@ -347,8 +336,8 @@ const SystemManagement: React.FC = () => {
       render: (v: string) => <span style={{ fontSize: 12, color: COLORS.textDark }}>{formatBeijing(v)}</span>,
     },
     { title: '操作人', dataIndex: 'userName', key: 'userName', width: 100,
-      render: (_: string, rec: any) => (
-        <span style={{ color: COLORS.textDark, fontSize: 13 }}>{rec.displayName || rec.userName || '—'}</span>
+      render: (_: string, rec: AuditLog) => (
+        <span style={{ color: COLORS.textDark, fontSize: 13 }}>{(rec as any).displayName || rec.userName || '—'}</span>
       ),
     },
     { title: '模块', dataIndex: 'module', key: 'module', width: 88 },
@@ -358,6 +347,16 @@ const SystemManagement: React.FC = () => {
     },
   ];
 
+  /** 弹窗通用确认/取消按钮组 */
+  const modalFooter = (onConfirm: () => void, onClose: () => void, confirmColor?: string) => ({
+    footer: (
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+        <Button icon={<CloseOutlined />} onClick={onClose} style={BTN_BASE} />
+        <Button type="primary" ghost icon={<CheckOutlined />} loading={saving} onClick={onConfirm}
+          style={{ ...BTN_BASE, borderColor: confirmColor || COLORS.primary, color: confirmColor || COLORS.primary }} />
+      </div>
+    ),
+  });
 
   return (
     <div>
@@ -367,6 +366,7 @@ const SystemManagement: React.FC = () => {
         <span style={{ fontSize: 17, fontWeight: 700, color: COLORS.textDark }}>系统管理</span>
       </div>
 
+      {/* ── Tab 切换 ── */}
       <div style={{ display: 'flex', gap: 0, marginBottom: 20, borderBottom: `2px solid ${COLORS.border}` }}>
         {TABS.map(t => (
           <div key={t.key} onClick={() => setTab(t.key)}
@@ -386,7 +386,7 @@ const SystemManagement: React.FC = () => {
       {tab === 'users' && (
         <div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
-            <Button type="default" ghost icon={<PlusOutlined />} onClick={openAddModal}
+            <Button type="default" ghost icon={<PlusOutlined />} onClick={() => { setNewName(''); setNewTitle('销售经理'); setNewPhone(''); setNewEmail(''); setAddOpen(true); }}
               style={{
                 borderRadius: 8, border: `1.5px dashed ${COLORS.borderLight}`,
                 color: COLORS.primary, fontSize: 13, fontWeight: 600, height: 32,
@@ -413,7 +413,7 @@ const SystemManagement: React.FC = () => {
           />
           </div>
 
-          {/* ---------- 新增用户弹窗 ---------- */}
+          {/* ── 新增用户弹窗 ── */}
           <Modal
             title={<span style={{ fontSize: 17, fontWeight: 600, color: COLORS.textDark }}>新增用户</span>}
             open={addOpen}
@@ -421,185 +421,134 @@ const SystemManagement: React.FC = () => {
             width={480}
             destroyOnHidden
             styles={{ body: { padding: '14px 2px 6px' } }}
-            footer={
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                <Button icon={<CloseOutlined />} onClick={() => setAddOpen(false)}
-                  style={{ borderRadius: 3, width: 36, height: 36 }} />
-                <Button type="primary" ghost icon={<CheckOutlined />} loading={saving} onClick={handleAddUser}
-                  style={{ borderColor: COLORS.primary, color: COLORS.primary, borderRadius: 3, width: 36, height: 36 }} />
-              </div>
-            }
+            {...modalFooter(handleAddUser, () => setAddOpen(false))}
           >
-
-              <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
-                <colgroup>
-                  <col width="100" /><col width="*" />
-                </colgroup>
-                <tbody>
-                  <tr>
-                    <td style={LABEL_CELL_STYLE}>姓名 <span style={{ color: COLORS.danger }}>*</span></td>
-                    <td style={VAL_CELL_STYLE}>
-                      <input value={newName} onChange={e => setNewName(e.target.value)}
-                        placeholder="输入用户姓名" style={INP_STYLE} />
-                    </td>
-                  </tr>
-                  <tr>
-                    <td style={LABEL_CELL_STYLE}>手机号</td>
-                    <td style={VAL_CELL_STYLE}>
-                      <input value={newPhone} onChange={e => setNewPhone(e.target.value)}
-                        placeholder="输入手机号" style={INP_STYLE} />
-                    </td>
-                  </tr>
-                  <tr>
-                    <td style={LABEL_CELL_STYLE}>邮箱 *</td>
-                    <td style={VAL_CELL_STYLE}>
-                      <input value={newEmail} onChange={e => setNewEmail(e.target.value)}
-                        placeholder="user@example.com" style={INP_STYLE} />
-                      <span style={{ fontSize: 10, color: '#aaa', marginLeft: 4 }}>作为登录账号</span>
-                    </td>
-                  </tr>
-                  <tr>
-                    <td style={LABEL_CELL_STYLE}>职务 *</td>
-                    <td style={VAL_CELL_STYLE}>
-                      <select value={newTitle} onChange={e => setNewTitle(e.target.value)}
-                        style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, padding: 0, cursor: 'pointer', color: COLORS.textPrimary }}>
-                        <option value="销售经理">销售经理</option>
-                        <option value="方案经理">方案经理</option>
-                        <option value="交付经理">交付经理</option>
-                        <option value="部门总监">部门总监</option>
-                      </select>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-              <div style={{ fontSize: 11, color: '#aaa', marginTop: 12, textAlign: 'center' }}>
-                💡 新增用户初始密码为 <strong>{DEFAULT_USER_PASSWORD}</strong>
-              </div>
+            <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+              <colgroup><col width="100" /><col width="*" /></colgroup>
+              <tbody>
+                <tr>
+                  <td style={LABEL_CELL_STYLE}>姓名 <span style={{ color: COLORS.danger }}>*</span></td>
+                  <td style={VAL_CELL_STYLE}>
+                    <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="输入用户姓名" style={INP_STYLE} />
+                  </td>
+                </tr>
+                <tr>
+                  <td style={LABEL_CELL_STYLE}>手机号</td>
+                  <td style={VAL_CELL_STYLE}>
+                    <input value={newPhone} onChange={e => setNewPhone(e.target.value)} placeholder="输入手机号" style={INP_STYLE} />
+                  </td>
+                </tr>
+                <tr>
+                  <td style={LABEL_CELL_STYLE}>邮箱 *</td>
+                  <td style={VAL_CELL_STYLE}>
+                    <input value={newEmail} onChange={e => setNewEmail(e.target.value)} placeholder="user@example.com" style={INP_STYLE} />
+                    <span style={{ fontSize: 10, color: '#aaa', marginLeft: 4 }}>作为登录账号</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td style={LABEL_CELL_STYLE}>职务 *</td>
+                  <td style={VAL_CELL_STYLE}>
+                    <select value={newTitle} onChange={e => setNewTitle(e.target.value)}
+                      style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, padding: 0, cursor: 'pointer', color: COLORS.textPrimary }}>
+                      {TITLE_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <div style={{ fontSize: 11, color: '#aaa', marginTop: 12, textAlign: 'center' }}>
+              💡 新增用户初始密码为 <strong>{DEFAULT_USER_PASSWORD}</strong>
+            </div>
           </Modal>
 
-          {/* ---------- 编辑用户弹窗 ---------- */}
+          {/* ── 编辑用户弹窗 ── */}
           <Modal
             title={<span style={{ fontSize: 17, fontWeight: 600, color: COLORS.textDark }}>编辑用户</span>}
             open={editOpen}
-            onCancel={() => { setEditOpen(false); setEditTarget(null); }}
+            onCancel={() => closeModal(setEditOpen)}
             width={460}
             destroyOnHidden
             styles={{ body: { padding: '14px 2px 6px' } }}
-            footer={
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                <Button icon={<CloseOutlined />} onClick={() => { setEditOpen(false); setEditTarget(null); }}
-                  style={{ borderRadius: 3, width: 36, height: 36 }} />
-                <Button type="primary" ghost icon={<CheckOutlined />} loading={saving} onClick={handleEditSave}
-                  style={{ borderColor: COLORS.primary, color: COLORS.primary, borderRadius: 3, width: 36, height: 36 }} />
-              </div>
-            }
+            {...modalFooter(handleEditSave, () => closeModal(setEditOpen))}
           >
             {editTarget && (
               <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
-                <colgroup>
-                  <col width="100" /><col width="*" />
-                </colgroup>
+                <colgroup><col width="100" /><col width="*" /></colgroup>
                 <tbody>
                   <tr>
                     <td style={LABEL_CELL_STYLE}>姓名</td>
-                    <td style={VAL_CELL_STYLE}>
-                      <input value={editName} onChange={e => setEditName(e.target.value)} style={INP_STYLE} />
-                    </td>
+                    <td style={VAL_CELL_STYLE}><input value={editName} onChange={e => setEditName(e.target.value)} style={INP_STYLE} /></td>
                   </tr>
                   <tr>
                     <td style={LABEL_CELL_STYLE}>手机号</td>
-                    <td style={VAL_CELL_STYLE}>
-                      <input value={editPhone} onChange={e => setEditPhone(e.target.value)} style={INP_STYLE} />
-                    </td>
+                    <td style={VAL_CELL_STYLE}><input value={editPhone} onChange={e => setEditPhone(e.target.value)} style={INP_STYLE} /></td>
                   </tr>
                   <tr>
                     <td style={LABEL_CELL_STYLE}>职务</td>
                     <td style={VAL_CELL_STYLE}>
                       <select value={editTitle} onChange={e => setEditTitle(e.target.value)}
                         style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, padding: 0, cursor: 'pointer', color: COLORS.textPrimary }}>
-                        <option value="销售经理">销售经理</option>
-                        <option value="方案经理">方案经理</option>
-                        <option value="交付经理">交付经理</option>
-                        <option value="部门总监">部门总监</option>
+                        {TITLE_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
                       </select>
                     </td>
                   </tr>
                   <tr>
                     <td style={LABEL_CELL_STYLE}>邮箱 *</td>
-                    <td style={VAL_CELL_STYLE}>
-                      <input value={editEmail} onChange={e => setEditEmail(e.target.value)} style={INP_STYLE} />
-                    </td>
+                    <td style={VAL_CELL_STYLE}><input value={editEmail} onChange={e => setEditEmail(e.target.value)} style={INP_STYLE} /></td>
                   </tr>
                 </tbody>
               </table>
             )}
           </Modal>
 
-          {/* ---------- 密码重置弹窗 ---------- */}
+          {/* ── 密码重置弹窗 ── */}
           <Modal
             title={<span style={{ fontSize: 17, fontWeight: 600, color: COLORS.textDark }}>重置密码</span>}
             open={pwdOpen}
-            onCancel={() => { setPwdOpen(false); setEditTarget(null); }}
+            onCancel={() => closeModal(setPwdOpen)}
             width={460}
             destroyOnHidden
             styles={{ body: { padding: '14px 2px 6px' } }}
-            footer={
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                <Button icon={<CloseOutlined />} onClick={() => { setPwdOpen(false); setEditTarget(null); }}
-                  style={{ borderRadius: 3, width: 36, height: 36 }} />
-                <Button type="primary" ghost icon={<CheckOutlined />} loading={saving} onClick={handlePwdReset}
-                  style={{ borderColor: COLORS.warning, color: COLORS.warning, borderRadius: 3, width: 36, height: 36 }} />
-              </div>
-            }
+            {...modalFooter(handlePwdReset, () => closeModal(setPwdOpen), COLORS.warning)}
           >
             {editTarget && (
-              <><div style={{ fontSize: 13, color: COLORS.textSecondary, marginBottom: 16 }}>
-                用户：<strong style={{ color: COLORS.textDark }}>{editTarget.displayName}</strong>
-                <span style={{ color: COLORS.textLight, marginLeft: 8 }}>（{editTarget.email}）</span>
-              </div>
-              <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
-                <colgroup>
-                  <col width="100" /><col width="*" />
-                </colgroup>
-                <tbody>
-                  <tr>
-                    <td style={LABEL_CELL_STYLE}>新密码 *</td>
-                    <td style={VAL_CELL_STYLE}>
-                      <input type="password" value={resetPwd}
-                        onChange={e => setResetPwd(e.target.value)}
-                        placeholder="输入新密码（至少6位）" style={INP_STYLE} />
-                    </td>
-                  </tr>
-                  <tr>
-                    <td style={LABEL_CELL_STYLE}>确认密码 *</td>
-                    <td style={VAL_CELL_STYLE}>
-                      <input type="password" value={confirmPwd}
-                        onChange={e => setConfirmPwd(e.target.value)}
-                        placeholder="再次输入新密码" style={INP_STYLE} />
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+              <>
+                <div style={{ fontSize: 13, color: COLORS.textSecondary, marginBottom: 16 }}>
+                  用户：<strong style={{ color: COLORS.textDark }}>{editTarget.displayName}</strong>
+                  <span style={{ color: COLORS.textLight, marginLeft: 8 }}>（{editTarget.email}）</span>
+                </div>
+                <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+                  <colgroup><col width="100" /><col width="*" /></colgroup>
+                  <tbody>
+                    <tr>
+                      <td style={LABEL_CELL_STYLE}>新密码 *</td>
+                      <td style={VAL_CELL_STYLE}>
+                        <input type="password" value={resetPwd} onChange={e => setResetPwd(e.target.value)}
+                          placeholder="输入新密码（至少8位）" style={INP_STYLE} />
+                      </td>
+                    </tr>
+                    <tr>
+                      <td style={LABEL_CELL_STYLE}>确认密码 *</td>
+                      <td style={VAL_CELL_STYLE}>
+                        <input type="password" value={confirmPwd} onChange={e => setConfirmPwd(e.target.value)}
+                          placeholder="再次输入新密码" style={INP_STYLE} />
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
               </>
-              )}
+            )}
           </Modal>
 
-          {/* ---------- 角色权限配置弹窗 ---------- */}
+          {/* ── 角色权限配置弹窗 ── */}
           <Modal
             title={<span style={{ fontSize: 17, fontWeight: 600, color: COLORS.textDark }}>角色权限配置</span>}
             open={permOpen}
-            onCancel={() => { setPermOpen(false); setEditTarget(null); }}
+            onCancel={() => closeModal(setPermOpen)}
             width={460}
             destroyOnHidden
             styles={{ body: { padding: '14px 2px 6px' } }}
-            footer={
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                <Button icon={<CloseOutlined />} onClick={() => { setPermOpen(false); setEditTarget(null); }}
-                  style={{ borderRadius: 3, width: 36, height: 36 }} />
-                <Button type="primary" ghost icon={<CheckOutlined />} loading={saving} onClick={handlePermSave}
-                  style={{ borderColor: COLORS.primary, color: COLORS.primary, borderRadius: 3, width: 36, height: 36 }} />
-              </div>
-            }
+            {...modalFooter(handlePermSave, () => closeModal(setPermOpen))}
           >
             {editTarget && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: '4px 0 0' }}>
@@ -609,13 +558,8 @@ const SystemManagement: React.FC = () => {
                 <div>
                   <div style={{ fontSize: 13, color: COLORS.textSecondary, marginBottom: 8 }}>职务：</div>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    {['销售经理', '方案经理', '交付经理', '部门总监'].map(t => (
-                      <div key={t} onClick={() => {
-                            setPermTitle(t);
-                            // 切换职务时自动填充该职务的默认权限（用户可再手动微调）
-                            const template = TITLE_PERMISSIONS[t] || [];
-                            setCheckedPerms([...template]);
-                          }}
+                    {TITLE_OPTIONS.map(t => (
+                      <div key={t} onClick={() => { setPermTitle(t); setCheckedPerms([...(TITLE_PERMISSIONS[t] || [])]); }}
                         style={{
                           padding: '4px 14px', borderRadius: 4, cursor: 'pointer', fontSize: 13,
                           border: `1.5px solid ${permTitle === t ? COLORS.primary : '#d0d0d0'}`,
@@ -638,18 +582,16 @@ const SystemManagement: React.FC = () => {
                           background: checkedPerms.includes(p) ? '#f0f6ff' : COLORS.bgLight,
                           cursor: 'pointer', userSelect: 'none',
                         }}
-                        onClick={() => {
-                          setCheckedPerms(prev =>
-                            prev.includes(p) ? prev.filter(x => x !== p) : [...prev, p]
-                          );
-                        }}
+                        onClick={() => setCheckedPerms(prev =>
+                          prev.includes(p) ? prev.filter(x => x !== p) : [...prev, p]
+                        )}
                       >
                         <div style={{
                           width: 16, height: 16, borderRadius: 3, flexShrink: 0,
                           border: `2px solid ${checkedPerms.includes(p) ? COLORS.primary : '#d0d0d0'}`,
                           background: checkedPerms.includes(p) ? COLORS.primary : 'transparent',
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          transition: 'all 0.15s', userSelect: 'none',
+                          transition: 'all 0.15s',
                         }}>
                           {checkedPerms.includes(p) && <span style={{ color: '#fff', fontSize: 11, lineHeight: 1 }}>✓</span>}
                         </div>
@@ -692,6 +634,7 @@ const SystemManagement: React.FC = () => {
           <Table<AuditLog>
             dataSource={filteredLogs}
             columns={logColumns}
+            loading={logLoading}
             pagination={false}
             size="small"
             style={{ fontSize: 13, background: '#fff', borderRadius: 8 }}
@@ -708,14 +651,7 @@ const SystemManagement: React.FC = () => {
         width={420}
         destroyOnHidden
         styles={{ body: { padding: '24px 28px 12px' } }}
-        footer={
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-            <Button icon={<CloseOutlined />} onClick={() => setDeleteTarget(null)}
-              style={{ borderRadius: 3, width: 36, height: 36 }} />
-            <Button type="primary" ghost icon={<CheckOutlined />} loading={saving} onClick={confirmDeleteUser}
-              style={{ borderColor: COLORS.danger, color: COLORS.danger, borderRadius: 3, width: 36, height: 36 }} />
-          </div>
-        }
+        {...modalFooter(confirmDeleteUser, () => setDeleteTarget(null), COLORS.danger)}
       >
         <div style={{ textAlign: 'center', padding: '16px 0' }}>
           <div style={{ fontSize: 40, marginBottom: 12 }}>🗑️</div>
