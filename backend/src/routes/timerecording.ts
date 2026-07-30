@@ -178,7 +178,6 @@ router.put('/time-records/:id', requireAuth, async (req, res, next) => {
 router.delete('/time-records/:id', requireAuth, async (req, res, next) => {
   try {
     await query('DELETE FROM timerecording.time_records WHERE id = $1', [req.params.id]);
-    logAudit(req, action === 'lock' ? '锁定周' : '解锁周', 'admin', year + 'W周 ' + week_number + ' ' + newStatus);
     res.json({ success: true });
   } catch (err) { next(err); }
 });
@@ -364,7 +363,6 @@ router.delete('/admin/users/:id', requireAuth, requireRole('director', 'admin'),
     await query('DELETE FROM timerecording.profiles WHERE id = $1', [id]);
     await query('DELETE FROM public.users WHERE id = $1', [id]);
     logAudit(req, '删除用户', 'admin', '用户 ' + id.slice(0,8) + ' 已删除');
-    logAudit(req, action === 'lock' ? '锁定周' : '解锁周', 'admin', year + 'W周 ' + week_number + ' ' + newStatus);
     res.json({ success: true });
   } catch (err) { next(err); }
 });
