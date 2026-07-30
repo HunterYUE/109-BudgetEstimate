@@ -663,3 +663,21 @@ ALTER TABLE sales_opportunities ADD COLUMN IF NOT EXISTS won_at TIMESTAMPTZ;
 ALTER TABLE sales_opportunities ADD COLUMN IF NOT EXISTS lost_at TIMESTAMPTZ;
 ALTER TABLE delivery_projects ADD COLUMN IF NOT EXISTS actual_costs JSONB NOT NULL DEFAULT '{}'::jsonb;
 ALTER TABLE project_versions ADD COLUMN IF NOT EXISTS gp3_amount NUMERIC(12,2) NOT NULL DEFAULT 0;
+
+-- ============================================================
+-- 外键约束补齐（确保数据完整性）
+-- ============================================================
+ALTER TABLE sales_opportunities ADD CONSTRAINT fk_sales_opps_quotation FOREIGN KEY (quotation_id) REFERENCES quotations(id) ON DELETE SET NULL;
+ALTER TABLE delivery_projects ADD CONSTRAINT fk_delivery_opportunity FOREIGN KEY (opportunity_id) REFERENCES sales_opportunities(id);
+ALTER TABLE delivery_projects ADD CONSTRAINT fk_delivery_quotation FOREIGN KEY (quotation_id) REFERENCES quotations(id) ON DELETE SET NULL;
+ALTER TABLE approval_requests ADD CONSTRAINT fk_approval_quotation FOREIGN KEY (quotation_id) REFERENCES quotations(id) ON DELETE SET NULL;
+ALTER TABLE approval_requests ADD CONSTRAINT fk_approval_opportunity FOREIGN KEY (opportunity_id) REFERENCES sales_opportunities(id) ON DELETE SET NULL;
+ALTER TABLE approval_requests ADD CONSTRAINT fk_approval_delivery FOREIGN KEY (delivery_id) REFERENCES delivery_projects(id) ON DELETE SET NULL;
+ALTER TABLE group_items ADD CONSTRAINT fk_group_items_component FOREIGN KEY (component_id) REFERENCES components(id) ON DELETE SET NULL;
+ALTER TABLE quotations ADD CONSTRAINT fk_quotations_opportunity FOREIGN KEY (opportunity_id) REFERENCES sales_opportunities(id) ON DELETE SET NULL;
+
+-- ============================================================
+-- 补齐 updated_at 触发器（quotations、user_settings）
+-- ============================================================
+CREATE TRIGGER IF NOT EXISTS trg_quotations_updated_at BEFORE UPDATE ON quotations FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+CREATE TRIGGER IF NOT EXISTS trg_user_settings_updated_at BEFORE UPDATE ON user_settings FOR EACH ROW EXECUTE FUNCTION update_updated_at();

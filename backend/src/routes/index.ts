@@ -169,6 +169,7 @@ router.post('/project-groups', requireAuth, async (req, res, next) => {
     }
 
     await client.query('COMMIT');
+    logAudit(req, '保存项目组', 'project', '项目组 ' + name + ' 已保存');
 
     // 返回完整组（含明细）
     const savedGroup = (await query('SELECT * FROM project_groups WHERE id = $1', [groupResult.id])).rows[0];
@@ -191,6 +192,7 @@ router.delete('/project-groups/by-version/:versionId', requireAuth, async (req, 
   try {
     const { versionId } = req.params;
     // group_items 通过外键 ON DELETE CASCADE 自动删除
+    logAudit(req, '删除组', 'project', '版本 ' + versionId.slice(0,8) + ' 的所有组已删除');
     await query('DELETE FROM project_groups WHERE version_id = $1', [versionId]);
     res.json({ deleted: true });
   } catch (err) { next(err); }
@@ -200,6 +202,7 @@ router.delete('/project-groups/by-version/:versionId', requireAuth, async (req, 
 router.delete('/project-groups/:id', requireAuth, async (req, res, next) => {
   try {
     const { id } = req.params;
+    logAudit(req, '删除组', 'project', '组ID ' + id.slice(0,8) + ' 已删除');
     await query('DELETE FROM project_groups WHERE id = $1', [id]);
     res.json({ deleted: true });
   } catch (err) { next(err); }

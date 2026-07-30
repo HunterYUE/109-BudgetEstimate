@@ -230,14 +230,14 @@ const Dashboard: React.FC = () => {
         const created = new Date(p.createdAt);
         if (created > mEnd) return false;
         if (p.status === '已完成') {
-          const node15 = (p.nodes||[]).find((n: any) => n.nodeNo === 15);
+          const node15 = (p.nodes||[]).find(n => n.nodeNo === 15);
           const doneDate = node15?.actualDate ? new Date(node15.actualDate) : new Date(p.updatedAt);
           if (doneDate < mStart) return false;
         }
         return true;
       });
       const monthDelivered = deliveries.filter(p => {
-        const node15 = (p.nodes||[]).find((n: any) => n.nodeNo === 15);
+        const node15 = (p.nodes||[]).find(n => n.nodeNo === 15);
         if (!node15 || (node15.status !== 'completed' && node15.status !== 'delayed')) return false;
         const d = new Date(node15.actualDate || p.updatedAt);
         return d >= mStart && d <= mEnd;
@@ -294,12 +294,12 @@ const Dashboard: React.FC = () => {
   const recentDeliveries = useMemo(() => {
     const cutoff = new Date(); cutoff.setMonth(cutoff.getMonth() - 2);
     const done = deliveries.filter(p => {
-      const node15 = (p.nodes||[]).find((n: any) => n.nodeNo === 15);
+      const node15 = (p.nodes||[]).find(n => n.nodeNo === 15);
       if (!node15 || node15.status !== 'completed') return false;
       return node15.actualDate && new Date(node15.actualDate) >= cutoff;
     }).sort((a, b) => {
-      const da = new Date((a.nodes||[]).find((n: any) => n.nodeNo === 15)?.actualDate || 0).getTime();
-      const db = new Date((b.nodes||[]).find((n: any) => n.nodeNo === 15)?.actualDate || 0).getTime();
+      const da = new Date((a.nodes||[]).find(n => n.nodeNo === 15)?.actualDate || 0).getTime();
+      const db = new Date((b.nodes||[]).find(n => n.nodeNo === 15)?.actualDate || 0).getTime();
       return db - da;
     }).slice(0, 5);
     return done;
@@ -318,7 +318,7 @@ const Dashboard: React.FC = () => {
     // 项目延期判断（以第15节点为准，与 DeliveryDetail 一致）
     // 项目延期判断：仅在项目进行中且已过基准截止日期时算延期中
     const getProjDelayedAt = (p: typeof deliveries[0], refDate: Date): boolean => {
-      const node15 = (p.nodes||[]).find((n: any) => n.nodeNo === 15);
+      const node15 = (p.nodes||[]).find(n => n.nodeNo === 15);
       if (!node15 || node15.status === 'completed') return false; // 已完成不算延期
       const baseline = node15.baselineEndDate || node15.baselinePlannedEndDate || node15.plannedEndDate;
       return !!baseline && new Date(baseline) <= refDate;
@@ -326,13 +326,13 @@ const Dashboard: React.FC = () => {
     const getStatusInMonth = (p: typeof deliveries[0], monthEnd: Date): string | null => {
       const created = new Date(p.createdAt);
       if (created > monthEnd) return null;
-      const node15 = (p.nodes||[]).find((n: any) => n.nodeNo === 15);
+      const node15 = (p.nodes||[]).find(n => n.nodeNo === 15);
       if (node15?.actualDate && new Date(node15.actualDate) <= monthEnd) return '已完成';
       if (getProjDelayedAt(p, monthEnd)) return '已延期';
       return '进行中';
     };
     const changedThisMonth = (p: typeof deliveries[0], monthEnd: Date): boolean => {
-      const node15 = (p.nodes||[]).find((n: any) => n.nodeNo === 15);
+      const node15 = (p.nodes||[]).find(n => n.nodeNo === 15);
       if (!node15?.actualDate) return false;
       const d = new Date(node15.actualDate);
       const monthStart = new Date(monthEnd.getFullYear(), monthEnd.getMonth(), 1);
@@ -375,7 +375,7 @@ const Dashboard: React.FC = () => {
     const inFyDels = deliveries.filter(p => {
       const created = new Date(p.createdAt);
       if (created > fyRange.end) return false;
-      const node15 = (p.nodes||[]).find((n: any) => n.nodeNo === 15);
+      const node15 = (p.nodes||[]).find(n => n.nodeNo === 15);
       let effEnd: Date;
       if (node15?.actualDate) {
         effEnd = new Date(node15.actualDate);
@@ -690,7 +690,7 @@ const Dashboard: React.FC = () => {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
               {recentDeliveries.map(p => {
-                const node15 = (p.nodes||[]).find((n: any) => n.nodeNo === 15);
+                const node15 = (p.nodes||[]).find(n => n.nodeNo === 15);
                 return (
                 <div key={p.id} onClick={() => navigate('/delivery/' + p.id)}
                   style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '4px 8px', borderRadius: 6, transition: 'background 0.12s' }}

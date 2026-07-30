@@ -215,7 +215,7 @@ const SalesAnalysis: React.FC = () => {
   const isProjActiveInFy = (p: DeliveryProject, fyR: { start: Date; end: Date }): boolean => {
     const created = new Date(p.createdAt);
     if (created > fyR.end) return false;
-    const node15 = (p.nodes||[]).find((n: any) => n.nodeNo === 15);
+    const node15 = (p.nodes||[]).find(n => n.nodeNo === 15);
     let effEnd: Date;
     if (node15?.actualDate) {
       effEnd = new Date(node15.actualDate);
@@ -365,7 +365,7 @@ const SalesAnalysis: React.FC = () => {
     const fyRange = parseFY(fySelect);
     const delivered = (deliveryProjects||[]).filter(p => {
       if (!isProjActiveInFy(p, fyRange)) return false;
-      const node15 = (p.nodes||[]).find((n: any) => n.nodeNo === 15);
+      const node15 = (p.nodes||[]).find(n => n.nodeNo === 15);
       if (!node15 || (node15.status !== 'completed' && node15.status !== 'delayed')) return false;
       if (p.costStatus !== 'approved' || p.totalActualCost == null) return false;
       return true;

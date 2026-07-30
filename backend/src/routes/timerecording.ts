@@ -178,6 +178,7 @@ router.put('/time-records/:id', requireAuth, async (req, res, next) => {
 router.delete('/time-records/:id', requireAuth, async (req, res, next) => {
   try {
     await query('DELETE FROM timerecording.time_records WHERE id = $1', [req.params.id]);
+    logAudit(req, action === 'lock' ? '锁定周' : '解锁周', 'admin', year + 'W周 ' + week_number + ' ' + newStatus);
     res.json({ success: true });
   } catch (err) { next(err); }
 });
@@ -275,6 +276,7 @@ router.put('/task-assignments/:id', requireAuth, async (req, res, next) => {
 router.delete('/task-assignments/:id', requireAuth, async (req, res, next) => {
   try {
     await query('DELETE FROM timerecording.task_assignments WHERE id = $1', [req.params.id]);
+    logAudit(req, action === 'lock' ? '锁定周' : '解锁周', 'admin', year + 'W周 ' + week_number + ' ' + newStatus);
     res.json({ success: true });
   } catch (err) { next(err); }
 });
@@ -295,6 +297,7 @@ router.get('/notifications', requireAuth, async (req, res, next) => {
 router.put('/notifications/:id/read', requireAuth, async (req, res, next) => {
   try {
     await query("UPDATE timerecording.notifications SET is_read = true WHERE id = $1", [req.params.id]);
+    logAudit(req, action === 'lock' ? '锁定周' : '解锁周', 'admin', year + 'W周 ' + week_number + ' ' + newStatus);
     res.json({ success: true });
   } catch (err) { next(err); }
 });
@@ -348,6 +351,8 @@ router.post('/admin/users/:id/reset-password', requireAuth, requireRole('directo
     if (!password || password.length < 6) throw new AppError(400, '密码至少6个字符');
     const passwordHash = await bcrypt.hash(password, 10);
     await query('UPDATE public.users SET password_hash = $1 WHERE id = $2', [passwordHash, id]);
+    logAudit(req, '重置密码', 'admin', '用户 ' + id.slice(0,8) + ' 密码已重置');
+    logAudit(req, action === 'lock' ? '锁定周' : '解锁周', 'admin', year + 'W周 ' + week_number + ' ' + newStatus);
     res.json({ success: true });
   } catch (err) { next(err); }
 });
@@ -358,6 +363,8 @@ router.delete('/admin/users/:id', requireAuth, requireRole('director', 'admin'),
     const { id } = req.params;
     await query('DELETE FROM timerecording.profiles WHERE id = $1', [id]);
     await query('DELETE FROM public.users WHERE id = $1', [id]);
+    logAudit(req, '删除用户', 'admin', '用户 ' + id.slice(0,8) + ' 已删除');
+    logAudit(req, action === 'lock' ? '锁定周' : '解锁周', 'admin', year + 'W周 ' + week_number + ' ' + newStatus);
     res.json({ success: true });
   } catch (err) { next(err); }
 });
@@ -372,6 +379,7 @@ router.post('/admin/lock-week', requireAuth, requireRole('director', 'admin'), a
       `UPDATE timerecording.time_records SET status = $1 WHERE year = $2 AND week_number = $3 AND status IN ('draft', 'submitted', 'locked')`,
       [newStatus, year, week_number]
     );
+    logAudit(req, action === 'lock' ? '锁定周' : '解锁周', 'admin', year + 'W周 ' + week_number + ' ' + newStatus);
     res.json({ success: true });
   } catch (err) { next(err); }
 });
