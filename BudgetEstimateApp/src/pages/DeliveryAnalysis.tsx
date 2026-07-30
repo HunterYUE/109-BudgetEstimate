@@ -239,9 +239,11 @@ const DeliveryAnalysis: React.FC = () => {
         const n15 = p.nodes.find(n => n.nodeNo === 15);
         const n15done = n15?.status === 'completed' && !!n15.actualDate && new Date(n15.actualDate) <= mEnd;
         if (n15done) { completed++; cAmt += ex; } else { active++; aAmt += ex; }
-        if (p.status === '已延期') { delayed++; dAmt += ex; }
         const pd = calcProjDelay(p);
-        if (pd != 0 && n15?.status === 'completed') { tDelay += pd; dCnt++; }
+        if (n15done) {
+          if (pd > 0) { delayed++; dAmt += ex; }
+          if (pd != 0) { tDelay += pd; dCnt++; }
+        }
         for (const n of p.nodes) {
           if (n.status !== 'completed' && new Date(n.plannedEndDate) > mEnd) continue;
           tN++;
@@ -284,12 +286,15 @@ const DeliveryAnalysis: React.FC = () => {
     ];
   }, [monthlyCumKpi]);
 
-  // ── 财年累计KPI（按FY内月份累计）──
-  // ── 甘特图数据（12个月时间线：前1个月 + 后10个月）──
+  // ── 甘特图数据（过去FY显示完整财年，当前FY显示前1个月+后11个月）──
   const ganttData = useMemo(() => {
     const now = new Date();
-    const tlStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const tlEnd = new Date(now.getFullYear(), now.getMonth() + 10, 0);
+    const tlStart = now > fyRange.end
+      ? new Date(fyRange.start.getFullYear(), fyRange.start.getMonth(), 1)
+      : new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const tlEnd = now > fyRange.end
+      ? new Date(fyRange.end.getFullYear(), fyRange.end.getMonth() + 1, 0)
+      : new Date(now.getFullYear(), now.getMonth() + 10, 0);
     const DAY_MS = 1000 * 60 * 60 * 24;
     const totalDays = Math.round((tlEnd.getTime() - tlStart.getTime()) / DAY_MS);
     const months = Array.from({ length: 12 }, (_, i) => {
