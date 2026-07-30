@@ -46,8 +46,6 @@ const ClientManagement: React.FC = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { fetchClients(); }, []);
 
-  // salesNo → quotationId 查找映射（暂未填充，后续可集成报价查询）
-
   // Edit modal
   const [editOpen, setEditOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -132,7 +130,7 @@ const ClientManagement: React.FC = () => {
   const openEdit = async (client: Client) => {
     setEditingId(client.id);
     // 从编码解析城市
-    const codeMatch = client.code?.match(/^[ABC]-([A-Z]{2})-([A-Z]{2,4})-\d{4}$/);
+    const codeMatch = client.code?.match(/^(?:[ABC]-)?([A-Z]{2})-([A-Z]{2,4})-\d{4}$/);
     if (codeMatch) setEditCity(codeMatch[2]);
     // 获取完整数据（含联系人）
     let detail = client;
@@ -470,7 +468,6 @@ const ClientManagement: React.FC = () => {
       <ClientDrawer
         drawerClient={drawerClient}
         clients={clients}
-       
         onClose={() => setDrawerClient(null)}
       />
     </div>

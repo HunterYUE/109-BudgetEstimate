@@ -256,7 +256,7 @@ export const ClientEditModal: React.FC<ClientEditModalProps> = ({
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     fontSize: 12, fontWeight: 700, flexShrink: 0,
                   }}>
-                    {c.name ? c.name.charAt(0) : '?'}
+                    {c.name ? c.name.charAt(0) : (c.position || '?').charAt(0)}
                   </div>
                   <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2 }}>
                     <input value={c.name}

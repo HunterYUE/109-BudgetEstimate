@@ -81,7 +81,7 @@ const ClientDrawer: React.FC<ClientDrawerProps> = ({ drawerClient, clients, onCl
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                         fontSize: 12, fontWeight: 700, flexShrink: 0,
                       }}>
-                        {c.name ? c.name.charAt(0) : '?'}
+                        {c.name ? c.name.charAt(0) : (c.position || '?').charAt(0)}
                       </div>
                       <div>
                         <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.textDark }}>{c.name}</div>

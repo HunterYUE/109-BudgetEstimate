@@ -28,18 +28,20 @@ export const SALESPEOPLE = ['张明', '李华', '王芳', '陈伟'];
 
 export const AREA_CODES: Record<string, string> = { 东区: 'EA', 南区: 'SO', 北区: 'NO', 国际: 'IN' };
 
-/** 根据等级、区域、城市和已有客户列表生成编码 */
-export function generateClientCode(grade: string, areaCode: string, cityCode: string, existingCodes: string[]): string {
-  const prefix = `${grade}-${areaCode}-${cityCode}-`;
+/** 根据区域、城市和已有客户列表生成编码（编号不包含等级，避免升级后冲突） */
+export function generateClientCode(_grade: string, areaCode: string, cityCode: string, existingCodes: string[]): string {
+  // 匹配新旧两种格式：新格式 "EA-NT-0001"，旧格式 "A-EA-NT-0001"
+  const pattern = new RegExp(`(?:[A-C]-)?${areaCode}-${cityCode}-(\\d{4})$`);
   let maxSeq = 0;
   for (const c of existingCodes) {
-    if (c.startsWith(prefix)) {
-      const seq = parseInt(c.slice(-4), 10);
+    const m = c.match(pattern);
+    if (m) {
+      const seq = parseInt(m[1], 10);
       if (!isNaN(seq) && seq > maxSeq) maxSeq = seq;
     }
   }
   const seq = String(maxSeq + 1).padStart(4, '0');
-  return prefix + seq;
+  return `${areaCode}-${cityCode}-${seq}`;
 }
 
 export function makeId(): string {
