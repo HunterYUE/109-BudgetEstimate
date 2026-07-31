@@ -8,7 +8,7 @@ import { clientService } from '../services/clientService';
 import type { Client, Contact, ClientGrade, CreditLevel } from '../types';
 import { COLORS, LABEL_CELL_STYLE } from '../styles/colors';
 import {
-  INDUSTRIES, REGIONS, SALESPEOPLE,
+  INDUSTRIES, REGIONS,
   gradeConfig, creditConfig, AREA_CODES, generateClientCode,
 } from '../components/client/clientConstants';
 import { ClientEditModal, ClientSubModal } from '../components/client/ClientModals';
@@ -161,7 +161,7 @@ const ClientManagement: React.FC = () => {
       parentId: undefined,
       industry: '其他',
       region: '东区',
-      salesman: '张明',
+      salesman: '',  // 销售员从客户管理维护，不硬编码
       creditLevel: 'B',
       grade: 'B',
       createdAt: new Date().toISOString().slice(0, 10),
@@ -319,7 +319,7 @@ const ClientManagement: React.FC = () => {
       onFilter: (value: string, record: Client) => value === '__all__' || record.region === value,
     },
     { title: '区域销售', dataIndex: 'salesman', width: 80,
-      filters: [{ text: '全部', value: '__all__' }, ...SALESPEOPLE.map(s => ({ text: s, value: s }))],
+      filters: [{ text: '全部', value: '__all__' }, ...Array.from(new Set(clients.map(c => c.salesman).filter(Boolean))).map(s => ({ text: s, value: s }))],
       filterSearch: true,
       filterDropdownProps: { minOverlayWidthMatchTrigger: false },
       onFilter: (value: string, record: Client) => value === '__all__' || record.salesman === value,

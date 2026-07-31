@@ -1,12 +1,12 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Card } from 'antd';
 import { deliveryService } from '../services/deliveryService';
+import { quotationService } from '../services/quotationService';
 import type { DeliveryProject } from '../types';
 import { COLORS } from '../styles/colors';
 import { NODE_DISPLAY_NAMES } from '../utils/constants';
-import { computeDeliveryEstGP3 } from '../utils/calculations';
 import { parseFY, FYSelector } from '../utils/fiscalYear';
-import { fmtK, compressNo, loadQuotationGroups, preloadQuotationGroupsBatch } from '../utils/analysisShared';
+import { fmtK, compressNo } from '../utils/analysisShared';
 import { VerticalBarChart, ProfitChart, ProjectGantt, BubbleChart } from '../components/charts/DeliveryCharts';
 import type { ProfitItem, BubbleDataItem } from '../components/charts/DeliveryCharts';
 
@@ -84,13 +84,22 @@ const DeliveryAnalysis: React.FC = () => {
   const defaultFy = `FY${String(y1 % 100).padStart(2,'0')}${String(y2 % 100).padStart(2,'0')}`;
   const [fySelect, setFySelect] = useState(defaultFy);
   const [deliveryProjects, setDeliveryProjects] = useState<DeliveryProject[]>([]);
+  // 报价编制表持久化数据（税率/折后报价/概算利润含税），经交付 quotationId 关联
+  const [quoteMap, setQuoteMap] = useState<Record<string, { taxRate?: number; discountedPrice?: number; gp3Amount?: number }>>({});
 
   useEffect(() => {
     let cancelled = false;
-    // 分析页需要最新数据：一次取全量（limit=1000），并绕过 api.ts 的 30s GET 缓存
-    deliveryService.list({ limit: '1000' }, { noCache: true })
-      .then((data: DeliveryProject[]) => { if (!cancelled) setDeliveryProjects(data.map(p => ({ ...p, nodes: p.nodes || [] }))); })
-      .catch(() => { if (!cancelled) setDeliveryProjects([]); });
+    // 分析页需要最新数据：交付一次取全量（limit=1000）并绕过 api.ts 的 30s GET 缓存
+    Promise.all([
+      deliveryService.list({ limit: '1000' }, { noCache: true }),
+      quotationService.list({ limit: '1000' }),
+    ]).then(([dps, quotes]) => {
+      if (cancelled) return;
+      setDeliveryProjects(dps.map(p => ({ ...p, nodes: p.nodes || [] })));
+      const m: Record<string, { taxRate?: number; discountedPrice?: number; gp3Amount?: number }> = {};
+      for (const q of quotes) m[q.id] = { taxRate: q.taxRate, discountedPrice: q.discountedPrice, gp3Amount: q.gp3Amount };
+      setQuoteMap(m);
+    }).catch(() => { if (!cancelled) setDeliveryProjects([]); });
     return () => { cancelled = true; };
   }, []);
 
@@ -125,17 +134,6 @@ const DeliveryAnalysis: React.FC = () => {
       return created <= fyRange.end && effectiveEnd >= fyRange.start;
     });
   }, [deliveryProjects, fyRange]);
-
-  // 交货项目加载完成后，仅预加载所选财年内项目的报价到缓存（限制请求量；随财年切换重取）
-  const [preloadReady, setPreloadReady] = useState(0);
-  useEffect(() => {
-    let cancelled = false;
-    const ids = fyFiltered.filter(p => p.quotationId).map(p => p.quotationId);
-    if (ids.length > 0) {
-      preloadQuotationGroupsBatch(ids, true).then(() => { if (!cancelled) setPreloadReady(v => v + 1); });
-    }
-    return () => { cancelled = true; };
-  }, [fyFiltered]);
 
   // ── 各项目延期天数（项目级，节点15）──
   const projectDelayDays = useMemo(() => {
@@ -199,34 +197,50 @@ const DeliveryAnalysis: React.FC = () => {
     });
   }, [fyFiltered]);
 
-  // ── 每个项目的报价估算数据（缓存）──
-  const projectEstimates = useMemo(() => {
-    void preloadReady;
-    const map = new Map<string, ReturnType<typeof computeDeliveryEstGP3>>();
-    for (const p of fyFiltered) {
+  // ── 交付项目 → 其报价编制表（最新版本）持久化数据：税率/折后报价/概算利润（含税）──
+  // 概算成本/概算利润/概算GP3 全部以此为准，不再运行时从组数据估算
+  const deliveryQuoteInfo = useMemo(() => {
+    const map = new Map<string, { taxRate: number; discounted: number; gp3Amt: number; rate: number }>();
+    for (const p of (deliveryProjects||[])) {
       if (!p.quotationId) continue;
-      const { groups, version } = loadQuotationGroups(p.quotationId);
-      map.set(p.id, computeDeliveryEstGP3(p.contractAmount, groups, version));
+      const q = quoteMap[p.quotationId];
+      if (!q) continue;
+      const taxRate = q.taxRate ?? 0.13;
+      const discounted = q.discountedPrice ?? 0;
+      const gp3Amt = q.gp3Amount ?? 0;
+      map.set(p.id, { taxRate, discounted, gp3Amt, rate: discounted > 0 ? gp3Amt / discounted : 0 });
     }
     return map;
-  }, [fyFiltered, preloadReady]);
+  }, [deliveryProjects, quoteMap]);
+  /** 交付项目未税金额 = 持久化合同金额 ÷ (1 + 报价编制表税率) */
+  const deliveryExTax = (p: DeliveryProject): number =>
+    Math.round(p.contractAmount / (1 + (deliveryQuoteInfo.get(p.id)?.taxRate ?? 0.13)));
+  /** 交付概算利润（未税）= 报价编制表概算利润（含税 gp3_amount）÷ (1+税率) */
+  const deliveryEstProfit = (p: DeliveryProject): number => {
+    const i = deliveryQuoteInfo.get(p.id);
+    return i && i.gp3Amt > 0 ? Math.round(i.gp3Amt / (1 + i.taxRate)) : 0;
+  };
+  /** 交付概算总成本（未税）= 未税金额 − 概算利润 */
+  const deliveryGrandEstimated = (p: DeliveryProject): number => deliveryExTax(p) - deliveryEstProfit(p);
+  /** 交付概算GP3 = 报价编制表概算利润率 */
+  const deliveryEstGP3 = (p: DeliveryProject): number => deliveryQuoteInfo.get(p.id)?.rate ?? 0;
 
   // ── 利润分析数据（仅已完成项目总结的项目，按GP3偏差排序）──
   const profitChartData = useMemo(() => {
     const completed = fyFiltered.filter(p => isNode15CompletedInFy(p, fyRange));
     const itemData = completed.map(p => {
-      const est = projectEstimates.get(p.id);
-      if (!est) return null;
-      const { exTax, grandEstimated, estGP3 } = est;
+      if (!deliveryQuoteInfo.has(p.id)) return null;
+      const exTax = deliveryExTax(p);
+      const estGP3 = deliveryEstGP3(p);
+      const estProfit = deliveryEstProfit(p);
       const actProfit = (p.costStatus === 'approved' && p.totalActualCost != null) ? (exTax - p.totalActualCost) : undefined;
       const actGP3 = actProfit != null && exTax > 0 ? actProfit / exTax : undefined;
-      return { exTax, estGP3, actGP3, actProfit, deviation: actGP3 != null ? actGP3 - estGP3 : 0, name: (() => { const s = compressNo(p.salesNo); return s.length > 4 ? s.slice(0, 4) + '\n' + s.slice(4) : s; })(), estProfit: exTax - grandEstimated };
+      return { exTax, estGP3, actGP3, actProfit, deviation: actGP3 != null ? actGP3 - estGP3 : 0, name: (() => { const s = compressNo(p.salesNo); return s.length > 4 ? s.slice(0, 4) + '\n' + s.slice(4) : s; })(), estProfit };
     });
     const items: ProfitItem[] = itemData.filter((d): d is NonNullable<typeof d> => d != null).map(d => ({ name: d.name!, estProfit: d.estProfit!, estGP3: d.estGP3, actProfit: d.actProfit, actGP3: d.actGP3, deviation: d.deviation }))
       .sort((a, b) => Math.abs(b.deviation) - Math.abs(a.deviation));
     return { items };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fyFiltered, fyRange, projectEstimates, preloadReady]);
+  }, [fyFiltered, fyRange, deliveryQuoteInfo]);
 
   // ── 财年累计KPI（最近3个完整月累计；已完结财年取财年最后三个月）──
   const monthlyCumKpi = useMemo((): MonthlyCum[] => {
@@ -247,8 +261,7 @@ const DeliveryAnalysis: React.FC = () => {
       for (const p of fyFiltered) {
         if (new Date(p.createdAt) > mEnd) continue;
         totalCount++;
-        const taxRate = loadQuotationGroups(p.quotationId).version?.taxRate ?? 0.13;
-        const ex = Math.round(p.contractAmount / (1 + taxRate));
+        const ex = deliveryExTax(p);
         tAmt += ex;
         const n15 = p.nodes.find(n => n.nodeNo === 15);
         const n15done = n15?.status === 'completed' && !!n15.actualDate && new Date(n15.actualDate) <= mEnd;
@@ -270,10 +283,9 @@ const DeliveryAnalysis: React.FC = () => {
           tN++;
           if (actual <= refD) onT++;
         }
-        // 成本偏差（仅统计已完成交付项目，与「已完成项目」KPI 同源）
+        // 成本偏差（仅统计已完成交付项目，与「已完成项目」KPI 同源；概算成本取自报价编制表持久化数据）
         if (n15done && p.costStatus === 'approved' && p.totalActualCost != null) {
-          const { groups, version } = loadQuotationGroups(p.quotationId);
-          const { grandEstimated } = computeDeliveryEstGP3(p.contractAmount, groups, version);
+          const grandEstimated = deliveryGrandEstimated(p);
           costDevNumerator += (p.totalActualCost - grandEstimated);
           costDevDenominator += grandEstimated;
         }
@@ -294,8 +306,7 @@ const DeliveryAnalysis: React.FC = () => {
     }
     // 当前财年：取相对 now 的最近三个完整月（首月尚无完整月数据时显示 —）
     return [1, 2, 3].map(recentMonthEnd).map(calcCum);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fyFiltered, preloadReady, fyRange]);
+  }, [fyFiltered, deliveryQuoteInfo, fyRange]);
 
 
   // ── 健康 KPI 卡片（使用财年截止到各月月底的累计值）──
@@ -381,12 +392,8 @@ const DeliveryAnalysis: React.FC = () => {
 
   // ── 各项目未税金额查找表（甘特图交付负荷按节点级计算时需要）──
   const projectExTaxLookup = useMemo(() => {
-    return fyFiltered.map(p => {
-      const est = projectEstimates.get(p.id);
-      const exTax = est ? est.exTax : Math.round(p.contractAmount / (1 + (loadQuotationGroups(p.quotationId).version?.taxRate ?? 0.13)));
-      return { projectId: compressNo(p.salesNo), exTax };
-    });
-  }, [fyFiltered, projectEstimates]);
+    return fyFiltered.map(p => ({ projectId: compressNo(p.salesNo), exTax: deliveryExTax(p) }));
+  }, [fyFiltered, deliveryQuoteInfo]);
 
   // ── 气泡图数据（仅含当前财年内完成节点15的项目）──
   // 产能压力：按实际时间窗口计算并行项目的时间加权贡献
@@ -410,8 +417,7 @@ const DeliveryAnalysis: React.FC = () => {
       const end = node15?.actualDate
         ? new Date(node15.actualDate)
         : now;
-      const est = projectEstimates.get(p.id);
-      const exTax = est ? est.exTax : Math.round(p.contractAmount / (1 + (loadQuotationGroups(p.quotationId).version?.taxRate ?? 0.13)));
+      const exTax = deliveryExTax(p);
       lifecycles.set(p.id, { start, end, exTax });
     }
 
@@ -421,9 +427,8 @@ const DeliveryAnalysis: React.FC = () => {
       const projDuration = lc.end.getTime() - lc.start.getTime();
 
       const projDelay = calcProjDelay(p);
-      const est = projectEstimates.get(p.id);
-      const exTax = est ? est.exTax : Math.round(p.contractAmount / (1 + (loadQuotationGroups(p.quotationId).version?.taxRate ?? 0.13)));
-      const estTotal = est ? est.grandEstimated : 0;
+      const exTax = deliveryExTax(p);
+      const estTotal = deliveryGrandEstimated(p);
       const costDev = p.costStatus === 'approved' && p.totalActualCost != null && estTotal > 0
         ? (p.totalActualCost - estTotal) / estTotal * 100 : 0;
 
@@ -456,7 +461,7 @@ const DeliveryAnalysis: React.FC = () => {
         capacityPressure: capacityRaw / 10000,
       };
     }).filter(Boolean) as BubbleDataItem[];
-  }, [fyFiltered, fyRange, projectEstimates]);
+  }, [fyFiltered, fyRange, deliveryQuoteInfo]);
 
   // ── 布局常量 ──
   // 左列 3 张卡片（利润分析/延期天数/节点分析），每张高225px，间距16px

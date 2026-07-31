@@ -63,6 +63,7 @@ const router = crudRoutes('clients', fields, {
         const updateCols = fields.filter(f => f !== 'id' && f !== 'created_at' && f !== 'updated_at' && clientData[f] !== undefined);
         let updated;
         if (updateCols.length > 0) {
+          const oldClient = (await tx.query('SELECT name, salesman FROM clients WHERE id = $1', [id])).rows[0];
           const setClause = updateCols.map((f, i) => `"${f}" = $${i + 1}`).join(', ');
           const values = updateCols.map(f => clientData[f]);
           values.push(id);
@@ -70,6 +71,13 @@ const router = crudRoutes('clients', fields, {
             `UPDATE clients SET ${setClause}, updated_at = now() WHERE id = $${values.length} RETURNING *`,
             values
           )).rows[0];
+          // 客户销售员变更 → 级联更新该客户所有机会的销售员（机会销售员由客户信息带出）
+          if (clientData.salesman !== undefined && clientData.salesman !== oldClient?.salesman) {
+            await tx.query(
+              'UPDATE sales_opportunities SET salesman = $1 WHERE client_name = $2',
+              [clientData.salesman, oldClient?.name]
+            );
+          }
         }
 
         // 替换联系人

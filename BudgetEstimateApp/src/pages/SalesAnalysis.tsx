@@ -7,9 +7,8 @@ import { opportunityService } from '../services/opportunityService';
 import { quotationService } from '../services/quotationService';
 import { deliveryService } from '../services/deliveryService';
 import { COLORS } from '../styles/colors';
-import { computeDeliveryEstGP3 } from '../utils/calculations';
 import { parseFY, FYSelector } from '../utils/fiscalYear';
-import { fmtK, loadQuotationGroups, preloadQuotationGroupsBatch } from '../utils/analysisShared';
+import { fmtK } from '../utils/analysisShared';
 import { settingsService } from '../services/settingsService';
 
 /* ============================================================
@@ -31,6 +30,29 @@ const exAmt = (o: SalesOpportunity) => Math.round(o.amount / (1 + (o.taxRate ?? 
 
 const stageIdx = (s: string) => STAGES.indexOf(s as typeof STAGES[number]);
 
+/** 机会的有效结束日期：过程中/冻结→至今（持续活跃）；赢→wonAt；输→lostAt；缺失回退 updatedAt */
+const oppEffectiveEnd = (o: SalesOpportunity): Date => {
+  if (o.status === '过程中' || o.status === '冻结') return new Date();
+  if (o.status === '赢' && o.wonAt) return new Date(o.wonAt);
+  if (o.status === '输' && o.lostAt) return new Date(o.lostAt);
+  return new Date(o.updatedAt);
+};
+
+/** 订单/合同金额（未税）= 持久化合同金额 contract_amount ÷ (1 + 机会报价编制表税率 tax_rate) */
+const exTaxOf = (p: DeliveryProject, info: Map<string, { taxRate: number }>): number =>
+  Math.round(p.contractAmount / (1 + (info.get(p.opportunityId)?.taxRate ?? 0.13)));
+
+/** 机会在指定时间点的阶段：取"进入阶段时间 ≤ 该时间"的最高阶段（议价→投标→机会→线索→信息） */
+const stageAsOf = (o: SalesOpportunity, date: Date): string => {
+  const t = (v?: string) => (v ? new Date(v) : null);
+  const neg = t(o.negotiationAt), bid = t(o.bidAt), opp = t(o.opportunityAt), lead = t(o.leadAt);
+  if (neg && neg <= date) return '议价';
+  if (bid && bid <= date) return '投标';
+  if (opp && opp <= date) return '机会';
+  if (lead && lead <= date) return '线索';
+  return '信息';
+};
+
 /** 编辑输入框共用样式 */
 const EDIT_INPUT_STYLE: React.CSSProperties = {
   border: 'none', borderRadius: 0, padding: 0, margin: 0,
@@ -45,10 +67,8 @@ function useFyFiltered(allOpps: SalesOpportunity[], fy: string) {
     const fyRange = parseFY(fy);
     return allOpps.filter(o => {
       const created = new Date(o.createdAt);
-      const effectiveEnd = (o.status === '过程中' || o.status === '冻结')
-        ? new Date()
-        : new Date(o.updatedAt);
-      return created <= fyRange.end && effectiveEnd >= fyRange.start;
+      // 机会按活跃期归属财年：创建 ≤ 财年末 && 有效结束（赢→wonAt/输→lostAt/活跃→至今）≥ 财年初
+      return created <= fyRange.end && oppEffectiveEnd(o) >= fyRange.start;
     });
   }, [allOpps, fy]);
 }
@@ -128,85 +148,98 @@ const SalesAnalysis: React.FC = () => {
     loadAll();
   }, [loadAll]);
 
-  const [preloadReady, setPreloadReady] = useState(0);
-  useEffect(() => {
-    const ids = (deliveryProjects||[]).filter(p => p.quotationId).map(p => p.quotationId);
-    if (ids.length > 0) preloadQuotationGroupsBatch(ids).then(() => setPreloadReady(v => v + 1));
-  }, [deliveryProjects]);
-
-  // ── 报价估算缓存（避免重复调用 loadQuotationGroups）──
-  const projectEstimates = useMemo(() => {
-    void preloadReady;
-    const map = new Map<string, ReturnType<typeof computeDeliveryEstGP3>>();
-    for (const p of (deliveryProjects||[])) {
-      if (!p.quotationId) continue;
-      if (p.nodes.length === 0) continue; // 只缓存有节点数据的项目
-      const { groups, version } = loadQuotationGroups(p.quotationId);
-      map.set(p.id, computeDeliveryEstGP3(p.contractAmount, groups, version));
+  // ── 机会关联报价（最新版本报价编制表）的持久化数据：税率、折后报价、概算利润（含税）──
+  // 订单金额（未税）/概算利润/概算利润率全部以此为准，不再运行时从组数据估算
+  const oppQuoteInfo = useMemo(() => {
+    const map = new Map<string, { taxRate: number; gp3Amt: number; discounted: number; rate: number }>();
+    for (const o of allOpps) {
+      if (!o.quotationId) continue;
+      const q = (quotationSummaries||[]).find(q => q.id === o.quotationId);
+      if (!q) continue;
+      const taxRate = q.taxRate ?? 0.13;
+      const discounted = q.discountedPrice ?? 0;
+      const gp3Amt = q.gp3Amount ?? 0;
+      map.set(o.id, { taxRate, gp3Amt, discounted, rate: discounted > 0 ? gp3Amt / discounted : 0 });
     }
     return map;
-  }, [deliveryProjects, preloadReady]);
+  }, [allOpps, quotationSummaries]);
 
   const fyFiltered = useFyFiltered(allOpps, fySelect);
 
   // ── 年度订单指标 + 目标GP3 ──
-  const [annualTargetInput, setAnnualTargetInput] = useState(() => { try { return localStorage.getItem('saAnnualTarget') || ''; } catch { return ''; } });
+  // ── 年度目标/利润率指标按财年隔离：键 = 基础键 + _财年；历史无后缀键作为所有财年兜底 ──
+  // 财年订单指标=saAnnualTarget_财年；财年订单/销售利润率=saTargetGP3_财年；财年销售额=saAnnualSalesTarget_财年
+  const fyTargetKey = (base: string) => `${base}_${fySelect}`;
+  const LEGACY_TARGET_KEYS = { order: 'saAnnualTarget', gp3: 'saTargetGP3', sales: 'saAnnualSalesTarget' } as const;
+
+  const [annualTargetInput, setAnnualTargetInput] = useState(() => { try { return localStorage.getItem(LEGACY_TARGET_KEYS.order) || ''; } catch { return ''; } });
   const [targetEditing, setTargetEditing] = useState(false);
   const targetRef = React.useRef<HTMLInputElement>(null);
-  const [gp3Input, setGp3Input] = useState(() => { try { return localStorage.getItem('saTargetGP3') || ''; } catch { return ''; } });
+  const [gp3Input, setGp3Input] = useState(() => { try { return localStorage.getItem(LEGACY_TARGET_KEYS.gp3) || ''; } catch { return ''; } });
   const [orderGp3Editing, setOrderGp3Editing] = useState(false);
   const orderGp3Ref = React.useRef<HTMLInputElement>(null);
   const [salesGp3Editing, setSalesGp3Editing] = useState(false);
   const salesGp3Ref = React.useRef<HTMLInputElement>(null);
   // ── 月度销售指标 ──
-  const [annualSalesTarget, setAnnualSalesTarget] = useState(() => { try { return localStorage.getItem('saAnnualSalesTarget') || ''; } catch { return ''; } });
+  const [annualSalesTarget, setAnnualSalesTarget] = useState(() => { try { return localStorage.getItem(LEGACY_TARGET_KEYS.sales) || ''; } catch { return ''; } });
   const [salesTargetEditing, setSalesTargetEditing] = useState(false);
   const salesTargetRef = React.useRef<HTMLInputElement>(null);
   const settingsTimerRef = useRef<ReturnType<typeof setTimeout>>();
 
   // ── 从服务端加载用户设置（必须在所有 setState 声明之后）──
+  const [serverTargets, setServerTargets] = useState<Record<string, string>>({});
   useEffect(() => {
     if (loading) return;
-    settingsService.get().then(settings => {
-      if (settings.saAnnualTarget) setAnnualTargetInput(settings.saAnnualTarget);
-      if (settings.saTargetGP3) setGp3Input(settings.saTargetGP3);
-      if (settings.saAnnualSalesTarget) setAnnualSalesTarget(settings.saAnnualSalesTarget);
-    }).catch(() => {});
+    settingsService.get().then(setServerTargets).catch(() => {});
   }, [loading]);
 
-  // 保存到 localStorage + 服务端持久化
-  const settingsRef = useRef({ annualTargetInput: '', gp3Input: '', annualSalesTarget: '' });
-  useEffect(() => { settingsRef.current = { annualTargetInput, gp3Input, annualSalesTarget }; });
+  // 财年切换/服务端设置就绪时，加载当前财年的目标值（服务端优先，本地兜底；无后缀键兜底）
+  useEffect(() => {
+    const serverVal = (key: string) => serverTargets[key] ?? '';
+    const read = (base: string, legacy: string): string => {
+      const local = (() => { try { return localStorage.getItem(fyTargetKey(base)) ?? localStorage.getItem(legacy) ?? ''; } catch { return ''; } })();
+      return serverVal(fyTargetKey(base)) || serverVal(legacy) || local;
+    };
+    setAnnualTargetInput(read('saAnnualTarget', LEGACY_TARGET_KEYS.order));
+    setGp3Input(read('saTargetGP3', LEGACY_TARGET_KEYS.gp3));
+    setAnnualSalesTarget(read('saAnnualSalesTarget', LEGACY_TARGET_KEYS.sales));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fySelect, serverTargets]);
 
-  const saveToServer = useCallback(() => {
-    const cur = settingsRef.current;
-    const payload: Record<string, string> = {};
-    if (cur.annualTargetInput) payload.saAnnualTarget = cur.annualTargetInput;
-    if (cur.gp3Input) payload.saTargetGP3 = cur.gp3Input;
-    if (cur.annualSalesTarget) payload.saAnnualSalesTarget = cur.annualSalesTarget;
+  // 保存：本地立即写（按财年键）；服务端累计待提交，3s 防抖提交（捕获编辑时的财年键）
+  const pendingServerSave = useRef<Record<string, string>>({});
+  const flushServerSave = useCallback(() => {
+    const payload = pendingServerSave.current;
+    pendingServerSave.current = {};
     if (Object.keys(payload).length > 0) {
-      settingsService.save(payload).catch(e => console.warn('[Settings] 保存到服务端失败:', e));
+      settingsService.save(payload)
+        .then(() => setServerTargets(prev => ({ ...prev, ...payload }))) // 同步回本地状态，避免切财年读到旧值
+        .catch(e => console.warn('[Settings] 保存到服务端失败:', e));
     }
-  }, []); // 空依赖：通过 ref 读取最新值
+  }, []);
+  const scheduleServerSave = (key: string, value: string) => {
+    pendingServerSave.current[key] = value;
+    if (settingsTimerRef.current) clearTimeout(settingsTimerRef.current);
+    settingsTimerRef.current = setTimeout(flushServerSave, 3000);
+  };
 
   const saveSalesTarget = (v: string) => {
     setAnnualSalesTarget(v);
-    try { localStorage.setItem('saAnnualSalesTarget', v); } catch (e) { console.warn('[SalesAnalysis] 保存销售指标失败:', e); };
-    if (settingsTimerRef.current) clearTimeout(settingsTimerRef.current);
-    settingsTimerRef.current = setTimeout(saveToServer, 3000);
+    const key = fyTargetKey('saAnnualSalesTarget');
+    try { localStorage.setItem(key, v); } catch (e) { console.warn('[SalesAnalysis] 保存销售指标失败:', e); }
+    scheduleServerSave(key, v);
   };
-
   const saveAnnualTarget = (v: string) => {
     setAnnualTargetInput(v);
-    try { localStorage.setItem('saAnnualTarget', v); } catch (e) { console.warn('[SalesAnalysis] 保存年度订单目标失败:', e); };
-    if (settingsTimerRef.current) clearTimeout(settingsTimerRef.current);
-    settingsTimerRef.current = setTimeout(saveToServer, 3000);
+    const key = fyTargetKey('saAnnualTarget');
+    try { localStorage.setItem(key, v); } catch (e) { console.warn('[SalesAnalysis] 保存年度订单目标失败:', e); }
+    scheduleServerSave(key, v);
   };
   const saveGp3 = (v: string) => {
     setGp3Input(v);
-    try { localStorage.setItem('saTargetGP3', v); } catch (e) { console.warn('[SalesAnalysis] 保存GP3目标失败:', e); };
-    if (settingsTimerRef.current) clearTimeout(settingsTimerRef.current);
-    settingsTimerRef.current = setTimeout(saveToServer, 3000);
+    const key = fyTargetKey('saTargetGP3');
+    try { localStorage.setItem(key, v); } catch (e) { console.warn('[SalesAnalysis] 保存GP3目标失败:', e); }
+    scheduleServerSave(key, v);
   };
 
   // ── 预解析目标输入值（避免渲染中重复 parseInt）──
@@ -214,34 +247,20 @@ const SalesAnalysis: React.FC = () => {
   const parsedSalesTarget = useMemo(() => safeParseInt(annualSalesTarget), [annualSalesTarget]);
   const parsedGp3 = useMemo(() => parseFloat(gp3Input) || 0, [gp3Input]);
 
-  // ── 判断交付项目是否属于某财年（创建、活动、完成任一环节落入则属之）──
-  const isProjActiveInFy = (p: DeliveryProject, fyR: { start: Date; end: Date }): boolean => {
-    const created = new Date(p.createdAt);
-    if (created > fyR.end) return false;
-    const node15 = (p.nodes||[]).find(n => n.nodeNo === 15);
-    let effEnd: Date;
-    if (node15?.actualDate) {
-      effEnd = new Date(node15.actualDate);
-    } else if (p.status === '已完成' || p.status === '已延期') {
-      effEnd = new Date(p.updatedAt);
-    } else {
-      effEnd = new Date();
-    }
-    return effEnd >= fyR.start;
-  };
-
   // ── 月度订单数据（当月转交付项目的合同金额之和，按财年月汇总）──
   const monthlyOrderData = useMemo(() => {
     const fyRange = parseFY(fySelect);
-    const inFy = (deliveryProjects||[]).filter(p => isProjActiveInFy(p, fyRange));
     const byMonth = new Map<number, { amount: number; profit: number }>();
-    for (const p of inFy) {
+    for (const p of (deliveryProjects||[])) {
       const d = new Date(p.createdAt);
+      // 订单金额只归集到订单获得（转交付）那个月及其所属财年，不可跨财年重复
+      if (d < fyRange.start || d > fyRange.end) continue;
       const fyMonth = d.getMonth() < 6 ? d.getMonth() + 6 : d.getMonth() - 6;
       const prev = byMonth.get(fyMonth) || { amount: 0, profit: 0 };
-      const est = projectEstimates.get(p.id);
-      const exTax = est ? est.exTax : Math.round(p.contractAmount / (1 + (loadQuotationGroups(p.quotationId).version?.taxRate ?? 0.13)));
-      const estProfit = est ? (exTax - est.grandEstimated) : 0;
+      const exTax = exTaxOf(p, oppQuoteInfo);
+      // 概算利润：最新版本报价编制表的概算利润（含税 gp3_amount）转未税
+      const oppProfit = oppQuoteInfo.get(p.opportunityId);
+      const estProfit = oppProfit && oppProfit.gp3Amt > 0 ? Math.round(oppProfit.gp3Amt / (1 + oppProfit.taxRate)) : 0;
       byMonth.set(fyMonth, { amount: prev.amount + exTax, profit: prev.profit + estProfit });
     }
     const MONTH_LABELS = ['Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar','Apr','May','Jun'];
@@ -253,9 +272,7 @@ const SalesAnalysis: React.FC = () => {
         subValue: m ? m.profit : undefined,
       };
     });
-  // deliveryProjects 变化通过 projectEstimates 捕获
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fySelect, projectEstimates]);
+  }, [fySelect, oppQuoteInfo, deliveryProjects]);
 
   // ── 月度销售数据（已完成项目总结的交付项目按月汇总）──
   const monthlySalesData = useMemo(() => {
@@ -270,8 +287,7 @@ const SalesAnalysis: React.FC = () => {
       if (d < fyRange.start || d > fyRange.end) continue;
       const fyMonth = d.getMonth() < 6 ? d.getMonth() + 6 : d.getMonth() - 6;
       const prev = byMonth.get(fyMonth) || { amount: 0, profit: 0 };
-      const est = projectEstimates.get(p.id);
-      const exTax = est ? est.exTax : Math.round(p.contractAmount / (1 + (loadQuotationGroups(p.quotationId).version?.taxRate ?? 0.13)));
+      const exTax = exTaxOf(p, oppQuoteInfo);
       const actualProfit = p.totalActualCost != null ? (exTax - p.totalActualCost) : Math.round(exTax * 0.20);
       byMonth.set(fyMonth, { amount: prev.amount + exTax, profit: prev.profit + actualProfit });
     }
@@ -279,8 +295,7 @@ const SalesAnalysis: React.FC = () => {
       const m = byMonth.get(i);
       return { name: MONTH_LABELS[i], value: m ? m.amount : 0, subValue: m ? m.profit : undefined };
     });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fySelect, projectEstimates]);
+  }, [fySelect, oppQuoteInfo, deliveryProjects]);
 
   // ── 共享：财年已过月数 ──
   const elapsedMonths = useMemo(() => {
@@ -321,12 +336,18 @@ const SalesAnalysis: React.FC = () => {
     allOpps.filter(o => o.status === '过程中'),
   [allOpps]);
 
-  // ── 漏斗：当前快照 ──
+  // ── 漏斗：财年内的管道快照（仅统计在所选财年内活跃的过程机会，按"该财年结束时的历史阶段"分桶）──
   const funnelSnapshot = useMemo(() => {
+    const fyRange = parseFY(fySelect);
     const byStage = new Map<string, { count: number; amount: number }>();
     for (const s of STAGES) byStage.set(s, { count: 0, amount: 0 });
     for (const o of currentPipeline) {
-      const entry = byStage.get(o.stage);
+      // 财年隔断：机会活跃期 [createdAt, 有效结束] 与所选财年有交集才计入
+      if (new Date(o.createdAt) > fyRange.end) continue;
+      if (oppEffectiveEnd(o) < fyRange.start) continue;
+      // 用"进入各阶段时间"确定该财年结束时的阶段（而非当前阶段），还原历史漏斗
+      const stage = stageAsOf(o, fyRange.end);
+      const entry = byStage.get(stage);
       if (entry) { entry.count++; entry.amount += exAmt(o); }
     }
     return STAGES.map(stage => ({
@@ -335,7 +356,7 @@ const SalesAnalysis: React.FC = () => {
       amount: byStage.get(stage)!.amount,
       color: stageColors[stage] || COLORS.textLight,
     }));
-  }, [currentPipeline]);
+  }, [currentPipeline, fySelect]);
 
   // ── 中标（按转交付时间 wonAt 归入财年，与其他卡片赢单标准一致）──
   const fyWonByTime = useMemo(() => {
@@ -347,45 +368,48 @@ const SalesAnalysis: React.FC = () => {
     });
   }, [fySelect, allOpps]);
 
-  // ── 订单加权 GP3（财年内交付项目的加权平均 GP3，取自交付管理概算 GP3）──
+  // ── 订单加权 GP3（财年内获得订单的交付项目加权平均 GP3，取自最新版本报价编制表概算利润）──
   const orderWeightedGP3 = useMemo(() => {
     const fyRange = parseFY(fySelect);
-    const inFy = (deliveryProjects||[]).filter(p => isProjActiveInFy(p, fyRange));
+    // 订单按获得（转交付 createdAt）时间归入财年，与「月度订单」同口径
+    const inFy = (deliveryProjects||[]).filter(p => {
+      const created = new Date(p.createdAt);
+      return created >= fyRange.start && created <= fyRange.end;
+    });
     if (inFy.length === 0) return 0;
     let totalAmt = 0, weighted = 0;
     for (const p of inFy) {
-      const est = projectEstimates.get(p.id);
-      if (!est) continue;
+      const oppProfit = oppQuoteInfo.get(p.opportunityId);
+      if (!oppProfit || oppProfit.discounted <= 0) continue;
       totalAmt += p.contractAmount;
-      weighted += p.contractAmount * est.estGP3;
+      weighted += p.contractAmount * oppProfit.rate;
     }
     return totalAmt > 0 ? (weighted / totalAmt * 100) : 0;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fySelect, projectEstimates]);
+  }, [fySelect, oppQuoteInfo, deliveryProjects]);
 
   // ── 已交付项目实际 GP3（已完成项目总结且成本审批通过的项目的加权平均实际 GP3）──
   const deliveredActualGP3 = useMemo(() => {
     const fyRange = parseFY(fySelect);
+    // 与「月度销售」同口径：节点15完成且完成日 ∈ 财年（销售金额只归集到完成月/财年，不可跨年重复）
     const delivered = (deliveryProjects||[]).filter(p => {
-      if (!isProjActiveInFy(p, fyRange)) return false;
       const node15 = (p.nodes||[]).find(n => n.nodeNo === 15);
       if (!node15 || (node15.status !== 'completed' && node15.status !== 'delayed')) return false;
+      const completionDate = new Date(node15.actualDate || p.updatedAt);
+      if (completionDate < fyRange.start || completionDate > fyRange.end) return false;
       if (p.costStatus !== 'approved' || p.totalActualCost == null) return false;
       return true;
     });
     if (delivered.length === 0) return 0;
     let totalAmt = 0, weighted = 0;
     for (const p of delivered) {
-      const est = projectEstimates.get(p.id);
-      const exTax = est ? est.exTax : Math.round(p.contractAmount / (1 + (loadQuotationGroups(p.quotationId).version?.taxRate ?? 0.13)));
+      const exTax = exTaxOf(p, oppQuoteInfo);
       totalAmt += exTax;
       const actProfit = exTax - p.totalActualCost!;
       const actGP3 = exTax > 0 ? actProfit / exTax : 0;
       weighted += exTax * actGP3;
     }
     return totalAmt > 0 ? (weighted / totalAmt * 100) : 0;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fySelect, projectEstimates]);
+  }, [fySelect, oppQuoteInfo, deliveryProjects]);
 
   // ── 漏斗右侧 FY 累计用 ──
   const fyWon = useMemo(() => ({
@@ -402,15 +426,18 @@ const SalesAnalysis: React.FC = () => {
       return d >= fyRange.start && d <= fyRange.end;
     });
   }, [fySelect, allOpps]);
+  // 财年"机会+"阶段输单（漏斗中标转化率分母 = 赢 + 机会+输单；剔除线索/信息阶段输单——它们未进入机会阶段）
+  const fyOppLost = useMemo(() => {
+    const oppLost = fyLostByTime.filter(o => stageIdx(o.stage) >= stageIdx('机会'));
+    return { count: oppLost.length, amount: oppLost.reduce((s, o) => s + exAmt(o), 0) };
+  }, [fyLostByTime]);
 
   // ── 财年各阶段汇总（用于漏斗右侧 FY 累计显示）──
   const fyInfo = useMemo(() => {
     const inFy = allOpps.filter(o => {
       const fyRange = parseFY(fySelect);
       const created = new Date(o.createdAt);
-      const updated = new Date(o.updatedAt);
-      const effectiveEnd = (o.status === '过程中' || o.status === '冻结') ? new Date() : updated;
-      return created <= fyRange.end && effectiveEnd >= fyRange.start;
+      return created <= fyRange.end && oppEffectiveEnd(o) >= fyRange.start;
     });
     return { count: inFy.length, amount: inFy.reduce((s, o) => s + exAmt(o), 0) };
   }, [fySelect, allOpps]);
@@ -425,61 +452,89 @@ const SalesAnalysis: React.FC = () => {
     return { count: items.length, amount: items.reduce((s, o) => s + exAmt(o), 0) };
   }, [fyFiltered]);
 
-  // ── 滚动12个月指标（销售周期、赢单转化率，用于概览卡片）──
-  const rolling12mKpi = useMemo(() => {
+  // ── 概览卡片主/副参考月（3 个，按所选财年锚定）──
+  // 已结束财年 → 财年最后三个月（6月/5月/4月）；当前财年 → 最近3个完整月
+  // （新财年初自动继承前一财年 6/5/4 月的管道与滚动数据，避免从 0 开始）；未来财年 → 全null
+  const overviewRefMonths = useMemo<(Date | null)[]>(() => {
     const now = new Date();
-    const calcWindow = (offset: number) => {
-      // 12个月窗口：结束于 offset 个月前最后一天
-      const wEnd = new Date(now.getFullYear(), now.getMonth() - offset + 1, 0);
-      const wStart = new Date(wEnd);
-      wStart.setFullYear(wStart.getFullYear() - 1);
-      wStart.setDate(1);
-      const won = allOpps.filter(o =>
-        o.wonAt && new Date(o.wonAt) >= wStart && new Date(o.wonAt) <= wEnd
-      );
-      const lost = allOpps.filter(o =>
-        o.status === '输' && new Date(o.lostAt || o.updatedAt) >= wStart && new Date(o.lostAt || o.updatedAt) <= wEnd
-      );
-      const cycle = won.length > 0 ? Math.round(won.reduce((s, o) => {
-        return s + Math.round((new Date(o.wonAt).getTime() - new Date(o.createdAt).getTime()) / (1000 * 60 * 60 * 24));
-      }, 0) / won.length) : 0;
-      const total = won.length + lost.length;
-      return { salesCycle: cycle, leadToWonRate: total > 0 ? won.length / total * 100 : 0, wonDecided: total };
-    };
-    return [calcWindow(1), calcWindow(2), calcWindow(3)];
-  }, [allOpps]);
+    const fyRange = parseFY(fySelect);
+    const monthEndOf = (y: number, m: number) => new Date(y, m + 1, 0);
+    if (now > fyRange.end) {
+      const y2 = fyRange.end.getFullYear();
+      return [monthEndOf(y2, 5), monthEndOf(y2, 4), monthEndOf(y2, 3)]; // 6月/5月/4月
+    }
+    if (now < fyRange.start) return [null, null, null]; // 未来财年无数据
+    const cur = new Date(now.getFullYear(), now.getMonth(), 1);
+    return [
+      monthEndOf(cur.getFullYear(), cur.getMonth() - 1),
+      monthEndOf(cur.getFullYear(), cur.getMonth() - 2),
+      monthEndOf(cur.getFullYear(), cur.getMonth() - 3),
+    ];
+  }, [fySelect]);
 
-  // ── 按月 KPI（最近3个完整月） ──
+  // ── 按财年锚定的月度 KPI（加权管道/加权利润/加权利润率）──
+  // 销售周期/赢单转化率已由 rolling12mKpi 负责，此处仅输出管道三项
   const monthlyKpi = useMemo(() => {
-    const now = new Date();
-    const calcMonth = (offset: number) => {
-      const d = new Date(now.getFullYear(), now.getMonth() - offset, 1);
-      const monthStart = new Date(d.getFullYear(), d.getMonth(), 1);
-      const monthEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+    const calcMonth = (refEnd: Date | null) => {
+      if (!refEnd) return { weightedPipeline: 0, weightedProfit: 0, weightedProfitRate: 0, valid: false };
+      const monthStart = new Date(refEnd.getFullYear(), refEnd.getMonth(), 1);
+      const monthEnd = refEnd;
       const activeOpps = allOpps.filter(o => {
         const created = new Date(o.createdAt);
-        const effectiveEnd = (o.status === '过程中' || o.status === '冻结') ? new Date() : new Date(o.updatedAt);
-        return created <= monthEnd && effectiveEnd >= monthStart;
+        return created <= monthEnd && oppEffectiveEnd(o) >= monthStart;
       });
-      const wonOpps = activeOpps.filter(o => o.wonAt && new Date(o.wonAt) >= monthStart && new Date(o.wonAt) <= monthEnd);
-      const lostOpps = activeOpps.filter(o => o.status === '输' && new Date(o.lostAt || o.updatedAt) >= monthStart && new Date(o.lostAt || o.updatedAt) <= monthEnd);
-      const pipelineOpps = activeOpps.filter(o => (o.status === '过程中' || o.status === '冻结') && stageIdx(o.stage) >= stageIdx('机会'));
+      // 管道基数 = 该月活跃（过程中，含此后已输/仍过程中/冻结）且阶段≥机会的项目；
+      // 赢单不计入管道；终止（输）后经 oppEffectiveEnd 不再计入后续月份
+      const pipelineOpps = activeOpps.filter(o => o.status !== '赢' && stageIdx(o.stage) >= stageIdx('机会'));
       let weighted = 0, profit = 0;
       for (const o of pipelineOpps) {
         const w = Math.round(exAmt(o) * o.winRate / 100);
         weighted += w;
         const q = o.quotationId ? (quotationSummaries||[]).find(q => q.id === o.quotationId) : undefined;
-        profit += Math.round(w * (q ? (q.profitRate ?? 0) / 100 : 0.15));
+        // 机会必须编制报价；无报价的机会利润率为 0（不假定 15%），低利润率可暴露管理问题
+        profit += Math.round(w * (q ? (q.profitRate ?? 0) / 100 : 0));
       }
-      const cycle = wonOpps.length > 0 ? Math.round(wonOpps.reduce((s, o) => {
-        return s + Math.round((new Date(o.wonAt).getTime() - new Date(o.createdAt).getTime()) / (1000 * 60 * 60 * 24));
-      }, 0) / wonOpps.length) : 0;
-      const total = wonOpps.length + lostOpps.length;
-      const convRate = total > 0 ? wonOpps.length / total * 100 : 0;
-      return { weightedPipeline: weighted, weightedProfit: profit, weightedProfitRate: weighted > 0 ? profit / weighted * 100 : 0, salesCycle: cycle, leadToWonRate: convRate, wonDecided: total };
+      return { weightedPipeline: weighted, weightedProfit: profit, weightedProfitRate: weighted > 0 ? profit / weighted * 100 : 0, valid: true };
     };
-    return [calcMonth(1), calcMonth(2), calcMonth(3)];
-  }, [allOpps, quotationSummaries]);
+    return overviewRefMonths.map(calcMonth);
+  }, [allOpps, quotationSummaries, overviewRefMonths]);
+
+  // ── 机会 → 转交付时间（交付项目创建时间），销售周期终点 ──
+  const deliveryCreatedByOpp = useMemo(() => {
+    const map = new Map<string, Date>();
+    for (const p of (deliveryProjects||[])) {
+      if (p.opportunityId) map.set(p.opportunityId, new Date(p.createdAt));
+    }
+    return map;
+  }, [deliveryProjects]);
+
+  // ── 按财年锚定的滚动12个月指标（销售周期、赢单转化率，用于概览卡片）──
+  // 销售周期 = 转交付时间(交付项目创建) − 进入机会时间(opportunityAt；回退 createdAt)；仅统计已转交付的赢单
+  const rolling12mKpi = useMemo(() => {
+    const calcWindow = (refEnd: Date | null) => {
+      if (!refEnd) return { salesCycle: 0, leadToWonRate: 0, wonDecided: 0, valid: false };
+      const wEnd = refEnd;
+      // 真正的12个月窗口：起点 = 参考月往前推11个月的首日（如参考6月 → 去年7月1日）
+      const wStart = new Date(wEnd.getFullYear(), wEnd.getMonth() - 11, 1);
+      // 以"机会"为锚点：赢单转化率/销售周期只统计达到机会阶段的项目（信息/线索质量不稳定，作基线波动大）
+      const won = allOpps.filter(o =>
+        o.wonAt && new Date(o.wonAt) >= wStart && new Date(o.wonAt) <= wEnd
+      );
+      const lost = allOpps.filter(o =>
+        o.status === '输' && stageIdx(o.stage) >= stageIdx('机会') &&
+        new Date(o.lostAt || o.updatedAt) >= wStart && new Date(o.lostAt || o.updatedAt) <= wEnd
+      );
+      const cycles = won.filter(o => deliveryCreatedByOpp.has(o.id)).map(o => {
+        const start = new Date(o.opportunityAt || o.createdAt);
+        const end = deliveryCreatedByOpp.get(o.id)!;
+        return Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+      });
+      const cycle = cycles.length > 0 ? Math.round(cycles.reduce((s, d) => s + d, 0) / cycles.length) : 0;
+      const total = won.length + lost.length;
+      return { salesCycle: cycle, leadToWonRate: total > 0 ? won.length / total * 100 : 0, wonDecided: total, valid: true };
+    };
+    return overviewRefMonths.map(calcWindow);
+  }, [allOpps, overviewRefMonths, deliveryCreatedByOpp]);
 
   // ── 输单原因柱状图（按输单时间归入财年）──
   /** 抽取指定分组的原因统计柱状图数据 */
@@ -520,50 +575,58 @@ const SalesAnalysis: React.FC = () => {
   // ── 销售员统一统计 ──
   const salesmenStats = useMemo(() => {
     const map = new Map<string, {
-      name: string; wins: number; orderAmount: number; totalAmount: number;
+      name: string; wins: number; orderAmount: number;
       pipelinePotential: number; profitTotal: number; totalCount: number;
     }>();
-    // 订单金额/利润：财年赢单（按 time 归入）
+    const newEntry = (name: string) => ({ name, wins: 0, orderAmount: 0, pipelinePotential: 0, profitTotal: 0, totalCount: 0 });
+    const fyRange = parseFY(fySelect);
+
+    // 赢单数量（转化效率分子，按 wonAt 归入财年）
     for (const o of fyWonByTime) {
       if (!o.salesman) continue;
       let s = map.get(o.salesman);
-      if (!s) { s = { name: o.salesman, wins: 0, orderAmount: 0, totalAmount: 0, pipelinePotential: 0, profitTotal: 0, totalCount: 0 }; map.set(o.salesman, s); }
+      if (!s) { s = newEntry(o.salesman); map.set(o.salesman, s); }
       s.wins++;
-      s.orderAmount += exAmt(o);
     }
+    // 转化效率分母：机会+ 已决出（赢+输），排除进行中/冻结与线索/信息，与漏斗赢单率口径一致
     for (const o of fyFiltered) {
       if (!o.salesman) continue;
+      if (o.status === '过程中' || o.status === '冻结') continue;
+      if (stageIdx(o.stage) < stageIdx('机会')) continue;
       let s = map.get(o.salesman);
-      if (!s) { s = { name: o.salesman, wins: 0, orderAmount: 0, totalAmount: 0, pipelinePotential: 0, profitTotal: 0, totalCount: 0 }; map.set(o.salesman, s); }
-      s.totalAmount += exAmt(o);
+      if (!s) { s = newEntry(o.salesman); map.set(o.salesman, s); }
       s.totalCount++;
-      // 利润：GP3 利润金额（报价 gp3Amount 已是未税口径），fallback 用未税金额 × 15%
-      if (o.wonAt && o.quotationId) {
-        const q = (quotationSummaries||[]).find(q => q.id === o.quotationId);
-        s.profitTotal += q?.gp3Amount != null ? Math.round(q.gp3Amount) : Math.round(exAmt(o) * 0.15);
-      }
     }
-    // 管道潜力：按财年过滤（随财年切换更新）
-    const fyR = parseFY(fySelect);
-    for (const o of currentPipeline) {
+    // 订单金额/订单利润：财年内转交付的交付项目合同金额（未税，与「月度订单」同口径），经机会关联销售员
+    const oppById = new Map(allOpps.map(o => [o.id, o]));
+    for (const p of (deliveryProjects||[])) {
+      const created = new Date(p.createdAt);
+      if (created < fyRange.start || created > fyRange.end) continue; // 财年隔断：转交付时间
+      if (!p.opportunityId) continue;
+      const opp = oppById.get(p.opportunityId);
+      if (!opp?.salesman) continue;
+      let s = map.get(opp.salesman);
+      if (!s) { s = newEntry(opp.salesman); map.set(opp.salesman, s); }
+      const exTax = exTaxOf(p, oppQuoteInfo);
+      s.orderAmount += exTax;
+      // 订单利润：最新版本报价编制表概算利润（含税 gp3_amount）转未税
+      const oppProfit = oppQuoteInfo.get(p.opportunityId);
+      s.profitTotal += oppProfit && oppProfit.gp3Amt > 0 ? Math.round(oppProfit.gp3Amt / (1 + oppProfit.taxRate)) : 0;
+    }
+    // 管道潜力：与「加权管道」同源（财年活跃期 + 机会锚点 + 赢单不计入），原始金额（不含赢率加权）
+    for (const o of fyFiltered) {
       if (!o.salesman) continue;
-      const oCreated = new Date(o.createdAt);
-      if (oCreated > fyR.end) continue;
-      const effEnd = new Date(o.updatedAt);
-      if (effEnd < fyR.start) continue;
+      if (o.status === '赢') continue;
+      if (stageIdx(o.stage) < stageIdx('机会')) continue;
       let s = map.get(o.salesman);
-      if (!s) { s = { name: o.salesman, wins: 0, orderAmount: 0, totalAmount: 0, pipelinePotential: 0, profitTotal: 0, totalCount: 0 }; map.set(o.salesman, s); }
-      const idx = stageIdx(o.stage);
-      if (idx >= stageIdx('机会')) {
-        s.pipelinePotential += Math.round(exAmt(o) * o.winRate / 100);
-      }
+      if (!s) { s = newEntry(o.salesman); map.set(o.salesman, s); }
+      s.pipelinePotential += exAmt(o);
     }
         return [...map.values()].map(s => ({
       ...s,
-      avgOrderAmount: s.wins > 0 ? Math.round(s.orderAmount / s.wins) : 0,
       conversionEff: s.totalCount > 0 ? s.wins / s.totalCount * 100 : 0,
     }));
-  }, [fyWonByTime, currentPipeline, quotationSummaries, fyFiltered, fySelect]);
+  }, [fyWonByTime, fyFiltered, fySelect, deliveryProjects, allOpps, oppQuoteInfo]);
 
   // ── 4 个维度提取（图表通过 topN=10 自动排序取前10名）──
   const dimEfficiency: BarItem[] = salesmenStats.map(s => ({ name: s.name, value: Math.round(s.conversionEff * 10) / 10 }));
@@ -573,23 +636,26 @@ const SalesAnalysis: React.FC = () => {
 
   // 概览卡片（按月数据）
   const overviewItems = [
-    { label: '加权管道', value: `¥${fmtK(monthlyKpi[0].weightedPipeline)}`,
-      color: COLORS.primary, icon: '📊',
+    { label: '加权管道',
+      value: monthlyKpi[0].valid ? `¥${fmtK(monthlyKpi[0].weightedPipeline)}` : '—',
+      color: monthlyKpi[0].valid ? COLORS.primary : COLORS.textLight, icon: '📊',
       prevValues: [
-        { value: `¥${fmtK(monthlyKpi[1].weightedPipeline)}`, color: COLORS.primary },
-        { value: `¥${fmtK(monthlyKpi[2].weightedPipeline)}`, color: COLORS.primary },
+        { value: monthlyKpi[1].valid ? `¥${fmtK(monthlyKpi[1].weightedPipeline)}` : '—', color: monthlyKpi[1].valid ? COLORS.primary : COLORS.textLight },
+        { value: monthlyKpi[2].valid ? `¥${fmtK(monthlyKpi[2].weightedPipeline)}` : '—', color: monthlyKpi[2].valid ? COLORS.primary : COLORS.textLight },
       ] },
-    { label: '加权利润', value: `¥${fmtK(monthlyKpi[0].weightedProfit)}`,
-      color: COLORS.purple, icon: '💰',
+    { label: '加权利润',
+      value: monthlyKpi[0].valid ? `¥${fmtK(monthlyKpi[0].weightedProfit)}` : '—',
+      color: monthlyKpi[0].valid ? COLORS.purple : COLORS.textLight, icon: '💰',
       prevValues: [
-        { value: `¥${fmtK(monthlyKpi[1].weightedProfit)}`, color: COLORS.purple },
-        { value: `¥${fmtK(monthlyKpi[2].weightedProfit)}`, color: COLORS.purple },
+        { value: monthlyKpi[1].valid ? `¥${fmtK(monthlyKpi[1].weightedProfit)}` : '—', color: monthlyKpi[1].valid ? COLORS.purple : COLORS.textLight },
+        { value: monthlyKpi[2].valid ? `¥${fmtK(monthlyKpi[2].weightedProfit)}` : '—', color: monthlyKpi[2].valid ? COLORS.purple : COLORS.textLight },
       ] },
-    { label: '加权利润率', value: `${monthlyKpi[0].weightedProfitRate.toFixed(1)}%`,
-      color: monthlyKpi[0].weightedProfitRate >= 15 ? COLORS.success : COLORS.warning, icon: '📈',
+    { label: '加权利润率',
+      value: monthlyKpi[0].valid ? `${monthlyKpi[0].weightedProfitRate.toFixed(1)}%` : '—',
+      color: monthlyKpi[0].valid ? (monthlyKpi[0].weightedProfitRate >= 15 ? COLORS.success : COLORS.warning) : COLORS.textLight, icon: '📈',
       prevValues: [
-        { value: `${monthlyKpi[1].weightedProfitRate.toFixed(1)}%`, color: monthlyKpi[1].weightedProfitRate >= 15 ? COLORS.success : COLORS.warning },
-        { value: `${monthlyKpi[2].weightedProfitRate.toFixed(1)}%`, color: monthlyKpi[2].weightedProfitRate >= 15 ? COLORS.success : COLORS.warning },
+        { value: monthlyKpi[1].valid ? `${monthlyKpi[1].weightedProfitRate.toFixed(1)}%` : '—', color: monthlyKpi[1].valid ? (monthlyKpi[1].weightedProfitRate >= 15 ? COLORS.success : COLORS.warning) : COLORS.textLight },
+        { value: monthlyKpi[2].valid ? `${monthlyKpi[2].weightedProfitRate.toFixed(1)}%` : '—', color: monthlyKpi[2].valid ? (monthlyKpi[2].weightedProfitRate >= 15 ? COLORS.success : COLORS.warning) : COLORS.textLight },
       ] },
     { label: '销售周期',
       value: rolling12mKpi[0].salesCycle > 0 ? `${rolling12mKpi[0].salesCycle} 天` : '—',
@@ -701,7 +767,7 @@ const SalesAnalysis: React.FC = () => {
         >
           <SalesFunnel
             funnelData={funnelSnapshot}
-            fyInfo={fyInfo} fyLead={fyLead} fyOpp={fyOpp} fyWon={fyWon}
+            fyInfo={fyInfo} fyLead={fyLead} fyOpp={fyOpp} fyWon={fyWon} fyOppLost={fyOppLost}
           />
         </Card>
 

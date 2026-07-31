@@ -7,7 +7,8 @@ const fields = [
   'id', 'sales_no', 'client_name', 'project_name', 'amount',
   'stage', 'win_rate', 'status', 'salesman', 'competitor', 'winner',
   'expected_close_date', 'notes', 'reasons', 'quotation_id',
-  'terminated', 'promote_locked', 'won_at', 'lost_at', 'created_at', 'updated_at',
+  'terminated', 'promote_locked', 'won_at', 'lost_at',
+  'lead_at', 'opportunity_at', 'bid_at', 'negotiation_at', 'created_at', 'updated_at',
 ];
 
 // 标准 CRUD（不含 GET / 和 extra 中的自定义端点）
@@ -213,13 +214,29 @@ router.put('/:id', async (req, res, next) => {
     if (body.status === '输') {
       setClause += `, lost_at = COALESCE(lost_at, now())`;
     }
-    // 转交付时补充写入（状态未变时也有机会采集）
+    // 记录进入各阶段时间（首次写入后不覆盖）：线索/机会/投标/议价；信息=创建时间、中标=won_at
+    if (body.stage && ['线索', '机会', '投标', '议价', '中标'].includes(body.stage)) {
+      setClause += `, lead_at = COALESCE(lead_at, now())`;
+    }
+    if (body.stage && ['机会', '投标', '议价', '中标'].includes(body.stage)) {
+      setClause += `, opportunity_at = COALESCE(opportunity_at, now())`;
+    }
+    if (body.stage && ['投标', '议价', '中标'].includes(body.stage)) {
+      setClause += `, bid_at = COALESCE(bid_at, now())`;
+    }
+    if (body.stage && ['议价', '中标'].includes(body.stage)) {
+      setClause += `, negotiation_at = COALESCE(negotiation_at, now())`;
+    }
+    // 转交付 = 赢单的终极确认：转交付时强制置为"赢/中标"并记录 won_at（转交付时间）
     if (body.terminated) {
       const cur = (await query('SELECT status FROM sales_opportunities WHERE id = $1', [id])).rows[0];
       if (cur?.status === '赢') {
         setClause += `, won_at = COALESCE(won_at, now())`;
       } else if (cur?.status === '输') {
         setClause += `, lost_at = COALESCE(lost_at, now())`;
+      } else {
+        // 过程中/冻结转交付 → 100% 确认为赢单
+        setClause += `, status = '赢', stage = '中标', won_at = COALESCE(won_at, now())`;
       }
     }
     rawValues.push(id);

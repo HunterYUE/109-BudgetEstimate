@@ -180,10 +180,10 @@ router.post('/project-groups', requireAuth, async (req, res, next) => {
 
     res.status(201).json(savedGroup);
   } catch (err) {
-    await client.query('ROLLBACK').catch(() => {});
+    await client?.query('ROLLBACK').catch(() => {});
     next(err);
   } finally {
-    client!.release();
+    client?.release();
   }
 });
 

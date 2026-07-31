@@ -24,7 +24,6 @@ export const INDUSTRIES = [
   '新能源汽车', '其他',
 ];
 export const REGIONS = ['东区', '南区', '北区'];
-export const SALESPEOPLE = ['张明', '李华', '王芳', '陈伟'];
 
 export const AREA_CODES: Record<string, string> = { 东区: 'EA', 南区: 'SO', 北区: 'NO', 国际: 'IN' };
 

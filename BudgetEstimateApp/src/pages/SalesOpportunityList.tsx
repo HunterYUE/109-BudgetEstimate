@@ -318,8 +318,10 @@ const SalesOpportunityList: React.FC = () => {
   }, [blueTableOpp, msg]);
 
   const handleWinDeliver = useCallback((opp: SalesOpportunity) => {
+    // 防重复转交付：已转交付（terminated）的机会不再打开转交付弹窗
+    if (opp.terminated) { msg.warning('该项目已转交付'); return; }
     setDeliveryOpp(opp);
-  }, []);
+  }, [msg]);
 
   const confirmDeliver = useCallback(async () => {
     const opp = deliveryOpp;
@@ -563,12 +565,15 @@ const SalesOpportunityList: React.FC = () => {
         salesNo = 'A' + y + '-' + m + '-' + String(count + 1).padStart(3, '0') + '-S';
       }
 
+      const createdStage = formData.stage || '信息';
+      const nowISO = new Date().toISOString();
+      const hasStage = (arr: string[]) => arr.includes(createdStage);
       opportunityService.create({
         salesNo,
         clientName: formData.clientName,
         projectName: formData.projectName,
         amount: formData.amount || 0,
-        stage: formData.stage || '信息',
+        stage: createdStage,
         winRate: formData.winRate || 0,
         status: formData.status || '过程中',
         salesman: formData.salesman || '',
@@ -576,6 +581,11 @@ const SalesOpportunityList: React.FC = () => {
         expectedCloseDate: formData.expectedCloseDate || '',
         notes: formData.notes || '',
         reasons: formData.reasons || '',
+        // 创建时按创建阶段记录进入各阶段时间（信息=创建时间、中标=won_at）
+        leadAt: hasStage(['线索', '机会', '投标', '议价', '中标']) ? nowISO : undefined,
+        opportunityAt: hasStage(['机会', '投标', '议价', '中标']) ? nowISO : undefined,
+        bidAt: hasStage(['投标', '议价', '中标']) ? nowISO : undefined,
+        negotiationAt: hasStage(['议价', '中标']) ? nowISO : undefined,
       }).then(() => {
         loadOpportunities();
         msg.success('机会已创建');
@@ -1040,8 +1050,10 @@ const SalesOpportunityList: React.FC = () => {
             <tr>
               <td style={labelStyle2}>区域销售</td>
               <td style={cellStyle2}>
-                <input value={formData.salesman || ''} onChange={e => setFormData(p => ({ ...p, salesman: e.target.value }))}
-                  style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, padding: '2px 0', margin: 0, display: 'block', boxSizing: 'border-box' }} />
+                {/* 销售员从所属客户信息带出（客户管理中维护），创建时自动填入、不可手动修改 */}
+                <input value={formData.salesman || ''} readOnly
+                  title="销售员取自客户信息（客户管理维护），创建后不可修改"
+                  style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, padding: '2px 0', margin: 0, display: 'block', boxSizing: 'border-box', color: COLORS.textLight, cursor: 'not-allowed' }} />
               </td>
               <td style={labelStyle2}>定标日期</td>
               <td style={cellStyle2}>

@@ -132,6 +132,14 @@ export interface SalesOpportunity {
   wonAt?: string;
   /** 首次标记为'输'的时间（后续编辑不覆盖），与 wonAt 对称 */
   lostAt?: string;
+  /** 进入"机会"阶段的时间（创建为机会 或 线索晋升为机会；信息/线索阶段为 undefined） */
+  opportunityAt?: string;
+  /** 进入"线索"阶段的时间 */
+  leadAt?: string;
+  /** 进入"投标"阶段的时间 */
+  bidAt?: string;
+  /** 进入"议价"阶段的时间 */
+  negotiationAt?: string;
   quotationId?: string;
   /** 是否存在报价（后端返回） */
   hasQuote?: boolean;

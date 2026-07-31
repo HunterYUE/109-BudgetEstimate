@@ -12,9 +12,11 @@ export interface FunnelProps {
   fyLead: { count: number; amount: number };
   fyOpp: { count: number; amount: number };
   fyWon: { count: number; amount: number };
+  /** 财年"机会+"阶段输单（中标转化率分母 = 赢 + 机会+输单；线索/信息阶段输单未进入机会，不计入） */
+  fyOppLost: { count: number; amount: number };
 }
 
-export const SalesFunnel: React.FC<FunnelProps> = ({ funnelData, fyInfo, fyLead, fyOpp, fyWon }) => {
+export const SalesFunnel: React.FC<FunnelProps> = ({ funnelData, fyInfo, fyLead, fyOpp, fyWon, fyOppLost }) => {
   // 四阶段可视化数据
   const stages = [
     { key: 'info', label: '信息', color: COLORS.textLight },
@@ -54,10 +56,13 @@ export const SalesFunnel: React.FC<FunnelProps> = ({ funnelData, fyInfo, fyLead,
     info: fyInfo, lead: fyLead, opp: fyOpp, won: fyWon,
   };
 
+  // 财年累计均值转化率（项目数口径）：线索/信息、机会/线索、中标/(赢+机会+输)
+  // ⚠️ 仅项目数口径；金额口径因财年累计各阶段金额重叠、无递进意义，不展示
+  // 中标转化率 = 赢/(赢+机会+输)：机会→中标的推进率（已决出的机会+项目，不含进行中；线索/信息输单未进机会不计入）
   const convData = [
-    { key: 'lead', cnt: fyInfo.count > 0 ? fyLead.count / fyInfo.count * 100 : 0, amt: fyInfo.amount > 0 ? fyLead.amount / fyInfo.amount * 100 : 0 },
-    { key: 'opp', cnt: fyLead.count > 0 ? fyOpp.count / fyLead.count * 100 : 0, amt: fyLead.amount > 0 ? fyOpp.amount / fyLead.amount * 100 : 0 },
-    { key: 'won', cnt: fyOpp.count > 0 ? fyWon.count / fyOpp.count * 100 : 0, amt: fyOpp.amount > 0 ? fyWon.amount / fyOpp.amount * 100 : 0 },
+    { key: 'lead', cnt: fyInfo.count > 0 ? fyLead.count / fyInfo.count * 100 : 0 },
+    { key: 'opp', cnt: fyLead.count > 0 ? fyOpp.count / fyLead.count * 100 : 0 },
+    { key: 'won', cnt: (fyWon.count + fyOppLost.count) > 0 ? fyWon.count / (fyWon.count + fyOppLost.count) * 100 : 0 },
   ];
 
   return (
@@ -129,12 +134,10 @@ export const SalesFunnel: React.FC<FunnelProps> = ({ funnelData, fyInfo, fyLead,
                   fill={COLORS.primary} fontSize={11} fontWeight={600}
                   dominantBaseline="middle">{fyc}/{fmtK(fya)}</text>
 
-                {/* 阶段间转化率（漏斗内居中） */}
+                {/* 阶段间转化率（漏斗内居中）：财年累计均值转化率（项目数口径） */}
                 {conv && (
                   <text x={0} y={y + 14} fontSize={12} textAnchor="middle">
                     <tspan fill={COLORS.primary} fontWeight="600">{conv.cnt.toFixed(1)}%</tspan>
-                    <tspan fill={COLORS.textLight}> / </tspan>
-                    <tspan fill={COLORS.success} fontWeight="600">{conv.amt.toFixed(1)}%</tspan>
                   </text>
                 )}
               </g>
