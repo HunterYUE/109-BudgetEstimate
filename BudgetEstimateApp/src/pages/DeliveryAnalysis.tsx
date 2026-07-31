@@ -54,6 +54,25 @@ const OverviewCards: React.FC<{ items: KpiCard[] }> = ({ items }) => (
 );
 
 
+/** 某财年截止到某月月底的累计 KPI 口径；hasData=false 表示该月早于财年起点、无完整月数据 */
+interface MonthlyCum {
+  hasData: boolean;
+  total: number; tAmt: number;
+  active: number; aAmt: number;
+  completed: number; cAmt: number;
+  delayed: number; dAmt: number;
+  avgDelay: number;
+  onTimeRate: number;
+  costDev: number;
+  costDevDenom: number;
+}
+
+/** 无完整月数据时的空口径 */
+const NO_DATA_CUM: MonthlyCum = {
+  hasData: false, total: 0, tAmt: 0, active: 0, aAmt: 0, completed: 0, cAmt: 0,
+  delayed: 0, dAmt: 0, avgDelay: 0, onTimeRate: -1, costDev: 0, costDevDenom: 0,
+};
+
 /* ============================================================
    主组件
    ============================================================ */
@@ -68,22 +87,12 @@ const DeliveryAnalysis: React.FC = () => {
 
   useEffect(() => {
     let cancelled = false;
-    deliveryService.list()
+    // 分析页需要最新数据：一次取全量（limit=1000），并绕过 api.ts 的 30s GET 缓存
+    deliveryService.list({ limit: '1000' }, { noCache: true })
       .then((data: DeliveryProject[]) => { if (!cancelled) setDeliveryProjects(data.map(p => ({ ...p, nodes: p.nodes || [] }))); })
       .catch(() => { if (!cancelled) setDeliveryProjects([]); });
     return () => { cancelled = true; };
   }, []);
-
-  // 交货项目加载完成后，预加载报价数据到缓存
-  const [preloadReady, setPreloadReady] = useState(0);
-  useEffect(() => {
-    let cancelled = false;
-    const ids = deliveryProjects.filter(p => p.quotationId).map(p => p.quotationId);
-    if (ids.length > 0) {
-      preloadQuotationGroupsBatch(ids).then(() => { if (!cancelled) setPreloadReady(v => v + 1); });
-    }
-    return () => { cancelled = true; };
-  }, [deliveryProjects]);
 
   // ── 共享工具函数 ──
   /** 计算项目延期天数（以第15节点基线为准，与交付管理页实施计划一致），负值表示提前 */
@@ -116,6 +125,17 @@ const DeliveryAnalysis: React.FC = () => {
       return created <= fyRange.end && effectiveEnd >= fyRange.start;
     });
   }, [deliveryProjects, fyRange]);
+
+  // 交货项目加载完成后，仅预加载所选财年内项目的报价到缓存（限制请求量；随财年切换重取）
+  const [preloadReady, setPreloadReady] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    const ids = fyFiltered.filter(p => p.quotationId).map(p => p.quotationId);
+    if (ids.length > 0) {
+      preloadQuotationGroupsBatch(ids, true).then(() => { if (!cancelled) setPreloadReady(v => v + 1); });
+    }
+    return () => { cancelled = true; };
+  }, [fyFiltered]);
 
   // ── 各项目延期天数（项目级，节点15）──
   const projectDelayDays = useMemo(() => {
@@ -207,28 +227,21 @@ const DeliveryAnalysis: React.FC = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fyFiltered, fyRange, projectEstimates, preloadReady]);
 
-  // ── 财年累计KPI（按FY内月份累计）──
-  const monthlyCumKpi = useMemo(() => {
+  // ── 财年累计KPI（最近3个完整月累计；已完结财年取财年最后三个月）──
+  const monthlyCumKpi = useMemo((): MonthlyCum[] => {
     const now = new Date();
-    const calcCum = (fyMo: number) => {
-      // fyMo: 0=FY首月(Jul)～11=FY末月(Jun)
-      let mEnd: Date;
-      if (now > fyRange.end) {
-        // 已完结FY：取FY内指定月的月底
-        const yr = fyRange.end.getFullYear();
-        const jsMo = fyMo < 6 ? fyMo + 6 : fyMo - 6;
-        mEnd = new Date(yr, jsMo + 1, 0);
-      } else {
-        // 当前FY：fyMo→JS月→判断是否已完结
-        const jsMo = fyMo < 6 ? fyMo + 6 : fyMo - 6;
-        const baseYr = fyRange.start.getFullYear() + (now.getMonth() >= 6 ? 0 : 0); // FY起始年
-        const dt = new Date(baseYr, jsMo, 1);
-        // 如果此月在当前月之后（尚未到来），返回0
-        if (dt > now) return { total: 0, tAmt: 0, active: 0, aAmt: 0, completed: 0, cAmt: 0, delayed: 0, dAmt: 0, avgDelay: 0, onTimeRate: -1 };
-        mEnd = new Date(baseYr, jsMo + 1, 0);
-      }
-      if (mEnd < fyRange.start) return { total: 0, tAmt: 0, active: 0, aAmt: 0, completed: 0, cAmt: 0, delayed: 0, dAmt: 0, avgDelay: 0, onTimeRate: -1, costDev: 0, costDevDenom: 0 };
-      let tAmt = 0, aAmt = 0, cAmt = 0, dAmt = 0, tDelay = 0, dCnt = 0, onT = 0, tN = 0, costDevNumerator = 0, costDevDenominator = 0;
+    /** 某月（JS 月索引）的月底 */
+    const monthEnd = (y: number, m: number) => new Date(y, m + 1, 0);
+    /** 相对 now 的最近完整月月底（k=1 最近，k=2/3 依次更早） */
+    const recentMonthEnd = (k: number) => {
+      const cur = new Date(now.getFullYear(), now.getMonth(), 1);
+      return monthEnd(cur.getFullYear(), cur.getMonth() - k);
+    };
+
+    const calcCum = (mEnd: Date): MonthlyCum => {
+      // 该月早于财年起点 → 当前财年内尚无完整月数据
+      if (mEnd < fyRange.start) return { ...NO_DATA_CUM };
+      let tAmt = 0, aAmt = 0, cAmt = 0, dAmt = 0, tDelay = 0, onT = 0, tN = 0, costDevNumerator = 0, costDevDenominator = 0;
       let active = 0, completed = 0, delayed = 0, totalCount = 0;
       for (const p of fyFiltered) {
         if (new Date(p.createdAt) > mEnd) continue;
@@ -242,12 +255,17 @@ const DeliveryAnalysis: React.FC = () => {
         const pd = calcProjDelay(p);
         if (n15done) {
           if (pd > 0) { delayed++; dAmt += ex; }
-          if (pd != 0) { tDelay += pd; dCnt++; }
+          tDelay += pd; // 提前完成记负值、按时完成记 0，全部计入分子
         }
         for (const n of p.nodes) {
-          if (n.status !== 'completed' && new Date(n.plannedEndDate) > mEnd) continue;
+          // 节点按时率：参考日取基线（无基线回退当前计划），须落在 [财年起点, 截止月] 内才计入
+          const refEnd = n.baselineEndDate || n.baselinePlannedEndDate || n.plannedEndDate;
+          if (!refEnd) continue;
+          const refD = new Date(refEnd);
+          if (refD < fyRange.start || refD > mEnd) continue;
           tN++;
-          if (n.status === 'completed' && n.actualDate && new Date(n.actualDate) <= new Date(n.plannedEndDate)) onT++;
+          const actual = n.actualDate ? new Date(n.actualDate) : null;
+          if (n.status === 'completed' && actual && actual <= mEnd && actual <= refD) onT++;
         }
         // 成本偏差
         if (p.costStatus === 'approved' && p.totalActualCost != null) {
@@ -258,9 +276,21 @@ const DeliveryAnalysis: React.FC = () => {
         }
       }
       const costDevRate = costDevDenominator > 0 ? (costDevNumerator / costDevDenominator * 100) : 0;
-      return { total: totalCount, tAmt, active, aAmt, completed, cAmt, delayed, dAmt, avgDelay: dCnt > 0 ? (tDelay / dCnt >= 0 ? Math.round(tDelay / dCnt) : -Math.round(-tDelay / dCnt)) : 0, onTimeRate: tN > 0 ? Math.round(onT / tN * 100) : -1, costDev: costDevRate, costDevDenom: costDevDenominator };
+      return {
+        hasData: true, total: totalCount, tAmt, active, aAmt, completed, cAmt, delayed, dAmt,
+        avgDelay: completed > 0 ? (tDelay / completed >= 0 ? Math.round(tDelay / completed) : -Math.round(-tDelay / completed)) : 0,
+        onTimeRate: tN > 0 ? Math.round(onT / tN * 100) : -1,
+        costDev: costDevRate, costDevDenom: costDevDenominator,
+      };
     };
-    return [calcCum(11), calcCum(10), calcCum(9)]; // Jun, May, Apr
+
+    if (now > fyRange.end) {
+      // 已完结财年：取财年最后三个月（Apr/May/Jun 月底）
+      const yr = fyRange.end.getFullYear();
+      return [monthEnd(yr, 5), monthEnd(yr, 4), monthEnd(yr, 3)].map(calcCum);
+    }
+    // 当前财年：取相对 now 的最近三个完整月（首月尚无完整月数据时显示 —）
+    return [1, 2, 3].map(recentMonthEnd).map(calcCum);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fyFiltered, preloadReady, fyRange]);
 
@@ -268,21 +298,21 @@ const DeliveryAnalysis: React.FC = () => {
   // ── 健康 KPI 卡片（使用财年截止到各月月底的累计值）──
   const overviewItems = useMemo((): KpiCard[] => {
     const mk = monthlyCumKpi;
-    const main = mk[0]; // 截止到最近完整月（过去FY=Jun，当前FY可能为0）
+    const main = mk[0]; // 截止到最近完整月（已完结财年=Jun；当前财年无完整月时 hasData=false）
 
-    const fmtVal = (amt: number, cnt: number) => fmtK(amt) + ' / ' + cnt;
-    const costShow = main.costDevDenom > 0 ? `${main.costDev > 0 ? '+' : ''}${main.costDev.toFixed(1)}%` : '—';
-    const delayShow = main.avgDelay !== 0 || main.dCnt > 0 ? `${main.avgDelay}天` : '—';
-    const onTimeShow = main.onTimeRate >= 0 ? `${main.onTimeRate}%` : '—';
+    const fmtVal = (amt: number, cnt: number) => main.hasData ? fmtK(amt) + ' / ' + cnt : '—';
+    const costShow = main.hasData && main.costDevDenom > 0 ? `${main.costDev > 0 ? '+' : ''}${main.costDev.toFixed(1)}%` : '—';
+    const delayShow = main.hasData && main.completed > 0 ? `${main.avgDelay}天` : '—';
+    const onTimeShow = main.hasData && main.onTimeRate >= 0 ? `${main.onTimeRate}%` : '—';
 
     return [
       { label: '项目总数', value: fmtVal(main.tAmt, main.total), color: COLORS.primary, icon: '📊' },
       { label: '进行中项目', value: fmtVal(main.aAmt, main.active), color: COLORS.primary, icon: '🚧' },
       { label: '已完成项目', value: fmtVal(main.cAmt, main.completed), color: COLORS.success, icon: '✅' },
-      { label: '延期项目', value: fmtVal(main.dAmt, main.delayed), color: main.delayed > 0 ? COLORS.danger : COLORS.success, icon: '🚨' },
-      { label: '加权延期天数', value: delayShow, color: main.avgDelay > 0 ? COLORS.danger : COLORS.success, icon: '📅' },
-      { label: '节点按时率', value: onTimeShow, color: main.onTimeRate >= 0 ? (main.onTimeRate >= 80 ? COLORS.success : main.onTimeRate >= 50 ? COLORS.warning : COLORS.danger) : COLORS.textLight, icon: '🎯' },
-      { label: '成本偏差率', value: costShow, color: main.costDev <= 0 ? COLORS.success : COLORS.danger, icon: '💰' },
+      { label: '延期项目', value: fmtVal(main.dAmt, main.delayed), color: main.hasData && main.delayed > 0 ? COLORS.danger : COLORS.success, icon: '🚨' },
+      { label: '平均延期天数', value: delayShow, color: main.hasData && main.avgDelay > 0 ? COLORS.danger : COLORS.success, icon: '📅' },
+      { label: '节点按时率', value: onTimeShow, color: main.hasData && main.onTimeRate >= 0 ? (main.onTimeRate >= 80 ? COLORS.success : main.onTimeRate >= 50 ? COLORS.warning : COLORS.danger) : COLORS.textLight, icon: '🎯' },
+      { label: '成本偏差率', value: costShow, color: main.hasData && main.costDev <= 0 ? COLORS.success : COLORS.danger, icon: '💰' },
     ];
   }, [monthlyCumKpi]);
 
@@ -445,8 +475,9 @@ const DeliveryAnalysis: React.FC = () => {
 
       <OverviewCards items={overviewItems.map((item, i) => {
             const mk = monthlyCumKpi;
-            const val = (m: typeof mk[0], idx: number) => {
-              const arr = [`${fmtK(m.tAmt)} / ${m.total}`, `${fmtK(m.aAmt)} / ${m.active}`, `${fmtK(m.cAmt)} / ${m.completed}`, `${fmtK(m.dAmt)} / ${m.delayed}`, m.avgDelay !== 0 ? m.avgDelay + '天' : '—', m.onTimeRate >= 0 ? m.onTimeRate + '%' : '—', m.costDevDenom > 0 ? (m.costDev > 0 ? '+' : '') + m.costDev.toFixed(1) + '%' : '—'];
+            const val = (m: MonthlyCum, idx: number) => {
+              if (!m.hasData) return '—';
+              const arr = [`${fmtK(m.tAmt)} / ${m.total}`, `${fmtK(m.aAmt)} / ${m.active}`, `${fmtK(m.cAmt)} / ${m.completed}`, `${fmtK(m.dAmt)} / ${m.delayed}`, m.hasData && m.completed > 0 ? m.avgDelay + '天' : '—', m.onTimeRate >= 0 ? m.onTimeRate + '%' : '—', m.costDevDenom > 0 ? (m.costDev > 0 ? '+' : '') + m.costDev.toFixed(1) + '%' : '—'];
               return arr[idx] || '—';
             };
             return { ...item, prevValues: [{ value: val(mk[1], i), color: item.color }, { value: val(mk[2], i), color: item.color }] };

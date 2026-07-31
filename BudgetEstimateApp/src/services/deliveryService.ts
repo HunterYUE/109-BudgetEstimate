@@ -2,8 +2,8 @@ import { api } from '../utils/api';
 import type { DeliveryProject, DeliveryNode } from '../types';
 
 export const deliveryService = {
-  list: (params?: Record<string, string>) =>
-    api.get<DeliveryProject[]>('/deliveries' + (params ? '?' + new URLSearchParams(params).toString() : '')),
+  list: (params?: Record<string, string>, opts?: { noCache?: boolean }) =>
+    api.get<DeliveryProject[]>('/deliveries' + (params ? '?' + new URLSearchParams(params).toString() : ''), opts),
 
   getFull: (id: string) =>
     api.get<DeliveryProject & { nodes: DeliveryNode[] }>(`/deliveries/${id}/full`),

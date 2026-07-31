@@ -6,7 +6,8 @@ export const projectService = {
   list: () => api.get<Project[]>('/projects'),
 
   /** 获取单个项目（含版本、组、明细） */
-  getFull: (id: string) => api.get<Project & { versions: ProjectVersion[]; groups: Group[] }>(`/projects/${id}/full`),
+  getFull: (id: string, opts?: { noCache?: boolean }) =>
+    api.get<Project & { versions: ProjectVersion[]; groups: Group[] }>(`/projects/${id}/full`, opts),
 
   /** 创建项目 */
   create: (data: Partial<Project>) => api.post<Project>('/projects', data),

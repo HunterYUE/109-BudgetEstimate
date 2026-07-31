@@ -72,12 +72,13 @@ function getToken(): string | null {
   try { return localStorage.getItem('budget_token'); } catch { return null; }
 }
 
-async function request<T>(path: string, options?: RequestInit): Promise<T> {
+async function request<T>(path: string, options?: RequestInit, noCache?: boolean): Promise<T> {
   const url = `${API_BASE}${path}`;
   const cacheKey = path;
+  const isGet = !options || options.method === undefined || options.method === 'GET';
 
-  // GET 请求优先走缓存
-  if (!options || options.method === undefined || options.method === 'GET') {
+  // GET 请求优先走缓存（noCache 时跳过缓存，直接请求最新数据）
+  if (isGet && !noCache) {
     const cached = getCached(cacheKey);
     if (cached !== undefined) return cached as T;
   }
@@ -115,9 +116,9 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const data = await res.json();
   const result = toCamel(data) as T;
 
-  // GET 请求写入缓存
-  if (!options || options.method === undefined || options.method === 'GET') {
-    setCache(cacheKey, result);
+  // GET 请求写入缓存（noCache 时不写入）
+  if (isGet) {
+    if (!noCache) setCache(cacheKey, result);
   } else {
     // 非 GET 请求（POST/PUT/DELETE）清除相关前缀缓存
     const resourcePrefix = path.split('?')[0].split('/')[1] || '';
@@ -140,7 +141,7 @@ export function clearCache(resourcePrefix?: string) {
 }
 
 export const api = {
-  get: <T>(path: string) => request<T>(path),
+  get: <T>(path: string, opts?: { noCache?: boolean }) => request<T>(path, undefined, opts?.noCache),
   post: <T>(path: string, body: unknown) =>
     request<T>(path, { method: 'POST', body: JSON.stringify(toSnake(body)) }),
   put: <T>(path: string, body: unknown) =>

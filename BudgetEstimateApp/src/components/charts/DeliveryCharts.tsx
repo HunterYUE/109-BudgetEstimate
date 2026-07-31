@@ -731,14 +731,18 @@ export const BubbleChart: React.FC<{
   const chartW = W - pad.left - pad.right;
   const chartH = H - pad.top - pad.bottom;
   const maxDelay = Math.max(...data.map(d => Math.abs(d.delayDays)), 1);
-  const maxCost = Math.max(...data.map(d => Math.abs(d.costDeviation)), 1);
+  // Y轴非对称缩放 + 封顶：正/负偏差分别取最大值（≤30%），避免单个异常点把整轴对称拉大、压平细节
+  const Y_CAP = 30; // 成本偏差率轴封顶 ±30%
+  const maxCostPos = Math.max(1, Math.min(Y_CAP, Math.max(...data.map(d => d.costDeviation), 0)));
+  const maxCostNeg = Math.max(1, Math.min(Y_CAP, Math.max(...data.map(d => -d.costDeviation), 0)));
+  const yTotal = maxCostPos + maxCostNeg;
   const maxPressure = Math.max(...data.map(d => d.capacityPressure), 0.001);
   const statusColors: Record<string, string> = { '进行中': COLORS.primary, '已完成': COLORS.success, '已延期': COLORS.danger };
   const step = 15;
   const maxTick = Math.ceil(maxDelay / step) * step;
-  // Y轴刻度独立计算（避免与X轴共用时，在小范围maxCost下重复取值）
+  // Y轴刻度独立计算（避免与X轴共用时，在小范围内重复取值）
   const yStep = (() => {
-    const rough = maxCost / 3;
+    const rough = Math.max(maxCostPos, maxCostNeg) / 3;
     if (rough <= 0.15) return 0.1;
     if (rough <= 0.3) return 0.2;
     if (rough <= 0.7) return 0.5;
@@ -749,7 +753,17 @@ export const BubbleChart: React.FC<{
     if (rough <= 30) return 20;
     return 50;
   })();
-  const yMaxTick = Math.ceil(maxCost / yStep) * yStep;
+  /** Y 值 → 画布 y（正值区在顶部、负值区在底部，超出轴范围的极端点钳制到边缘） */
+  const yPos = (v: number) => {
+    const clamped = Math.max(-maxCostNeg, Math.min(maxCostPos, v));
+    return pad.top + (1 - (clamped + maxCostNeg) / yTotal) * chartH;
+  };
+  // 正/负两侧刻度各自独立生成，合并后排序
+  const yTicks: number[] = [];
+  for (let i = 1; i * yStep <= maxCostPos; i++) yTicks.push(i * yStep);
+  for (let i = 1; i * yStep <= maxCostNeg; i++) yTicks.push(-i * yStep);
+  yTicks.push(0);
+  yTicks.sort((a, b) => a - b);
 
   return (
     <Card size="small" style={{ borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }} styles={{ body: { padding: `${bodyPadTop}px 0 ${bodyPadBottom}px` } }}>
@@ -771,10 +785,9 @@ export const BubbleChart: React.FC<{
             </g>
           );
         })}
-        {/* Y轴网格 + 标签（成本偏差率） */}
-        {Array.from({ length: Math.ceil(yMaxTick / yStep) * 2 + 1 }, (_, i) => (i - Math.ceil(yMaxTick / yStep)) * yStep).map(t => {
-          const r = t / yMaxTick;
-          const y = pad.top + (1 - (r + 1) / 2) * chartH;
+        {/* Y轴网格 + 标签（成本偏差率，非对称刻度） */}
+        {yTicks.map(t => {
+          const y = yPos(t);
           return (
             <g key={`yg-${t}`}>
               <line x1={pad.left} y1={y} x2={W - pad.right} y2={y} stroke={t === 0 ? '#e0e0e0' : COLORS.borderLight} strokeWidth={t === 0 ? 1.5 : 1} />
@@ -783,12 +796,12 @@ export const BubbleChart: React.FC<{
           );
         })}
         <line x1={pad.left + chartW / 2} y1={pad.top} x2={pad.left + chartW / 2} y2={pad.top + chartH} stroke="#ddd" strokeWidth={1} />
-        <line x1={pad.left} y1={pad.top + chartH / 2} x2={W - pad.right} y2={pad.top + chartH / 2} stroke="#ddd" strokeWidth={1} />
+        <line x1={pad.left} y1={yPos(0)} x2={W - pad.right} y2={yPos(0)} stroke="#ddd" strokeWidth={1} />
         <text x={pad.left + chartW / 2} y={H + 21} textAnchor="middle" fontSize={10} fill="#444">延期天数</text>
         <text x={8} y={pad.top + chartH / 2} textAnchor="middle" fontSize={10} fill="#444" transform={`rotate(-90, 24, ${pad.top + chartH / 2})`}>成本偏差率</text>
         {data.map(d => {
           const cx = pad.left + chartW / 2 + (d.delayDays / maxTick) * chartW / 2;
-          const cy = pad.top + (1 - (d.costDeviation + maxCost) / (maxCost * 2)) * chartH;
+          const cy = yPos(d.costDeviation);
           // 直径 = 15 + (金额 - 200万) / 100万 × 5，连续线性映射，钳制 [3, 25]
           const diff = d.contractAmount - 2000000;
           const dia = 15 + diff / 1000000 * 5;

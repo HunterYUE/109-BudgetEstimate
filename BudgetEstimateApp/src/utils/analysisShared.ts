@@ -22,18 +22,18 @@ const projectCache = new Map<string, { groups: Group[]; version?: { warrantyRate
  * 预加载报价数据到缓存（供同步 loadQuotationGroups 使用）
  * 流程：报价ID → 查 quotation → 取 project_id → 加载项目完整数据
  */
-export async function preloadQuotationGroups(quotationId: string | undefined | null): Promise<void> {
+export async function preloadQuotationGroups(quotationId: string | undefined | null, noCache?: boolean): Promise<void> {
   if (!quotationId) return;
-  if (projectCache.has(quotationId)) return;
+  if (projectCache.has(quotationId) && !noCache) return;
   try {
     // 1. 先查报价获取 project_id + version_no（api.get 自动注入 token、toCamel、错误处理）
-    const quote = await api.get<Record<string, unknown>>(`/quotations/${quotationId}`);
+    const quote = await api.get<Record<string, unknown>>(`/quotations/${quotationId}`, noCache ? { noCache: true } : undefined);
     const projectId = quote.projectId as string | undefined;
     if (!projectId) throw new Error('报价缺少 projectId');
     const quoteVerNo = quote.versionNo || '';
 
     // 2. 再加载项目完整数据
-    const project = await projectService.getFull(projectId);
+    const project = await projectService.getFull(projectId, noCache ? { noCache: true } : undefined);
     // ⚠️ 按版本过滤组数据，避免加载全量组导致成本对比表重复显示多条设备组
     const version = project.versions?.find((v: any) => v.versionNo === quoteVerNo) || project.versions?.[0];
     const versionId = version?.id || '';
@@ -77,8 +77,8 @@ export function loadQuotationGroups(quotationId: string | undefined | null): {
 }
 
 /** 批量预加载（完成后递增版本号，触发 useMemo 重新计算） */
-export async function preloadQuotationGroupsBatch(ids: string[]): Promise<void> {
-  await Promise.all(ids.map(id => preloadQuotationGroups(id)));
+export async function preloadQuotationGroupsBatch(ids: string[], noCache?: boolean): Promise<void> {
+  await Promise.all(ids.map(id => preloadQuotationGroups(id, noCache)));
   bumpPreloadVersion();
 }
 
