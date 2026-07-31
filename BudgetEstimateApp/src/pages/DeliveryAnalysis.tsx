@@ -167,8 +167,9 @@ const DeliveryAnalysis: React.FC = () => {
 
         let isDelayed = n.status === 'delayed';
         if (!isDelayed && n.status !== 'completed') {
-          const plannedEnd = new Date(n.plannedEndDate);
-          if (plannedEnd < now) isDelayed = true;
+          // 延期判定以基线为准（与规则一致）：基线已过且未完成 → 延期
+          const refEnd = n.baselineEndDate || n.baselinePlannedEndDate || n.plannedEndDate;
+          if (refEnd && new Date(refEnd) < now) isDelayed = true;
         }
         if (!isDelayed && n.status === 'completed' && n.actualDate) {
           const refDc = n.baselineEndDate || n.baselinePlannedEndDate;
@@ -217,11 +218,11 @@ const DeliveryAnalysis: React.FC = () => {
       const est = projectEstimates.get(p.id);
       if (!est) return null;
       const { exTax, grandEstimated, estGP3 } = est;
-      const actProfit = p.totalActualCost != null ? (exTax - p.totalActualCost) : undefined;
+      const actProfit = (p.costStatus === 'approved' && p.totalActualCost != null) ? (exTax - p.totalActualCost) : undefined;
       const actGP3 = actProfit != null && exTax > 0 ? actProfit / exTax : undefined;
       return { exTax, estGP3, actGP3, actProfit, deviation: actGP3 != null ? actGP3 - estGP3 : 0, name: (() => { const s = compressNo(p.salesNo); return s.length > 4 ? s.slice(0, 4) + '\n' + s.slice(4) : s; })(), estProfit: exTax - grandEstimated };
     });
-    const items: ProfitItem[] = itemData.filter(Boolean).map(d => ({ name: d.name!, estProfit: d.estProfit!, estGP3: d.estGP3, actProfit: d.actProfit, actGP3: d.actGP3, deviation: d.deviation }))
+    const items: ProfitItem[] = itemData.filter((d): d is NonNullable<typeof d> => d != null).map(d => ({ name: d.name!, estProfit: d.estProfit!, estGP3: d.estGP3, actProfit: d.actProfit, actGP3: d.actGP3, deviation: d.deviation }))
       .sort((a, b) => Math.abs(b.deviation) - Math.abs(a.deviation));
     return { items };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -258,17 +259,19 @@ const DeliveryAnalysis: React.FC = () => {
           tDelay += pd; // 提前完成记负值、按时完成记 0，全部计入分子
         }
         for (const n of p.nodes) {
-          // 节点按时率：参考日取基线（无基线回退当前计划），须落在 [财年起点, 截止月] 内才计入
+          // 节点按时率：仅统计已完成节点（完成日 ∈ [财年起点, 截止月]），
+          // 与实际完成日对比最初的基线：≤基线 = 正常/提前（计入分子），>基线 = 延期
+          if (n.status !== 'completed' || !n.actualDate) continue;
+          const actual = new Date(n.actualDate);
+          if (actual < fyRange.start || actual > mEnd) continue;
           const refEnd = n.baselineEndDate || n.baselinePlannedEndDate || n.plannedEndDate;
-          if (!refEnd) continue;
+          if (!refEnd) continue; // 无基线不判定
           const refD = new Date(refEnd);
-          if (refD < fyRange.start || refD > mEnd) continue;
           tN++;
-          const actual = n.actualDate ? new Date(n.actualDate) : null;
-          if (n.status === 'completed' && actual && actual <= mEnd && actual <= refD) onT++;
+          if (actual <= refD) onT++;
         }
-        // 成本偏差
-        if (p.costStatus === 'approved' && p.totalActualCost != null) {
+        // 成本偏差（仅统计已完成交付项目，与「已完成项目」KPI 同源）
+        if (n15done && p.costStatus === 'approved' && p.totalActualCost != null) {
           const { groups, version } = loadQuotationGroups(p.quotationId);
           const { grandEstimated } = computeDeliveryEstGP3(p.contractAmount, groups, version);
           costDevNumerator += (p.totalActualCost - grandEstimated);
@@ -316,20 +319,16 @@ const DeliveryAnalysis: React.FC = () => {
     ];
   }, [monthlyCumKpi]);
 
-  // ── 甘特图数据（过去FY显示完整财年，当前FY显示前1个月+后11个月）──
+  // ── 甘特图数据（统一按标准财年月份显示：7月到次年6月，所有财年一致）──
   const ganttData = useMemo(() => {
     const now = new Date();
-    const tlStart = now > fyRange.end
-      ? new Date(fyRange.start.getFullYear(), fyRange.start.getMonth(), 1)
-      : new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const tlEnd = now > fyRange.end
-      ? new Date(fyRange.end.getFullYear(), fyRange.end.getMonth() + 1, 0)
-      : new Date(tlStart.getFullYear(), tlStart.getMonth() + 12, 0);
+    const tlStart = new Date(fyRange.start.getFullYear(), fyRange.start.getMonth(), 1);
+    const tlEnd = new Date(fyRange.end.getFullYear(), fyRange.end.getMonth() + 1, 0);
     const DAY_MS = 1000 * 60 * 60 * 24;
     const totalDays = Math.round((tlEnd.getTime() - tlStart.getTime()) / DAY_MS);
     const months = Array.from({ length: 12 }, (_, i) => {
       const d = new Date(tlStart.getFullYear(), tlStart.getMonth() + i, 1);
-      return d.toLocaleString('en', { month: 'short' }) + ' ' + String(d.getFullYear()).slice(2);
+      return d.toLocaleString('en', { month: 'short' });
     });
     const todayPos = Math.round((now.getTime() - tlStart.getTime()) / DAY_MS);
     const projectRows = fyFiltered.filter(p => {
@@ -348,14 +347,15 @@ const DeliveryAnalysis: React.FC = () => {
         return new Date(n.plannedEndDate) >= tlStart && new Date(n.plannedStartDate) <= tlEnd;
       }).map(n => {
         let start: Date, end: Date;
+        const baselineEnd = n.baselineEndDate || n.baselinePlannedEndDate;
         if (n.status === 'completed' && n.actualDate) {
           // 已完成节点：开始=实际开始(优先)或计划开始，结束=实际完成
           start = n.actualStartDate ? new Date(n.actualStartDate) : new Date(n.plannedStartDate);
           end = new Date(n.actualDate);
           if (start > end) start = end;
         } else if (n.status === 'in_progress' || n.status === 'delayed') {
-          // 进行中/延期：开始=计划开始，已超期则结束=now
-          start = new Date(n.plannedStartDate);
+          // 进行中/延期：开始=实际开始（人为设定开始的时刻），已超最新计划则结束=now
+          start = n.actualStartDate ? new Date(n.actualStartDate) : new Date(n.plannedStartDate);
           end = new Date(n.plannedEndDate) < now ? now : new Date(n.plannedEndDate);
         } else {
           // 未开始：按计划时间
@@ -366,7 +366,7 @@ const DeliveryAnalysis: React.FC = () => {
           name: n.name, plannedStartDate: new Date(n.plannedStartDate),
           plannedEndDate: new Date(n.plannedEndDate), actualDate: n.actualDate ? new Date(n.actualDate) : undefined,
           initEndDate: new Date(n.plannedEndDate),
-          baselineDate: n.baselineEndDate || n.baselinePlannedEndDate ? new Date(n.baselineEndDate || n.baselinePlannedEndDate) : undefined };
+          baselineDate: baselineEnd ? new Date(baselineEnd) : undefined };
       });
       return {
         name: compressNo(p.salesNo),
@@ -424,7 +424,7 @@ const DeliveryAnalysis: React.FC = () => {
       const est = projectEstimates.get(p.id);
       const exTax = est ? est.exTax : Math.round(p.contractAmount / (1 + (loadQuotationGroups(p.quotationId).version?.taxRate ?? 0.13)));
       const estTotal = est ? est.grandEstimated : 0;
-      const costDev = p.totalActualCost != null && estTotal > 0
+      const costDev = p.costStatus === 'approved' && p.totalActualCost != null && estTotal > 0
         ? (p.totalActualCost - estTotal) / estTotal * 100 : 0;
 
       // 时间加权并行计算
@@ -460,7 +460,8 @@ const DeliveryAnalysis: React.FC = () => {
 
   // ── 布局常量 ──
   // 左列 3 张卡片（利润分析/延期天数/节点分析），每张高225px，间距16px
-  const LEFT_COL_H = (2 + 30 + 225) * 3 + 16 * 2; // 803
+  const CARD_H = 225; // 左列卡片高度（利润分析/延期天数/节点分析）
+  const LEFT_COL_H = (2 + 30 + CARD_H) * 3 + 16 * 2; // 803
   // 气泡图卡片内容区高度
   const BUBBLE_SVG_H = LEFT_COL_H - 2 - 37 - 25; // 739
   // 气泡图画布高度（含外部标注空间）
@@ -486,12 +487,12 @@ const DeliveryAnalysis: React.FC = () => {
           <div style={{ display: 'flex', gap: 16, marginTop: 16, alignItems: 'stretch' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16, flex: '0 0 calc(3 / 7 * (100% - 96px) + 32px)' }}>
               <ProfitChart data={profitChartData.items}
-                height={225} chartWidth={702} contentOffset={40} />
+                height={CARD_H} chartWidth={702} contentOffset={40} />
               <VerticalBarChart title="延期天数" data={projectDelayDays}
-                format="num" height={225} topN={15} barWidthRatio={0.75}
+                format="num" height={CARD_H} topN={15} barWidthRatio={0.75}
                 maxBarWidth={40} chartWidth={702} contentOffset={40} hideAvgLine padTop={25} padBottom={35} barLabelGap={10} />
               <VerticalBarChart title="节点分析" data={nodeBottleneck}
-                format="num" height={225} topN={15} barWidthRatio={0.75}
+                format="num" height={CARD_H} topN={15} barWidthRatio={0.75}
                 maxBarWidth={40} chartWidth={702} contentOffset={40} hideAvgLine padTop={25} padBottom={35} disableSort />
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16, flex: 1, minWidth: 0 }}>

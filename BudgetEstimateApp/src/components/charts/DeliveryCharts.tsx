@@ -451,12 +451,19 @@ const GanttTooltip: React.FC<{
           </text>
         </>
       ) : slot.status === 'in_progress' || slot.status === 'delayed' ? (
-        <>
-          <text x={ttx + 12} y={tty + 46} fontSize={11} fill={COLORS.danger}>超期进行</text>
-          <text x={ttx + tooltipW - 12} y={tty + 46} fontSize={11} fill="#444" textAnchor="end">
-            {fmtShort(slot.plannedStartDate)}~至今
-          </text>
-        </>
+        (() => {
+          const overdue = new Date(slot.plannedEndDate) < new Date(); // 已超最新计划
+          return (
+            <>
+              <text x={ttx + 12} y={tty + 46} fontSize={11} fill={overdue ? COLORS.danger : COLORS.textLight}>
+                {overdue ? '超期进行' : '进行中'}
+              </text>
+              <text x={ttx + tooltipW - 12} y={tty + 46} fontSize={11} fill="#444" textAnchor="end">
+                {fmtShort(slot.startDate)}~{overdue ? '至今' : fmtShort(slot.plannedEndDate)}
+              </text>
+            </>
+          );
+        })()
       ) : (
         <>
           <text x={ttx + 12} y={tty + 46} fontSize={11} fill={COLORS.textLight}>计划时间</text>
