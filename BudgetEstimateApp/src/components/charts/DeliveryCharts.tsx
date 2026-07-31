@@ -67,9 +67,9 @@ const fmtShort = (d: Date) => `${String(d.getFullYear()).slice(2)}-${String(d.ge
 
 const toK = (v: number) => Math.round(v / 1000).toLocaleString() + 'K';
 
-/** 节点状态标签 & 条颜色（三类：未开始/进行中/已完成） */
+/** 节点状态条颜色：未开始/进行中(含延期)/已完成 */
 const GANTT_STATUS_COLOR: Record<string, string> = {
-  pending: '#1a4f83', in_progress: '#593b73', delayed: '#ab4242', completed: '#275d3e',
+  pending: '#1a4f83', in_progress: '#593b73', completed: '#275d3e',
 };
 
 /** 计算某节点的延期天数（与基线计划完成时间比，正=延期，负=提前，无基线时用当前计划） */

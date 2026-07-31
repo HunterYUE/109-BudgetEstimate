@@ -15,7 +15,6 @@ import type { ProfitItem, BubbleDataItem } from '../components/charts/DeliveryCh
    ============================================================ */
 interface KpiCard {
   label: string; value: string; color: string; icon: string;
-  subValue?: string;
   prevValues?: { value: string; color: string }[];
 }
 const OverviewCards: React.FC<{ items: KpiCard[] }> = ({ items }) => (
@@ -36,11 +35,6 @@ const OverviewCards: React.FC<{ items: KpiCard[] }> = ({ items }) => (
         <div style={{ fontSize: 26, fontWeight: 700, color: item.color, lineHeight: 1.2 }}>
           {item.value}
         </div>
-        {item.subValue && (
-          <div style={{ fontSize: 13, fontWeight: 600, color: item.color, marginTop: 2 }}>
-            {item.subValue}
-          </div>
-        )}
         {item.prevValues && item.prevValues.length === 2 && (
           <div style={{ fontSize: 11, fontWeight: 600, lineHeight: 1.3, marginTop: 3, opacity: 0.7 }}>
             <span style={{ color: item.prevValues[0].color }}>{item.prevValues[0].value}</span>
@@ -74,14 +68,54 @@ const NO_DATA_CUM: MonthlyCum = {
 };
 
 /* ============================================================
+   模块级工具函数（不依赖组件状态，避免每次渲染重建）
+   ============================================================ */
+/** 节点总数（与 NODE_DISPLAY_NAMES 一一对应，避免硬编码 15） */
+const NODE_COUNT = NODE_DISPLAY_NAMES.length;
+
+/** 压缩销售编号并换行：A2026-07-003-E → 2607003E，超4位时拆两行（图表 X 轴标签用） */
+const chartLabel = (salesNo: string | undefined): string => {
+  const s = compressNo(salesNo);
+  return s.length > 4 ? s.slice(0, 4) + '\n' + s.slice(4) : s;
+};
+
+/** 计算项目延期天数（以第15节点基线为准，与交付管理页实施计划一致），负值表示提前 */
+const calcProjDelay = (p: DeliveryProject): number => {
+  const n15 = p.nodes.find(n => n.nodeNo === 15);
+  if (!n15) return 0;
+  const refDate = n15.baselineEndDate || n15.baselinePlannedEndDate || n15.plannedEndDate;
+  if (!refDate) return 0;
+  const end = (n15.status === 'completed' && n15.actualDate) ? new Date(n15.actualDate) : new Date();
+  return Math.round((end.getTime() - new Date(refDate).getTime()) / (1000 * 60 * 60 * 24));
+};
+
+/** 判断项目节点15是否已完成且在财年范围内 */
+const isNode15CompletedInFy = (p: DeliveryProject, fyRange: ReturnType<typeof parseFY>): boolean => {
+  const n15 = p.nodes.find(n => n.nodeNo === 15);
+  if (!n15 || n15.status !== 'completed') return false;
+  const d = new Date(n15.actualDate || p.updatedAt);
+  return d >= fyRange.start && d <= fyRange.end;
+};
+
+/** 默认财年：当前日历月 ≥ 7 月 → 当年~次年，否则上一年~当年 */
+const defaultFy = (() => {
+  const now = new Date();
+  const m = now.getMonth();
+  const y1 = m >= 6 ? now.getFullYear() : now.getFullYear() - 1;
+  const y2 = m >= 6 ? now.getFullYear() + 1 : now.getFullYear();
+  return `FY${String(y1 % 100).padStart(2, '0')}${String(y2 % 100).padStart(2, '0')}`;
+})();
+
+// ── 布局常量（左列 3 张卡片：利润分析/延期天数/节点分析，每张高225px，间距16px）──
+const CARD_H = 225;
+const LEFT_COL_H = (2 + 30 + CARD_H) * 3 + 16 * 2; // 803
+const BUBBLE_SVG_H = LEFT_COL_H - 2 - 37 - 25; // 739
+const BUBBLE_CANVAS_H = LEFT_COL_H - 2 - 10 - 22 - 30 + 25; // 764
+
+/* ============================================================
    主组件
    ============================================================ */
 const DeliveryAnalysis: React.FC = () => {
-  const now = new Date();
-  const y = now.getFullYear(), m = now.getMonth();
-  const y1 = m >= 6 ? y : y - 1;
-  const y2 = m >= 6 ? y + 1 : y;
-  const defaultFy = `FY${String(y1 % 100).padStart(2,'0')}${String(y2 % 100).padStart(2,'0')}`;
   const [fySelect, setFySelect] = useState(defaultFy);
   const [deliveryProjects, setDeliveryProjects] = useState<DeliveryProject[]>([]);
   // 报价编制表持久化数据（税率/折后报价/概算利润含税），经交付 quotationId 关联
@@ -103,34 +137,22 @@ const DeliveryAnalysis: React.FC = () => {
     return () => { cancelled = true; };
   }, []);
 
-  // ── 共享工具函数 ──
-  /** 计算项目延期天数（以第15节点基线为准，与交付管理页实施计划一致），负值表示提前 */
-  const calcProjDelay = (p: DeliveryProject): number => {
-    const n15 = p.nodes.find(n => n.nodeNo === 15);
-    if (!n15) return 0;
-    const refDate = n15.baselineEndDate || n15.baselinePlannedEndDate || n15.plannedEndDate;
-    if (!refDate) return 0;
-    const end = (n15.status === 'completed' && n15.actualDate) ? new Date(n15.actualDate) : new Date();
-    return Math.round((end.getTime() - new Date(refDate).getTime()) / (1000 * 60 * 60 * 24));
-  };
-  /** 判断项目节点15是否已完成且在财年范围内 */
-  const isNode15CompletedInFy = (p: DeliveryProject, fyRange: ReturnType<typeof parseFY>) => {
-    const n15 = p.nodes.find(n => n.nodeNo === 15);
-    if (!n15 || n15.status !== 'completed') return false;
-    const d = new Date(n15.actualDate || p.updatedAt);
-    return d >= fyRange.start && d <= fyRange.end;
-  };
-
   // ── 缓存财年范围 ──
   const fyRange = useMemo(() => parseFY(fySelect), [fySelect]);
 
   // ── 财年过滤（活跃期交集：与销售分析一致的逻辑）──
+  // ⚠️ 已完成项目的有效结束 = 节点15实际完成日，而非 updatedAt：
+  //    updated_at 有触发器覆盖为 now()，已交付项目被后续编辑/回填会污染其财年归属
   const fyFiltered = useMemo(() => {
     return deliveryProjects.filter(p => {
       const created = new Date(p.createdAt);
+      const n15 = p.nodes.find(n => n.nodeNo === 15);
+      const n15DoneDate = (n15 && n15.status === 'completed' && n15.actualDate)
+        ? new Date(n15.actualDate)
+        : null;
       const effectiveEnd = (p.status === '进行中' || p.status === '已延期')
         ? new Date()
-        : new Date(p.updatedAt);
+        : (n15DoneDate || new Date(p.updatedAt));
       return created <= fyRange.end && effectiveEnd >= fyRange.start;
     });
   }, [deliveryProjects, fyRange]);
@@ -141,7 +163,7 @@ const DeliveryAnalysis: React.FC = () => {
       const delay = calcProjDelay(p);
       const n15completed = p.nodes.find(n => n.nodeNo === 15)?.status === 'completed';
       return {
-        name: (() => { const s = compressNo(p.salesNo); return s.length > 4 ? s.slice(0,4) + String.fromCharCode(10) + s.slice(4) : s; })(),
+        name: chartLabel(p.salesNo),
         value: delay,
         color: n15completed ? COLORS.textLight : (delay > 0 ? COLORS.danger : delay < 0 ? COLORS.success : COLORS.textLight),
       };
@@ -151,17 +173,26 @@ const DeliveryAnalysis: React.FC = () => {
   // ── 节点卡脖子分析（瓶颈识别）──
   const nodeBottleneck = useMemo(() => {
     const now = new Date();
-    const delayCount = new Array(15).fill(0);
-    const delayDays = new Array(15).fill(0);
-    const reached = new Array(15).fill(0);
-    const delayedProjects: string[][] = Array.from({ length: 15 }, () => []);
+    const delayCount = new Array(NODE_COUNT).fill(0);
+    const delayDays = new Array(NODE_COUNT).fill(0);
+    const reached = new Array(NODE_COUNT).fill(0);
+    const delayedProjects: string[][] = Array.from({ length: NODE_COUNT }, () => []);
 
     for (const p of fyFiltered) {
       if (p.status !== '进行中' && p.status !== '已延期' && p.status !== '已完成') continue;
       const shortName = compressNo(p.salesNo) || p.clientName;
       for (const n of p.nodes) {
-        if (n.status === 'pending' && new Date(n.plannedStartDate) > now) continue;
-        reached[n.nodeNo - 1]++;
+        // ⚠️ 节点级财年裁剪（与节点按时率/甘特图同口径）：
+        //   已完成节点：完成日 ∈ 财年才计入；未完成节点：计划窗口与财年有交集才计入
+        if (n.status === 'completed' && n.actualDate) {
+          const doneD = new Date(n.actualDate);
+          if (doneD < fyRange.start || doneD > fyRange.end) continue;
+        } else if (new Date(n.plannedEndDate) < fyRange.start || new Date(n.plannedStartDate) > fyRange.end) {
+          continue;
+        }
+        // 未开始的 pending 不计入「到达次数」，但若其基线已过（事实延期）仍需计入延期
+        const isFuturePending = n.status === 'pending' && new Date(n.plannedStartDate) > now;
+        if (!isFuturePending) reached[n.nodeNo - 1]++;
 
         let isDelayed = n.status === 'delayed';
         if (!isDelayed && n.status !== 'completed') {
@@ -190,12 +221,12 @@ const DeliveryAnalysis: React.FC = () => {
         name, value: delayCount[i],
         subValue: delayCount[i] > 0 ? reached[i] : undefined,
         tooltip: delayCount[i] > 0
-        ? delayCount[i] + " 次，" + (avgDays > 0 ? avgDays + " 天/次" : "—") + String.fromCharCode(10) + [...new Set(delayedProjects[i])].join("、")
+        ? `${delayCount[i]} 次，${avgDays > 0 ? avgDays + ' 天/次' : '—'}\n${[...new Set(delayedProjects[i])].join('、')}`
         : undefined,
         color: delayCount[i] > 0 ? (avgDays >= 10 ? COLORS.danger : avgDays >= 3 ? COLORS.warning : '#ccc') : '#ccc',
       };
     });
-  }, [fyFiltered]);
+  }, [fyFiltered, fyRange]);
 
   // ── 交付项目 → 其报价编制表（最新版本）持久化数据：税率/折后报价/概算利润（含税）──
   // 概算成本/概算利润/概算GP3 全部以此为准，不再运行时从组数据估算
@@ -227,17 +258,20 @@ const DeliveryAnalysis: React.FC = () => {
 
   // ── 利润分析数据（仅已完成项目总结的项目，按GP3偏差排序）──
   const profitChartData = useMemo(() => {
-    const completed = fyFiltered.filter(p => isNode15CompletedInFy(p, fyRange));
-    const itemData = completed.map(p => {
-      if (!deliveryQuoteInfo.has(p.id)) return null;
-      const exTax = deliveryExTax(p);
-      const estGP3 = deliveryEstGP3(p);
-      const estProfit = deliveryEstProfit(p);
-      const actProfit = (p.costStatus === 'approved' && p.totalActualCost != null) ? (exTax - p.totalActualCost) : undefined;
-      const actGP3 = actProfit != null && exTax > 0 ? actProfit / exTax : undefined;
-      return { exTax, estGP3, actGP3, actProfit, deviation: actGP3 != null ? actGP3 - estGP3 : 0, name: (() => { const s = compressNo(p.salesNo); return s.length > 4 ? s.slice(0, 4) + '\n' + s.slice(4) : s; })(), estProfit };
-    });
-    const items: ProfitItem[] = itemData.filter((d): d is NonNullable<typeof d> => d != null).map(d => ({ name: d.name!, estProfit: d.estProfit!, estGP3: d.estGP3, actProfit: d.actProfit, actGP3: d.actGP3, deviation: d.deviation }))
+    const items: ProfitItem[] = fyFiltered
+      .filter(p => isNode15CompletedInFy(p, fyRange) && deliveryQuoteInfo.has(p.id))
+      .map(p => {
+        const exTax = deliveryExTax(p);
+        const estGP3 = deliveryEstGP3(p);
+        const estProfit = deliveryEstProfit(p);
+        const actProfit = (p.costStatus === 'approved' && p.totalActualCost != null) ? (exTax - p.totalActualCost) : undefined;
+        const actGP3 = actProfit != null && exTax > 0 ? actProfit / exTax : undefined;
+        return {
+          name: chartLabel(p.salesNo),
+          estProfit, estGP3, actProfit, actGP3,
+          deviation: actGP3 != null ? actGP3 - estGP3 : 0,
+        };
+      })
       .sort((a, b) => Math.abs(b.deviation) - Math.abs(a.deviation));
     return { items };
   }, [fyFiltered, fyRange, deliveryQuoteInfo]);
@@ -264,7 +298,8 @@ const DeliveryAnalysis: React.FC = () => {
         const ex = deliveryExTax(p);
         tAmt += ex;
         const n15 = p.nodes.find(n => n.nodeNo === 15);
-        const n15done = n15?.status === 'completed' && !!n15.actualDate && new Date(n15.actualDate) <= mEnd;
+        const n15done = n15?.status === 'completed' && !!n15.actualDate
+          && new Date(n15.actualDate) >= fyRange.start && new Date(n15.actualDate) <= mEnd;
         if (n15done) { completed++; cAmt += ex; } else { active++; aAmt += ex; }
         const pd = calcProjDelay(p);
         if (n15done) {
@@ -421,9 +456,9 @@ const DeliveryAnalysis: React.FC = () => {
       lifecycles.set(p.id, { start, end, exTax });
     }
 
-    return completed.filter(p => {const n1 = p.nodes.find(n => n.nodeNo === 1); return n1 != null;}).map(p => {
+    return completed.map(p => {
       const lc = lifecycles.get(p.id); if (!lc) return null;
-      // null items filtered below
+      // null items 在末尾 filter(Boolean) 剔除
       const projDuration = lc.end.getTime() - lc.start.getTime();
 
       const projDelay = calcProjDelay(p);
@@ -463,14 +498,6 @@ const DeliveryAnalysis: React.FC = () => {
     }).filter(Boolean) as BubbleDataItem[];
   }, [fyFiltered, fyRange, deliveryQuoteInfo]);
 
-  // ── 布局常量 ──
-  // 左列 3 张卡片（利润分析/延期天数/节点分析），每张高225px，间距16px
-  const CARD_H = 225; // 左列卡片高度（利润分析/延期天数/节点分析）
-  const LEFT_COL_H = (2 + 30 + CARD_H) * 3 + 16 * 2; // 803
-  // 气泡图卡片内容区高度
-  const BUBBLE_SVG_H = LEFT_COL_H - 2 - 37 - 25; // 739
-  // 气泡图画布高度（含外部标注空间）
-  const BUBBLE_CANVAS_H = LEFT_COL_H - 2 - 10 - 22 - 30 + 25; // 764
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>

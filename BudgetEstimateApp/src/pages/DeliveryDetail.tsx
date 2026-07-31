@@ -7,7 +7,6 @@ import { approvalService } from '../services/approvalService';
 import { deliveryService } from '../services/deliveryService';
 import { projectService } from '../services/projectService';
 import { componentService } from '../services/componentService';
-import { preloadQuotationGroups } from '../utils/analysisShared';
 import { api, clearCache } from '../utils/api';
 import DeliveryNodeTimeline from '../components/DeliveryNodeTimeline';
 import IconButton from '../components/IconButton';
@@ -90,7 +89,6 @@ const DeliveryDetail: React.FC = () => {
       }
       if (data.nodes) data.nodes.forEach((n: DeliveryNode) => { const b = n.baselineEndDate || n.baselinePlannedEndDate; if (b) baselinesRef.current[n.id] = b; });
       if (data.quotationId) {
-        preloadQuotationGroups(data.quotationId);
         // 通过 api.get 加载报价数据（使用统一转换/缓存/错误处理）
         api.get<Record<string, unknown>>(`/quotations/${data.quotationId}`).then(quote => {
           const pid = quote.projectId;

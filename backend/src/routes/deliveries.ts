@@ -74,7 +74,8 @@ router.get('/', async (req, res, next) => {
       sql += ` WHERE ${conditions.join(' OR ')}`;
       params.push(`%${search}%`);
     }
-    sql += ` ORDER BY dp.project_name DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+    // 与 crudRoutes 配置的 orderBy 一致：最近更新优先（原 project_name DESC 为遗留，中文名排序无意义）
+    sql += ` ORDER BY dp.updated_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
     const result = await query(sql, [...params, limitNum, offsetNum]);
     res.json(result.rows);
   } catch (err) { next(err); }
