@@ -219,6 +219,15 @@ const ProjectLayoutUpload: React.FC<{ value: string; onChange: (v: string) => vo
     active: false, startX: 0, startY: 0, offsetX: 0, offsetY: 0,
   });
   const modalWrapRef = useRef<HTMLElement | null>(null);
+  const dragRefCleanup = useRef<(() => void) | null>(null);
+  React.useEffect(() => {
+    return () => {
+      if (dragRefCleanup.current) {
+        dragRefCleanup.current();
+        dragRefCleanup.current = null;
+      }
+    };
+  }, []);
 
   // 拖拽弹窗位置
   const onDragStart = (e: React.MouseEvent) => {

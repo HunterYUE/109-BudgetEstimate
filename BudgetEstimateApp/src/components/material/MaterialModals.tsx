@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Modal, Button } from 'antd';
 import { CheckOutlined, CloseOutlined } from '@ant-design/icons';
 import MaterialTagSelector from '../MaterialTagSelector';
-import type { Component } from '../../types';
+import type { Component, ItemType } from '../../types';
 import { COLORS } from '../../styles/colors';
 import { CATEGORIES, CATEGORY_OPTIONS, TYPE_ABBREV, SOURCES, UNITS } from './materialConstants';
 import { LABEL_CELL_STYLE } from '../../styles/colors';

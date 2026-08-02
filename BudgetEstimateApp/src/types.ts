@@ -87,6 +87,13 @@ export interface ProjectVersion {
   gp3ProfitRate: number;
   gp3Amount: number;
   reviewStatus: ReviewStatus;
+  /** 总成本/质保/风险/物料/人工/项目费用（后端 project_versions 兼容列，报价保存时写入） */
+  totalCost?: number;
+  warrantyCost?: number;
+  riskCost?: number;
+  materialCost?: number;
+  laborCost?: number;
+  projectExpense?: number;
 }
 
 // ===== 项目 =====

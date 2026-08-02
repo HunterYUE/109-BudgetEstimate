@@ -21,7 +21,7 @@ const IndustryDropdown: React.FC<{ value?: string; onChange: (v: string) => void
       onOpenChange={setOpen}
       trigger="click"
       placement="bottomLeft"
-      styles={{ body: { padding: 0 } }}
+      styles={{ content: { padding: 0 } }}
       content={
         <div style={{ width: 180 }}>
           <input type="text" value={search}

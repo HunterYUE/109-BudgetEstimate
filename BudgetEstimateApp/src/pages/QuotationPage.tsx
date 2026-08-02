@@ -99,6 +99,7 @@ const initProject = (): Project => {
     salesNo: salesNo,
     clientName: '新项目',
     clientCode: '',
+    versionNo: 'V1.0',
     projectScope: '2年质保',
     projectName: '',
     projectStage: '方案设计',
@@ -116,8 +117,8 @@ const initProject = (): Project => {
     warrantyRate: 0.01, riskRate: 0.03, commercialCost: 0,
     totalDirectCost: 0, totalAccountingPrice: 0,
     discountedPrice: 0, discountRate: 0,
-    gp3ProfitRate: 0,
-    reviewStatus: 'draft',
+    gp3ProfitRate: 0, gp3Amount: 0,
+    reviewStatus: 'draft' as const,
   };
   return {
     ...base,
@@ -134,7 +135,7 @@ const FALLBACK_VERSION: ProjectVersion = {
   id: '', versionNo: 'V1.0', eurRate: 8.15, taxRate: 0.13, roundingDigits: 0,
   warrantyRate: 0.01, riskRate: 0.03, commercialCost: 0,
   totalDirectCost: 0, totalAccountingPrice: 0, discountedPrice: 0, discountRate: 0,
-  gp3ProfitRate: 0, reviewStatus: 'draft',
+  gp3ProfitRate: 0, gp3Amount: 0, reviewStatus: 'draft',
 };
 
 const QuotationPage: React.FC = () => {
@@ -206,7 +207,7 @@ const QuotationPage: React.FC = () => {
           const search = new URLSearchParams(window.location.search);
           const oppId = search.get('oppId');
           oppIdRef.current = oppId || null;
-          let prefill = {};
+          let prefill: Record<string, string> = {};
           if (oppId) {
             try {
               const opp = await opportunityService.get(oppId);
@@ -218,7 +219,7 @@ const QuotationPage: React.FC = () => {
               try {
                 const clients = await clientService.list();
                 const match = clients.find((c: any) => c.name === cn);
-                if (match) cc = match.code || match.clientCode || '';
+                if (match) cc = match.code || '';
               } catch { console.warn("[Caught]"); }
               prefill = { salesNo: opp.salesNo || '', clientName: cn, clientCode: cc, expectedAwardDate: opp.expectedCloseDate || '', projectName: opp.projectName || '' };
             } catch { console.warn("[Caught]"); }
@@ -413,6 +414,7 @@ const QuotationPage: React.FC = () => {
   }, []);
 
   const validateCodes = useCallback((): string[] => {
+    if (!project) return [];
     const badCodes: string[] = [];
     for (const g of project.groups) {
       for (const item of g.items) {
@@ -426,7 +428,7 @@ const QuotationPage: React.FC = () => {
 
 
   // ⚠️ 报价同步金额取 calcProjectSummary 汇总值，discountedPrice 需传未税（从含税存储值转换）
-  const syncQuotation = useCallback(async (versionNo, status, overrideProjectId?: string) => {
+  const syncQuotation = useCallback(async (versionNo: string, status: string, overrideProjectId?: string) => {
     if (!project) return undefined;
     const p = project.currentVersion;
     const pid = overrideProjectId || project.id;
@@ -588,7 +590,7 @@ const QuotationPage: React.FC = () => {
       const submitUntaxed = curVer?.discountedPrice ? Math.round(curVer.discountedPrice / (1 + (curVer.taxRate || 0.13))) : undefined;
       const submitSummary = calcProjectSummary(project.groups || [], curVer, submitUntaxed);
       const updatedVersion = {
-        ...curVer, reviewStatus: 'pending',
+        ...curVer, reviewStatus: 'pending' as const,
         totalDirectCost: submitSummary.totalDirectCost,
         totalAccountingPrice: submitSummary.totalAccountingPrice,
         discountedPrice: submitSummary.discountedPrice,
@@ -661,6 +663,7 @@ const QuotationPage: React.FC = () => {
       messageApi.warning('报价需审批通过后方可导出');
       return;
     }
+    if (!summary) return;
     let groupsHtml = '';
     for (let gi = 0; gi < project.groups.length; gi++) {
       const g = project.groups[gi];
@@ -723,7 +726,7 @@ const QuotationPage: React.FC = () => {
         <div style={{ fontSize: 14, marginBottom: 20 }}>报价不存在或已被删除</div>
         <Button onClick={() => navigate('/quotations')}>返回报价列表</Button>
       </div>}
-      {!invalidQuote && <div>
+      {!invalidQuote && project && <div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <ArrowLeftOutlined style={{ fontSize: 18, color: COLORS.primary, cursor: 'pointer' }} onClick={() => navigate('/quotations')} />
@@ -872,9 +875,5 @@ const QuotationPage: React.FC = () => {
   );
 };
 
-
-if (import.meta.hot) {
-  import.meta.hot.decline();
-}
 
 export default QuotationPage;

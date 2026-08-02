@@ -23,7 +23,7 @@ export const projectService = {
     api.post<ProjectVersion>(`/project-versions`, { ...data, projectId }),
 
   /** 保存组和明细 */
-  saveGroup: (projectId: string, versionId: string, data: { id?: string; projectId: string; versionId: string; groupNo: number; groupType: string; name: string; isFixed?: boolean; items?: any[] }) =>
+  saveGroup: (projectId: string, versionId: string, data: { id?: string; projectId?: string; versionId?: string; groupNo: number; groupType: string; name: string; isFixed?: boolean; items?: any[] }) =>
     api.post('/project-groups', { ...data, projectId, versionId }),
 
   deleteGroup: (id: string) =>

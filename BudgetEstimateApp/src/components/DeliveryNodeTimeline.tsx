@@ -172,7 +172,7 @@ const DeliveryNodeTimeline: React.FC<Props> = ({
                       fontSize: node.status === 'completed' ? 14 : 10, fontWeight: 700, color: node.status === 'completed' ? COLORS.primary : node.status === 'in_progress' ? COLORS.primary : COLORS.textLight,
                       cursor: onNodeStatusClick ? 'pointer' : 'default', userSelect: 'none',
                     }}
-                      onClick={() => { if (onNodeStatusClick && !locked) setStatusDropdown(statusDropdown === node.id ? null : node.id); }}
+                      onClick={() => { if (onNodeStatusClick && !locked) setStatusDropdown(statusDropdown === node.id ? null : node.id ?? null); }}
                       title="点击选择状态">
                       <span style={{ marginLeft: 1 }}>{node.status === 'completed' ? '⚑' : node.status === 'in_progress' ? '▶' : node.nodeNo}</span>
                     </div>
@@ -183,7 +183,7 @@ const DeliveryNodeTimeline: React.FC<Props> = ({
                         minWidth: 72, boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
                       }}>
                         {(node.status === 'pending' ? ['in_progress'] : node.status === 'in_progress' ? ['completed'] : node.status === 'delayed' ? ['completed', 'in_progress'] : ['in_progress']).map(st => (
-                          <div key={st} onClick={() => { onNodeStatusClick?.(node.id, st); setStatusDropdown(null); }}
+                          <div key={st} onClick={() => { onNodeStatusClick?.(node.id!, st); setStatusDropdown(null); }}
                             style={{
                               padding: '4px 12px', cursor: 'pointer', fontSize: 12,
                               background: node.status === st ? '#f0f6ff' : '#fff',
@@ -235,7 +235,7 @@ const DeliveryNodeTimeline: React.FC<Props> = ({
                         onKeyDown={e => { if (e.key === 'Enter') commitEdit(); if (e.key === 'Escape') setEditing(null); }}
                         style={{ width: 95, fontSize: 12, border: 'none', borderBottom: `1px solid ${COLORS.primary}`, outline: 'none', padding: 0, background: 'transparent', color: COLORS.primary }} />
                     ) : (
-                      <span onClick={() => !locked && node.status !== 'completed' && (setEditing({ id: node.id, field: 'plannedStartDate' }), setEditVal(node.plannedStartDate))}
+                      <span onClick={() => !locked && node.status !== 'completed' && (setEditing({ id: node.id!, field: 'plannedStartDate' }), setEditVal(node.plannedStartDate))}
                         style={{ cursor: !locked && node.status !== 'completed' ? 'pointer' : 'default', color: COLORS.primary }}>
                         {shortDate(node.plannedStartDate)}
                       </span>
@@ -248,7 +248,7 @@ const DeliveryNodeTimeline: React.FC<Props> = ({
                         onKeyDown={e => { if (e.key === 'Enter') commitEdit(); if (e.key === 'Escape') setEditing(null); }}
                         style={{ width: 95, fontSize: 12, border: 'none', borderBottom: `1px solid ${COLORS.primary}`, outline: 'none', padding: 0, background: 'transparent', color: COLORS.primary }} />
                     ) : (
-                      <span onClick={() => !locked && node.status !== 'completed' && (setEditing({ id: node.id, field: 'plannedEndDate' }), setEditVal(node.plannedEndDate))}
+                      <span onClick={() => !locked && node.status !== 'completed' && (setEditing({ id: node.id!, field: 'plannedEndDate' }), setEditVal(node.plannedEndDate))}
                         style={{ cursor: !locked && node.status !== 'completed' ? 'pointer' : 'default', color: COLORS.primary }}>
                         {shortDate(node.plannedEndDate)}
                       </span>
@@ -286,7 +286,7 @@ const DeliveryNodeTimeline: React.FC<Props> = ({
                       />
                     </div>
                   ) : (
-                    <span onClick={() => !locked && startEditComments(node.id, node.comments || '')}
+                    <span onClick={() => !locked && startEditComments(node.id!, node.comments || '')}
                       style={{ cursor: locked ? 'default' : 'pointer', display: 'block', minHeight: 20 }}>
                       {node.comments ? (
                         <Tag color={COMMENT_TAG_COLORS[Math.abs(node.nodeNo - 1) % COMMENT_TAG_COLORS.length]}

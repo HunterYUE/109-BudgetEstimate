@@ -575,7 +575,7 @@ export const ProjectGantt: React.FC<{
           );
         })}
         {/* 行分隔横线 */}
-        {data.map((proj, pi) => (
+        {data.map((_proj, pi) => (
           <line key={'hr-' + pi} x1={labelW} y1={73 +(pi + 1) * projH} x2={W} y2={73 +(pi + 1) * projH}
             stroke={COLORS.borderLight} strokeWidth={1.5} opacity={0.9} />
         ))}

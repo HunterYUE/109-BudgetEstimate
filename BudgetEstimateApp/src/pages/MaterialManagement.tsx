@@ -454,8 +454,7 @@ const MaterialManagement: React.FC = () => {
       title: '类型', dataIndex: 'category', width: 60, align: 'center' as const, onCell: onCellLock(60),
       filters: [{ text: '全部', value: '__all__' }, ...CATEGORIES.map(c => ({ text: CATEGORY_OPTIONS[c].label, value: c }))],
       filterSearch: true,
-      filterDropdownProps: { minOverlayWidthMatchTrigger: false },
-      onFilter: (value: string, record: Component) => value === '__all__' || record.category === value,
+      onFilter: (value: unknown, record: Component) => value === '__all__' || record.category === value,
       render: (v: ItemType) => {
         const cfg = CATEGORY_OPTIONS[v] || { label: v, color: COLORS.textLight };
         return <Tag color={cfg.color} style={{ borderRadius: 1, margin: 0, fontSize: 12 }}>{cfg.label}</Tag>;
@@ -464,8 +463,7 @@ const MaterialManagement: React.FC = () => {
     { title: '品牌', dataIndex: 'brand', width: 55, onCell: onCellLock(55),
       filters: [{ text: '全部', value: '__all__' }, ...brandFilterOptions],
       filterSearch: true,
-      filterDropdownProps: { minOverlayWidthMatchTrigger: false },
-      onFilter: (value: string, record: Component) => value === '__all__' || record.brand === value,
+      onFilter: (value: unknown, record: Component) => value === '__all__' || record.brand === value,
       render: (v: any) => <span style={{ fontSize: 12, color: '#555' }}>{v || '—'}</span>,
     },
     { title: '供应商', dataIndex: 'supplier', width: 80, onCell: onCellLock(80),
@@ -474,8 +472,7 @@ const MaterialManagement: React.FC = () => {
         return [{ text: '全部', value: '__all__' }, ...suppliers.map(s => ({ text: s, value: s }))];
       })(),
       filterSearch: true,
-      filterDropdownProps: { minOverlayWidthMatchTrigger: false },
-      onFilter: (value: string, record: Component) => value === '__all__' || record.supplier === value,
+      onFilter: (value: unknown, record: Component) => value === '__all__' || record.supplier === value,
       render: (v: string) => <span style={{ fontSize: 12, color: '#555' }}>{v || '—'}</span>,
     },
     { title: '型号', dataIndex: 'model', width: 90, onCell: onCellLock(90),
@@ -484,8 +481,7 @@ const MaterialManagement: React.FC = () => {
     { title: '单位', dataIndex: 'unit', width: 48, align: 'center' as const, onCell: onCellLock(48),
       filters: [{ text: '全部', value: '__all__' }, ...UNITS.map(u => ({ text: u, value: u }))],
       filterSearch: true,
-      filterDropdownProps: { minOverlayWidthMatchTrigger: false },
-      onFilter: (value: string, record: Component) => value === '__all__' || record.unit === value,
+      onFilter: (value: unknown, record: Component) => value === '__all__' || record.unit === value,
       render: (v: string) => <span style={{ fontSize: 12, color: '#555' }}>{v || '—'}</span>,
     },
     { title: '规格', dataIndex: 'specification', width: 220, onCell: onCellLock(220),
@@ -495,8 +491,7 @@ const MaterialManagement: React.FC = () => {
       title: '来源', dataIndex: 'sourcingType', width: 52, align: 'center' as const, onCell: onCellLock(52),
       filters: [{ text: '全部', value: '__all__' }, ...SOURCES.map(s => ({ text: s.label, value: s.value }))],
       filterSearch: true,
-      filterDropdownProps: { minOverlayWidthMatchTrigger: false },
-      onFilter: (value: string, record: Component) => value === '__all__' || record.sourcingType === value,
+      onFilter: (value: unknown, record: Component) => value === '__all__' || record.sourcingType === value,
       render: (v: SourcingType) => (
         <Tag color={v === 'PURCHASED' ? 'orange' : COLORS.success} style={{ borderRadius: 1, margin: 0, fontSize: 12 }}>
           {v === 'PURCHASED' ? '外购' : '自制'}
@@ -510,8 +505,7 @@ const MaterialManagement: React.FC = () => {
         ...tagTree.map(t => ({ text: t.name, value: t.id })),
       ],
       filterSearch: true,
-      filterDropdownProps: { minOverlayWidthMatchTrigger: false },
-      onFilter: (value: string, record: Component) => {
+      onFilter: (value: unknown, record: Component) => {
         if (value === '__all__') return true;
         const ids = collectDescendantIds(tagTree, value as string);
         return ids.some(id => (record.tags || []).includes(id));

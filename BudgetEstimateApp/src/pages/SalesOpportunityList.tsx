@@ -41,16 +41,16 @@ const statusColors: Record<string, string> = {
 
 };
 
-const getWinRateColumn = (tab: string, opp: SalesOpportunity | null, setOpp: (o: SalesOpportunity | null) => void, setOpen: (v: boolean) => void) => {
+const getWinRateColumn = (tab: string, _opp: SalesOpportunity | null, setOpp: (o: SalesOpportunity | null) => void, setOpen: (v: boolean) => void) => {
   if (tab === 'info') return [];
   return [{
     title: '赢率', dataIndex: 'winRate', width: 30, align: 'center' as const,
     filters: ['__all__', [0, 25], [26, 50], [51, 75], [76, 100]].map(r => ({
       text: r === '__all__' ? '全部' : `${r[0]}-${r[1]}%`,
-      value: r,
+      // ⚠️ 赢率用区间数组作筛选值，antd FilterValue 类型仅收 Key|boolean，故 cast
+      value: r as any,
     })),
     filterSearch: true,
-    filterDropdownProps: { minOverlayWidthMatchTrigger: false },
     onFilter: (value: unknown, record: SalesOpportunity) => {
       if (value === '__all__') return true;
       const range = value as number[];
@@ -656,8 +656,7 @@ const SalesOpportunityList: React.FC = () => {
         { text: '中标', value: '中标' },
       ],
       filterSearch: true,
-      filterDropdownProps: { minOverlayWidthMatchTrigger: false },
-      onFilter: (value: string, record: SalesOpportunity) => value === '__all__' || record.stage === value,
+      onFilter: (value: unknown, record: SalesOpportunity) => value === '__all__' || record.stage === value,
       render: (v: string, rec: SalesOpportunity) => {
         if (rec.terminated || rec.promoteLocked) return <Tag color={COLORS.textLight} style={{ cursor: 'default', margin: 0 }}>{v}</Tag>;
         // 信息/线索 tab 只读显示，通过操作列按钮晋级
@@ -709,8 +708,7 @@ const SalesOpportunityList: React.FC = () => {
         { text: '冻结', value: '冻结' },
       ],
       filterSearch: true,
-      filterDropdownProps: { minOverlayWidthMatchTrigger: false },
-      onFilter: (value: string, record: SalesOpportunity) => value === '__all__' || record.status === value,
+      onFilter: (value: unknown, record: SalesOpportunity) => value === '__all__' || record.status === value,
       render: (v: string, rec: SalesOpportunity) => {
         if (rec.terminated || rec.promoteLocked) return (
           <Tooltip title={buildStatusTooltip(rec, v, true)}>
@@ -746,13 +744,12 @@ const SalesOpportunityList: React.FC = () => {
     { title: '区域销售', dataIndex: 'salesman', width: 32,
       filters: [{ text: '全部', value: '__all__' }, ...Array.from(new Set(opportunities.map(o => o.salesman).filter(Boolean))).map(s => ({ text: s, value: s }))],
       filterSearch: true,
-      filterDropdownProps: { minOverlayWidthMatchTrigger: false },
-      onFilter: (value: string, record: SalesOpportunity) => value === '__all__' || record.salesman === value,
+      onFilter: (value: unknown, record: SalesOpportunity) => value === '__all__' || record.salesman === value,
       render: (v: string, rec: SalesOpportunity) =>
         <span style={{ fontSize: 13, color: rec.terminated ? COLORS.textLight : COLORS.textDark }}>{v || '—'}</span> },
     { title: '预计定标', dataIndex: 'expectedCloseDate', width: 67,
       filters: Array.from(new Set(opportunities.map(o => o.expectedCloseDate).filter(Boolean))).sort().map(s => ({ text: s, value: s })),
-      onFilter: (value: string, record: SalesOpportunity) => record.expectedCloseDate === value,
+      onFilter: (value: unknown, record: SalesOpportunity) => record.expectedCloseDate === value,
       render: (v: string, rec: SalesOpportunity) => (rec.terminated || rec.promoteLocked)
         ? <span style={{ fontSize: 13, color: COLORS.textLight }}>{v || '—'}</span>
         : (

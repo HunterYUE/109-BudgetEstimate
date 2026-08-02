@@ -175,7 +175,7 @@ const MaterialTagSelector: React.FC<Props> = ({ value, onChange }) => {
       open={open}
       onOpenChange={setOpen}
       placement="bottomLeft"
-      styles={{ root: { padding: 0 }, body: { padding: 0 } }}
+      styles={{ root: { padding: 0 }, content: { padding: 0 } }}
     >
       {triggerContent}
     </Popover>

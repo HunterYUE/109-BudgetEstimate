@@ -87,14 +87,14 @@ const DeliveryDetail: React.FC = () => {
         setActualCosts(data.actualCosts);
         initialCostsLoaded.current = true;
       }
-      if (data.nodes) data.nodes.forEach((n: DeliveryNode) => { const b = n.baselineEndDate || n.baselinePlannedEndDate; if (b) baselinesRef.current[n.id] = b; });
+      if (data.nodes) data.nodes.forEach((n: DeliveryNode) => { const b = n.baselineEndDate || n.baselinePlannedEndDate; if (b && n.id) baselinesRef.current[n.id] = b; });
       if (data.quotationId) {
         // 通过 api.get 加载报价数据（使用统一转换/缓存/错误处理）
         api.get<Record<string, unknown>>(`/quotations/${data.quotationId}`).then(quote => {
           const pid = quote.projectId;
           const qvn = quote.versionNo || '';
           if (!pid) return;
-          projectService.getFull(pid).then(proj => {
+          projectService.getFull(pid as string).then(proj => {
             const ver = (proj.versions || []).find((v: ProjectVersion) => v.versionNo === qvn) || proj.versions?.[0];
             const vid = ver?.id || '';
             const filtered = (proj.groups || []).filter((g: any) => (g as Record<string, unknown>).versionId === vid);
@@ -311,6 +311,7 @@ const DeliveryDetail: React.FC = () => {
     const beijingDate = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' });
 
     const updatedNodes = projectData.nodes.map(n => {
+      if (!n.id) return n;
       const change = pending.get(n.id);
       if (!change) return n;
       // 检查是否有实际变更（开始或结束）
@@ -1011,9 +1012,5 @@ const DeliveryDetail: React.FC = () => {
     </div>
   );
 };
-
-if (import.meta.hot) {
-  import.meta.hot.decline();
-}
 
 export default DeliveryDetail;

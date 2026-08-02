@@ -36,7 +36,7 @@ const CostCard: React.FC<{ label: string; value: number; unit?: string; highligh
   );
 
 /** 行内可点击百分比 */
-const PctBadge: React.FC<{ value: number; label: string; onClick: () => void }> =
+const PctBadge: React.FC<{ value: number; label: string; onClick?: () => void }> =
   ({ value, label, onClick }) => (
     <span onClick={onClick} title={onClick ? "点击切换" : undefined}
       style={{
