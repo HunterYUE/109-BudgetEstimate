@@ -6,7 +6,7 @@ import {
 } from '@ant-design/icons';
 import { parseFY } from '../utils/fiscalYear';
 import { formatBeijing } from '../utils/timeFormat';
-import { fmtK, compressNo } from '../utils/analysisShared';
+import { fmtK, compressNo, oppEffectiveEnd, isRealWin } from '../utils/analysisShared';
 import { COLORS } from '../styles/colors';
 import { opportunityService } from '../services/opportunityService';
 import { deliveryService } from '../services/deliveryService';
@@ -15,16 +15,6 @@ import { quotationService } from '../services/quotationService';
 import type { SalesOpportunity, DeliveryProject, Client, QuotationSummary } from '../types';
 
 const exAmount = (v: number, taxRate?: number) => Math.round(v / (1 + (taxRate ?? 0.13)));
-
-/** 机会的有效结束日期：过程中/冻结/未转交付标赢→至今；已转交付赢→wonAt；输→lostAt；缺失回退 updatedAt */
-const oppEffectiveEnd = (o: SalesOpportunity): Date => {
-  if (o.status === '过程中' || o.status === '冻结') return new Date();
-  // ⚠️ 赢单以「转交付（terminated）」为终极确认：已转交付→wonAt 完结；手动标赢未转交付→仍当作机会（持续活跃）
-  if (o.status === '赢' && o.terminated && o.wonAt) return new Date(o.wonAt);
-  if (o.status === '赢') return new Date();
-  if (o.status === '输' && o.lostAt) return new Date(o.lostAt);
-  return new Date(o.updatedAt);
-};
 
 /** 机会在指定时间点的阶段：取"进入阶段时间 ≤ 该时间"的最高阶段（议价→投标→机会→线索→信息） */
 const stageAsOf = (o: SalesOpportunity, date: Date): string => {
@@ -252,7 +242,7 @@ const Dashboard: React.FC = () => {
       });
       const monthWins = monthOpps.filter(o => {
         // ⚠️ 赢单以「转交付（terminated）」为终极确认：手动标赢未转交付不算赢单，仍当作机会
-        if (!o.terminated || !o.wonAt) return false;
+        if (!isRealWin(o) || !o.wonAt) return false;
         const wonD = new Date(o.wonAt);
         return wonD >= mStart && wonD <= mEnd;
       });
@@ -288,7 +278,7 @@ const Dashboard: React.FC = () => {
 
   const recentWins = useMemo(() => {
     const cutoff = new Date(); cutoff.setMonth(cutoff.getMonth() - 2);
-    return opportunities.filter(o => o.status === '赢' && o.terminated && o.wonAt && new Date(o.wonAt) >= cutoff).sort((a, b) => new Date(b.wonAt!).getTime() - new Date(a.wonAt!).getTime()).slice(0, 5);
+    return opportunities.filter(o => isRealWin(o) && o.wonAt && new Date(o.wonAt) >= cutoff).sort((a, b) => new Date(b.wonAt!).getTime() - new Date(a.wonAt!).getTime()).slice(0, 5);
   }, [opportunities]);
 
   const recentLosses = useMemo(() => {
@@ -303,7 +293,7 @@ const Dashboard: React.FC = () => {
     const monthLabels = [3,2,1].map(i => new Date(now.getFullYear(), now.getMonth() - i, 1).toLocaleString('en', {month:'short'}));
     const getPipelineStage = (o: typeof opportunities[0], monthEnd: Date) => {
       if (new Date(o.createdAt) > monthEnd) return null;
-      if (o.status === '赢' && o.terminated && o.wonAt && new Date(o.wonAt) <= monthEnd) return null;
+      if (isRealWin(o) && o.wonAt && new Date(o.wonAt) <= monthEnd) return null;
       if (o.status === '输' && o.lostAt && new Date(o.lostAt) <= monthEnd) return null;
       // ⚠️ 用阶段推进时间还原该月月底的历史阶段（与销售分析漏斗 stageAsOf 同口径），而非当前阶段
       return stageAsOf(o, monthEnd);

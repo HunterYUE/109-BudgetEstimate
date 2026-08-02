@@ -206,10 +206,8 @@ router.put('/:id', async (req, res, next) => {
     if (updateCols.length === 0) throw new AppError(400, '没有要更新的字段');
     let setClause = updateCols.map((f, i) => `"${f}" = $${i + 1}`).join(', ');
     const rawValues = updateCols.map(f => body[f]);
-    // 状态变"赢"时写入 won_at（首次写入后不覆盖）
-    if (body.status === '赢') {
-      setClause += `, won_at = COALESCE(won_at, now())`;
-    }
+    // ⚠️ won_at 仅在转交付（terminated）时采集（69d3de6 语义，勿回归）：
+    // 手动标赢未转交付不算赢单，won_at 保持 NULL；转交付时由下方 terminated 块 COALESCE 写入
     // 状态变"输"时写入 lost_at（首次写入后不覆盖）
     if (body.status === '输') {
       setClause += `, lost_at = COALESCE(lost_at, now())`;
