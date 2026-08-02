@@ -257,8 +257,10 @@ const Dashboard: React.FC = () => {
       const activeDel = deliveries.filter(p => {
         const created = new Date(p.createdAt);
         if (created > mEnd) return false;
-        if (p.status === '已完成') {
-          const node15 = (p.nodes||[]).find(n => n.nodeNo === 15);
+        // ⚠️ 完成判定用 node15（completed/delayed，与「上月交付」口径一致），不依赖手工 status
+        const node15 = (p.nodes||[]).find(n => n.nodeNo === 15);
+        const isDone = !!node15 && (node15.status === 'completed' || node15.status === 'delayed');
+        if (isDone) {
           const doneDate = node15?.actualDate ? new Date(node15.actualDate) : new Date(p.updatedAt);
           if (doneDate < mStart) return false;
         }
@@ -510,9 +512,12 @@ const Dashboard: React.FC = () => {
     return sorted.map(([label, value], i) => ({ label, value, color: colors[i] || COLORS.chartGray }));
   }, [clients, opportunities, currentFy]);
 
-  // −− 当前交付中快照（未完成的项目，不过滤月份）−−
+  // −− 当前交付中快照（node15 未完成/未延期 = 尚未交付；与「上月交付」node15 口径互补，不依赖手工 status）−−
   const currentActiveDel = useMemo(() => {
-    const active = deliveries.filter(p => p.status !== '已完成');
+    const active = deliveries.filter(p => {
+      const n15 = (p.nodes||[]).find(n => n.nodeNo === 15);
+      return !n15 || (n15.status !== 'completed' && n15.status !== 'delayed');
+    });
     return {
       amt: active.reduce((s, p) => s + exTaxOfDelivery(p, quotations), 0),
       cnt: active.length,
