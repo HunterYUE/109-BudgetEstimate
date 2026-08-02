@@ -6,7 +6,7 @@ import type { DeliveryProject } from '../types';
 import { COLORS } from '../styles/colors';
 import { NODE_DISPLAY_NAMES } from '../utils/constants';
 import { parseFY, FYSelector } from '../utils/fiscalYear';
-import { fmtK, compressNo, monthEndOf, exAmount } from '../utils/analysisShared';
+import { fmtK, compressNo, monthEndOf, exAmount, getNode15, isNode15Done, getNodeBaseline } from '../utils/analysisShared';
 import { VerticalBarChart, ProfitChart, ProjectGantt, BubbleChart } from '../components/charts/DeliveryCharts';
 import type { ProfitItem, BubbleDataItem } from '../components/charts/DeliveryCharts';
 
@@ -81,7 +81,7 @@ const chartLabel = (salesNo: string | undefined): string => {
 
 /** 计算项目延期天数（以第15节点基线为准，与交付管理页实施计划一致），负值表示提前 */
 const calcProjDelay = (p: DeliveryProject): number => {
-  const n15 = p.nodes.find(n => n.nodeNo === 15);
+  const n15 = getNode15(p.nodes);
   if (!n15) return 0;
   const refDate = n15.baselineEndDate || n15.baselinePlannedEndDate || n15.plannedEndDate;
   if (!refDate) return 0;
@@ -91,7 +91,7 @@ const calcProjDelay = (p: DeliveryProject): number => {
 
 /** 判断项目节点15是否已完成且在财年范围内 */
 const isNode15CompletedInFy = (p: DeliveryProject, fyRange: ReturnType<typeof parseFY>): boolean => {
-  const n15 = p.nodes.find(n => n.nodeNo === 15);
+  const n15 = getNode15(p.nodes);
   if (!n15 || n15.status !== 'completed') return false;
   const d = new Date(n15.actualDate || p.updatedAt);
   return d >= fyRange.start && d <= fyRange.end;
@@ -146,7 +146,7 @@ const DeliveryAnalysis: React.FC = () => {
   const fyFiltered = useMemo(() => {
     return deliveryProjects.filter(p => {
       const created = new Date(p.createdAt);
-      const n15 = p.nodes.find(n => n.nodeNo === 15);
+      const n15 = getNode15(p.nodes);
       const n15DoneDate = (n15 && n15.status === 'completed' && n15.actualDate)
         ? new Date(n15.actualDate)
         : null;
@@ -161,7 +161,7 @@ const DeliveryAnalysis: React.FC = () => {
   const projectDelayDays = useMemo(() => {
     return fyFiltered.map(p => {
       const delay = calcProjDelay(p);
-      const n15completed = p.nodes.find(n => n.nodeNo === 15)?.status === 'completed';
+      const n15completed = getNode15(p.nodes)?.status === 'completed';
       return {
         name: chartLabel(p.salesNo),
         value: delay,
@@ -197,7 +197,7 @@ const DeliveryAnalysis: React.FC = () => {
         let isDelayed = n.status === 'delayed';
         if (!isDelayed && n.status !== 'completed') {
           // 延期判定以基线为准（与规则一致）：基线已过且未完成 → 延期
-          const refEnd = n.baselineEndDate || n.baselinePlannedEndDate || n.plannedEndDate;
+          const refEnd = getNodeBaseline(n);
           if (refEnd && new Date(refEnd) < now) isDelayed = true;
         }
         if (!isDelayed && n.status === 'completed' && n.actualDate) {
@@ -295,7 +295,7 @@ const DeliveryAnalysis: React.FC = () => {
         totalCount++;
         const ex = deliveryExTax(p);
         tAmt += ex;
-        const n15 = p.nodes.find(n => n.nodeNo === 15);
+        const n15 = getNode15(p.nodes);
         const n15done = n15?.status === 'completed' && !!n15.actualDate
           && new Date(n15.actualDate) >= fyRange.start && new Date(n15.actualDate) <= mEnd;
         if (n15done) { completed++; cAmt += ex; } else { active++; aAmt += ex; }
@@ -310,7 +310,7 @@ const DeliveryAnalysis: React.FC = () => {
           if (n.status !== 'completed' || !n.actualDate) continue;
           const actual = new Date(n.actualDate);
           if (actual < fyRange.start || actual > mEnd) continue;
-          const refEnd = n.baselineEndDate || n.baselinePlannedEndDate || n.plannedEndDate;
+          const refEnd = getNodeBaseline(n);
           if (!refEnd) continue; // 无基线不判定
           const refD = new Date(refEnd);
           tN++;
@@ -377,7 +377,7 @@ const DeliveryAnalysis: React.FC = () => {
     });
     const todayPos = Math.round((now.getTime() - tlStart.getTime()) / DAY_MS);
     const projectRows = fyFiltered.filter(p => {
-      const n15 = p.nodes.find(n => n.nodeNo === 15);
+      const n15 = getNode15(p.nodes);
       if (n15 && n15.status === 'completed') {
         const doneDate = n15.actualDate ? new Date(n15.actualDate) : new Date(p.updatedAt);
         // 已完成项目仅在完成日期在时间线范围内时显示
@@ -416,7 +416,7 @@ const DeliveryAnalysis: React.FC = () => {
       return {
         name: compressNo(p.salesNo),
         slots,
-        doneCount: p.nodes.filter(n => n.status === 'completed' || n.status === 'delayed').length,
+        doneCount: p.nodes.filter(n => isNode15Done(n)).length,
         totalCount: p.nodes.length,
         status: p.status,
       };
@@ -444,7 +444,7 @@ const DeliveryAnalysis: React.FC = () => {
     for (const p of fyFiltered) {
       const node1 = p.nodes.find(n => n.nodeNo === 1);
       if (!node1) continue;
-      const node15 = p.nodes.find(n => n.nodeNo === 15);
+      const node15 = getNode15(p.nodes);
       // 实际开始 = 节点1计划开始（无实际开始日期字段时的最佳近似）
       const start = new Date(node1.plannedStartDate);
       // 实际结束 = 节点15实际完成（如有），否则使用最近更新时间或现在
@@ -540,7 +540,7 @@ const DeliveryAnalysis: React.FC = () => {
               height={1050} />
           </div>
       </div>
-      );
+    );
 };
 
 export default DeliveryAnalysis;

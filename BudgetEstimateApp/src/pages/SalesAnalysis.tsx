@@ -8,7 +8,7 @@ import { quotationService } from '../services/quotationService';
 import { deliveryService } from '../services/deliveryService';
 import { COLORS } from '../styles/colors';
 import { parseFY, FYSelector } from '../utils/fiscalYear';
-import { fmtK, oppEffectiveEnd, isRealWin, monthEndOf, exAmount, stageAsOf } from '../utils/analysisShared';
+import { fmtK, oppEffectiveEnd, isRealWin, monthEndOf, exAmount, stageAsOf, getNode15, isNode15Done } from '../utils/analysisShared';
 import { settingsService, type UserSettings } from '../services/settingsService';
 
 /* ============================================================
@@ -261,9 +261,9 @@ const SalesAnalysis: React.FC = () => {
     const MONTH_LABELS = ['Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar','Apr','May','Jun'];
     const byMonth = new Map<number, { amount: number; profit: number }>();
     for (const p of deliveryProjects) {
-      const node15 = (p.nodes||[]).find(n => n.nodeNo === 15);
-      if (!node15 || (node15.status !== 'completed' && node15.status !== 'delayed')) continue;
-      const completionDate = node15.actualDate || p.updatedAt;
+      const node15 = getNode15(p.nodes);
+      if (!isNode15Done(node15)) continue;
+      const completionDate = node15!.actualDate || p.updatedAt;
       const d = new Date(completionDate);
       if (d < fyRange.start || d > fyRange.end) continue;
       const fyMonth = d.getMonth() < 6 ? d.getMonth() + 6 : d.getMonth() - 6;
@@ -374,9 +374,9 @@ const SalesAnalysis: React.FC = () => {
     const fyRange = parseFY(fySelect);
     // 与「月度销售」同口径：节点15完成且完成日 ∈ 财年（销售金额只归集到完成月/财年，不可跨年重复）
     const delivered = (deliveryProjects||[]).filter(p => {
-      const node15 = (p.nodes||[]).find(n => n.nodeNo === 15);
-      if (!node15 || (node15.status !== 'completed' && node15.status !== 'delayed')) return false;
-      const completionDate = new Date(node15.actualDate || p.updatedAt);
+      const node15 = getNode15(p.nodes);
+      if (!isNode15Done(node15)) return false;
+      const completionDate = new Date(node15!.actualDate || p.updatedAt);
       if (completionDate < fyRange.start || completionDate > fyRange.end) return false;
       if (p.costStatus !== 'approved' || p.totalActualCost == null) return false;
       return true;
@@ -593,7 +593,7 @@ const SalesAnalysis: React.FC = () => {
       s.orderAmount += exTax;
       // 订单利润：最新版本报价编制表概算利润（含税 gp3_amount）转未税
       const oppProfit = oppQuoteInfo.get(p.opportunityId);
-      s.profitTotal += oppProfit && oppProfit.gp3Amt > 0 ? Math.round(oppProfit.gp3Amt / (1 + oppProfit.taxRate)) : 0;
+      s.profitTotal += oppProfit && oppProfit.gp3Amt > 0 ? exAmount(oppProfit.gp3Amt, oppProfit.taxRate) : 0;
     }
     // 管道潜力：与「加权管道」同源（财年活跃期 + 机会锚点 + 已转交付赢单不计入），原始金额（不含赢率加权）
     for (const o of fyFiltered) {
@@ -604,7 +604,7 @@ const SalesAnalysis: React.FC = () => {
       if (!s) { s = newEntry(o.salesman); map.set(o.salesman, s); }
       s.pipelinePotential += exAmt(o);
     }
-        return [...map.values()].map(s => ({
+    return [...map.values()].map(s => ({
       ...s,
       conversionEff: s.totalCount > 0 ? s.wins / s.totalCount * 100 : 0,
     }));
