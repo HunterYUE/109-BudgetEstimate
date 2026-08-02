@@ -280,7 +280,8 @@ const DeliveryAnalysis: React.FC = () => {
   const monthlyCumKpi = useMemo((): MonthlyCum[] => {
     const now = new Date();
     /** 某月（JS 月索引）的月底 */
-    const monthEnd = (y: number, m: number) => new Date(y, m + 1, 0);
+    // ⚠️ 月末取最后一天 23:59:59.999（而非 00:00），否则漏掉最后一天数据
+    const monthEnd = (y: number, m: number) => new Date(y, m + 1, 0, 23, 59, 59, 999);
     /** 相对 now 的最近完整月月底（k=1 最近，k=2/3 依次更早） */
     const recentMonthEnd = (k: number) => {
       const cur = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -369,7 +370,8 @@ const DeliveryAnalysis: React.FC = () => {
   const ganttData = useMemo(() => {
     const now = new Date();
     const tlStart = new Date(fyRange.start.getFullYear(), fyRange.start.getMonth(), 1);
-    const tlEnd = new Date(fyRange.end.getFullYear(), fyRange.end.getMonth() + 1, 0);
+    // ⚠️ 时间线末尾取 6月30日 23:59:59.999（完整覆盖财年最后一天）
+    const tlEnd = new Date(fyRange.end.getFullYear(), fyRange.end.getMonth() + 1, 0, 23, 59, 59, 999);
     const DAY_MS = 1000 * 60 * 60 * 24;
     const totalDays = Math.round((tlEnd.getTime() - tlStart.getTime()) / DAY_MS);
     const months = Array.from({ length: 12 }, (_, i) => {

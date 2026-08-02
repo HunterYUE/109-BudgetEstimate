@@ -451,7 +451,8 @@ const SalesAnalysis: React.FC = () => {
   const overviewRefMonths = useMemo<(Date | null)[]>(() => {
     const now = new Date();
     const fyRange = parseFY(fySelect);
-    const monthEndOf = (y: number, m: number) => new Date(y, m + 1, 0);
+    // ⚠️ 月末取最后一天 23:59:59.999（而非 00:00），否则漏掉最后一天数据
+    const monthEndOf = (y: number, m: number) => new Date(y, m + 1, 0, 23, 59, 59, 999);
     if (now > fyRange.end) {
       const y2 = fyRange.end.getFullYear();
       return [monthEndOf(y2, 5), monthEndOf(y2, 4), monthEndOf(y2, 3)]; // 6月/5月/4月
