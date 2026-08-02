@@ -16,6 +16,25 @@ import type { SalesOpportunity, DeliveryProject, Client, QuotationSummary } from
 
 const exAmount = (v: number, taxRate?: number) => Math.round(v / (1 + (taxRate ?? 0.13)));
 
+/** 机会的有效结束日期：过程中/冻结→至今（持续活跃）；赢→wonAt；输→lostAt；缺失回退 updatedAt */
+const oppEffectiveEnd = (o: SalesOpportunity): Date => {
+  if (o.status === '过程中' || o.status === '冻结') return new Date();
+  if (o.status === '赢' && o.wonAt) return new Date(o.wonAt);
+  if (o.status === '输' && o.lostAt) return new Date(o.lostAt);
+  return new Date(o.updatedAt);
+};
+
+/** 机会在指定时间点的阶段：取"进入阶段时间 ≤ 该时间"的最高阶段（议价→投标→机会→线索→信息） */
+const stageAsOf = (o: SalesOpportunity, date: Date): string => {
+  const t = (v?: string) => (v ? new Date(v) : null);
+  const neg = t(o.negotiationAt), bid = t(o.bidAt), opp = t(o.opportunityAt), lead = t(o.leadAt);
+  if (neg && neg <= date) return '议价';
+  if (bid && bid <= date) return '投标';
+  if (opp && opp <= date) return '机会';
+  if (lead && lead <= date) return '线索';
+  return '信息';
+};
+
 /* ── KPI 卡片（与销售分析完全一致） ── */
 const KpiCard: React.FC<{
   label: string; value: string; color: string; icon: React.ReactNode;
@@ -199,10 +218,11 @@ const Dashboard: React.FC = () => {
 
   useEffect(() => {
     Promise.all([
-      opportunityService.list(),
-      deliveryService.list(),
-      clientService.list(),
-      quotationService.list(),
+      // ⚠️ 全部传 limit:'1000'，避免后端默认 limit=100 导致统计静默截断（对齐 DeliveryAnalysis）
+      opportunityService.list({ limit: '1000' }),
+      deliveryService.list({ limit: '1000' }),
+      clientService.list({ limit: '1000' }),
+      quotationService.list({ limit: '1000' }),
     ]).then(([opps, dels, clis, quots]) => {
       setOpportunities(opps);
       setDeliveries(dels);
@@ -221,10 +241,10 @@ const Dashboard: React.FC = () => {
       const mEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0);
       const monthOpps = opportunities.filter(o => {
         const created = new Date(o.createdAt);
-        const effEnd = (o.status === '过程中' || o.status === '冻结') ? new Date() : new Date(o.updatedAt);
-        return created <= mEnd && effEnd >= mStart;
+        // ⚠️ 有效结束用 oppEffectiveEnd（赢→wonAt/输→lostAt），与销售分析/财年规则一致，不用 updatedAt
+        return created <= mEnd && oppEffectiveEnd(o) >= mStart;
       });
-      const monthWins = monthOpps.filter(o => o.status === '赢' && new Date(o.wonAt) >= mStart && new Date(o.wonAt) <= mEnd);
+      const monthWins = monthOpps.filter(o => o.status === '赢' && o.wonAt && new Date(o.wonAt) >= mStart && new Date(o.wonAt) <= mEnd);
       const monthNew = opportunities.filter(o => new Date(o.createdAt) >= mStart && new Date(o.createdAt) <= mEnd);
       const activeDel = deliveries.filter(p => {
         const created = new Date(p.createdAt);
@@ -257,12 +277,12 @@ const Dashboard: React.FC = () => {
 
   const recentWins = useMemo(() => {
     const cutoff = new Date(); cutoff.setMonth(cutoff.getMonth() - 2);
-    return opportunities.filter(o => o.status === '赢' && o.wonAt && new Date(o.wonAt) >= cutoff).sort((a, b) => new Date(b.wonAt).getTime() - new Date(a.wonAt).getTime()).slice(0, 5);
+    return opportunities.filter(o => o.status === '赢' && o.wonAt && new Date(o.wonAt) >= cutoff).sort((a, b) => new Date(b.wonAt!).getTime() - new Date(a.wonAt!).getTime()).slice(0, 5);
   }, [opportunities]);
 
   const recentLosses = useMemo(() => {
     const cutoff = new Date(); cutoff.setMonth(cutoff.getMonth() - 2);
-    return opportunities.filter(o => o.status === '输' && o.lostAt && new Date(o.lostAt) >= cutoff).sort((a, b) => new Date(b.lostAt).getTime() - new Date(a.lostAt).getTime()).slice(0, 5);
+    return opportunities.filter(o => o.status === '输' && o.lostAt && new Date(o.lostAt) >= cutoff).sort((a, b) => new Date(b.lostAt!).getTime() - new Date(a.lostAt!).getTime()).slice(0, 5);
   }, [opportunities]);
 
 
@@ -274,7 +294,8 @@ const Dashboard: React.FC = () => {
       if (new Date(o.createdAt) > monthEnd) return null;
       if (o.status === '赢' && o.wonAt && new Date(o.wonAt) <= monthEnd) return null;
       if (o.status === '输' && o.lostAt && new Date(o.lostAt) <= monthEnd) return null;
-      return o.stage;
+      // ⚠️ 用阶段推进时间还原该月月底的历史阶段（与销售分析漏斗 stageAsOf 同口径），而非当前阶段
+      return stageAsOf(o, monthEnd);
     };
     const result: { label: string; value: number; color: string }[] = [];
     for (const stage of stages) {
@@ -443,17 +464,7 @@ const Dashboard: React.FC = () => {
     const fyRange = parseFY(currentFy);
     const fyOpps = opportunities.filter(o => {
       const created = new Date(o.createdAt);
-      let effectiveEnd: Date;
-      if (o.status === '过程中' || o.status === '冻结') {
-        effectiveEnd = new Date();
-      } else if (o.status === '赢' && o.wonAt) {
-        effectiveEnd = new Date(o.wonAt);
-      } else if (o.status === '输' && o.lostAt) {
-        effectiveEnd = new Date(o.lostAt);
-      } else {
-        effectiveEnd = new Date(o.updatedAt);
-      }
-      return created >= fyRange.start && created <= fyRange.end && effectiveEnd >= fyRange.start;
+      return created >= fyRange.start && created <= fyRange.end && oppEffectiveEnd(o) >= fyRange.start;
     });
     const monthLabels = ['Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar','Apr','May','Jun'];
     return Array.from({ length: 12 }, (_, i) => {
@@ -476,17 +487,7 @@ const Dashboard: React.FC = () => {
     const counts: Record<string, number> = {};
     opportunities.forEach(o => {
       const created = new Date(o.createdAt);
-      let effectiveEnd: Date;
-      if (o.status === '过程中' || o.status === '冻结') {
-        effectiveEnd = new Date();
-      } else if (o.status === '赢' && o.wonAt) {
-        effectiveEnd = new Date(o.wonAt);
-      } else if (o.status === '输' && o.lostAt) {
-        effectiveEnd = new Date(o.lostAt);
-      } else {
-        effectiveEnd = new Date(o.updatedAt);
-      }
-      if (created <= fyRange.end && effectiveEnd >= fyRange.start) {
+      if (created <= fyRange.end && oppEffectiveEnd(o) >= fyRange.start) {
         const info = clientMap.get(o.clientName);
         const industry = info?.industry || '其他';
         counts[industry] = (counts[industry] || 0) + 1;
