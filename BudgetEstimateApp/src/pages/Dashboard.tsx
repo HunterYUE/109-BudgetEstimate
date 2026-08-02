@@ -16,6 +16,12 @@ import type { SalesOpportunity, DeliveryProject, Client, QuotationSummary } from
 
 const exAmount = (v: number, taxRate?: number) => Math.round(v / (1 + (taxRate ?? 0.13)));
 
+/** 交付合同额未税：取机会关联报价的实际税率（与销售分析 exTaxOf 同口径），无报价回退 13% */
+const exTaxOfDelivery = (p: DeliveryProject, quotations: QuotationSummary[]): number => {
+  const q = quotations.find(q => q.id === p.quotationId);
+  return exAmount(p.contractAmount, q?.taxRate);
+};
+
 /** 机会在指定时间点的阶段：取"进入阶段时间 ≤ 该时间"的最高阶段（议价→投标→机会→线索→信息） */
 const stageAsOf = (o: SalesOpportunity, date: Date): string => {
   const t = (v?: string) => (v ? new Date(v) : null);
@@ -269,13 +275,13 @@ const Dashboard: React.FC = () => {
         amt: monthOpps.reduce((s, o) => s + exAmount(o.amount, o.taxRate), 0), cnt: monthOpps.length,
         winAmt: monthWins.reduce((s, o) => s + exAmount(o.amount, o.taxRate), 0), winCnt,
         newAmt: monthNew.reduce((s, o) => s + exAmount(o.amount, o.taxRate), 0), newCnt: monthNew.length,
-        delAmt: activeDel.reduce((s, p) => s + exAmount(p.contractAmount), 0), delCnt: activeDel.length,
-        deliveredAmt: monthDelivered.reduce((s, p) => s + exAmount(p.contractAmount), 0),
+        delAmt: activeDel.reduce((s, p) => s + exTaxOfDelivery(p, quotations), 0), delCnt: activeDel.length,
+        deliveredAmt: monthDelivered.reduce((s, p) => s + exTaxOfDelivery(p, quotations), 0),
         deliveredCnt: monthDelivered.length,
       };
     };
     return [calcMonth(1), calcMonth(2), calcMonth(3)];
-  }, [opportunities, deliveries]);
+  }, [opportunities, deliveries, quotations]);
 
   const recentWins = useMemo(() => {
     const cutoff = new Date(); cutoff.setMonth(cutoff.getMonth() - 2);
@@ -432,9 +438,9 @@ const Dashboard: React.FC = () => {
     });
     const getEstProfit = (p: typeof deliveries[0]) => {
       const q = quotations.find(q => q.id === p.quotationId);
-      return q ? Math.round(exAmount(p.contractAmount) * q.profitRate / 100) : 0;
+      return q ? Math.round(exTaxOfDelivery(p, quotations) * q.profitRate / 100) : 0;
     };
-    const getActProfit = (p: typeof deliveries[0]) => p.totalActualCost ? exAmount(p.contractAmount) - p.totalActualCost : 0;
+    const getActProfit = (p: typeof deliveries[0]) => p.totalActualCost ? exTaxOfDelivery(p, quotations) - p.totalActualCost : 0;
     const profitOverview: { label: string; value: number; color: string; displayValue?: string }[] = [];
     for (const prefix of ['概算', '实际'] as const) {
       for (let mi = 3; mi >= 1; mi--) {
@@ -446,10 +452,10 @@ const Dashboard: React.FC = () => {
           const status = getStatusInMonth(p, monthEnd);
           if (prefix === '概算' && status === '进行中') {
             totalProfit += getEstProfit(p);
-            totalAmt += exAmount(p.contractAmount);
+            totalAmt += exTaxOfDelivery(p, quotations);
           } else if (prefix === '实际' && status === '已完成' && changedThisMonth(p, monthEnd)) {
             totalProfit += getActProfit(p);
-            totalAmt += exAmount(p.contractAmount);
+            totalAmt += exTaxOfDelivery(p, quotations);
           }
         });
         profitOverview.push({
@@ -508,10 +514,10 @@ const Dashboard: React.FC = () => {
   const currentActiveDel = useMemo(() => {
     const active = deliveries.filter(p => p.status !== '已完成');
     return {
-      amt: active.reduce((s, p) => s + exAmount(p.contractAmount), 0),
+      amt: active.reduce((s, p) => s + exTaxOfDelivery(p, quotations), 0),
       cnt: active.length,
     };
-  }, [deliveries]);
+  }, [deliveries, quotations]);
 
   return (
     <div className="dashboard-container">
@@ -711,7 +717,7 @@ const Dashboard: React.FC = () => {
                       <span>{formatBeijing(node15?.actualDate || p.updatedAt)}</span>
                     </div>
                   </div>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: COLORS.success, whiteSpace: 'nowrap' }}>¥{fmtK(exAmount(p.contractAmount))}</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: COLORS.success, whiteSpace: 'nowrap' }}>¥{fmtK(exTaxOfDelivery(p, quotations))}</span>
                   <RightOutlined style={{ color: COLORS.textLight, fontSize: 12 }} />
                 </div>
               );})}
