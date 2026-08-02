@@ -512,18 +512,7 @@ const Dashboard: React.FC = () => {
     return sorted.map(([label, value], i) => ({ label, value, color: colors[i] || COLORS.chartGray }));
   }, [clients, opportunities, currentFy]);
 
-  // −− 当前交付中快照（node15 未完成/未延期 = 尚未交付；与「上月交付」node15 口径互补，不依赖手工 status）−−
-  const currentActiveDel = useMemo(() => {
-    const active = deliveries.filter(p => {
-      const n15 = (p.nodes||[]).find(n => n.nodeNo === 15);
-      return !n15 || (n15.status !== 'completed' && n15.status !== 'delayed');
-    });
-    return {
-      amt: active.reduce((s, p) => s + exTaxOfDelivery(p, quotations), 0),
-      cnt: active.length,
-    };
-  }, [deliveries, quotations]);
-
+  // 交付中 = monthlyKpi[0]/[1]/[2]（与其他卡片同口径：主值=上一个完整月，副值=前两月/前三月）
   return (
     <div className="dashboard-container">
       {/* ── 标题 ── */}
@@ -553,10 +542,10 @@ const Dashboard: React.FC = () => {
             { value: fmtMonthly(monthlyKpi[1].deliveredAmt, monthlyKpi[1].deliveredCnt), color: COLORS.success },
             { value: fmtMonthly(monthlyKpi[2].deliveredAmt, monthlyKpi[2].deliveredCnt), color: COLORS.success },
           ]} />
-        <KpiCard label="交付中" value={fmtMonthly(currentActiveDel.amt, currentActiveDel.cnt)} color={COLORS.purple} icon="🚧"
+        <KpiCard label="交付中" value={fmtMonthly(monthlyKpi[0].delAmt, monthlyKpi[0].delCnt)} color={COLORS.purple} icon="🚧"
           prevValues={[
-            { value: fmtMonthly(monthlyKpi[0].delAmt, monthlyKpi[0].delCnt), color: COLORS.purple },
             { value: fmtMonthly(monthlyKpi[1].delAmt, monthlyKpi[1].delCnt), color: COLORS.purple },
+            { value: fmtMonthly(monthlyKpi[2].delAmt, monthlyKpi[2].delCnt), color: COLORS.purple },
           ]} />
       </div>
 
