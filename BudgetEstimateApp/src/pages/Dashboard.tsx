@@ -35,6 +35,10 @@ const stageAsOf = (o: SalesOpportunity, date: Date): string => {
   return '信息';
 };
 
+/** 月度 KPI 卡片展示：数量为 0 时显示 —（避免 "0K / 0" 误导） */
+const fmtMonthly = (amt: number, cnt: number): string =>
+  cnt === 0 ? '—' : `${fmtK(amt)} / ${cnt}`;
+
 /* ── KPI 卡片（与销售分析完全一致） ── */
 const KpiCard: React.FC<{
   label: string; value: string; color: string; icon: React.ReactNode;
@@ -244,7 +248,11 @@ const Dashboard: React.FC = () => {
         // ⚠️ 有效结束用 oppEffectiveEnd（赢→wonAt/输→lostAt），与销售分析/财年规则一致，不用 updatedAt
         return created <= mEnd && oppEffectiveEnd(o) >= mStart;
       });
-      const monthWins = monthOpps.filter(o => o.status === '赢' && o.wonAt && new Date(o.wonAt) >= mStart && new Date(o.wonAt) <= mEnd);
+      const monthWins = monthOpps.filter(o => {
+        if (o.status !== '赢' || !o.wonAt) return false;
+        const wonD = new Date(o.wonAt);
+        return wonD >= mStart && wonD <= mEnd;
+      });
       const monthNew = opportunities.filter(o => new Date(o.createdAt) >= mStart && new Date(o.createdAt) <= mEnd);
       const activeDel = deliveries.filter(p => {
         const created = new Date(p.createdAt);
@@ -516,30 +524,30 @@ const Dashboard: React.FC = () => {
 
       {/* ── KPI 卡片行（等宽铺满，与销售分析一致） ── */}
       <div style={{ display: 'flex', gap: 16, marginBottom: 10, flexWrap: 'wrap' }}>
-        <KpiCard label="上月机会" value={`${fmtK(monthlyKpi[0].amt)} / ${monthlyKpi[0].cnt}`} color={COLORS.primary} icon="📊"
+        <KpiCard label="上月机会" value={fmtMonthly(monthlyKpi[0].amt, monthlyKpi[0].cnt)} color={COLORS.primary} icon="📊"
           prevValues={[
-            { value: `${fmtK(monthlyKpi[1].amt)} / ${monthlyKpi[1].cnt}`, color: COLORS.primary },
-            { value: `${fmtK(monthlyKpi[2].amt)} / ${monthlyKpi[2].cnt}`, color: COLORS.primary },
+            { value: fmtMonthly(monthlyKpi[1].amt, monthlyKpi[1].cnt), color: COLORS.primary },
+            { value: fmtMonthly(monthlyKpi[2].amt, monthlyKpi[2].cnt), color: COLORS.primary },
           ]} />
-        <KpiCard label="上月赢单" value={`${fmtK(monthlyKpi[0].winAmt)} / ${monthlyKpi[0].winCnt}`} color={COLORS.success} icon="🏆"
+        <KpiCard label="上月赢单" value={fmtMonthly(monthlyKpi[0].winAmt, monthlyKpi[0].winCnt)} color={COLORS.success} icon="🏆"
           prevValues={[
-            { value: `${fmtK(monthlyKpi[1].winAmt)} / ${monthlyKpi[1].winCnt}`, color: COLORS.success },
-            { value: `${fmtK(monthlyKpi[2].winAmt)} / ${monthlyKpi[2].winCnt}`, color: COLORS.success },
+            { value: fmtMonthly(monthlyKpi[1].winAmt, monthlyKpi[1].winCnt), color: COLORS.success },
+            { value: fmtMonthly(monthlyKpi[2].winAmt, monthlyKpi[2].winCnt), color: COLORS.success },
           ]} />
-        <KpiCard label="上月新增" value={`${fmtK(monthlyKpi[0].newAmt)} / ${monthlyKpi[0].newCnt}`} color={COLORS.amber} icon="✨"
+        <KpiCard label="上月新增" value={fmtMonthly(monthlyKpi[0].newAmt, monthlyKpi[0].newCnt)} color={COLORS.amber} icon="✨"
           prevValues={[
-            { value: `${fmtK(monthlyKpi[1].newAmt)} / ${monthlyKpi[1].newCnt}`, color: COLORS.amber },
-            { value: `${fmtK(monthlyKpi[2].newAmt)} / ${monthlyKpi[2].newCnt}`, color: COLORS.amber },
+            { value: fmtMonthly(monthlyKpi[1].newAmt, monthlyKpi[1].newCnt), color: COLORS.amber },
+            { value: fmtMonthly(monthlyKpi[2].newAmt, monthlyKpi[2].newCnt), color: COLORS.amber },
           ]} />
-        <KpiCard label="上月交付" value={`${fmtK(monthlyKpi[0].deliveredAmt)} / ${monthlyKpi[0].deliveredCnt}`} color={COLORS.success} icon="🚚"
+        <KpiCard label="上月交付" value={fmtMonthly(monthlyKpi[0].deliveredAmt, monthlyKpi[0].deliveredCnt)} color={COLORS.success} icon="🚚"
           prevValues={[
-            { value: `${fmtK(monthlyKpi[1].deliveredAmt)} / ${monthlyKpi[1].deliveredCnt}`, color: COLORS.success },
-            { value: `${fmtK(monthlyKpi[2].deliveredAmt)} / ${monthlyKpi[2].deliveredCnt}`, color: COLORS.success },
+            { value: fmtMonthly(monthlyKpi[1].deliveredAmt, monthlyKpi[1].deliveredCnt), color: COLORS.success },
+            { value: fmtMonthly(monthlyKpi[2].deliveredAmt, monthlyKpi[2].deliveredCnt), color: COLORS.success },
           ]} />
-        <KpiCard label="交付中" value={`${fmtK(currentActiveDel.amt)} / ${currentActiveDel.cnt}`} color={COLORS.purple} icon="🚧"
+        <KpiCard label="交付中" value={fmtMonthly(currentActiveDel.amt, currentActiveDel.cnt)} color={COLORS.purple} icon="🚧"
           prevValues={[
-            { value: `${fmtK(monthlyKpi[0].delAmt)} / ${monthlyKpi[0].delCnt}`, color: COLORS.purple },
-            { value: `${fmtK(monthlyKpi[1].delAmt)} / ${monthlyKpi[1].delCnt}`, color: COLORS.purple },
+            { value: fmtMonthly(monthlyKpi[0].delAmt, monthlyKpi[0].delCnt), color: COLORS.purple },
+            { value: fmtMonthly(monthlyKpi[1].delAmt, monthlyKpi[1].delCnt), color: COLORS.purple },
           ]} />
       </div>
 
