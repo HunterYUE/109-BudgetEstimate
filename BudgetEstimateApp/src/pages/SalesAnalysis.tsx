@@ -30,10 +30,12 @@ const exAmt = (o: SalesOpportunity) => Math.round(o.amount / (1 + (o.taxRate ?? 
 
 const stageIdx = (s: string) => STAGES.indexOf(s as typeof STAGES[number]);
 
-/** 机会的有效结束日期：过程中/冻结→至今（持续活跃）；赢→wonAt；输→lostAt；缺失回退 updatedAt */
+/** 机会的有效结束日期：过程中/冻结/未转交付标赢→至今；已转交付赢→wonAt；输→lostAt；缺失回退 updatedAt */
 const oppEffectiveEnd = (o: SalesOpportunity): Date => {
   if (o.status === '过程中' || o.status === '冻结') return new Date();
-  if (o.status === '赢' && o.wonAt) return new Date(o.wonAt);
+  // ⚠️ 全局规则：赢单以「转交付（terminated）」为终极确认；手动标赢未转交付仍当作机会（持续活跃）
+  if (o.status === '赢' && o.terminated && o.wonAt) return new Date(o.wonAt);
+  if (o.status === '赢') return new Date();
   if (o.status === '输' && o.lostAt) return new Date(o.lostAt);
   return new Date(o.updatedAt);
 };
@@ -331,9 +333,9 @@ const SalesAnalysis: React.FC = () => {
     return { cumulative, expectedCumulative, profitCumulative, expectedProfitCumulative, elapsedMonths, annualProfitTarget, gp3: parsedGp3 };
   }, [monthlyOrderData, parsedAnnualTarget, parsedGp3, elapsedMonths]);
 
-  // ── 当前活跃管道（不过滤财年，仅 status='过程中'）──
+  // ── 当前活跃管道（不过滤财年；含未转交付的手动标赢，仍当作机会）──
   const currentPipeline = useMemo(() =>
-    allOpps.filter(o => o.status === '过程中'),
+    allOpps.filter(o => o.status === '过程中' || (o.status === '赢' && !o.terminated)),
   [allOpps]);
 
   // ── 漏斗：财年内的管道快照（仅统计在所选财年内活跃的过程机会，按"该财年结束时的历史阶段"分桶）──
@@ -358,11 +360,12 @@ const SalesAnalysis: React.FC = () => {
     }));
   }, [currentPipeline, fySelect]);
 
-  // ── 中标（按转交付时间 wonAt 归入财年，与其他卡片赢单标准一致）──
+  // ── 中标（按转交付时间 wonAt 归入财年；赢单以「转交付 terminated」为终极确认）──
   const fyWonByTime = useMemo(() => {
     const fyRange = parseFY(fySelect);
     return allOpps.filter(o => {
-      if (!o.wonAt) return false;
+      // ⚠️ 全局规则：手动标赢未转交付不计赢单
+      if (!o.terminated || !o.wonAt) return false;
       const d = new Date(o.wonAt);
       return d >= fyRange.start && d <= fyRange.end;
     });
@@ -483,9 +486,9 @@ const SalesAnalysis: React.FC = () => {
         const created = new Date(o.createdAt);
         return created <= monthEnd && oppEffectiveEnd(o) >= monthStart;
       });
-      // 管道基数 = 该月活跃（过程中，含此后已输/仍过程中/冻结）且阶段≥机会的项目；
-      // 赢单不计入管道；终止（输）后经 oppEffectiveEnd 不再计入后续月份
-      const pipelineOpps = activeOpps.filter(o => o.status !== '赢' && stageIdx(o.stage) >= stageIdx('机会'));
+      // 管道基数 = 该月活跃（过程中/未转交付标赢，含此后已输/仍过程中/冻结）且阶段≥机会的项目；
+      // 已转交付的赢单不计入管道；终止（输）后经 oppEffectiveEnd 不再计入后续月份
+      const pipelineOpps = activeOpps.filter(o => (o.status !== '赢' || !o.terminated) && stageIdx(o.stage) >= stageIdx('机会'));
       let weighted = 0, profit = 0;
       for (const o of pipelineOpps) {
         const w = Math.round(exAmt(o) * o.winRate / 100);
@@ -517,8 +520,9 @@ const SalesAnalysis: React.FC = () => {
       // 真正的12个月窗口：起点 = 参考月往前推11个月的首日（如参考6月 → 去年7月1日）
       const wStart = new Date(wEnd.getFullYear(), wEnd.getMonth() - 11, 1);
       // 以"机会"为锚点：赢单转化率/销售周期只统计达到机会阶段的项目（信息/线索质量不稳定，作基线波动大）
+      // ⚠️ 全局规则：赢单以转交付（terminated）为终极确认，手动标赢未转交付不计赢单
       const won = allOpps.filter(o =>
-        o.wonAt && new Date(o.wonAt) >= wStart && new Date(o.wonAt) <= wEnd
+        o.terminated && o.wonAt && new Date(o.wonAt) >= wStart && new Date(o.wonAt) <= wEnd
       );
       const lost = allOpps.filter(o =>
         o.status === '输' && stageIdx(o.stage) >= stageIdx('机会') &&
@@ -588,10 +592,10 @@ const SalesAnalysis: React.FC = () => {
       if (!s) { s = newEntry(o.salesman); map.set(o.salesman, s); }
       s.wins++;
     }
-    // 转化效率分母：机会+ 已决出（赢+输），排除进行中/冻结与线索/信息，与漏斗赢单率口径一致
+    // 转化效率分母：机会+ 已决出（赢+输），排除进行中/冻结/未转交付标赢与线索/信息，与漏斗赢单率口径一致
     for (const o of fyFiltered) {
       if (!o.salesman) continue;
-      if (o.status === '过程中' || o.status === '冻结') continue;
+      if (o.status === '过程中' || o.status === '冻结' || (o.status === '赢' && !o.terminated)) continue;
       if (stageIdx(o.stage) < stageIdx('机会')) continue;
       let s = map.get(o.salesman);
       if (!s) { s = newEntry(o.salesman); map.set(o.salesman, s); }
@@ -613,10 +617,10 @@ const SalesAnalysis: React.FC = () => {
       const oppProfit = oppQuoteInfo.get(p.opportunityId);
       s.profitTotal += oppProfit && oppProfit.gp3Amt > 0 ? Math.round(oppProfit.gp3Amt / (1 + oppProfit.taxRate)) : 0;
     }
-    // 管道潜力：与「加权管道」同源（财年活跃期 + 机会锚点 + 赢单不计入），原始金额（不含赢率加权）
+    // 管道潜力：与「加权管道」同源（财年活跃期 + 机会锚点 + 已转交付赢单不计入），原始金额（不含赢率加权）
     for (const o of fyFiltered) {
       if (!o.salesman) continue;
-      if (o.status === '赢') continue;
+      if (o.status === '赢' && o.terminated) continue;
       if (stageIdx(o.stage) < stageIdx('机会')) continue;
       let s = map.get(o.salesman);
       if (!s) { s = newEntry(o.salesman); map.set(o.salesman, s); }
