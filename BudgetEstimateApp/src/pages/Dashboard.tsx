@@ -6,7 +6,7 @@ import {
 } from '@ant-design/icons';
 import { parseFY } from '../utils/fiscalYear';
 import { formatBeijing } from '../utils/timeFormat';
-import { fmtK, compressNo, oppEffectiveEnd, isRealWin, monthEndOf } from '../utils/analysisShared';
+import { fmtK, compressNo, oppEffectiveEnd, isRealWin, monthEndOf, exAmount, stageAsOf, getNode15, isNode15Done, getNodeBaseline } from '../utils/analysisShared';
 import { COLORS } from '../styles/colors';
 import { opportunityService } from '../services/opportunityService';
 import { deliveryService } from '../services/deliveryService';
@@ -14,23 +14,10 @@ import { clientService } from '../services/clientService';
 import { quotationService } from '../services/quotationService';
 import type { SalesOpportunity, DeliveryProject, Client, QuotationSummary, DeliveryNode } from '../types';
 
-const exAmount = (v: number, taxRate?: number) => Math.round(v / (1 + (taxRate ?? 0.13)));
-
 /** 交付合同额未税：取机会关联报价的实际税率（与销售分析 exTaxOf 同口径），无报价回退 13% */
 const exTaxOfDelivery = (p: DeliveryProject, quotations: QuotationSummary[]): number => {
   const q = quotations.find(q => q.id === p.quotationId);
   return exAmount(p.contractAmount, q?.taxRate);
-};
-
-/** 机会在指定时间点的阶段：取"进入阶段时间 ≤ 该时间"的最高阶段（议价→投标→机会→线索→信息） */
-const stageAsOf = (o: SalesOpportunity, date: Date): string => {
-  const t = (v?: string) => (v ? new Date(v) : null);
-  const neg = t(o.negotiationAt), bid = t(o.bidAt), opp = t(o.opportunityAt), lead = t(o.leadAt);
-  if (neg && neg <= date) return '议价';
-  if (bid && bid <= date) return '投标';
-  if (opp && opp <= date) return '机会';
-  if (lead && lead <= date) return '线索';
-  return '信息';
 };
 
 /** 月度 KPI 卡片展示：数量为 0 时显示 —（避免 "0K / 0" 误导） */
@@ -257,8 +244,8 @@ const Dashboard: React.FC = () => {
         const created = new Date(p.createdAt);
         if (created > mEnd) return false;
         // ⚠️ 完成判定用 node15（completed/delayed，与「上月交付」口径一致），不依赖手工 status
-        const node15 = (p.nodes||[]).find(n => n.nodeNo === 15);
-        const isDone = !!node15 && (node15.status === 'completed' || node15.status === 'delayed');
+        const node15 = getNode15(p.nodes);
+        const isDone = isNode15Done(node15);
         if (isDone) {
           const doneDate = node15?.actualDate ? new Date(node15.actualDate) : new Date(p.updatedAt);
           if (doneDate < mStart) return false;
@@ -266,9 +253,9 @@ const Dashboard: React.FC = () => {
         return true;
       });
       const monthDelivered = deliveries.filter(p => {
-        const node15 = (p.nodes||[]).find(n => n.nodeNo === 15);
-        if (!node15 || (node15.status !== 'completed' && node15.status !== 'delayed')) return false;
-        const d = new Date(node15.actualDate || p.updatedAt);
+        const node15 = getNode15(p.nodes);
+        if (!isNode15Done(node15)) return false;
+        const d = new Date(node15!.actualDate || p.updatedAt);
         return d >= mStart && d <= mEnd;
       });
       const winCnt = monthWins.length;
@@ -324,12 +311,12 @@ const Dashboard: React.FC = () => {
   const recentDeliveries = useMemo(() => {
     const cutoff = new Date(); cutoff.setMonth(cutoff.getMonth() - 2);
     const done = deliveries.filter(p => {
-      const node15 = (p.nodes||[]).find(n => n.nodeNo === 15);
+      const node15 = getNode15(p.nodes);
       if (!node15 || node15.status !== 'completed') return false;
       return node15.actualDate && new Date(node15.actualDate) >= cutoff;
     }).sort((a, b) => {
-      const da = new Date((a.nodes||[]).find(n => n.nodeNo === 15)?.actualDate || 0).getTime();
-      const db = new Date((b.nodes||[]).find(n => n.nodeNo === 15)?.actualDate || 0).getTime();
+      const da = new Date(getNode15(a.nodes)?.actualDate || 0).getTime();
+      const db = new Date(getNode15(b.nodes)?.actualDate || 0).getTime();
       return db - da;
     }).slice(0, 5);
     return done;
@@ -348,21 +335,21 @@ const Dashboard: React.FC = () => {
     // 项目延期判断（以第15节点为准，与 DeliveryDetail 一致）
     // 项目延期判断：仅在项目进行中且已过基准截止日期时算延期中
     const getProjDelayedAt = (p: typeof deliveries[0], refDate: Date): boolean => {
-      const node15 = (p.nodes||[]).find(n => n.nodeNo === 15);
+      const node15 = getNode15(p.nodes);
       if (!node15 || node15.status === 'completed') return false; // 已完成不算延期
-      const baseline = node15.baselineEndDate || node15.baselinePlannedEndDate || node15.plannedEndDate;
+      const baseline = getNodeBaseline(node15);
       return !!baseline && new Date(baseline) <= refDate;
     };
     const getStatusInMonth = (p: typeof deliveries[0], monthEnd: Date): string | null => {
       const created = new Date(p.createdAt);
       if (created > monthEnd) return null;
-      const node15 = (p.nodes||[]).find(n => n.nodeNo === 15);
+      const node15 = getNode15(p.nodes);
       if (node15?.actualDate && new Date(node15.actualDate) <= monthEnd) return '已完成';
       if (getProjDelayedAt(p, monthEnd)) return '已延期';
       return '进行中';
     };
     const changedThisMonth = (p: typeof deliveries[0], monthEnd: Date): boolean => {
-      const node15 = (p.nodes||[]).find(n => n.nodeNo === 15);
+      const node15 = getNode15(p.nodes);
       if (!node15?.actualDate) return false;
       const d = new Date(node15.actualDate);
       const monthStart = new Date(monthEnd.getFullYear(), monthEnd.getMonth(), 1);
@@ -384,7 +371,7 @@ const Dashboard: React.FC = () => {
       if (node.status === 'completed' && node.actualDate && new Date(node.actualDate) <= monthEnd) return 'completed';
       if (new Date(node.plannedStartDate) > monthEnd) return null;
       if (node.status !== 'completed') {
-        const baseline = node.baselineEndDate || node.baselinePlannedEndDate || node.plannedEndDate;
+        const baseline = getNodeBaseline(node);
         if (baseline && new Date(baseline) <= monthEnd) return 'delayed';
       }
       return node.status === 'in_progress' ? 'in_progress' : 'pending';
@@ -405,7 +392,7 @@ const Dashboard: React.FC = () => {
     const inFyDels = deliveries.filter(p => {
       const created = new Date(p.createdAt);
       if (created > fyRange.end) return false;
-      const node15 = (p.nodes||[]).find(n => n.nodeNo === 15);
+      const node15 = getNode15(p.nodes);
       let effEnd: Date;
       if (node15?.actualDate) {
         effEnd = new Date(node15.actualDate);
@@ -421,7 +408,7 @@ const Dashboard: React.FC = () => {
       const scheduled = (p.nodes || []).filter(n => n.actualDate || new Date(n.plannedEndDate) <= nowD);
       const delayed = scheduled.filter(n => {
         if (n.actualDate) {
-          const baseline = n.baselineEndDate || n.baselinePlannedEndDate || n.plannedEndDate;
+          const baseline = getNodeBaseline(n);
           return !!baseline && new Date(n.actualDate) > new Date(baseline);
         }
         return new Date(n.plannedEndDate) <= nowD;
@@ -653,7 +640,7 @@ const Dashboard: React.FC = () => {
           )}
         </Card>
 
-                <Card size="small"
+        <Card size="small"
           style={{ flex: 1, borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
           styles={{ body: { padding: '4px 16px' } }}>
           <SectionTitle title="近期输单" count={recentLosses.length} />
@@ -661,8 +648,7 @@ const Dashboard: React.FC = () => {
             <div style={{ padding: 24, textAlign: 'center', color: COLORS.textLight, fontSize: 13 }}>暂无输单记录</div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-              {recentLosses.map(o => {
-                return (
+              {recentLosses.map(o => (
                   <div key={o.id} onClick={() => navigate('/opportunities')}
                     style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '4px 8px', borderRadius: 6, transition: 'background 0.12s' }}
                     onMouseEnter={e => e.currentTarget.style.background = COLORS.bgSelected}
@@ -677,13 +663,12 @@ const Dashboard: React.FC = () => {
                     </div>
                     <span style={{ fontSize: 13, fontWeight: 700, color: COLORS.textSecondary, whiteSpace: 'nowrap' }}>¥{fmtK(exAmount(o.amount, o.taxRate))}</span>
                   </div>
-                );
-              })}
+              ))}
             </div>
           )}
         </Card>
 
-<Card size="small"
+        <Card size="small"
           style={{ flex: 1, borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
           styles={{ body: { padding: '4px 16px' } }}>
           <SectionTitle title="近期交付" count={recentDeliveries.length} />
@@ -692,7 +677,7 @@ const Dashboard: React.FC = () => {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
               {recentDeliveries.map(p => {
-                const node15 = (p.nodes||[]).find(n => n.nodeNo === 15);
+                const node15 = getNode15(p.nodes);
                 return (
                 <div key={p.id} onClick={() => navigate('/delivery/' + p.id)}
                   style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '4px 8px', borderRadius: 6, transition: 'background 0.12s' }}
@@ -714,7 +699,7 @@ const Dashboard: React.FC = () => {
           )}
         </Card>
 
-        
+
       </div>
     </div>
   );

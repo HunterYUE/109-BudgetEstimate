@@ -8,7 +8,7 @@ import { quotationService } from '../services/quotationService';
 import { deliveryService } from '../services/deliveryService';
 import { COLORS } from '../styles/colors';
 import { parseFY, FYSelector } from '../utils/fiscalYear';
-import { fmtK, oppEffectiveEnd, isRealWin, monthEndOf } from '../utils/analysisShared';
+import { fmtK, oppEffectiveEnd, isRealWin, monthEndOf, exAmount, stageAsOf } from '../utils/analysisShared';
 import { settingsService, type UserSettings } from '../services/settingsService';
 
 /* ============================================================
@@ -26,24 +26,13 @@ const safeParseInt = (val: string | undefined | null): number => {
   return isNaN(n) ? 0 : n;
 };
 /** 含税→未税（统一使用未税口径） */
-const exAmt = (o: SalesOpportunity) => Math.round(o.amount / (1 + (o.taxRate ?? 0.13)));
+const exAmt = (o: SalesOpportunity) => exAmount(o.amount, o.taxRate);
 
 const stageIdx = (s: string) => STAGES.indexOf(s as typeof STAGES[number]);
 
 /** 订单/合同金额（未税）= 持久化合同金额 contract_amount ÷ (1 + 机会报价编制表税率 tax_rate) */
 const exTaxOf = (p: DeliveryProject, info: Map<string, { taxRate: number }>): number =>
-  Math.round(p.contractAmount / (1 + (info.get(p.opportunityId)?.taxRate ?? 0.13)));
-
-/** 机会在指定时间点的阶段：取"进入阶段时间 ≤ 该时间"的最高阶段（议价→投标→机会→线索→信息） */
-const stageAsOf = (o: SalesOpportunity, date: Date): string => {
-  const t = (v?: string) => (v ? new Date(v) : null);
-  const neg = t(o.negotiationAt), bid = t(o.bidAt), opp = t(o.opportunityAt), lead = t(o.leadAt);
-  if (neg && neg <= date) return '议价';
-  if (bid && bid <= date) return '投标';
-  if (opp && opp <= date) return '机会';
-  if (lead && lead <= date) return '线索';
-  return '信息';
-};
+  exAmount(p.contractAmount, info.get(p.opportunityId)?.taxRate);
 
 /** 编辑输入框共用样式 */
 const EDIT_INPUT_STYLE: React.CSSProperties = {

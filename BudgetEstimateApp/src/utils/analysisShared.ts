@@ -1,4 +1,4 @@
-import type { SalesOpportunity } from '../types';
+import type { SalesOpportunity, DeliveryNode } from '../types';
 
 /** 格式化数字为千单位显示（如 1234 → "1K"） */
 export const fmtK = (v: number) => Math.round(v / 1000).toLocaleString() + 'K';
@@ -25,3 +25,30 @@ export const oppEffectiveEnd = (o: SalesOpportunity): Date => {
 /** 取某月最后一天 23:59:59.999（月末排他边界，含最后一天数据；勿用 new Date(y,m+1,0) 的 00:00 漏数） */
 export const monthEndOf = (year: number, month: number): Date =>
   new Date(year, month + 1, 0, 23, 59, 59, 999);
+
+/** 未税金额：含税 ÷ (1+税率)，缺省 13%（全应用统一未税口径） */
+export const exAmount = (v: number, taxRate?: number): number =>
+  Math.round(v / (1 + (taxRate ?? 0.13)));
+
+/** 机会在指定时间点的阶段：取"进入阶段时间 ≤ 该时间"的最高阶段（议价→投标→机会→线索→信息） */
+export const stageAsOf = (o: SalesOpportunity, date: Date): string => {
+  const t = (v?: string) => (v ? new Date(v) : null);
+  const neg = t(o.negotiationAt), bid = t(o.bidAt), opp = t(o.opportunityAt), lead = t(o.leadAt);
+  if (neg && neg <= date) return '议价';
+  if (bid && bid <= date) return '投标';
+  if (opp && opp <= date) return '机会';
+  if (lead && lead <= date) return '线索';
+  return '信息';
+};
+
+/** 取交付项目第15节点（项目总结） */
+export const getNode15 = (nodes: DeliveryNode[] | undefined): DeliveryNode | undefined =>
+  (nodes || []).find(n => n.nodeNo === 15);
+
+/** 节点是否已完成/已延期（交付完成判定，与销售/交付分析一致） */
+export const isNode15Done = (node: DeliveryNode | undefined): boolean =>
+  !!node && (node.status === 'completed' || node.status === 'delayed');
+
+/** 节点基准计划结束日（审批基线，无则当前计划；延期判定用） */
+export const getNodeBaseline = (node: DeliveryNode | undefined): string | undefined =>
+  node?.baselineEndDate || node?.baselinePlannedEndDate || node?.plannedEndDate;

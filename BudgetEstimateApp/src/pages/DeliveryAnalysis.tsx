@@ -6,7 +6,7 @@ import type { DeliveryProject } from '../types';
 import { COLORS } from '../styles/colors';
 import { NODE_DISPLAY_NAMES } from '../utils/constants';
 import { parseFY, FYSelector } from '../utils/fiscalYear';
-import { fmtK, compressNo, monthEndOf } from '../utils/analysisShared';
+import { fmtK, compressNo, monthEndOf, exAmount } from '../utils/analysisShared';
 import { VerticalBarChart, ProfitChart, ProjectGantt, BubbleChart } from '../components/charts/DeliveryCharts';
 import type { ProfitItem, BubbleDataItem } from '../components/charts/DeliveryCharts';
 
@@ -245,7 +245,7 @@ const DeliveryAnalysis: React.FC = () => {
   }, [deliveryProjects, quoteMap]);
   /** 交付项目未税金额 = 持久化合同金额 ÷ (1 + 报价编制表税率) */
   const deliveryExTax = (p: DeliveryProject): number =>
-    Math.round(p.contractAmount / (1 + (deliveryQuoteInfo.get(p.id)?.taxRate ?? 0.13)));
+    exAmount(p.contractAmount, deliveryQuoteInfo.get(p.id)?.taxRate);
   /** 交付概算利润（未税）= 报价编制表概算利润（含税 gp3_amount）÷ (1+税率) */
   const deliveryEstProfit = (p: DeliveryProject): number => {
     const i = deliveryQuoteInfo.get(p.id);
