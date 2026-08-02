@@ -6,13 +6,13 @@ import {
 } from '@ant-design/icons';
 import { parseFY } from '../utils/fiscalYear';
 import { formatBeijing } from '../utils/timeFormat';
-import { fmtK, compressNo, oppEffectiveEnd, isRealWin } from '../utils/analysisShared';
+import { fmtK, compressNo, oppEffectiveEnd, isRealWin, monthEndOf } from '../utils/analysisShared';
 import { COLORS } from '../styles/colors';
 import { opportunityService } from '../services/opportunityService';
 import { deliveryService } from '../services/deliveryService';
 import { clientService } from '../services/clientService';
 import { quotationService } from '../services/quotationService';
-import type { SalesOpportunity, DeliveryProject, Client, QuotationSummary } from '../types';
+import type { SalesOpportunity, DeliveryProject, Client, QuotationSummary, DeliveryNode } from '../types';
 
 const exAmount = (v: number, taxRate?: number) => Math.round(v / (1 + (taxRate ?? 0.13)));
 
@@ -240,8 +240,7 @@ const Dashboard: React.FC = () => {
     const calcMonth = (offset: number) => {
       const d = new Date(now.getFullYear(), now.getMonth() - offset, 1);
       const mStart = new Date(d.getFullYear(), d.getMonth(), 1);
-      // ⚠️ 月末取最后一天 23:59:59.999（而非 00:00），否则漏掉最后一天白天创建/完成的数据
-      const mEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999);
+      const mEnd = monthEndOf(d.getFullYear(), d.getMonth());
       const monthOpps = opportunities.filter(o => {
         const created = new Date(o.createdAt);
         // ⚠️ 有效结束用 oppEffectiveEnd（赢→wonAt/输→lostAt），与销售分析/财年规则一致，不用 updatedAt
@@ -312,8 +311,7 @@ const Dashboard: React.FC = () => {
       const ci = stages.indexOf(stage);
       for (let mi = 3; mi >= 1; mi--) {
         const d = new Date(now.getFullYear(), now.getMonth() - mi, 1);
-        // ⚠️ 月末取最后一天 23:59:59.999（而非 00:00），否则漏掉最后一天数据
-        const monthEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999);
+        const monthEnd = monthEndOf(d.getFullYear(), d.getMonth());
         const count = opportunities.filter(o => getPipelineStage(o, monthEnd) === stage).length;
         result.push({ label: monthLabels[3 - mi], value: count, color: colors[ci] });
       }
@@ -377,13 +375,12 @@ const Dashboard: React.FC = () => {
     for (let si = 0; si < 3; si++) {
       for (let mi = 3; mi >= 1; mi--) {
         const d = new Date(now.getFullYear(), now.getMonth() - mi, 1);
-        // ⚠️ 月末取最后一天 23:59:59.999（而非 00:00），否则漏掉最后一天数据
-        const monthEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999);
+        const monthEnd = monthEndOf(d.getFullYear(), d.getMonth());
         const count = deliveries.filter(p => getStatusInMonth(p, monthEnd) === statusNames[si]).length;
         projectStatus.push({ label: monthLabels[3 - mi], value: count, color: statusColors[si] });
       }
     }
-    const getNodeStatusInMonth = (node: any, monthEnd: Date): string | null => {
+    const getNodeStatusInMonth = (node: DeliveryNode, monthEnd: Date): string | null => {
       if (node.status === 'completed' && node.actualDate && new Date(node.actualDate) <= monthEnd) return 'completed';
       if (new Date(node.plannedStartDate) > monthEnd) return null;
       if (node.status !== 'completed') {
@@ -399,8 +396,7 @@ const Dashboard: React.FC = () => {
     for (let si = 0; si < 4; si++) {
       for (let mi = 3; mi >= 1; mi--) {
         const d = new Date(now.getFullYear(), now.getMonth() - mi, 1);
-        // ⚠️ 月末取最后一天 23:59:59.999（而非 00:00），否则漏掉最后一天数据
-        const monthEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999);
+        const monthEnd = monthEndOf(d.getFullYear(), d.getMonth());
         const count = allNodes.filter(n => getNodeStatusInMonth(n, monthEnd) === nodeStNames[si]).length;
         nodeStatus.push({ label: monthLabels[3 - mi], value: count, color: nodeStColors[si] });
       }
@@ -447,8 +443,7 @@ const Dashboard: React.FC = () => {
     for (const prefix of ['概算', '实际'] as const) {
       for (let mi = 3; mi >= 1; mi--) {
         const d = new Date(now.getFullYear(), now.getMonth() - mi, 1);
-        // ⚠️ 月末取最后一天 23:59:59.999（而非 00:00），否则漏掉最后一天数据
-        const monthEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999);
+        const monthEnd = monthEndOf(d.getFullYear(), d.getMonth());
         let totalAmt = 0, totalProfit = 0;
         deliveries.forEach(p => {
           const status = getStatusInMonth(p, monthEnd);

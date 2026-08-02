@@ -6,7 +6,7 @@ import type { DeliveryProject } from '../types';
 import { COLORS } from '../styles/colors';
 import { NODE_DISPLAY_NAMES } from '../utils/constants';
 import { parseFY, FYSelector } from '../utils/fiscalYear';
-import { fmtK, compressNo } from '../utils/analysisShared';
+import { fmtK, compressNo, monthEndOf } from '../utils/analysisShared';
 import { VerticalBarChart, ProfitChart, ProjectGantt, BubbleChart } from '../components/charts/DeliveryCharts';
 import type { ProfitItem, BubbleDataItem } from '../components/charts/DeliveryCharts';
 
@@ -279,13 +279,10 @@ const DeliveryAnalysis: React.FC = () => {
   // ── 财年累计KPI（最近3个完整月累计；已完结财年取财年最后三个月）──
   const monthlyCumKpi = useMemo((): MonthlyCum[] => {
     const now = new Date();
-    /** 某月（JS 月索引）的月底 */
-    // ⚠️ 月末取最后一天 23:59:59.999（而非 00:00），否则漏掉最后一天数据
-    const monthEnd = (y: number, m: number) => new Date(y, m + 1, 0, 23, 59, 59, 999);
     /** 相对 now 的最近完整月月底（k=1 最近，k=2/3 依次更早） */
     const recentMonthEnd = (k: number) => {
       const cur = new Date(now.getFullYear(), now.getMonth(), 1);
-      return monthEnd(cur.getFullYear(), cur.getMonth() - k);
+      return monthEndOf(cur.getFullYear(), cur.getMonth() - k);
     };
 
     const calcCum = (mEnd: Date): MonthlyCum => {
@@ -338,7 +335,7 @@ const DeliveryAnalysis: React.FC = () => {
     if (now > fyRange.end) {
       // 已完结财年：取财年最后三个月（Apr/May/Jun 月底）
       const yr = fyRange.end.getFullYear();
-      return [monthEnd(yr, 5), monthEnd(yr, 4), monthEnd(yr, 3)].map(calcCum);
+      return [monthEndOf(yr, 5), monthEndOf(yr, 4), monthEndOf(yr, 3)].map(calcCum);
     }
     // 当前财年：取相对 now 的最近三个完整月（首月尚无完整月数据时显示 —）
     return [1, 2, 3].map(recentMonthEnd).map(calcCum);
@@ -370,8 +367,8 @@ const DeliveryAnalysis: React.FC = () => {
   const ganttData = useMemo(() => {
     const now = new Date();
     const tlStart = new Date(fyRange.start.getFullYear(), fyRange.start.getMonth(), 1);
-    // ⚠️ 时间线末尾取 6月30日 23:59:59.999（完整覆盖财年最后一天）
-    const tlEnd = new Date(fyRange.end.getFullYear(), fyRange.end.getMonth() + 1, 0, 23, 59, 59, 999);
+    // ⚠️ 时间线末尾 = 财年结束（6月30日 23:59:59.999，完整覆盖最后一天）
+    const tlEnd = fyRange.end;
     const DAY_MS = 1000 * 60 * 60 * 24;
     const totalDays = Math.round((tlEnd.getTime() - tlStart.getTime()) / DAY_MS);
     const months = Array.from({ length: 12 }, (_, i) => {

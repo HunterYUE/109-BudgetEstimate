@@ -21,3 +21,7 @@ export const oppEffectiveEnd = (o: SalesOpportunity): Date => {
   if (o.status === '输' && o.lostAt) return new Date(o.lostAt);
   return new Date(o.updatedAt);
 };
+
+/** 取某月最后一天 23:59:59.999（月末排他边界，含最后一天数据；勿用 new Date(y,m+1,0) 的 00:00 漏数） */
+export const monthEndOf = (year: number, month: number): Date =>
+  new Date(year, month + 1, 0, 23, 59, 59, 999);
