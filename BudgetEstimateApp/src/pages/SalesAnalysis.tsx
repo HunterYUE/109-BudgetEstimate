@@ -9,7 +9,7 @@ import { deliveryService } from '../services/deliveryService';
 import { COLORS } from '../styles/colors';
 import { parseFY, FYSelector } from '../utils/fiscalYear';
 import { fmtK, oppEffectiveEnd, isRealWin } from '../utils/analysisShared';
-import { settingsService } from '../services/settingsService';
+import { settingsService, type UserSettings } from '../services/settingsService';
 
 /* ============================================================
    常量
@@ -176,10 +176,10 @@ const SalesAnalysis: React.FC = () => {
   const [annualSalesTarget, setAnnualSalesTarget] = useState(() => { try { return localStorage.getItem(LEGACY_TARGET_KEYS.sales) || ''; } catch { return ''; } });
   const [salesTargetEditing, setSalesTargetEditing] = useState(false);
   const salesTargetRef = React.useRef<HTMLInputElement>(null);
-  const settingsTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const settingsTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   // ── 从服务端加载用户设置（必须在所有 setState 声明之后）──
-  const [serverTargets, setServerTargets] = useState<Record<string, string>>({});
+  const [serverTargets, setServerTargets] = useState<UserSettings>({});
   useEffect(() => {
     if (loading) return;
     settingsService.get().then(setServerTargets).catch(() => {});
