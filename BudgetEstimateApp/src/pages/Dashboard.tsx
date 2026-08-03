@@ -273,14 +273,16 @@ const Dashboard: React.FC = () => {
   }, [opportunities, deliveries, quotations, now]);
 
   const recentWins = useMemo(() => {
-    const cutoff = new Date(); cutoff.setMonth(cutoff.getMonth() - 2);
+    // 近 2 个月窗口：前两个月首日（避免 setMonth 月末溢出）
+    const cutoff = new Date(now.getFullYear(), now.getMonth() - 2, 1);
     return opportunities.filter(o => isRealWin(o) && o.wonAt && new Date(o.wonAt) >= cutoff).sort((a, b) => new Date(b.wonAt!).getTime() - new Date(a.wonAt!).getTime()).slice(0, 5);
-  }, [opportunities]);
+  }, [opportunities, now]);
 
   const recentLosses = useMemo(() => {
-    const cutoff = new Date(); cutoff.setMonth(cutoff.getMonth() - 2);
+    // 近 2 个月窗口：前两个月首日（避免 setMonth 月末溢出）
+    const cutoff = new Date(now.getFullYear(), now.getMonth() - 2, 1);
     return opportunities.filter(o => o.status === '输' && o.lostAt && new Date(o.lostAt) >= cutoff).sort((a, b) => new Date(b.lostAt!).getTime() - new Date(a.lostAt!).getTime()).slice(0, 5);
-  }, [opportunities]);
+  }, [opportunities, now]);
 
 
   const stageDist = useMemo(() => {
@@ -309,7 +311,8 @@ const Dashboard: React.FC = () => {
 
   // −− 近期交付（已完成的项目，按第15节点实际完成时间倒序）−−
   const recentDeliveries = useMemo(() => {
-    const cutoff = new Date(); cutoff.setMonth(cutoff.getMonth() - 2);
+    // 近 2 个月窗口：前两个月首日（避免 setMonth 月末溢出）
+    const cutoff = new Date(now.getFullYear(), now.getMonth() - 2, 1);
     const done = deliveries.filter(p => {
       const node15 = getNode15(p.nodes);
       if (!node15 || node15.status !== 'completed') return false;
@@ -320,7 +323,7 @@ const Dashboard: React.FC = () => {
       return db - da;
     }).slice(0, 5);
     return done;
-  }, [deliveries]);
+  }, [deliveries, now]);
 
 
   const currentFy = useMemo(() => {
