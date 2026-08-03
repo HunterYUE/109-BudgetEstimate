@@ -96,6 +96,7 @@ const VerticalBars: React.FC<{
             <div key={i} style={{
               display: 'flex', flexDirection: 'column', alignItems: 'center',
               flex: 1, justifyContent: 'flex-end', alignSelf: 'stretch',
+              minWidth: 0,  // ⚠️ 允许槽位收缩到 flex 均分宽度，防止 displayValue/柱体按内容撑宽导致与标签错位
               marginLeft: groupGaps?.includes(i - 1) ? gapSize : 0,
               position: 'relative', zIndex: 1,
             }}>
@@ -135,6 +136,7 @@ const VerticalBars: React.FC<{
             <span key={i} style={{
               flex: 1, textAlign: 'center', fontSize: 9, color: COLORS.textSecondary,
               lineHeight: 1.3, opacity: item && item.color !== 'transparent' ? 1 : 0,
+              minWidth: 0,  // 与立柱槽位同构，确保逐柱对齐
               marginLeft: groupGaps?.includes(i - 1) ? gapSize : 0,
             }}>
               {item && item.color !== 'transparent' ? item.label.split('\n').map((l, j) => <span key={j} style={{ display: 'block' }}>{l}</span>) : ''}
