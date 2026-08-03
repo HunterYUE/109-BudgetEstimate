@@ -127,7 +127,7 @@ const VerticalBars: React.FC<{
           ))}
         </div>
       </div>
-      <div style={{ display: 'flex', marginTop: 6, paddingLeft: 32 }}>
+      <div style={{ display: 'flex', marginTop: 6, paddingLeft: 32, gap: 2 }}>
         {slots.map((item, i) => (
           <span key={i} style={{
             flex: 1, textAlign: 'center', fontSize: 9, color: COLORS.textSecondary,
