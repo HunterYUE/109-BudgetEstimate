@@ -127,16 +127,20 @@ const VerticalBars: React.FC<{
           ))}
         </div>
       </div>
-      <div style={{ display: 'flex', marginTop: 6, paddingLeft: 32, gap: 2 }}>
-        {slots.map((item, i) => (
-          <span key={i} style={{
-            flex: 1, textAlign: 'center', fontSize: 9, color: COLORS.textSecondary,
-            lineHeight: 1.3, opacity: item && item.color !== 'transparent' ? 1 : 0,
-            marginLeft: groupGaps?.includes(i - 1) ? gapSize : 0,
-          }}>
-            {item && item.color !== 'transparent' ? item.label.split('\n').map((l, j) => <span key={j} style={{ display: 'block' }}>{l}</span>) : ''}
-          </span>
-        ))}
+      {/* 标签行：与柱状图区镜像结构（[Y轴28占位][gap4][标签区flex gap2]），确保逐柱对齐 */}
+      <div style={{ display: 'flex', marginTop: 6, gap: 4 }}>
+        <div style={{ width: 28, flexShrink: 0 }} />
+        <div style={{ flex: 1, display: 'flex', gap: 2 }}>
+          {slots.map((item, i) => (
+            <span key={i} style={{
+              flex: 1, textAlign: 'center', fontSize: 9, color: COLORS.textSecondary,
+              lineHeight: 1.3, opacity: item && item.color !== 'transparent' ? 1 : 0,
+              marginLeft: groupGaps?.includes(i - 1) ? gapSize : 0,
+            }}>
+              {item && item.color !== 'transparent' ? item.label.split('\n').map((l, j) => <span key={j} style={{ display: 'block' }}>{l}</span>) : ''}
+            </span>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -474,12 +478,14 @@ const Dashboard: React.FC = () => {
   }, [opportunities, currentFy]);
 
   const industryDist = useMemo(() => {
-    const fyRange = parseFY(currentFy);
+    // 自上月起过去 12 个月窗口（年初数据充足）：创建于该窗口内的机会（含赢/输/进行中等全部类型）按客户行业分布
+    const winStart = new Date(now.getFullYear(), now.getMonth() - 12, 1);
+    const winEnd = monthEndOf(now.getFullYear(), now.getMonth() - 1);
     const industryByName = new Map(clients.map(c => [c.name, c.industry]));
     const counts: Record<string, number> = {};
     opportunities.forEach(o => {
       const created = new Date(o.createdAt);
-      if (created <= fyRange.end && oppEffectiveEnd(o) >= fyRange.start) {
+      if (created >= winStart && created <= winEnd) {
         const industry = industryByName.get(o.clientName) || '其他';
         counts[industry] = (counts[industry] || 0) + 1;
       }
@@ -487,7 +493,7 @@ const Dashboard: React.FC = () => {
     const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
     const colors = [COLORS.primary, COLORS.purple, COLORS.warning, COLORS.amber, COLORS.chartGray, COLORS.textSecondary, COLORS.danger];
     return sorted.map(([label, value], i) => ({ label, value, color: colors[i] || COLORS.chartGray }));
-  }, [clients, opportunities, currentFy]);
+  }, [clients, opportunities, now]);
 
   // 交付中 = monthlyKpi[0]/[1]/[2]（与其他卡片同口径：主值=上一个完整月，副值=前两月/前三月）
   return (
