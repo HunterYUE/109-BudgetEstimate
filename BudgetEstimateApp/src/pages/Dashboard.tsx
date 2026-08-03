@@ -6,7 +6,7 @@ import {
 } from '@ant-design/icons';
 import { parseFY } from '../utils/fiscalYear';
 import { formatBeijing } from '../utils/timeFormat';
-import { fmtK, compressNo, oppEffectiveEnd, isRealWin, monthEndOf, exAmount, stageAsOf, getNode15, isNode15Done, getNodeBaseline } from '../utils/analysisShared';
+import { fmtK, compressNo, oppEffectiveEnd, isRealWin, monthEndOf, exAmount, stageAsOf, getNode15, getNodeDelay, getProjectDelay, getProjectDoneDate } from '../utils/analysisShared';
 import { COLORS } from '../styles/colors';
 import { opportunityService } from '../services/opportunityService';
 import { deliveryService } from '../services/deliveryService';
@@ -201,7 +201,7 @@ const Dashboard: React.FC = () => {
   const navigate = useNavigate();
 
   const [opportunities, setOpportunities] = useState<SalesOpportunity[]>([]);
-    const [deliveries, setDeliveries] = useState<DeliveryProject[]>([]);
+  const [deliveries, setDeliveries] = useState<DeliveryProject[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [quotations, setQuotations] = useState<QuotationSummary[]>([]);
 
@@ -243,20 +243,14 @@ const Dashboard: React.FC = () => {
       const activeDel = deliveries.filter(p => {
         const created = new Date(p.createdAt);
         if (created > mEnd) return false;
-        // ⚠️ 完成判定用 node15（completed/delayed，与「上月交付」口径一致），不依赖手工 status
-        const node15 = getNode15(p.nodes);
-        const isDone = isNode15Done(node15);
-        if (isDone) {
-          const doneDate = node15?.actualDate ? new Date(node15.actualDate) : new Date(p.updatedAt);
-          if (doneDate < mStart) return false;
-        }
+        // 交付中 = 该月末仍在交付的项目快照：月末前已完成 → 排除
+        const doneDate = getProjectDoneDate(p);
+        if (doneDate && doneDate <= mEnd) return false;
         return true;
       });
       const monthDelivered = deliveries.filter(p => {
-        const node15 = getNode15(p.nodes);
-        if (!isNode15Done(node15)) return false;
-        const d = new Date(node15!.actualDate || p.updatedAt);
-        return d >= mStart && d <= mEnd;
+        const doneDate = getProjectDoneDate(p);
+        return !!doneDate && doneDate >= mStart && doneDate <= mEnd;
       });
       const winCnt = monthWins.length;
       return {
@@ -269,7 +263,7 @@ const Dashboard: React.FC = () => {
       };
     };
     return [calcMonth(1), calcMonth(2), calcMonth(3)];
-  }, [opportunities, deliveries, quotations]);
+  }, [opportunities, deliveries, quotations, now]);
 
   const recentWins = useMemo(() => {
     const cutoff = new Date(); cutoff.setMonth(cutoff.getMonth() - 2);
@@ -304,8 +298,7 @@ const Dashboard: React.FC = () => {
       }
     }
     return result;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [opportunities]);
+  }, [opportunities, now]);
 
   // −− 近期交付（已完成的项目，按第15节点实际完成时间倒序）−−
   const recentDeliveries = useMemo(() => {
@@ -328,18 +321,13 @@ const Dashboard: React.FC = () => {
     const y1 = m >= 6 ? y : y - 1;
     const y2 = m >= 6 ? y + 1 : y;
     return `FY${String(y1 % 100).padStart(2, '0')}${String(y2 % 100).padStart(2, '0')}`;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [now]);
 
   const deliveryStats = useMemo(() => {
-    // 项目延期判断（以第15节点为准，与 DeliveryDetail 一致）
-    // 项目延期判断：仅在项目进行中且已过基准截止日期时算延期中
-    const getProjDelayedAt = (p: typeof deliveries[0], refDate: Date): boolean => {
-      const node15 = getNode15(p.nodes);
-      if (!node15 || node15.status === 'completed') return false; // 已完成不算延期
-      const baseline = getNodeBaseline(node15);
-      return !!baseline && new Date(baseline) <= refDate;
-    };
+    // 项目延期判断（以第15节点为准，共享延期口径 getProjectDelay）：
+    // 该月月底前已完成→已完成；否则该月底超出初始审批基线（计划排后或已超期）→已延期
+    const getProjDelayedAt = (p: typeof deliveries[0], refDate: Date): boolean =>
+      getProjectDelay(p, refDate).delayed;
     const getStatusInMonth = (p: typeof deliveries[0], monthEnd: Date): string | null => {
       const created = new Date(p.createdAt);
       if (created > monthEnd) return null;
@@ -370,11 +358,10 @@ const Dashboard: React.FC = () => {
     const getNodeStatusInMonth = (node: DeliveryNode, monthEnd: Date): string | null => {
       if (node.status === 'completed' && node.actualDate && new Date(node.actualDate) <= monthEnd) return 'completed';
       if (new Date(node.plannedStartDate) > monthEnd) return null;
-      if (node.status !== 'completed') {
-        const baseline = getNodeBaseline(node);
-        if (baseline && new Date(baseline) <= monthEnd) return 'delayed';
-      }
-      return node.status === 'in_progress' ? 'in_progress' : 'pending';
+      // 延期维度（派生）：该月未完成且已超出初始审批基线
+      if (getNodeDelay(node, monthEnd).delayed) return 'delayed';
+      // 已开始（实际开始 ≤ 月末）→ 进行中；否则未开始（pending）
+      return node.actualStartDate && new Date(node.actualStartDate) <= monthEnd ? 'in_progress' : 'pending';
     };
     const nodeStNames = ['completed', 'in_progress', 'delayed', 'pending'] as const;
     const nodeStColors = [COLORS.success, COLORS.primary, COLORS.danger, COLORS.chartGray];
@@ -396,7 +383,7 @@ const Dashboard: React.FC = () => {
       let effEnd: Date;
       if (node15?.actualDate) {
         effEnd = new Date(node15.actualDate);
-      } else if (p.status === '已完成' || p.status === '已延期') {
+      } else if (p.status === '已完成') {
         effEnd = new Date(p.updatedAt);
       } else {
         effEnd = new Date();
@@ -406,13 +393,7 @@ const Dashboard: React.FC = () => {
     const onTimeRate = [...inFyDels].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).map(p => {
       const nowD = new Date();
       const scheduled = (p.nodes || []).filter(n => n.actualDate || new Date(n.plannedEndDate) <= nowD);
-      const delayed = scheduled.filter(n => {
-        if (n.actualDate) {
-          const baseline = getNodeBaseline(n);
-          return !!baseline && new Date(n.actualDate) > new Date(baseline);
-        }
-        return new Date(n.plannedEndDate) <= nowD;
-      });
+      const delayed = scheduled.filter(n => getNodeDelay(n, nowD).delayed);
       const onTime = scheduled.length - delayed.length;
       const rate = scheduled.length > 0 ? Math.round((onTime / scheduled.length) * 100) : 0;
       return {
@@ -451,8 +432,7 @@ const Dashboard: React.FC = () => {
       }
     }
     return { projectStatus, nodeStatus, onTimeRate, profitOverview };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deliveries, quotations]);
+  }, [deliveries, quotations, now, currentFy]);
 
 
 
@@ -649,20 +629,20 @@ const Dashboard: React.FC = () => {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
               {recentLosses.map(o => (
-                  <div key={o.id} onClick={() => navigate('/opportunities')}
-                    style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '4px 8px', borderRadius: 6, transition: 'background 0.12s' }}
-                    onMouseEnter={e => e.currentTarget.style.background = COLORS.bgSelected}
-                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                    <span style={{ fontSize: 16, lineHeight: 1, color: COLORS.danger }}>✘</span>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.textDark, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.salesNo}</div>
-                      <div style={{ fontSize: 11, color: COLORS.textLight, display: 'flex', gap: 10, marginTop: 1 }}>
-                        <span>{o.salesman}</span>
-                        <span>{formatBeijing(o.lostAt || o.updatedAt)}</span>
-                      </div>
+                <div key={o.id} onClick={() => navigate('/opportunities')}
+                  style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '4px 8px', borderRadius: 6, transition: 'background 0.12s' }}
+                  onMouseEnter={e => e.currentTarget.style.background = COLORS.bgSelected}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                  <span style={{ fontSize: 16, lineHeight: 1, color: COLORS.danger }}>✘</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.textDark, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.salesNo}</div>
+                    <div style={{ fontSize: 11, color: COLORS.textLight, display: 'flex', gap: 10, marginTop: 1 }}>
+                      <span>{o.salesman}</span>
+                      <span>{formatBeijing(o.lostAt || o.updatedAt)}</span>
                     </div>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: COLORS.textSecondary, whiteSpace: 'nowrap' }}>¥{fmtK(exAmount(o.amount, o.taxRate))}</span>
                   </div>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: COLORS.textSecondary, whiteSpace: 'nowrap' }}>¥{fmtK(exAmount(o.amount, o.taxRate))}</span>
+                </div>
               ))}
             </div>
           )}
@@ -677,24 +657,25 @@ const Dashboard: React.FC = () => {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
               {recentDeliveries.map(p => {
-                const node15 = getNode15(p.nodes);
+                const doneDate = getProjectDoneDate(p);
                 return (
-                <div key={p.id} onClick={() => navigate('/delivery/' + p.id)}
-                  style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '4px 8px', borderRadius: 6, transition: 'background 0.12s' }}
-                  onMouseEnter={e => e.currentTarget.style.background = COLORS.bgSelected}
-                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                  <span style={{ fontSize: 16, lineHeight: 1, color: COLORS.success }}>✔</span>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.textDark, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.salesNo}</div>
-                    <div style={{ fontSize: 11, color: COLORS.textLight, display: 'flex', gap: 10, marginTop: 1 }}>
-                      <span>{p.clientName}</span>
-                      <span>{formatBeijing(node15?.actualDate || p.updatedAt)}</span>
+                  <div key={p.id} onClick={() => navigate('/delivery/' + p.id)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '4px 8px', borderRadius: 6, transition: 'background 0.12s' }}
+                    onMouseEnter={e => e.currentTarget.style.background = COLORS.bgSelected}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                    <span style={{ fontSize: 16, lineHeight: 1, color: COLORS.success }}>✔</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.textDark, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.salesNo}</div>
+                      <div style={{ fontSize: 11, color: COLORS.textLight, display: 'flex', gap: 10, marginTop: 1 }}>
+                        <span>{p.clientName}</span>
+                        <span>{formatBeijing(doneDate?.toISOString() || p.updatedAt)}</span>
+                      </div>
                     </div>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: COLORS.success, whiteSpace: 'nowrap' }}>¥{fmtK(exTaxOfDelivery(p, quotations))}</span>
+                    <RightOutlined style={{ color: COLORS.textLight, fontSize: 12 }} />
                   </div>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: COLORS.success, whiteSpace: 'nowrap' }}>¥{fmtK(exTaxOfDelivery(p, quotations))}</span>
-                  <RightOutlined style={{ color: COLORS.textLight, fontSize: 12 }} />
-                </div>
-              );})}
+                );
+              })}
             </div>
           )}
         </Card>

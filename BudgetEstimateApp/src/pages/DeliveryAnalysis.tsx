@@ -6,7 +6,7 @@ import type { DeliveryProject } from '../types';
 import { COLORS } from '../styles/colors';
 import { NODE_DISPLAY_NAMES } from '../utils/constants';
 import { parseFY, FYSelector } from '../utils/fiscalYear';
-import { fmtK, compressNo, monthEndOf, exAmount, getNode15, isNode15Done, getNodeBaseline } from '../utils/analysisShared';
+import { fmtK, compressNo, monthEndOf, exAmount, getNode15, isNode15Done, getNodeBaseline, getNodeDelay, getProjectDelay, isProjectDelivered, getProjectDoneDate } from '../utils/analysisShared';
 import { VerticalBarChart, ProfitChart, ProjectGantt, BubbleChart } from '../components/charts/DeliveryCharts';
 import type { ProfitItem, BubbleDataItem } from '../components/charts/DeliveryCharts';
 
@@ -79,22 +79,14 @@ const chartLabel = (salesNo: string | undefined): string => {
   return s.length > 4 ? s.slice(0, 4) + '\n' + s.slice(4) : s;
 };
 
-/** 计算项目延期天数（以第15节点基线为准，与交付管理页实施计划一致），负值表示提前 */
-const calcProjDelay = (p: DeliveryProject): number => {
-  const n15 = getNode15(p.nodes);
-  if (!n15) return 0;
-  const refDate = n15.baselineEndDate || n15.baselinePlannedEndDate || n15.plannedEndDate;
-  if (!refDate) return 0;
-  const end = (n15.status === 'completed' && n15.actualDate) ? new Date(n15.actualDate) : new Date();
-  return Math.round((end.getTime() - new Date(refDate).getTime()) / (1000 * 60 * 60 * 24));
-};
+/** 计算项目延期天数（共享延期口径，以第15节点为准，与实施计划一致），负值表示提前 */
+const calcProjDelay = (p: DeliveryProject): number => getProjectDelay(p).days;
 
-/** 判断项目节点15是否已完成且在财年范围内 */
+/** 判断项目是否已完成交付且在财年范围内（完成日 = 节点15实际完成日或 updatedAt 回退） */
 const isNode15CompletedInFy = (p: DeliveryProject, fyRange: ReturnType<typeof parseFY>): boolean => {
-  const n15 = getNode15(p.nodes);
-  if (!n15 || n15.status !== 'completed') return false;
-  const d = new Date(n15.actualDate || p.updatedAt);
-  return d >= fyRange.start && d <= fyRange.end;
+  if (!isProjectDelivered(p)) return false;
+  const d = getProjectDoneDate(p);
+  return !!d && d >= fyRange.start && d <= fyRange.end;
 };
 
 /** 默认财年：当前日历月 ≥ 7 月 → 当年~次年，否则上一年~当年 */
@@ -150,7 +142,7 @@ const DeliveryAnalysis: React.FC = () => {
       const n15DoneDate = (n15 && n15.status === 'completed' && n15.actualDate)
         ? new Date(n15.actualDate)
         : null;
-      const effectiveEnd = (p.status === '进行中' || p.status === '已延期')
+      const effectiveEnd = (p.status !== '已完成')
         ? new Date()
         : (n15DoneDate || new Date(p.updatedAt));
       return created <= fyRange.end && effectiveEnd >= fyRange.start;
@@ -179,7 +171,7 @@ const DeliveryAnalysis: React.FC = () => {
     const delayedProjects: string[][] = Array.from({ length: NODE_COUNT }, () => []);
 
     for (const p of fyFiltered) {
-      if (p.status !== '进行中' && p.status !== '已延期' && p.status !== '已完成') continue;
+      if (p.status !== '进行中' && p.status !== '未开始' && p.status !== '已完成') continue;
       const shortName = compressNo(p.salesNo) || p.clientName;
       for (const n of p.nodes) {
         // ⚠️ 节点级财年裁剪（与节点按时率/甘特图同口径）：
@@ -194,24 +186,12 @@ const DeliveryAnalysis: React.FC = () => {
         const isFuturePending = n.status === 'pending' && new Date(n.plannedStartDate) > now;
         if (!isFuturePending) reached[n.nodeNo - 1]++;
 
-        let isDelayed = n.status === 'delayed';
-        if (!isDelayed && n.status !== 'completed') {
-          // 延期判定以基线为准（与规则一致）：基线已过且未完成 → 延期
-          const refEnd = getNodeBaseline(n);
-          if (refEnd && new Date(refEnd) < now) isDelayed = true;
-        }
-        if (!isDelayed && n.status === 'completed' && n.actualDate) {
-          const refDc = n.baselineEndDate || n.baselinePlannedEndDate;
-          if (refDc) isDelayed = new Date(n.actualDate) > new Date(refDc);
-        }
-        if (isDelayed) {
-          const refD = n.baselineEndDate || n.baselinePlannedEndDate;
-          if (refD && refD.length >= 10) {
-            delayCount[n.nodeNo - 1]++;
-            delayedProjects[n.nodeNo - 1].push(shortName);
-            const endD = (n.status === 'completed' && n.actualDate) ? new Date(n.actualDate) : now;
-            delayDays[n.nodeNo - 1] += Math.max(0, Math.round((endD.getTime() - new Date(refD).getTime()) / (1000 * 60 * 60 * 24)));
-          }
+        // ⚠️ 共享延期判定：基线 = 初始审批实施计划；无审批基线不判延期
+        const delay = getNodeDelay(n, now);
+        if (delay.delayed && delay.hasBaseline) {
+          delayCount[n.nodeNo - 1]++;
+          delayedProjects[n.nodeNo - 1].push(shortName);
+          delayDays[n.nodeNo - 1] += Math.max(0, delay.days);
         }
       }
     }
@@ -295,9 +275,9 @@ const DeliveryAnalysis: React.FC = () => {
         totalCount++;
         const ex = deliveryExTax(p);
         tAmt += ex;
-        const n15 = getNode15(p.nodes);
-        const n15done = n15?.status === 'completed' && !!n15.actualDate
-          && new Date(n15.actualDate) >= fyRange.start && new Date(n15.actualDate) <= mEnd;
+        // 已完成交付判定：节点15实际完成日或 updatedAt 回退（统一共享口径）
+        const doneDate = getProjectDoneDate(p);
+        const n15done = !!doneDate && doneDate >= fyRange.start && doneDate <= mEnd;
         if (n15done) { completed++; cAmt += ex; } else { active++; aAmt += ex; }
         const pd = calcProjDelay(p);
         if (n15done) {
@@ -398,8 +378,8 @@ const DeliveryAnalysis: React.FC = () => {
           start = n.actualStartDate ? new Date(n.actualStartDate) : new Date(n.plannedStartDate);
           end = new Date(n.actualDate);
           if (start > end) start = end;
-        } else if (n.status === 'in_progress' || n.status === 'delayed') {
-          // 进行中/延期：开始=实际开始（人为设定开始的时刻），已超最新计划则结束=now
+        } else if (n.status === 'in_progress') {
+          // 进行中：开始=实际开始（人为设定开始的时刻），已超最新计划则结束=now
           start = n.actualStartDate ? new Date(n.actualStartDate) : new Date(n.plannedStartDate);
           end = new Date(n.plannedEndDate) < now ? now : new Date(n.plannedEndDate);
         } else {
@@ -410,8 +390,8 @@ const DeliveryAnalysis: React.FC = () => {
         return { nodeNo: n.nodeNo, startDate: start, endDate: end, status: n.status,
           name: n.name, plannedStartDate: new Date(n.plannedStartDate),
           plannedEndDate: new Date(n.plannedEndDate), actualDate: n.actualDate ? new Date(n.actualDate) : undefined,
-          initEndDate: new Date(n.plannedEndDate),
-          baselineDate: baselineEnd ? new Date(baselineEnd) : undefined };
+          baselineDate: baselineEnd ? new Date(baselineEnd) : undefined,
+          delay: getNodeDelay(n) };
       });
       return {
         name: compressNo(p.salesNo),
@@ -419,6 +399,7 @@ const DeliveryAnalysis: React.FC = () => {
         doneCount: p.nodes.filter(n => isNode15Done(n)).length,
         totalCount: p.nodes.length,
         status: p.status,
+        delayed: getProjectDelay(p).delayed,
       };
     });
     return { tlStart, totalDays, months, todayPos, projectRows, DAY_MS };
@@ -492,6 +473,7 @@ const DeliveryAnalysis: React.FC = () => {
         delayDays: projDelay,
         costDeviation: costDev,
         status: p.status,
+        delayed: getProjectDelay(p).delayed,
         capacityPressure: capacityRaw / 10000,
       };
     }).filter(Boolean) as BubbleDataItem[];

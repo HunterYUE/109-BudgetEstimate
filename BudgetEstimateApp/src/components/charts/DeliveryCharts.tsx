@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Card } from 'antd';
 import { COLORS } from '../../styles/colors';
-import { fmtK } from '../../utils/analysisShared';
+import { fmtK, type NodeDelayInfo } from '../../utils/analysisShared';
 
 /* ============================================================
    类型定义
@@ -32,9 +32,9 @@ interface GanttSlot {
   plannedStartDate: Date;
   plannedEndDate: Date;
   actualDate?: Date;
-  /** 当前计划结束日（无基线时作为延期计算回退） */
-  initEndDate: Date;
   baselineDate?: Date;
+  /** 共享延期判定结果（由数据方用 getNodeDelay 计算） */
+  delay: NodeDelayInfo;
 }
 
 export interface BubbleDataItem {
@@ -44,6 +44,8 @@ export interface BubbleDataItem {
   costDeviation: number;
   status: string;
   capacityPressure: number;
+  /** 派生延期维度（getProjectDelay） */
+  delayed: boolean;
 }
 
 interface GanttHoverInfo {
@@ -71,20 +73,6 @@ const toK = (v: number) => Math.round(v / 1000).toLocaleString() + 'K';
 const GANTT_STATUS_COLOR: Record<string, string> = {
   pending: '#1a4f83', in_progress: '#593b73', completed: '#275d3e',
 };
-
-/** 计算某节点的延期天数（与基线计划完成时间比，正=延期，负=提前，无基线时用当前计划） */
-function calcNodeDelay(s: GanttSlot): number {
-  const refEnd = s.baselineDate || s.initEndDate;
-  if (s.status === 'completed') {
-    if (!s.actualDate) return 0;
-    return Math.round((s.actualDate.getTime() - refEnd.getTime()) / (1000 * 60 * 60 * 24));
-  }
-  // 非完成节点（含 pending）：与交付管理页实施计划一致，均计算延期
-  // 但提前天数仅在存在基准（审批通过的计划）时显示
-  const dd = Math.round((Date.now() - refEnd.getTime()) / (1000 * 60 * 60 * 24));
-  if (dd < 0 && !s.baselineDate) return 0;
-  return dd;
-}
 
 /* ============================================================
    SVG 柱状图（增强版，支持 subValue / per-bar color）
@@ -389,10 +377,10 @@ const GanttNode: React.FC<{
 }> = ({ slot, projectKey, sx, ex, w, cy, barH, onHover }) => {
   const color = slot.status === 'completed'
     ? GANTT_STATUS_COLOR.completed
-    : (slot.status === 'in_progress' || slot.status === 'delayed')
+    : slot.status === 'in_progress'
     ? GANTT_STATUS_COLOR.in_progress
     : GANTT_STATUS_COLOR.pending;
-  const delayDays = calcNodeDelay(slot);
+  const delayDays = slot.delay.days;
   const showContent = w > 9;
   return (
     <g style={{ cursor: 'pointer' }}
@@ -450,7 +438,7 @@ const GanttTooltip: React.FC<{
             {fmtShort(slot.startDate)}~{fmtShort(slot.actualDate)}
           </text>
         </>
-      ) : slot.status === 'in_progress' || slot.status === 'delayed' ? (
+      ) : slot.status === 'in_progress' ? (
         (() => {
           const overdue = new Date(slot.plannedEndDate) < new Date(); // 已超最新计划
           return (
@@ -491,6 +479,8 @@ interface GanttProject {
   doneCount: number;
   totalCount: number;
   status: string;
+  /** 派生延期维度（getProjectDelay） */
+  delayed: boolean;
 }
 
 export const ProjectGantt: React.FC<{
@@ -584,8 +574,8 @@ export const ProjectGantt: React.FC<{
           const cy = rowCenter(pi) - barH / 2; // 居中于行分隔线之间
           const badgeCx = 22;
           const badgeR = 14;
-          const badgeBg = proj.status === '已完成' ? '#e8f5e9' : proj.status === '已延期' ? '#ffebee' : '#e6f0fa';
-          const badgeColor = proj.status === '已完成' ? COLORS.success : proj.status === '已延期' ? COLORS.danger : COLORS.primary;
+          const badgeBg = proj.status === '已完成' ? '#e8f5e9' : proj.delayed ? '#ffebee' : '#e6f0fa';
+          const badgeColor = proj.status === '已完成' ? COLORS.success : proj.delayed ? COLORS.danger : COLORS.primary;
           return (
             <g key={proj.name + '-' + pi}>
               {/* 先绘矩形条（底层），再绘标签（顶层） */}
@@ -744,7 +734,9 @@ export const BubbleChart: React.FC<{
   const maxCostNeg = Math.max(1, Math.min(Y_CAP, Math.max(...data.map(d => -d.costDeviation), 0)));
   const yTotal = maxCostPos + maxCostNeg;
   const maxPressure = Math.max(...data.map(d => d.capacityPressure), 0.001);
-  const statusColors: Record<string, string> = { '进行中': COLORS.primary, '已完成': COLORS.success, '已延期': COLORS.danger };
+  /** 气泡颜色：已完成绿；未完成且延期中（派生）红；否则蓝 */
+  const bubbleColor = (d: BubbleDataItem): string =>
+    d.status === '已完成' ? COLORS.success : d.delayed ? COLORS.danger : COLORS.primary;
   const step = 15;
   const maxTick = Math.ceil(maxDelay / step) * step;
   // Y轴刻度独立计算（避免与X轴共用时，在小范围内重复取值）
@@ -819,7 +811,7 @@ export const BubbleChart: React.FC<{
               item={d}
               cx={cx} cy={cy} r={r}
               fillOpacity={fillOpacity}
-              color={statusColors[d.status] || COLORS.textLight}
+              color={bubbleColor(d)}
               hovered={hoveredBubble?.item.name === d.name}
               onHover={setHoveredBubble} />
           );

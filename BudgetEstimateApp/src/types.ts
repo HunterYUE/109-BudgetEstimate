@@ -250,7 +250,8 @@ export interface DeliveryNode {
   baselineEndDate?: string;
   /** 旧数据中可能存在此字段 */
   baselinePlannedEndDate?: string;
-  status: 'pending' | 'in_progress' | 'completed' | 'delayed';
+  /** 执行状态三态：未开始/进行中/已完成（延期为派生维度，见 analysisShared.getNodeDelay） */
+  status: 'pending' | 'in_progress' | 'completed';
   comments: string;
   history: NodeChangeEntry[];
 }
@@ -263,7 +264,8 @@ export interface DeliveryProject {
   projectName: string;
   contractAmount: number;
   quotationId: string;          // 关联报价ID，用于加载成本对比数据
-  status: '进行中' | '已完成' | '已延期';
+  /** 执行状态三态：未开始/进行中/已完成（延期中为派生维度，见 analysisShared.getProjectDelay） */
+  status: '未开始' | '进行中' | '已完成';
   nodes: DeliveryNode[];
   // 实施计划审批
   planStatus: 'draft' | 'pending' | 'approved' | 'rejected';

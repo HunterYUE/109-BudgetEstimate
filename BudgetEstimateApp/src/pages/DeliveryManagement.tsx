@@ -6,11 +6,12 @@ import { formatMoney } from '../utils/calculations';
 import { deliveryService } from '../services/deliveryService';
 import type { DeliveryProject } from '../types';
 import { COLORS } from '../styles/colors';
+import { getProjectDelay } from '../utils/analysisShared';
 
 const statusTag: Record<string, { label: string; color: string }> = {
+  '未开始': { label: '未开始', color: 'default' },
   '进行中': { label: '进行中', color: 'blue' },
   '已完成': { label: '已完成', color: 'green' },
-  '已延期': { label: '已延期', color: 'red' },
 };
 
 const DeliveryManagement: React.FC = () => {
@@ -46,10 +47,11 @@ const DeliveryManagement: React.FC = () => {
 
   const renderProjectCard = (p: DeliveryProject) => {
     const nodes = p.nodes || [];
-    const done = nodes.filter(n => n.status === 'completed' || n.status === 'delayed').length;
+    const done = nodes.filter(n => n.status === 'completed').length;
     const total = nodes.length;
     const cfg = statusTag[p.status] || { label: p.status, color: 'default' };
-    
+    // 延期中：派生维度（初始审批基线 vs 更新计划/实际/当前）
+    const delayed = p.status !== '已完成' && getProjectDelay(p).delayed;
 
     return (
       <Card
@@ -60,7 +62,7 @@ const DeliveryManagement: React.FC = () => {
         style={{
           borderRadius: 6, marginBottom: 8, cursor: 'pointer',
           borderLeft: `4px solid ${
-            p.status === '已完成' ? COLORS.success : p.status === '已延期' ? COLORS.danger : COLORS.primary
+            p.status === '已完成' ? COLORS.success : delayed ? COLORS.danger : COLORS.primary
           }`,
         }}
         styles={{ body: { padding: '14px 20px' } }}
@@ -71,6 +73,7 @@ const DeliveryManagement: React.FC = () => {
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <span style={{ fontSize: 18, fontWeight: 700, color: COLORS.textDark, letterSpacing: 1 }}>{p.clientName}</span>
               <Tag color={cfg.color} style={{ margin: 0, fontSize: 12, lineHeight: '20px', borderRadius: 3, border: 'none' }}>{cfg.label}</Tag>
+              {delayed && <Tag color="red" style={{ margin: 0, fontSize: 12, lineHeight: '20px', borderRadius: 3, border: 'none' }}>延期中</Tag>}
             </div>
             <div style={{ fontSize: 13, color: COLORS.textLight, marginTop: 4, display: 'flex', gap: 16 }}>
               <span>{p.projectName}</span>
@@ -89,9 +92,9 @@ const DeliveryManagement: React.FC = () => {
           <div style={{
             width: 40, height: 40, borderRadius: '50%', flexShrink: 0,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            background: p.status === '已完成' ? '#e8f5e9' : p.status === '已延期' ? '#ffebee' : '#e6f0fa',
+            background: p.status === '已完成' ? '#e8f5e9' : delayed ? '#ffebee' : '#e6f0fa',
             fontSize: 13, fontWeight: 700,
-            color: p.status === '已完成' ? COLORS.success : p.status === '已延期' ? COLORS.danger : COLORS.primary,
+            color: p.status === '已完成' ? COLORS.success : delayed ? COLORS.danger : COLORS.primary,
           }}>
             {done}/{total}
           </div>

@@ -13,6 +13,7 @@ import IconButton from '../components/IconButton';
 import ItemCostTable from '../components/ItemCostTable';
 import type { DeliveryProject, DeliveryNode, NodeChangeEntry, Group, ProjectVersion } from '../types';
 import { COLORS } from '../styles/colors';
+import { getNodeDelay, getProjectDelay } from '../utils/analysisShared';
 import { exportHtmlTable } from '../utils/exportToExcel';
 import { deliveryFileService, type DeliveryFile } from '../services/deliveryFileService';
 import { todayBeijing } from '../utils/timeFormat';
@@ -472,13 +473,10 @@ const DeliveryDetail: React.FC = () => {
     let rows = '';
     for (let i = 0; i < project.nodes.length; i++) {
       const n = project.nodes[i];
-      const statusMap = { pending: '未开始', in_progress: '进行中', completed: '已完成', delayed: '延期中' };
-      // ⚠️ 与界面显示逻辑一致：取基准日期，无基准时取当前计划结束日
-      const refDate = n.baselineEndDate || n.baselinePlannedEndDate || n.plannedEndDate;
-      const dd = n.status === 'completed' && n.actualDate
-        ? Math.round((new Date(n.actualDate).getTime() - new Date(refDate).getTime()) / 86400000)
-        : Math.round((Date.now() - new Date(refDate).getTime()) / 86400000);
-      const delayStr = dd > 0 ? '+' + dd : (dd < 0 ? String(dd) : '0');
+      const statusMap = { pending: '未开始', in_progress: '进行中', completed: '已完成' };
+      // ⚠️ 共享延期判定：基线 = 初始审批实施计划；无基线显示 —
+      const { hasBaseline, days } = getNodeDelay(n);
+      const delayStr = hasBaseline ? (days > 0 ? '+' + days : String(days)) : '—';
       rows += '<tr>' +
         '<td style="text-align:center">' + n.nodeNo + '</td>' +
         '<td>' + n.name + '</td>' +
@@ -635,7 +633,7 @@ const DeliveryDetail: React.FC = () => {
     );
   };
 
-  const completedNodeCount = project.nodes.filter(n => n.status === 'completed' || n.status === 'delayed').length;
+  const completedNodeCount = project.nodes.filter(n => n.status === 'completed').length;
 
   return (
     <div>
@@ -662,11 +660,15 @@ const DeliveryDetail: React.FC = () => {
         <div style={{ flex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <span style={{ fontSize: 17, fontWeight: 700, color: COLORS.textDark, letterSpacing: 1 }}>{project.clientName}</span>
-            <Tag color={project.status === '已完成' ? 'green' : project.status === '已延期' ? 'red' : 'blue'}
+            <Tag color={project.status === '已完成' ? 'green' : project.status === '未开始' ? 'default' : 'blue'}
               style={{ margin: 0, fontSize: 12, lineHeight: '20px', borderRadius: 3, border: 'none' }}>
               {project.status}
             </Tag>
-            {project.status !== '已完成' && project.nodes.every(n => n.status === 'completed' || n.status === 'delayed') && project.costStatus === 'approved' && (
+            {/* 延期中：派生维度（初始审批基线 vs 更新计划/实际/当前） */}
+            {project.status !== '已完成' && getProjectDelay(project).delayed && (
+              <Tag color="red" style={{ margin: 0, fontSize: 12, lineHeight: '20px', borderRadius: 3, border: 'none' }}>延期中</Tag>
+            )}
+            {project.status !== '已完成' && project.nodes.every(n => n.status === 'completed') && project.costStatus === 'approved' && (
               <span onClick={() => {
                 Modal.confirm({
                   title: '确认完成项目',
@@ -800,19 +802,9 @@ const DeliveryDetail: React.FC = () => {
             <span>项目延期：
               <strong style={{ color: COLORS.danger }}>
                 {(() => {
-                  const done15 = project.nodes.find(n => n.nodeNo === 15);
-                  if (done15?.status === 'completed' && done15.actualDate) {
-                    const baseline = done15.baselineEndDate || done15.baselinePlannedEndDate || done15.plannedEndDate;
-                    const planEnd = new Date(baseline);
-                    const actual = new Date(done15.actualDate);
-                    const days = Math.round((actual.getTime() - planEnd.getTime()) / (1000 * 60 * 60 * 24));
-                    return days > 0 ? '+' + days + '天' : days + '天';
-                  }
-                  const now = new Date();
-                  const refDate = done15?.baselineEndDate || done15?.baselinePlannedEndDate || done15?.plannedEndDate;
-                  const end15 = new Date(refDate || now);
-                  const days = Math.round((now.getTime() - end15.getTime()) / (1000 * 60 * 60 * 24));
-                  return days > 0 ? '+' + days + '天' : days + '天';
+                  // ⚠️ 共享延期判定：以节点15为准；无基线显示 —
+                  const { hasBaseline, days } = getProjectDelay(project);
+                  return hasBaseline ? (days > 0 ? '+' + days + '天' : days + '天') : '—';
                 })()}
               </strong>
             </span>

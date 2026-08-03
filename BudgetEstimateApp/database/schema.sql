@@ -66,12 +66,12 @@ EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
 DO $$ BEGIN
-  CREATE TYPE delivery_status AS ENUM ('进行中', '已完成', '已延期');
+  CREATE TYPE delivery_status AS ENUM ('未开始', '进行中', '已完成');
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
 DO $$ BEGIN
-  CREATE TYPE node_status AS ENUM ('pending', 'in_progress', 'completed', 'delayed');
+  CREATE TYPE node_status AS ENUM ('pending', 'in_progress', 'completed');
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
