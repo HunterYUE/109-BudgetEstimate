@@ -2,7 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Drawer, Table, Tag, Space } from 'antd';
 import { PhoneOutlined, MailOutlined } from '@ant-design/icons';
-import type { Client, Contact } from '../../types';
+import type { Client, Contact, ClientQuoteHistory } from '../../types';
 import { COLORS } from '../../styles/colors';
 import { gradeConfig, creditConfig, roleColors } from './clientConstants';
 import { formatMoney } from '../../utils/calculations';
@@ -132,11 +132,11 @@ const ClientDrawer: React.FC<ClientDrawerProps> = ({ drawerClient, clients, onCl
         }}>
           {sectionHeader('历史报价记录')}
           {(() => {
-            const qh = (client as any).quotationHistory || [];
+            const qh = client.quotationHistory || [];
             return qh.length > 0 ? (
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <tbody>
-                  {qh.map((h: any, i: number) => {
+                  {qh.map((h: ClientQuoteHistory, i: number) => {
                     const qId = h.quotationId;
                     const clickable = !!qId;
                     const salesNo = h.salesNo || '';

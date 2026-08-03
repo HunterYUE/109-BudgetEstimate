@@ -99,24 +99,77 @@ export const getNodeDelay = (node: DeliveryNode | undefined, asOf?: Date): NodeD
 };
 
 /** 交付项目是否已完结交付：节点15完成 或 项目状态已完成（执行状态三态，延期中为派生维度） */
-export const isProjectDelivered = (p: DeliveryProject): boolean => {
-  const node15 = getNode15(p.nodes);
-  return !!node15 && (node15.status === 'completed' || p.status === '已完成');
-};
+export const isProjectDelivered = (p: DeliveryProject): boolean =>
+  getNode15(p.nodes)?.status === 'completed' || p.status === '已完成';
 
 /**
  * 交付项目实际完成日期。
- * - 节点15实际完成日优先（actualDate，兼容旧数据 actualEndDate）
+ * - 节点15完成且填实际日 → 实际完成日（actualDate，兼容旧数据 actualEndDate）
  * - 项目已完成但节点无实际日 → 状态切到已完成的时刻（updatedAt）
  * - 未完结 → null
  */
 export const getProjectDoneDate = (p: DeliveryProject): Date | null => {
   const node15 = getNode15(p.nodes);
   const actualEnd = node15?.actualDate || node15?.actualEndDate;
-  if (actualEnd) return new Date(actualEnd);
+  if (node15?.status === 'completed' && actualEnd) return new Date(actualEnd);
   if (p.status === '已完成') return new Date(p.updatedAt);
   return null;
 };
+
+/* ============================================================
+   月度订单/销售归集（销售分析月度订单/月度销售、仪表盘利润概览共用）
+   ============================================================ */
+/** 报价概算利润转未税：gp3_amount（含税）÷ (1+税率)，缺省 13%；无概算利润为 0 */
+export const quoteProfitExTax = (gp3Amt: number | undefined, taxRate?: number): number =>
+  !!gp3Amt && gp3Amt > 0 ? Math.round(gp3Amt / (1 + (taxRate ?? 0.13))) : 0;
+
+/**
+ * 交付实际销售利润（未税）：未税金额 − 实际总成本。
+ * 无成本数据返回 undefined —— 不设 20% 假利润，避免误导，同时提示成本数据缺失。
+ */
+export const deliverySalesProfit = (exTax: number, totalActualCost?: number): number | undefined =>
+  totalActualCost != null ? (exTax - totalActualCost) : undefined;
+
+/** 单个项目在月窗口内的订单/销售金额与利润（未税口径） */
+export interface MonthlySalesPoint {
+  /** 订单金额（转交付月 createdAt 归集） */
+  orderAmt: number;
+  /** 订单利润（报价概算利润未税） */
+  orderProfit: number;
+  /** 销售金额（完成交付月 doneDate 归集） */
+  salesAmt: number;
+  /** 销售利润（实际利润；无成本数据为 undefined，提示成本缺失） */
+  salesProfit: number | undefined;
+}
+
+/** 交付项目在指定月窗口内的订单/销售归集（与销售分析月度订单/月度销售同源） */
+export const projectMonthlySales = (
+  p: DeliveryProject,
+  monthStart: Date,
+  monthEnd: Date,
+  taxRate?: number,
+  gp3Amt?: number,
+): MonthlySalesPoint => {
+  const exTax = exAmount(p.contractAmount, taxRate);
+  const created = new Date(p.createdAt);
+  const doneDate = getProjectDoneDate(p);
+  const orderIn = created >= monthStart && created <= monthEnd;
+  const salesIn = !!doneDate && doneDate >= monthStart && doneDate <= monthEnd;
+  return {
+    orderAmt: orderIn ? exTax : 0,
+    orderProfit: orderIn ? quoteProfitExTax(gp3Amt, taxRate) : 0,
+    salesAmt: salesIn ? exTax : 0,
+    salesProfit: salesIn ? deliverySalesProfit(exTax, p.totalActualCost) : 0,
+  };
+};
+
+/** 财年 12 个月的起止窗口（index 0 = 7月，与销售分析 MONTH_LABELS 对齐） */
+export const fyMonthWindows = (fyRange: { start: Date; end: Date }): { start: Date; end: Date }[] =>
+  Array.from({ length: 12 }, (_, i) => {
+    const m = (6 + i) % 12;
+    const y = m < 6 ? fyRange.end.getFullYear() : fyRange.start.getFullYear();
+    return { start: new Date(y, m, 1), end: monthEndOf(y, m) };
+  });
 
 /**
  * 统一项目延期判定（以节点15为准，与节点同口径）。

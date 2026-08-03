@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { Table, Tooltip, Button, Input, Popover } from 'antd';
 import { DeleteOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
-import type { GroupItem, SourcingType, GroupType, Component } from '../types';
+import type { GroupItem, SourcingType, GroupType, Component, ItemType } from '../types';
 import { componentService } from '../services/componentService';
 import { calcDirectCost, calcItemPrices } from '../utils/calculations';
 import { COLORS } from '../styles/colors';
@@ -86,13 +86,13 @@ const MarginInput: React.FC<{ value: number; onCommit: (val: number) => void }> 
 
 
 /** 可编辑的编码单元格，支持模糊搜索物料编码、名称和标签 */
-const CodeCell: React.FC<{ value: string; onSelect: (item: any) => void }> = ({ value, onSelect }) => {
+const CodeCell: React.FC<{ value: string; onSelect: (item: Component) => void }> = ({ value, onSelect }) => {
   const [open, setOpen] = React.useState(false);
   const [search, setSearch] = React.useState('');
-  const [catalog, setCatalog] = React.useState<any[]>([]);
+  const [catalog, setCatalog] = React.useState<Component[]>([]);
   useEffect(() => { loadCatalog().then(setCatalog); }, []);
   const results = search.trim()
-    ? catalog.filter((c: any) => c.code?.toLowerCase().includes(search.toLowerCase()) || c.nameCn?.toLowerCase().includes(search.toLowerCase()) || (c.tags || []).some((t: string) => t.includes(search)))
+    ? catalog.filter((c: Component) => c.code?.toLowerCase().includes(search.toLowerCase()) || c.nameCn?.toLowerCase().includes(search.toLowerCase()) || (c.tags || []).some((t: string) => t.includes(search)))
     : [];
   return (
     <Popover
@@ -126,7 +126,7 @@ const CodeCell: React.FC<{ value: string; onSelect: (item: any) => void }> = ({ 
 };
 
 const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem, groupType, editing = true }) => {
-  const [catalog, setCatalog] = React.useState<any[]>([]);
+  const [catalog, setCatalog] = React.useState<Component[]>([]);
   const cfg = getColumnConfig(groupType);
 
   useEffect(() => { loadCatalog().then(setCatalog); }, []);
@@ -136,8 +136,8 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
     const item = { ...newItems[index], ...partial };
 
     // 确保工时费率有值（历史数据可能为 0）
-    const effectiveDesignRate = item.designHourRate || catalog.find((c: any) => c.code === 'SV-DESIGN-000000-V1.0')?.unitCost || 175;
-    const effectiveAssemblyRate = item.assemblyHourRate || catalog.find((c: any) => c.code === 'SV-INSASS-000000-V1.0')?.unitCost || 85;
+    const effectiveDesignRate = item.designHourRate || catalog.find((c: Component) => c.code === 'SV-DESIGN-000000-V1.0')?.unitCost || 175;
+    const effectiveAssemblyRate = item.assemblyHourRate || catalog.find((c: Component) => c.code === 'SV-INSASS-000000-V1.0')?.unitCost || 85;
     if (!item.designHourRate) item.designHourRate = effectiveDesignRate;
     if (!item.assemblyHourRate) item.assemblyHourRate = effectiveAssemblyRate;
 
@@ -183,10 +183,10 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
     onCell: onCellLock(60),
     render: (v: string, _record: GroupItem, idx: number) => {
       const fontSize = 13;
-      const TYPES = ['COMPLETE_SET', 'COMPONENT', 'SOFTWARE', 'SERVICE', 'PART'];
+      const TYPES: ItemType[] = ['COMPLETE_SET', 'COMPONENT', 'SOFTWARE', 'SERVICE', 'PART'];
       const LABELS = { COMPLETE_SET: 'CS', COMPONENT: 'CP', SOFTWARE: 'SW', SERVICE: 'SV' } as Record<string, string>;
       const typeLabel = LABELS[v] || v;
-      const nextType = () => { const cur = TYPES.indexOf(v); return TYPES[(cur + 1) % TYPES.length]; };
+      const nextType = () => { const cur = TYPES.indexOf(v as ItemType); return TYPES[(cur + 1) % TYPES.length]; };
       if (!editing) {
         return <span style={{
           fontSize,
@@ -194,7 +194,7 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
         }}>{typeLabel}</span>;
       }
       return (
-        <span onClick={() => updateItem(idx, { itemType: nextType() as any })}
+        <span onClick={() => updateItem(idx, { itemType: nextType() })}
           style={{
             fontSize, cursor: 'pointer', display: 'block', textAlign: 'center',
             color: typeColors[v] || COLORS.chartGray, userSelect: 'none'

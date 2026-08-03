@@ -6,7 +6,7 @@ import type { DeliveryProject } from '../types';
 import { COLORS } from '../styles/colors';
 import { NODE_DISPLAY_NAMES } from '../utils/constants';
 import { parseFY, FYSelector } from '../utils/fiscalYear';
-import { fmtK, compressNo, monthEndOf, exAmount, getNode15, isNode15Done, getNodeBaseline, getNodeDelay, getProjectDelay, isProjectDelivered, getProjectDoneDate } from '../utils/analysisShared';
+import { fmtK, compressNo, monthEndOf, exAmount, isNode15Done, getNodeBaseline, getNodeDelay, getProjectDelay, isProjectDelivered, getProjectDoneDate, quoteProfitExTax, deliverySalesProfit } from '../utils/analysisShared';
 import { VerticalBarChart, ProfitChart, ProjectGantt, BubbleChart } from '../components/charts/DeliveryCharts';
 import type { ProfitItem, BubbleDataItem } from '../components/charts/DeliveryCharts';
 
@@ -82,6 +82,24 @@ const chartLabel = (salesNo: string | undefined): string => {
 /** 计算项目延期天数（共享延期口径，以第15节点为准，与实施计划一致），负值表示提前 */
 const calcProjDelay = (p: DeliveryProject): number => getProjectDelay(p).days;
 
+/** 交付报价信息映射类型（报价编制表持久化数据：税率/折后报价/概算利润/概算利润率） */
+type DeliveryQuoteMap = Map<string, { taxRate: number; discounted: number; gp3Amt: number; rate: number }>;
+
+/** 交付未税金额 = 合同金额 ÷ (1+报价税率) */
+const exTaxOf = (p: DeliveryProject, info: DeliveryQuoteMap): number =>
+  exAmount(p.contractAmount, info.get(p.id)?.taxRate);
+/** 交付概算利润（未税）= 报价概算利润转未税（共享 quoteProfitExTax） */
+const estProfitOf = (p: DeliveryProject, info: DeliveryQuoteMap): number => {
+  const i = info.get(p.id);
+  return quoteProfitExTax(i?.gp3Amt, i?.taxRate);
+};
+/** 交付概算总成本（未税）= 未税金额 − 概算利润 */
+const grandEstimatedOf = (p: DeliveryProject, info: DeliveryQuoteMap): number =>
+  exTaxOf(p, info) - estProfitOf(p, info);
+/** 交付概算GP3 = 报价概算利润率 */
+const estGP3Of = (p: DeliveryProject, info: DeliveryQuoteMap): number =>
+  info.get(p.id)?.rate ?? 0;
+
 /** 判断项目是否已完成交付且在财年范围内（完成日 = 节点15实际完成日或 updatedAt 回退） */
 const isNode15CompletedInFy = (p: DeliveryProject, fyRange: ReturnType<typeof parseFY>): boolean => {
   if (!isProjectDelivered(p)) return false;
@@ -138,13 +156,10 @@ const DeliveryAnalysis: React.FC = () => {
   const fyFiltered = useMemo(() => {
     return deliveryProjects.filter(p => {
       const created = new Date(p.createdAt);
-      const n15 = getNode15(p.nodes);
-      const n15DoneDate = (n15 && n15.status === 'completed' && n15.actualDate)
-        ? new Date(n15.actualDate)
-        : null;
+      // 有效结束：未完成→至今；已完成→实际完成日（节点15实际日或 updatedAt 回退，统一共享口径）
       const effectiveEnd = (p.status !== '已完成')
         ? new Date()
-        : (n15DoneDate || new Date(p.updatedAt));
+        : (getProjectDoneDate(p) ?? new Date(p.updatedAt));
       return created <= fyRange.end && effectiveEnd >= fyRange.start;
     });
   }, [deliveryProjects, fyRange]);
@@ -153,11 +168,12 @@ const DeliveryAnalysis: React.FC = () => {
   const projectDelayDays = useMemo(() => {
     return fyFiltered.map(p => {
       const delay = calcProjDelay(p);
-      const n15completed = getNode15(p.nodes)?.status === 'completed';
+      // 已完成项目灰显；未完成按延期/提前着色
+      const done = isProjectDelivered(p);
       return {
         name: chartLabel(p.salesNo),
         value: delay,
-        color: n15completed ? COLORS.textLight : (delay > 0 ? COLORS.danger : delay < 0 ? COLORS.success : COLORS.textLight),
+        color: done ? COLORS.textLight : (delay > 0 ? COLORS.danger : delay < 0 ? COLORS.success : COLORS.textLight),
       };
     });
   }, [fyFiltered]);
@@ -171,7 +187,6 @@ const DeliveryAnalysis: React.FC = () => {
     const delayedProjects: string[][] = Array.from({ length: NODE_COUNT }, () => []);
 
     for (const p of fyFiltered) {
-      if (p.status !== '进行中' && p.status !== '未开始' && p.status !== '已完成') continue;
       const shortName = compressNo(p.salesNo) || p.clientName;
       for (const n of p.nodes) {
         // ⚠️ 节点级财年裁剪（与节点按时率/甘特图同口径）：
@@ -224,27 +239,16 @@ const DeliveryAnalysis: React.FC = () => {
     return map;
   }, [deliveryProjects, quoteMap]);
   /** 交付项目未税金额 = 持久化合同金额 ÷ (1 + 报价编制表税率) */
-  const deliveryExTax = (p: DeliveryProject): number =>
-    exAmount(p.contractAmount, deliveryQuoteInfo.get(p.id)?.taxRate);
-  /** 交付概算利润（未税）= 报价编制表概算利润（含税 gp3_amount）÷ (1+税率) */
-  const deliveryEstProfit = (p: DeliveryProject): number => {
-    const i = deliveryQuoteInfo.get(p.id);
-    return i && i.gp3Amt > 0 ? Math.round(i.gp3Amt / (1 + i.taxRate)) : 0;
-  };
-  /** 交付概算总成本（未税）= 未税金额 − 概算利润 */
-  const deliveryGrandEstimated = (p: DeliveryProject): number => deliveryExTax(p) - deliveryEstProfit(p);
-  /** 交付概算GP3 = 报价编制表概算利润率 */
-  const deliveryEstGP3 = (p: DeliveryProject): number => deliveryQuoteInfo.get(p.id)?.rate ?? 0;
-
   // ── 利润分析数据（仅已完成项目总结的项目，按GP3偏差排序）──
   const profitChartData = useMemo(() => {
     const items: ProfitItem[] = fyFiltered
       .filter(p => isNode15CompletedInFy(p, fyRange) && deliveryQuoteInfo.has(p.id))
       .map(p => {
-        const exTax = deliveryExTax(p);
-        const estGP3 = deliveryEstGP3(p);
-        const estProfit = deliveryEstProfit(p);
-        const actProfit = (p.costStatus === 'approved' && p.totalActualCost != null) ? (exTax - p.totalActualCost) : undefined;
+        const exTax = exTaxOf(p, deliveryQuoteInfo);
+        const estGP3 = estGP3Of(p, deliveryQuoteInfo);
+        const estProfit = estProfitOf(p, deliveryQuoteInfo);
+        // 实际销售利润（共享 deliverySalesProfit：无成本数据返回 undefined，图表不显示实际）
+        const actProfit = deliverySalesProfit(exTax, p.totalActualCost);
         const actGP3 = actProfit != null && exTax > 0 ? actProfit / exTax : undefined;
         return {
           name: chartLabel(p.salesNo),
@@ -273,7 +277,7 @@ const DeliveryAnalysis: React.FC = () => {
       for (const p of fyFiltered) {
         if (new Date(p.createdAt) > mEnd) continue;
         totalCount++;
-        const ex = deliveryExTax(p);
+        const ex = exTaxOf(p, deliveryQuoteInfo);
         tAmt += ex;
         // 已完成交付判定：节点15实际完成日或 updatedAt 回退（统一共享口径）
         const doneDate = getProjectDoneDate(p);
@@ -298,7 +302,7 @@ const DeliveryAnalysis: React.FC = () => {
         }
         // 成本偏差（仅统计已完成交付项目，与「已完成项目」KPI 同源；概算成本取自报价编制表持久化数据）
         if (n15done && p.costStatus === 'approved' && p.totalActualCost != null) {
-          const grandEstimated = deliveryGrandEstimated(p);
+          const grandEstimated = grandEstimatedOf(p, deliveryQuoteInfo);
           costDevNumerator += (p.totalActualCost - grandEstimated);
           costDevDenominator += grandEstimated;
         }
@@ -357,11 +361,10 @@ const DeliveryAnalysis: React.FC = () => {
     });
     const todayPos = Math.round((now.getTime() - tlStart.getTime()) / DAY_MS);
     const projectRows = fyFiltered.filter(p => {
-      const n15 = getNode15(p.nodes);
-      if (n15 && n15.status === 'completed') {
-        const doneDate = n15.actualDate ? new Date(n15.actualDate) : new Date(p.updatedAt);
-        // 已完成项目仅在完成日期在时间线范围内时显示
-        return doneDate >= tlStart;
+      // 已完成项目仅在完成日期在时间线范围内时显示（统一共享完成判定）
+      if (isProjectDelivered(p)) {
+        const doneDate = getProjectDoneDate(p);
+        return !!doneDate && doneDate >= tlStart;
       }
       return true;
     }).map(p => {
@@ -403,11 +406,11 @@ const DeliveryAnalysis: React.FC = () => {
       };
     });
     return { tlStart, totalDays, months, todayPos, projectRows, DAY_MS };
-  }, [fyFiltered]);
+  }, [fyFiltered, fyRange]);
 
   // ── 各项目未税金额查找表（甘特图交付负荷按节点级计算时需要）──
   const projectExTaxLookup = useMemo(() => {
-    return fyFiltered.map(p => ({ projectId: compressNo(p.salesNo), exTax: deliveryExTax(p) }));
+    return fyFiltered.map(p => ({ projectId: compressNo(p.salesNo), exTax: exTaxOf(p, deliveryQuoteInfo) }));
   }, [fyFiltered, deliveryQuoteInfo]);
 
   // ── 气泡图数据（仅含当前财年内完成节点15的项目）──
@@ -425,14 +428,11 @@ const DeliveryAnalysis: React.FC = () => {
     for (const p of fyFiltered) {
       const node1 = p.nodes.find(n => n.nodeNo === 1);
       if (!node1) continue;
-      const node15 = getNode15(p.nodes);
       // 实际开始 = 节点1计划开始（无实际开始日期字段时的最佳近似）
       const start = new Date(node1.plannedStartDate);
-      // 实际结束 = 节点15实际完成（如有），否则使用最近更新时间或现在
-      const end = node15?.actualDate
-        ? new Date(node15.actualDate)
-        : now;
-      const exTax = deliveryExTax(p);
+      // 实际结束 = 已完成项目实际完成日（updatedAt 回退）；未完成 → 现在
+      const end = getProjectDoneDate(p) ?? now;
+      const exTax = exTaxOf(p, deliveryQuoteInfo);
       lifecycles.set(p.id, { start, end, exTax });
     }
 
@@ -442,8 +442,8 @@ const DeliveryAnalysis: React.FC = () => {
       const projDuration = lc.end.getTime() - lc.start.getTime();
 
       const projDelay = calcProjDelay(p);
-      const exTax = deliveryExTax(p);
-      const estTotal = deliveryGrandEstimated(p);
+      const exTax = exTaxOf(p, deliveryQuoteInfo);
+      const estTotal = grandEstimatedOf(p, deliveryQuoteInfo);
       const costDev = p.costStatus === 'approved' && p.totalActualCost != null && estTotal > 0
         ? (p.totalActualCost - estTotal) / estTotal * 100 : 0;
 

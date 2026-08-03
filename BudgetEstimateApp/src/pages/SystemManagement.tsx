@@ -337,7 +337,7 @@ const SystemManagement: React.FC = () => {
     },
     { title: '操作人', dataIndex: 'userName', key: 'userName', width: 100,
       render: (_: string, rec: AuditLog) => (
-        <span style={{ color: COLORS.textDark, fontSize: 13 }}>{(rec as any).displayName || rec.userName || '—'}</span>
+        <span style={{ color: COLORS.textDark, fontSize: 13 }}>{rec.displayName || rec.userName || '—'}</span>
       ),
     },
     { title: '模块', dataIndex: 'module', key: 'module', width: 88 },

@@ -1,12 +1,10 @@
 import React, { useMemo, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card } from 'antd';
-import {
-  RightOutlined,
-} from '@ant-design/icons';
+import { RightOutlined } from '@ant-design/icons';
 import { parseFY } from '../utils/fiscalYear';
 import { formatBeijing } from '../utils/timeFormat';
-import { fmtK, compressNo, oppEffectiveEnd, isRealWin, monthEndOf, exAmount, stageAsOf, getNode15, getNodeDelay, getProjectDelay, getProjectDoneDate } from '../utils/analysisShared';
+import { fmtK, compressNo, oppEffectiveEnd, isRealWin, monthEndOf, exAmount, stageAsOf, getNode15, getNodeDelay, getProjectDelay, getProjectDoneDate, projectMonthlySales } from '../utils/analysisShared';
 import { COLORS } from '../styles/colors';
 import { opportunityService } from '../services/opportunityService';
 import { deliveryService } from '../services/deliveryService';
@@ -112,12 +110,15 @@ const VerticalBars: React.FC<{
                   ) : (
                     <span style={{ fontSize: 9, fontWeight: 600, color: item.color, marginBottom: 3, textAlign: 'center', lineHeight: 1.2 }}>{item.value}{unit || ''}</span>
                   )}
-                  <div style={{
-                    width: barWidth,
-                    height: `${Math.max((item.value / max) * 100, 4)}%`, minHeight: 4,
-                    border: `3px solid ${item.color}`,
-                    background: 'transparent',
-                  }} />
+                  {/* 0 值（含负值）不渲染柱条，仅保留数值标签，避免 4% 兜底产生误导性 stub */}
+                  {item.value > 0 && (
+                    <div style={{
+                      width: barWidth,
+                      height: `${Math.max((item.value / max) * 100, 4)}%`, minHeight: 4,
+                      border: `3px solid ${item.color}`,
+                      background: 'transparent',
+                    }} />
+                  )}
                 </>
               ) : (
                 <div style={{ width: item && item.color === 'transparent' ? 16 : barWidth, height: 0 }} />
@@ -331,17 +332,11 @@ const Dashboard: React.FC = () => {
     const getStatusInMonth = (p: typeof deliveries[0], monthEnd: Date): string | null => {
       const created = new Date(p.createdAt);
       if (created > monthEnd) return null;
-      const node15 = getNode15(p.nodes);
-      if (node15?.actualDate && new Date(node15.actualDate) <= monthEnd) return '已完成';
+      // 已完成判定：节点15实际完成日或 updatedAt 回退（统一共享口径）
+      const doneDate = getProjectDoneDate(p);
+      if (doneDate && doneDate <= monthEnd) return '已完成';
       if (getProjDelayedAt(p, monthEnd)) return '已延期';
       return '进行中';
-    };
-    const changedThisMonth = (p: typeof deliveries[0], monthEnd: Date): boolean => {
-      const node15 = getNode15(p.nodes);
-      if (!node15?.actualDate) return false;
-      const d = new Date(node15.actualDate);
-      const monthStart = new Date(monthEnd.getFullYear(), monthEnd.getMonth(), 1);
-      return d >= monthStart && d <= monthEnd;
     };
     const monthLabels = [3,2,1].map(i => new Date(now.getFullYear(), now.getMonth() - i, 1).toLocaleString('en', {month:'short'}));
     const statusNames = ['已完成', '进行中', '已延期'] as const;
@@ -379,15 +374,9 @@ const Dashboard: React.FC = () => {
     const inFyDels = deliveries.filter(p => {
       const created = new Date(p.createdAt);
       if (created > fyRange.end) return false;
-      const node15 = getNode15(p.nodes);
-      let effEnd: Date;
-      if (node15?.actualDate) {
-        effEnd = new Date(node15.actualDate);
-      } else if (p.status === '已完成') {
-        effEnd = new Date(p.updatedAt);
-      } else {
-        effEnd = new Date();
-      }
+      // 有效结束：已完成→实际完成日（updatedAt 回退）；未完成→至今
+      const doneDate = getProjectDoneDate(p);
+      const effEnd = doneDate ?? new Date();
       return effEnd >= fyRange.start;
     });
     const onTimeRate = [...inFyDels].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).map(p => {
@@ -402,32 +391,34 @@ const Dashboard: React.FC = () => {
         color: p.status === '已完成' ? COLORS.chartGray : (rate >= 90 ? COLORS.success : rate >= 70 ? COLORS.warning : COLORS.danger),
       };
     });
-    const getEstProfit = (p: typeof deliveries[0]) => {
-      const q = quotations.find(q => q.id === p.quotationId);
-      return q ? Math.round(exTaxOfDelivery(p, quotations) * q.profitRate / 100) : 0;
-    };
-    const getActProfit = (p: typeof deliveries[0]) => p.totalActualCost ? exTaxOfDelivery(p, quotations) - p.totalActualCost : 0;
     const profitOverview: { label: string; value: number; color: string; displayValue?: string }[] = [];
+    // 利润概览（与销售分析月度订单/月度销售同源，共享 projectMonthlySales）：
+    //   概算 = 每月转交付项目的订单利润（报价概算利润未税）→ 观察近3月订单利润
+    //   实际 = 每月完成交付项目的销售利润（未税 − 实际成本）→ 观察近3月销售利润
     for (const prefix of ['概算', '实际'] as const) {
       for (let mi = 3; mi >= 1; mi--) {
         const d = new Date(now.getFullYear(), now.getMonth() - mi, 1);
+        const monthStart = new Date(d.getFullYear(), d.getMonth(), 1);
         const monthEnd = monthEndOf(d.getFullYear(), d.getMonth());
-        let totalAmt = 0, totalProfit = 0;
+        let totalAmt = 0, totalProfit = 0, incomplete = false;
         deliveries.forEach(p => {
-          const status = getStatusInMonth(p, monthEnd);
-          if (prefix === '概算' && status === '进行中') {
-            totalProfit += getEstProfit(p);
-            totalAmt += exTaxOfDelivery(p, quotations);
-          } else if (prefix === '实际' && status === '已完成' && changedThisMonth(p, monthEnd)) {
-            totalProfit += getActProfit(p);
-            totalAmt += exTaxOfDelivery(p, quotations);
+          const q = quotations.find(q => q.id === p.quotationId);
+          const pt = projectMonthlySales(p, monthStart, monthEnd, q?.taxRate, q?.gp3Amount);
+          if (prefix === '概算') {
+            totalProfit += pt.orderProfit;
+            totalAmt += pt.orderAmt;
+          } else {
+            totalAmt += pt.salesAmt;
+            // ⚠️ 某月任一完成交付项目无成本 → 该月销售利润为无值（—），提示成本缺失
+            if (pt.salesProfit !== undefined) totalProfit += pt.salesProfit;
+            else incomplete = true;
           }
         });
         profitOverview.push({
           label: monthLabels[3 - mi],
-          value: Math.round(totalProfit / 1000),
+          value: incomplete ? 0 : Math.round(totalProfit / 1000),
           color: prefix === '概算' ? COLORS.primary : COLORS.success,
-          displayValue: totalProfit > 0 ? `${fmtK(totalProfit)}\n（${fmtK(totalAmt)}）` : undefined,
+          displayValue: incomplete ? '—' : (totalProfit > 0 ? `${fmtK(totalProfit)}\n（${fmtK(totalAmt)}）` : undefined),
         });
       }
     }
@@ -459,13 +450,12 @@ const Dashboard: React.FC = () => {
 
   const industryDist = useMemo(() => {
     const fyRange = parseFY(currentFy);
-    const clientMap = new Map(clients.map(c => [c.name, { industry: c.industry, code: c.code }]));
+    const industryByName = new Map(clients.map(c => [c.name, c.industry]));
     const counts: Record<string, number> = {};
     opportunities.forEach(o => {
       const created = new Date(o.createdAt);
       if (created <= fyRange.end && oppEffectiveEnd(o) >= fyRange.start) {
-        const info = clientMap.get(o.clientName);
-        const industry = info?.industry || '其他';
+        const industry = industryByName.get(o.clientName) || '其他';
         counts[industry] = (counts[industry] || 0) + 1;
       }
     });
@@ -535,7 +525,11 @@ const Dashboard: React.FC = () => {
             <div style={{ width: 1, background: COLORS.borderLight, flexShrink: 0 }} />
             <div style={{ flex: 3.5, display: 'flex', flexDirection: 'column' }}>
               <div style={{ fontSize: 10, color: COLORS.textLight, fontWeight: 500, textAlign: 'right', marginBottom: 2, paddingRight: 2 }}>利润概览</div>
-              <VerticalBars items={deliveryStats.profitOverview} height={210} unit="K" />
+              <VerticalBars items={deliveryStats.profitOverview} height={210} unit="K" groupGaps={[2]} />
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, paddingRight: 2, marginTop: 3, fontSize: 9, color: COLORS.textSecondary, whiteSpace: 'nowrap' }}>
+                <span><span style={{ color: COLORS.primary }}>■</span> 概算利润</span>
+                <span><span style={{ color: COLORS.success }}>■</span> 销售利润</span>
+              </div>
             </div>
           </div>
         </Card>
@@ -589,7 +583,7 @@ const Dashboard: React.FC = () => {
         </Card>
       </div>
 
-      {/* ── 动态：近期赢单 | 待审批项 | 近期输单 ── */}
+      {/* ── 动态：近期赢单 | 近期输单 | 近期交付 ── */}
       <div style={{ display: 'flex', gap: 20, marginTop: 10, flexWrap: 'wrap' }}>
         <Card size="small"
           style={{ flex: 1, borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}

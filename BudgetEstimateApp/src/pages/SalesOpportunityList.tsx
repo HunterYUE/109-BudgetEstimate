@@ -47,7 +47,8 @@ const getWinRateColumn = (tab: string, _opp: SalesOpportunity | null, setOpp: (o
     title: '赢率', dataIndex: 'winRate', width: 30, align: 'center' as const,
     filters: ['__all__', [0, 25], [26, 50], [51, 75], [76, 100]].map(r => ({
       text: r === '__all__' ? '全部' : `${r[0]}-${r[1]}%`,
-      // ⚠️ 赢率用区间数组作筛选值，antd FilterValue 类型仅收 Key|boolean，故 cast
+      // ⚠️ 赢率用区间数组作筛选值，antd FilterValue 类型仅收 Key|boolean，需显式 cast（合法互操作）
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       value: r as any,
     })),
     filterSearch: true,
@@ -411,7 +412,7 @@ const SalesOpportunityList: React.FC = () => {
         if (opp.quotationId) {
           try {
             const quotation = await quotationService.get(opp.quotationId);
-            const qt = quotation as any;
+            const qt = quotation;
             versionNo = qt.versionNo || 'V1.0';
             // 通过项目ID获取版本财务数据
             if (qt.projectId) {

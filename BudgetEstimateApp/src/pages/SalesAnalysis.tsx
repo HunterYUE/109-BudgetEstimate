@@ -8,7 +8,7 @@ import { quotationService } from '../services/quotationService';
 import { deliveryService } from '../services/deliveryService';
 import { COLORS } from '../styles/colors';
 import { parseFY, FYSelector } from '../utils/fiscalYear';
-import { fmtK, oppEffectiveEnd, isRealWin, monthEndOf, exAmount, stageAsOf, getProjectDoneDate } from '../utils/analysisShared';
+import { fmtK, oppEffectiveEnd, isRealWin, monthEndOf, exAmount, stageAsOf, getProjectDoneDate, fyMonthWindows, projectMonthlySales, deliverySalesProfit, quoteProfitExTax } from '../utils/analysisShared';
 import { settingsService, type UserSettings } from '../services/settingsService';
 
 /* ============================================================
@@ -228,52 +228,39 @@ const SalesAnalysis: React.FC = () => {
   const parsedSalesTarget = useMemo(() => safeParseInt(annualSalesTarget), [annualSalesTarget]);
   const parsedGp3 = useMemo(() => parseFloat(gp3Input) || 0, [gp3Input]);
 
-  // ── 月度订单数据（当月转交付项目的合同金额之和，按财年月汇总）──
+  // ── 月度订单数据（当月转交付项目的合同金额与订单利润之和，按财年月汇总）──
+  // 复用共享归集 projectMonthlySales：订单金额 = orderAmt，订单利润 = orderProfit（报价概算利润未税）
   const monthlyOrderData = useMemo(() => {
     const fyRange = parseFY(fySelect);
-    const byMonth = new Map<number, { amount: number; profit: number }>();
-    for (const p of (deliveryProjects||[])) {
-      const d = new Date(p.createdAt);
-      // 订单金额只归集到订单获得（转交付）那个月及其所属财年，不可跨财年重复
-      if (d < fyRange.start || d > fyRange.end) continue;
-      const fyMonth = d.getMonth() < 6 ? d.getMonth() + 6 : d.getMonth() - 6;
-      const prev = byMonth.get(fyMonth) || { amount: 0, profit: 0 };
-      const exTax = exTaxOf(p, oppQuoteInfo);
-      // 概算利润：最新版本报价编制表的概算利润（含税 gp3_amount）转未税
-      const oppProfit = oppQuoteInfo.get(p.opportunityId);
-      const estProfit = oppProfit && oppProfit.gp3Amt > 0 ? Math.round(oppProfit.gp3Amt / (1 + oppProfit.taxRate)) : 0;
-      byMonth.set(fyMonth, { amount: prev.amount + exTax, profit: prev.profit + estProfit });
-    }
     const MONTH_LABELS = ['Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar','Apr','May','Jun'];
-    return Array.from({ length: 12 }, (_, i) => {
-      const m = byMonth.get(i);
-      return {
-        name: MONTH_LABELS[i],
-        value: m ? m.amount : 0,
-        subValue: m ? m.profit : undefined,
-      };
+    return fyMonthWindows(fyRange).map((w, i) => {
+      let amount = 0, profit = 0;
+      for (const p of (deliveryProjects||[])) {
+        const info = oppQuoteInfo.get(p.opportunityId);
+        const pt = projectMonthlySales(p, w.start, w.end, info?.taxRate, info?.gp3Amt);
+        amount += pt.orderAmt;
+        profit += pt.orderProfit;
+      }
+      return { name: MONTH_LABELS[i], value: amount, subValue: profit || undefined };
     });
   }, [fySelect, oppQuoteInfo, deliveryProjects]);
 
-  // ── 月度销售数据（已完成项目总结的交付项目按月汇总）──
+  // ── 月度销售数据（当月完成交付项目的销售金额与销售利润之和，按财年月汇总）──
+  // 复用共享归集 projectMonthlySales：销售金额 = salesAmt，销售利润 = salesProfit（未税 − 实际成本）
+  // ⚠️ 某月任一完成交付项目无成本数据 → 该月销售利润为无值（undefined），提示成本缺失
   const monthlySalesData = useMemo(() => {
     const fyRange = parseFY(fySelect);
     const MONTH_LABELS = ['Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar','Apr','May','Jun'];
-    const byMonth = new Map<number, { amount: number; profit: number }>();
-    for (const p of deliveryProjects) {
-      // 已完成交付判定：节点15实际完成日或 updatedAt 回退（统一共享口径）
-      const d = getProjectDoneDate(p);
-      if (!d) continue;
-      if (d < fyRange.start || d > fyRange.end) continue;
-      const fyMonth = d.getMonth() < 6 ? d.getMonth() + 6 : d.getMonth() - 6;
-      const prev = byMonth.get(fyMonth) || { amount: 0, profit: 0 };
-      const exTax = exTaxOf(p, oppQuoteInfo);
-      const actualProfit = p.totalActualCost != null ? (exTax - p.totalActualCost) : Math.round(exTax * 0.20);
-      byMonth.set(fyMonth, { amount: prev.amount + exTax, profit: prev.profit + actualProfit });
-    }
-    return Array.from({ length: 12 }, (_, i) => {
-      const m = byMonth.get(i);
-      return { name: MONTH_LABELS[i], value: m ? m.amount : 0, subValue: m ? m.profit : undefined };
+    return fyMonthWindows(fyRange).map((w, i) => {
+      let amount = 0, profit = 0, incomplete = false;
+      for (const p of deliveryProjects) {
+        const info = oppQuoteInfo.get(p.opportunityId);
+        const pt = projectMonthlySales(p, w.start, w.end, info?.taxRate, info?.gp3Amt);
+        amount += pt.salesAmt;
+        if (pt.salesProfit !== undefined) profit += pt.salesProfit;
+        else incomplete = true;
+      }
+      return { name: MONTH_LABELS[i], value: amount, subValue: incomplete ? undefined : profit || undefined };
     });
   }, [fySelect, oppQuoteInfo, deliveryProjects]);
 
@@ -385,8 +372,9 @@ const SalesAnalysis: React.FC = () => {
     for (const p of delivered) {
       const exTax = exTaxOf(p, oppQuoteInfo);
       totalAmt += exTax;
-      const actProfit = exTax - p.totalActualCost!;
-      const actGP3 = exTax > 0 ? actProfit / exTax : 0;
+      // 实际销售利润（共享 deliverySalesProfit：未税 − 实际成本；成本已被过滤保证非空）
+      const actProfit = deliverySalesProfit(exTax, p.totalActualCost);
+      const actGP3 = exTax > 0 && actProfit != null ? actProfit / exTax : 0;
       weighted += exTax * actGP3;
     }
     return totalAmt > 0 ? (weighted / totalAmt * 100) : 0;
@@ -590,9 +578,9 @@ const SalesAnalysis: React.FC = () => {
       if (!s) { s = newEntry(opp.salesman); map.set(opp.salesman, s); }
       const exTax = exTaxOf(p, oppQuoteInfo);
       s.orderAmount += exTax;
-      // 订单利润：最新版本报价编制表概算利润（含税 gp3_amount）转未税
+      // 订单利润：报价编制表概算利润转未税（共享 quoteProfitExTax）
       const oppProfit = oppQuoteInfo.get(p.opportunityId);
-      s.profitTotal += oppProfit && oppProfit.gp3Amt > 0 ? exAmount(oppProfit.gp3Amt, oppProfit.taxRate) : 0;
+      s.profitTotal += quoteProfitExTax(oppProfit?.gp3Amt, oppProfit?.taxRate);
     }
     // 管道潜力：与「加权管道」同源（财年活跃期 + 机会锚点 + 已转交付赢单不计入），原始金额（不含赢率加权）
     for (const o of fyFiltered) {

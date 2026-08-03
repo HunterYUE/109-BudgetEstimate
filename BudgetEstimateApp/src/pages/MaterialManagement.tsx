@@ -464,7 +464,7 @@ const MaterialManagement: React.FC = () => {
       filters: [{ text: '全部', value: '__all__' }, ...brandFilterOptions],
       filterSearch: true,
       onFilter: (value: unknown, record: Component) => value === '__all__' || record.brand === value,
-      render: (v: any) => <span style={{ fontSize: 12, color: '#555' }}>{v || '—'}</span>,
+      render: (v: string | undefined) => <span style={{ fontSize: 12, color: '#555' }}>{v || '—'}</span>,
     },
     { title: '供应商', dataIndex: 'supplier', width: 80, onCell: onCellLock(80),
       filters: (() => {

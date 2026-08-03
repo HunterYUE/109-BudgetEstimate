@@ -98,7 +98,7 @@ const DeliveryDetail: React.FC = () => {
           projectService.getFull(pid as string).then(proj => {
             const ver = (proj.versions || []).find((v: ProjectVersion) => v.versionNo === qvn) || proj.versions?.[0];
             const vid = ver?.id || '';
-            const filtered = (proj.groups || []).filter((g: any) => (g as Record<string, unknown>).versionId === vid);
+            const filtered = (proj.groups || []).filter((g: Group) => (g as unknown as Record<string, unknown>).versionId === vid);
             if (!cancelled) setQuotationProject({ ...proj, groups: filtered.length > 0 ? filtered : proj.groups });
           });
         }).catch(() => {/* empty */});
@@ -109,8 +109,8 @@ const DeliveryDetail: React.FC = () => {
         componentService.list({ search: 'SV-INSASS-000000-V1.0' }),
       ]).then(([designComps, assyComps]) => {
         if (cancelled) return;
-        const designRate = (designComps?.[0] as any)?.unitCost || 175;
-        const assyRate = (assyComps?.[0] as any)?.unitCost || 85;
+        const designRate = designComps?.[0]?.unitCost || 175;
+        const assyRate = assyComps?.[0]?.unitCost || 85;
         setLaborRates({ design: Number(designRate), assembly: Number(assyRate) });
       }).catch(() => {/* empty */});
     }).catch(() => {/* empty */}).finally(() => setLoading(false));
@@ -408,10 +408,10 @@ const DeliveryDetail: React.FC = () => {
       setHasChanges(false);
       setSubmitPlanOpen(false);
       msg.success('实施计划已提交审批');
-    }).catch((err: any) => {
-      msg.error('提交审批失败：' + ((err as Error).message || '未知错误'));
+    }).catch((err: unknown) => {
+      msg.error('提交审批失败：' + ((err instanceof Error ? err.message : '') || '未知错误'));
     });
-  }, [project, msg, quotationVersionFull, quotationVersion, modifierName, flushPendingDateChanges, deliveryService, setHasChanges]);
+  }, [project, msg, quotationVersionFull, quotationVersion, modifierName, flushPendingDateChanges, setHasChanges]);
 
   const handleOpenSubmitCost = useCallback(() => {
     if (!project) return;
@@ -463,8 +463,8 @@ const DeliveryDetail: React.FC = () => {
       setCostDirty(false);
       setSubmitCostOpen(false);
       msg.success('成本对比已提交审批，请前往审批管理模块查看');
-    }).catch((err: any) => {
-      msg.error('提交审批失败：' + ((err as Error).message || '未知错误'));
+    }).catch((err: unknown) => {
+      msg.error('提交审批失败：' + ((err instanceof Error ? err.message : '') || '未知错误'));
     });
   }, [project, actualCosts, msg, quotationVersionFull, quotationVersion, quotationGroups, modifierName]);
 
@@ -683,8 +683,8 @@ const DeliveryDetail: React.FC = () => {
                         return { ...prev, status: '已完成' as const };
                       });
                       msg.success('项目已标记为已完成');
-                    }).catch((err: any) => {
-                      msg.error('项目完成操作失败：' + ((err as Error).message || '未知错误'));
+                    }).catch((err: unknown) => {
+                      msg.error('项目完成操作失败：' + ((err instanceof Error ? err.message : '') || '未知错误'));
                     });
                   },
                 });

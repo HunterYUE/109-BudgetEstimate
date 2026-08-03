@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect, useRef } from 'react';
+import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { Table } from 'antd';
 import type { Group } from '../types';
 import { formatMoney } from '../utils/calculations';
@@ -416,14 +416,14 @@ const rows: FlatRow[] = useMemo(() => {
     return { estimated: est, actual: act, variance: varAmt, rate: est > 0 ? varAmt / est : 0 };
   }, [rows]);
 
-  const handleActualChange = (row: FlatRow, newVal: number) => {
+  const handleActualChange = useCallback((row: FlatRow, newVal: number) => {
     if (locked || !onActualCostChange) return;
     if (row._type === 'header' || row._warrantyItem) return;
 
     for (const id of row._relatedIds) {
       onActualCostChange(id, newVal);
     }
-  };
+  }, [locked, onActualCostChange]);
 
   // ---- Columns ----
   const columns = useMemo(() => [
@@ -515,7 +515,7 @@ const rows: FlatRow[] = useMemo(() => {
         );
       },
     },
-  ], [locked, onActualCostChange]);
+  ], [locked, onActualCostChange, handleActualChange]);
 
   return (
     <>

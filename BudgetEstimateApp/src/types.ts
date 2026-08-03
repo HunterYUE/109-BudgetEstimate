@@ -346,6 +346,15 @@ export interface BlueTable {
   updatedAt: string;
 }
 
+/** 客户历史报价记录（后端返回，客户端列表展示用） */
+export interface ClientQuoteHistory {
+  quotationId?: string;
+  salesNo?: string;
+  versionNo?: string;
+  discountedPrice?: number;
+  amount?: number;
+}
+
 export interface Client {
   id: string;
   code: string;
@@ -359,6 +368,8 @@ export interface Client {
   grade: ClientGrade;
   contacts: Contact[];
   history: ClientHistoryRecord[];
+  /** 历史报价记录（后端返回） */
+  quotationHistory?: ClientQuoteHistory[];
   createdAt: string;
 }
 

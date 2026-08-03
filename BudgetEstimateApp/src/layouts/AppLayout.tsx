@@ -135,7 +135,7 @@ const AppLayout: React.FC = () => {
                 onMouseEnter={e => {
                   if (!isActive) e.currentTarget.style.background = 'rgba(255,255,255,0.06)';
                   // 悬停时预加载页面 chunk（减少点击后的加载等待）
-                  const pageMap: Record<string, () => Promise<any>> = {
+                  const pageMap: Record<string, () => Promise<unknown>> = {
                     '/': () => import('../pages/Dashboard'),
                     '/analysis': () => import('../pages/SalesAnalysis'),
                     '/opportunities': () => import('../pages/SalesOpportunityList'),

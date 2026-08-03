@@ -11,7 +11,7 @@ import { quotationService } from '../services/quotationService';
 import { opportunityService } from '../services/opportunityService';
 import { approvalService } from '../services/approvalService';
 import { clientService } from '../services/clientService';
-import type { Group, GroupItem, Project, ProjectVersion, Component } from '../types';
+import type { Group, GroupItem, Project, ProjectVersion, Component, Client } from '../types';
 import { calcProjectSummary, calcDirectCost, calcItemPrices } from '../utils/calculations';
 import { clearCache } from '../utils/api';
 import { projectService } from '../services/projectService';
@@ -46,8 +46,8 @@ function renumberEquipGroups(groups: Group[]): Group[] {
 
 
 /** Return default fixed groups with default items (from A2026-07-002-S) */
-function getFixedGroups(): any[] {
-  const fi = (o: any) => ({
+function getFixedGroups(): Group[] {
+  const fi = (o: Partial<GroupItem>): GroupItem => ({
     id: crypto.randomUUID(), itemNo: 0, itemType: 'SERVICE', componentId: '',
     code: '', description: '', qtyTotal: 1, unit: '项',
     sourcingType: 'PURCHASED', unitCost: 0, designHours: 0, assemblyHours: 0,
@@ -194,9 +194,9 @@ const QuotationPage: React.FC = () => {
             setQuotationLocked(shouldLock);
             // ⚠️ 按版本过滤组数据；无匹配时检查是否为无版本隔离的旧数据（此时回退全量组），
             // 否则视为新版本尚无组，保持空（避免加载全量组后保存导致版本内组重复）
-            let versionGroups = data.groups?.filter((g: any) => g.versionId === lv?.id) || [];
+            let versionGroups = data.groups?.filter((g: Group) => (g as unknown as Record<string, unknown>).versionId === lv?.id) || [];
             if (versionGroups.length === 0) {
-              const hasVersionedGroups = data.groups?.some((g: any) => g.versionId);
+              const hasVersionedGroups = data.groups?.some((g: Group) => (g as unknown as Record<string, unknown>).versionId);
               if (!hasVersionedGroups) {
                 versionGroups = data.groups || [];
               }
@@ -218,7 +218,7 @@ const QuotationPage: React.FC = () => {
               let cc = '';
               try {
                 const clients = await clientService.list();
-                const match = clients.find((c: any) => c.name === cn);
+                const match = clients.find((c: Client) => c.name === cn);
                 if (match) cc = match.code || '';
               } catch { console.warn("[Caught]"); }
               prefill = { salesNo: opp.salesNo || '', clientName: cn, clientCode: cc, expectedAwardDate: opp.expectedCloseDate || '', projectName: opp.projectName || '' };
@@ -243,8 +243,8 @@ const QuotationPage: React.FC = () => {
   useEffect(() => {
     if (!project || componentDB.length === 0) return;
     let changed = false;
-    const designRateFromDB = componentDB.find((c: any) => c.code === 'SV-DESIGN-000000-V1.0')?.unitCost ?? 175;
-    const assemblyRateFromDB = componentDB.find((c: any) => c.code === 'SV-INSASS-000000-V1.0')?.unitCost ?? 85;
+    const designRateFromDB = componentDB.find((c: Component) => c.code === 'SV-DESIGN-000000-V1.0')?.unitCost ?? 175;
+    const assemblyRateFromDB = componentDB.find((c: Component) => c.code === 'SV-INSASS-000000-V1.0')?.unitCost ?? 85;
     const newGroups = project.groups.map(g => ({
       ...g,
       items: g.items.map(item => {
@@ -418,7 +418,7 @@ const QuotationPage: React.FC = () => {
     const badCodes: string[] = [];
     for (const g of project.groups) {
       for (const item of g.items) {
-        if (item.code && componentDB.length > 0 && !componentDB.some((c: any) => c.code === item.code)) {
+        if (item.code && componentDB.length > 0 && !componentDB.some((c: Component) => c.code === item.code)) {
           badCodes.push(item.code);
         }
       }
