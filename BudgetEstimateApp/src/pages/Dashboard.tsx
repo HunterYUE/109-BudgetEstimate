@@ -332,9 +332,14 @@ const Dashboard: React.FC = () => {
     const getStatusInMonth = (p: typeof deliveries[0], monthEnd: Date): string | null => {
       const created = new Date(p.createdAt);
       if (created > monthEnd) return null;
-      // 已完成判定：节点15实际完成日或 updatedAt 回退（统一共享口径）
       const doneDate = getProjectDoneDate(p);
-      if (doneDate && doneDate <= monthEnd) return '已完成';
+      if (doneDate && doneDate <= monthEnd) {
+        // 完成月份：实际完成日 > 基线 → 延期完成（已延期）；否则按时完成（已完成）
+        const monthStart = new Date(monthEnd.getFullYear(), monthEnd.getMonth(), 1);
+        if (doneDate >= monthStart && getProjDelayedAt(p, monthEnd)) return '已延期';
+        return '已完成';
+      }
+      // 未完成：该月月末已超出初始基线 → 事实延期（已延期）
       if (getProjDelayedAt(p, monthEnd)) return '已延期';
       return '进行中';
     };
@@ -351,7 +356,13 @@ const Dashboard: React.FC = () => {
       }
     }
     const getNodeStatusInMonth = (node: DeliveryNode, monthEnd: Date): string | null => {
-      if (node.status === 'completed' && node.actualDate && new Date(node.actualDate) <= monthEnd) return 'completed';
+      if (node.status === 'completed' && node.actualDate && new Date(node.actualDate) <= monthEnd) {
+        // 完成月份：实际完成日 > 基线 → 延期完成（delayed）；否则按时完成（completed）
+        const doneD = new Date(node.actualDate);
+        const monthStart = new Date(monthEnd.getFullYear(), monthEnd.getMonth(), 1);
+        if (doneD >= monthStart && getNodeDelay(node, monthEnd).delayed) return 'delayed';
+        return 'completed';
+      }
       if (new Date(node.plannedStartDate) > monthEnd) return null;
       // 延期维度（派生）：该月未完成且已超出初始审批基线
       if (getNodeDelay(node, monthEnd).delayed) return 'delayed';
