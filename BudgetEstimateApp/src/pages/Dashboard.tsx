@@ -507,7 +507,7 @@ const Dashboard: React.FC = () => {
 
       {/* ── KPI 卡片行（等宽铺满，与销售分析一致） ── */}
       <div style={{ display: 'flex', gap: 16, marginBottom: 10, flexWrap: 'wrap' }}>
-        <KpiCard label="上月机会" value={fmtMonthly(monthlyKpi[0].amt, monthlyKpi[0].cnt)} color={COLORS.primary} icon="📊"
+        <KpiCard label="上月活跃" value={fmtMonthly(monthlyKpi[0].amt, monthlyKpi[0].cnt)} color={COLORS.primary} icon="📊"
           prevValues={[
             { value: fmtMonthly(monthlyKpi[1].amt, monthlyKpi[1].cnt), color: COLORS.primary },
             { value: fmtMonthly(monthlyKpi[2].amt, monthlyKpi[2].cnt), color: COLORS.primary },
@@ -564,7 +564,7 @@ const Dashboard: React.FC = () => {
         </Card>
       </div>
 
-      {/* ── 底栏：管道节点 | 行业分布 | 机会趋势 ── */}
+      {/* ── 底栏：管道节点 | 行业分布 | 新增机会 ── */}
       <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
         <Card size="small"
           style={{ flex: 1, borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
@@ -601,7 +601,7 @@ const Dashboard: React.FC = () => {
         <Card size="small"
           style={{ flex: 1, borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
           styles={{ body: { padding: '16px 18px' } }}>
-          <SectionTitle title="机会趋势" count={fyTrend.reduce((s, m) => s + m.value, 0)} />
+          <SectionTitle title="新增机会" count={fyTrend.reduce((s, m) => s + m.value, 0)} />
           {fyTrend.every(m => m.value === 0) ? (
             <div style={{ padding: 24, textAlign: 'center', color: COLORS.textLight, fontSize: 13 }}>当前财年暂无新增</div>
           ) : (
