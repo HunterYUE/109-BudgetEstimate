@@ -60,7 +60,7 @@ export const getNodeBaseline = (node: DeliveryNode | undefined): string | undefi
    - 已完成（实际完成日 ≤ 判定时点）→ 实际完成日 vs 基线
      · 实际 > 基线 → 永久延期，天数 = 实际 − 基线
      · 实际 ≤ 基线 → 正常（可能提前），提前 = 基线 − 实际
-   - 未完成 → max(更新计划完成日, 判定时点) vs 基线（计划排后或已超期 → 临时延期中）
+   - 未完成 → 判定时点（当前日期）vs 基线（仅已超期 → 临时延期中；更新计划排后不计）
    ============================================================ */
 const DAY_MS = 1000 * 60 * 60 * 24;
 
@@ -75,9 +75,9 @@ export interface NodeDelayInfo {
 }
 
 /**
- * 统一节点延期判定。
+ * 统一节点延期判定（事实延期口径）。
  * - 已完成（实际完成日 ≤ 判定时点）→ 实际完成日 vs 基线，结果永久
- * - 未完成 → max(更新计划完成日, 判定时点) vs 基线，结果临时
+ * - 未完成 → 判定时点（当前日期）vs 基线，仅已超期判延期，结果临时
  * - asOf = 判定时点（仪表盘历史月回溯传该月月底），默认当前日期
  */
 export const getNodeDelay = (node: DeliveryNode | undefined, asOf?: Date): NodeDelayInfo => {
@@ -90,10 +90,8 @@ export const getNodeDelay = (node: DeliveryNode | undefined, asOf?: Date): NodeD
   const actualEnd = node.actualDate || node.actualEndDate;
   // 判定时点的完成状态：completed 且实际完成日 ≤ 时点
   const doneByAsOf = node.status === 'completed' && !!actualEnd && new Date(actualEnd) <= t;
-  // 参考完成日：已完成→实际完成日；未完成→max(更新计划完成日, 判定时点)
-  const end = doneByAsOf
-    ? new Date(actualEnd!)
-    : (node.plannedEndDate && new Date(node.plannedEndDate) > t ? new Date(node.plannedEndDate) : t);
+  // 参考完成日：已完成→实际完成日；未完成→判定时点（当前日期）
+  const end = doneByAsOf ? new Date(actualEnd!) : t;
   const days = Math.round((end.getTime() - baselineD.getTime()) / DAY_MS);
   return { hasBaseline: true, delayed: days > 0, days };
 };
@@ -172,8 +170,8 @@ export const fyMonthWindows = (fyRange: { start: Date; end: Date }): { start: Da
   });
 
 /**
- * 统一项目延期判定（以节点15为准，与节点同口径）。
- * 完成前为临时状态（更新计划或当前日期超出基线）；完成后按实际完成日重算为永久状态。
+ * 统一项目延期判定（以节点15为准，与节点同口径，事实延期）。
+ * 完成前为临时状态（仅当前日期超基线判延期）；完成后按实际完成日重算为永久状态。
  */
 export const getProjectDelay = (p: DeliveryProject, asOf?: Date): NodeDelayInfo => {
   const node15 = getNode15(p.nodes);
@@ -185,10 +183,8 @@ export const getProjectDelay = (p: DeliveryProject, asOf?: Date): NodeDelayInfo 
   // 实际完成日期：已完成项目 → 实际完成日（节点日或 updatedAt 回退）
   const doneDate = isProjectDelivered(p) ? getProjectDoneDate(p) : null;
   const doneByAsOf = !!doneDate && doneDate <= t;
-  // 参考完成日：已完成→实际完成日；未完成→max(更新计划完成日, 判定时点)
-  const end = doneByAsOf
-    ? doneDate!
-    : (node15.plannedEndDate && new Date(node15.plannedEndDate) > t ? new Date(node15.plannedEndDate) : t);
+  // 参考完成日：已完成→实际完成日；未完成→判定时点（当前日期）
+  const end = doneByAsOf ? doneDate! : t;
   const days = Math.round((end.getTime() - baselineD.getTime()) / DAY_MS);
   return { hasBaseline: true, delayed: days > 0, days };
 };
