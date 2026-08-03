@@ -403,14 +403,17 @@ const Dashboard: React.FC = () => {
     });
     const onTimeRate = [...inFyDels].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).map(p => {
       const nowD = new Date();
-      const scheduled = (p.nodes || []).filter(n => n.actualDate || new Date(n.plannedEndDate) <= nowD);
+      // 到期节点 = 已完成 或 已超基线（事实延期）；与事实延期判定一致（基线口径，非当前计划）
+      const scheduled = (p.nodes || []).filter(n => n.actualDate || getNodeDelay(n, nowD).delayed);
       const delayed = scheduled.filter(n => getNodeDelay(n, nowD).delayed);
       const onTime = scheduled.length - delayed.length;
-      const rate = scheduled.length > 0 ? Math.round((onTime / scheduled.length) * 100) : 0;
+      const hasDue = scheduled.length > 0;
+      const rate = hasDue ? Math.round((onTime / scheduled.length) * 100) : -1; // -1 = 无到期节点
       return {
         label: (() => { const s = compressNo(p.salesNo); return s.length > 4 ? s.slice(0, 4) + '\n' + s.slice(4) : s; })(),
-        value: rate,
-        color: p.status === '已完成' ? COLORS.chartGray : (rate >= 90 ? COLORS.success : rate >= 70 ? COLORS.warning : COLORS.danger),
+        value: hasDue ? rate : 0,
+        color: !hasDue ? COLORS.textLight : (p.status === '已完成' ? COLORS.chartGray : (rate >= 90 ? COLORS.success : rate >= 70 ? COLORS.warning : COLORS.danger)),
+        displayValue: hasDue ? undefined : '—',
       };
     });
     const profitOverview: { label: string; value: number; color: string; displayValue?: string }[] = [];
@@ -530,28 +533,24 @@ const Dashboard: React.FC = () => {
           styles={{ body: { padding: '18px 20px' } }}>
           <SectionTitle title="交付状态" />
           <div style={{ display: 'flex', gap: 8, alignItems: 'stretch', minHeight: 150, marginTop: -18 }}>
-            <div style={{ flex: 3.75, display: 'flex', flexDirection: 'column', marginLeft: -20 }}>
+            <div style={{ flex: 4.0625, display: 'flex', flexDirection: 'column', marginLeft: -20 }}>
               <div style={{ fontSize: 10, color: COLORS.textLight, fontWeight: 500, textAlign: 'right', marginBottom: 2, paddingRight: 2 }}>项目状态</div>
               <VerticalBars items={deliveryStats.projectStatus} height={210} groupGaps={[2, 5]} gapSize={4} />
             </div>
             <div style={{ width: 1, background: COLORS.borderLight, flexShrink: 0 }} />
-            <div style={{ flex: 3.75, display: 'flex', flexDirection: 'column', marginLeft: -10 }}>
+            <div style={{ flex: 4.0625, display: 'flex', flexDirection: 'column', marginLeft: -10 }}>
               <div style={{ fontSize: 10, color: COLORS.textLight, fontWeight: 500, textAlign: 'right', marginBottom: 2, paddingRight: 2 }}>节点执行</div>
               <VerticalBars items={deliveryStats.nodeStatus} height={210} groupGaps={[2, 5]} gapSize={5} />
             </div>
             <div style={{ width: 1, background: COLORS.borderLight, flexShrink: 0 }} />
-            <div style={{ flex: 7.75, display: 'flex', flexDirection: 'column' }}>
+            <div style={{ flex: 8.0625, display: 'flex', flexDirection: 'column' }}>
               <div style={{ fontSize: 10, color: COLORS.textLight, fontWeight: 500, textAlign: 'right', marginBottom: 2, paddingRight: 2 }}>节点准时率</div>
               <VerticalBars items={deliveryStats.onTimeRate} height={210} unit="%" maxSlots={18} />
             </div>
             <div style={{ width: 1, background: COLORS.borderLight, flexShrink: 0 }} />
-            <div style={{ flex: 3.75, display: 'flex', flexDirection: 'column' }}>
+            <div style={{ flex: 2.8125, display: 'flex', flexDirection: 'column' }}>
               <div style={{ fontSize: 10, color: COLORS.textLight, fontWeight: 500, textAlign: 'right', marginBottom: 2, paddingRight: 2 }}>利润概览</div>
               <VerticalBars items={deliveryStats.profitOverview} height={210} unit="K" groupGaps={[2]} />
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, paddingRight: 2, marginTop: 3, fontSize: 9, color: COLORS.textSecondary, whiteSpace: 'nowrap' }}>
-                <span><span style={{ color: COLORS.primary }}>■</span> 概算利润</span>
-                <span><span style={{ color: COLORS.success }}>■</span> 销售利润</span>
-              </div>
             </div>
           </div>
         </Card>
