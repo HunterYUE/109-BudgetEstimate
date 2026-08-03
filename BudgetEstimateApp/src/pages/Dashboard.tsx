@@ -355,29 +355,40 @@ const Dashboard: React.FC = () => {
         projectStatus.push({ label: monthLabels[3 - mi], value: count, color: statusColors[si] });
       }
     }
-    const getNodeStatusInMonth = (node: DeliveryNode, monthEnd: Date): string | null => {
-      if (node.status === 'completed' && node.actualDate && new Date(node.actualDate) <= monthEnd) {
-        // 完成月份：实际完成日 > 基线 → 延期完成（delayed）；否则按时完成（completed）
-        const doneD = new Date(node.actualDate);
-        const monthStart = new Date(monthEnd.getFullYear(), monthEnd.getMonth(), 1);
-        if (doneD >= monthStart && getNodeDelay(node, monthEnd).delayed) return 'delayed';
-        return 'completed';
+    // 节点在月内的各桶（当月口径，不含未开始）：已完成=当月完成；进行中=当月执行过（含当月完成者）；
+    //   延期=当月延期完成+延期中。月前已完成节点不计入当月各桶。
+    const getNodeBucketsInMonth = (node: DeliveryNode, monthEnd: Date): string[] => {
+      const monthStart = new Date(monthEnd.getFullYear(), monthEnd.getMonth(), 1);
+      const doneDate = node.actualDate || node.actualEndDate;
+      const doneD = doneDate ? new Date(doneDate) : null;
+      // 月前已完成 → 属历史执行月份，本月不计
+      if (node.status === 'completed' && doneD && doneD < monthStart) return [];
+      // 该月计划窗口未开始 → 不计
+      if (new Date(node.plannedStartDate) > monthEnd) return [];
+      const delay = getNodeDelay(node, monthEnd);
+      // 当月执行过：开始 ≤ 月末（含当月完成者）
+      const executedInM = (node.actualStartDate && new Date(node.actualStartDate) <= monthEnd)
+        || node.status === 'in_progress';
+      const buckets: string[] = [];
+      if (executedInM) buckets.push('in_progress');
+      // 当月完成：延期完成 → delayed；按时完成 → completed
+      if (node.status === 'completed' && doneD && doneD <= monthEnd) {
+        buckets.push(delay.delayed ? 'delayed' : 'completed');
+      } else if (delay.delayed) {
+        // 延期中（未完成且已超基线；含未开始但已超基线的事实延期）
+        buckets.push('delayed');
       }
-      if (new Date(node.plannedStartDate) > monthEnd) return null;
-      // 延期维度（派生）：该月未完成且已超出初始审批基线
-      if (getNodeDelay(node, monthEnd).delayed) return 'delayed';
-      // 已开始（实际开始 ≤ 月末）→ 进行中；否则未开始（pending）
-      return node.actualStartDate && new Date(node.actualStartDate) <= monthEnd ? 'in_progress' : 'pending';
+      return buckets;
     };
-    const nodeStNames = ['completed', 'in_progress', 'delayed', 'pending'] as const;
-    const nodeStColors = [COLORS.success, COLORS.primary, COLORS.danger, COLORS.chartGray];
+    const nodeStNames = ['completed', 'in_progress', 'delayed'] as const;
+    const nodeStColors = [COLORS.success, COLORS.primary, COLORS.danger];
     const nodeStatus: { label: string; value: number; color: string }[] = [];
     const allNodes = (deliveries||[]).flatMap(p => p.nodes || []);
-    for (let si = 0; si < 4; si++) {
+    for (let si = 0; si < 3; si++) {
       for (let mi = 3; mi >= 1; mi--) {
         const d = new Date(now.getFullYear(), now.getMonth() - mi, 1);
         const monthEnd = monthEndOf(d.getFullYear(), d.getMonth());
-        const count = allNodes.filter(n => getNodeStatusInMonth(n, monthEnd) === nodeStNames[si]).length;
+        const count = allNodes.filter(n => getNodeBucketsInMonth(n, monthEnd).includes(nodeStNames[si])).length;
         nodeStatus.push({ label: monthLabels[3 - mi], value: count, color: nodeStColors[si] });
       }
     }
@@ -519,22 +530,22 @@ const Dashboard: React.FC = () => {
           styles={{ body: { padding: '18px 20px' } }}>
           <SectionTitle title="交付状态" />
           <div style={{ display: 'flex', gap: 8, alignItems: 'stretch', minHeight: 150, marginTop: -18 }}>
-            <div style={{ flex: 3.5, display: 'flex', flexDirection: 'column', marginLeft: -20 }}>
+            <div style={{ flex: 3.75, display: 'flex', flexDirection: 'column', marginLeft: -20 }}>
               <div style={{ fontSize: 10, color: COLORS.textLight, fontWeight: 500, textAlign: 'right', marginBottom: 2, paddingRight: 2 }}>项目状态</div>
               <VerticalBars items={deliveryStats.projectStatus} height={210} groupGaps={[2, 5]} gapSize={4} />
             </div>
             <div style={{ width: 1, background: COLORS.borderLight, flexShrink: 0 }} />
-            <div style={{ flex: 4.5, display: 'flex', flexDirection: 'column', marginLeft: -10 }}>
+            <div style={{ flex: 3.75, display: 'flex', flexDirection: 'column', marginLeft: -10 }}>
               <div style={{ fontSize: 10, color: COLORS.textLight, fontWeight: 500, textAlign: 'right', marginBottom: 2, paddingRight: 2 }}>节点执行</div>
-              <VerticalBars items={deliveryStats.nodeStatus} height={210} groupGaps={[2, 5, 8]} gapSize={5} />
+              <VerticalBars items={deliveryStats.nodeStatus} height={210} groupGaps={[2, 5]} gapSize={5} />
             </div>
             <div style={{ width: 1, background: COLORS.borderLight, flexShrink: 0 }} />
-            <div style={{ flex: 7.5, display: 'flex', flexDirection: 'column' }}>
+            <div style={{ flex: 7.75, display: 'flex', flexDirection: 'column' }}>
               <div style={{ fontSize: 10, color: COLORS.textLight, fontWeight: 500, textAlign: 'right', marginBottom: 2, paddingRight: 2 }}>节点准时率</div>
               <VerticalBars items={deliveryStats.onTimeRate} height={210} unit="%" maxSlots={18} />
             </div>
             <div style={{ width: 1, background: COLORS.borderLight, flexShrink: 0 }} />
-            <div style={{ flex: 3.5, display: 'flex', flexDirection: 'column' }}>
+            <div style={{ flex: 3.75, display: 'flex', flexDirection: 'column' }}>
               <div style={{ fontSize: 10, color: COLORS.textLight, fontWeight: 500, textAlign: 'right', marginBottom: 2, paddingRight: 2 }}>利润概览</div>
               <VerticalBars items={deliveryStats.profitOverview} height={210} unit="K" groupGaps={[2]} />
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, paddingRight: 2, marginTop: 3, fontSize: 9, color: COLORS.textSecondary, whiteSpace: 'nowrap' }}>
