@@ -4,19 +4,14 @@ import { Card } from 'antd';
 import { RightOutlined } from '@ant-design/icons';
 import { parseFY, fiscalYearLabel } from '../utils/fiscalYear';
 import { formatBeijing } from '../utils/timeFormat';
-import { fmtK, compressNo, oppEffectiveEnd, isRealWin, monthEndOf, exAmount, stageAsOf, getNodeDelay, getProjectDelay, isProjectDelivered, getProjectDoneDate, projectMonthlySales, FY_MONTH_LABELS } from '../utils/analysisShared';
+import { fmtK, compressNo, oppEffectiveEnd, isRealWin, monthEndOf, exAmount, stageAsOf, getNodeDelay, getProjectDelay, isProjectDelivered, getProjectDoneDate, projectMonthlySales, FY_MONTH_LABELS, buildQuoteInfoMap, deliveryExTax } from '../utils/analysisShared';
 import { COLORS } from '../styles/colors';
+import { OverviewCards } from '../components/shared/OverviewCards';
 import { opportunityService } from '../services/opportunityService';
 import { deliveryService } from '../services/deliveryService';
 import { clientService } from '../services/clientService';
 import { quotationService } from '../services/quotationService';
 import type { SalesOpportunity, DeliveryProject, Client, QuotationSummary, DeliveryNode } from '../types';
-
-/** 交付合同额未税：取机会关联报价的实际税率（与销售分析 exTaxOf 同口径），无报价回退 13% */
-const exTaxOfDelivery = (p: DeliveryProject, quoteById: Map<string, QuotationSummary>): number => {
-  const q = quoteById.get(p.quotationId);
-  return exAmount(p.contractAmount, q?.taxRate);
-};
 
 /** 月度 KPI 卡片展示：数量为 0 时显示 —（避免 "0K / 0" 误导） */
 const fmtMonthly = (amt: number, cnt: number): string =>
@@ -32,33 +27,6 @@ const last3MonthsOf = (now: Date): { start: Date; end: Date }[] =>
     const start = monthsAgoStart(now, mi);
     return { start, end: monthEndOf(start.getFullYear(), start.getMonth()) };
   });
-
-/* ── KPI 卡片（与销售分析完全一致） ── */
-const KpiCard: React.FC<{
-  label: string; value: string; color: string; icon: React.ReactNode;
-  prevValues?: { value: string; color: string }[];
-}> = ({ label, value, color, icon, prevValues }) => (
-  <Card size="small" hoverable
-    style={{
-      flex: 1, borderRadius: 8, border: `1px solid ${COLORS.borderLight}`,
-      transition: 'box-shadow 0.2s, transform 0.15s',
-    }}
-    styles={{ body: { padding: '16px 12px', textAlign: 'center' as const } }}
-  >
-    <div style={{ fontSize: 26, marginBottom: 4, lineHeight: 1, color }}>{icon}</div>
-    <div style={{ fontSize: 12, color: COLORS.textLight, marginBottom: 4, letterSpacing: 0.3 }}>
-      {label}
-    </div>
-    <div style={{ fontSize: 22, fontWeight: 700, color, lineHeight: 1.2 }}>{value}</div>
-    {prevValues && prevValues.length === 2 && (
-      <div style={{ fontSize: 11, fontWeight: 600, lineHeight: 1.3, marginTop: 3, opacity: 0.7 }}>
-        <span style={{ color: prevValues[0].color }}>{prevValues[0].value}</span>
-        <span style={{ color: COLORS.textLight, margin: '0 4px' }}>|</span>
-        <span style={{ color: prevValues[1].color }}>{prevValues[1].value}</span>
-      </div>
-    )}
-  </Card>
-);
 
 /* ── 区块标题 ── */
 const SectionTitle: React.FC<{ title: string; count?: number }> = ({ title, count }) => (
@@ -246,8 +214,10 @@ const Dashboard: React.FC = () => {
   // 近 3 个月窗口唯一事实来源：各统计 memo 共享，避免各自重复计算
   const last3Months = useMemo(() => last3MonthsOf(now), [now]);
   const last3Labels = useMemo(() => last3Months.map(w => w.start.toLocaleString('en', { month: 'short' })), [last3Months]);
-  // 报价按 id 建索引，避免 exTaxOfDelivery / 利润概览反复 find（O(N×M)）
+  // 报价按 id 建索引，避免利润概览反复 find（O(N×M)）
   const quotationsById = useMemo(() => new Map(quotations.map(q => [q.id, q])), [quotations]);
+  // 交付关联报价（按交付项目 id 索引）：税率统一取交付自身 quotationId（共享 deliveryExTax 口径，与销售/交付分析一致）
+  const deliveryQuoteInfo = useMemo(() => buildQuoteInfoMap(deliveries, qid => quotationsById.get(qid)), [deliveries, quotationsById]);
 
   // ── 按月 KPI（最近3个完整月） ──
   const monthlyKpi = useMemo(() => {
@@ -284,13 +254,13 @@ const Dashboard: React.FC = () => {
         amt: monthOpps.reduce((s, o) => s + exAmount(o.amount, o.taxRate), 0), cnt: monthOpps.length,
         winAmt: monthWins.reduce((s, o) => s + exAmount(o.amount, o.taxRate), 0), winCnt,
         newAmt: monthNew.reduce((s, o) => s + exAmount(o.amount, o.taxRate), 0), newCnt: monthNew.length,
-        delAmt: activeDel.reduce((s, p) => s + exTaxOfDelivery(p, quotationsById), 0), delCnt: activeDel.length,
-        deliveredAmt: monthDelivered.reduce((s, p) => s + exTaxOfDelivery(p, quotationsById), 0),
+        delAmt: activeDel.reduce((s, p) => s + deliveryExTax(p, deliveryQuoteInfo), 0), delCnt: activeDel.length,
+        deliveredAmt: monthDelivered.reduce((s, p) => s + deliveryExTax(p, deliveryQuoteInfo), 0),
         deliveredCnt: monthDelivered.length,
       };
     };
     return [calcMonth(1), calcMonth(2), calcMonth(3)];
-  }, [opportunities, deliveries, quotationsById, last3Months]);
+  }, [opportunities, deliveries, deliveryQuoteInfo, last3Months]);
 
   const recentWins = useMemo(() => {
     // 近 2 个月窗口：前两个月首日（避免 setMonth 月末溢出）
@@ -524,34 +494,39 @@ const Dashboard: React.FC = () => {
         仪表盘
       </div>
 
-      {/* ── KPI 卡片行（等宽铺满，与销售分析一致） ── */}
-      <div style={{ display: 'flex', gap: 16, marginBottom: 10, flexWrap: 'wrap' }}>
-        <KpiCard label="上月活跃" value={fmtMonthly(monthlyKpi[0].amt, monthlyKpi[0].cnt)} color={COLORS.primary} icon="📊"
-          prevValues={[
-            { value: fmtMonthly(monthlyKpi[1].amt, monthlyKpi[1].cnt), color: COLORS.primary },
-            { value: fmtMonthly(monthlyKpi[2].amt, monthlyKpi[2].cnt), color: COLORS.primary },
-          ]} />
-        <KpiCard label="上月赢单" value={fmtMonthly(monthlyKpi[0].winAmt, monthlyKpi[0].winCnt)} color={COLORS.success} icon="🏆"
-          prevValues={[
-            { value: fmtMonthly(monthlyKpi[1].winAmt, monthlyKpi[1].winCnt), color: COLORS.success },
-            { value: fmtMonthly(monthlyKpi[2].winAmt, monthlyKpi[2].winCnt), color: COLORS.success },
-          ]} />
-        <KpiCard label="上月新增" value={fmtMonthly(monthlyKpi[0].newAmt, monthlyKpi[0].newCnt)} color={COLORS.amber} icon="✨"
-          prevValues={[
-            { value: fmtMonthly(monthlyKpi[1].newAmt, monthlyKpi[1].newCnt), color: COLORS.amber },
-            { value: fmtMonthly(monthlyKpi[2].newAmt, monthlyKpi[2].newCnt), color: COLORS.amber },
-          ]} />
-        <KpiCard label="上月交付" value={fmtMonthly(monthlyKpi[0].deliveredAmt, monthlyKpi[0].deliveredCnt)} color={COLORS.success} icon="🚚"
-          prevValues={[
-            { value: fmtMonthly(monthlyKpi[1].deliveredAmt, monthlyKpi[1].deliveredCnt), color: COLORS.success },
-            { value: fmtMonthly(monthlyKpi[2].deliveredAmt, monthlyKpi[2].deliveredCnt), color: COLORS.success },
-          ]} />
-        <KpiCard label="交付中" value={fmtMonthly(monthlyKpi[0].delAmt, monthlyKpi[0].delCnt)} color={COLORS.purple} icon="🚧"
-          prevValues={[
-            { value: fmtMonthly(monthlyKpi[1].delAmt, monthlyKpi[1].delCnt), color: COLORS.purple },
-            { value: fmtMonthly(monthlyKpi[2].delAmt, monthlyKpi[2].delCnt), color: COLORS.purple },
-          ]} />
-      </div>
+      {/* ── KPI 卡片行（共享 OverviewCards；iconSize=26 + flexWrap + marginBottom=10 保持原视觉） ── */}
+      <OverviewCards
+        items={[
+          { label: '上月活跃', value: fmtMonthly(monthlyKpi[0].amt, monthlyKpi[0].cnt), color: COLORS.primary, icon: '📊',
+            prevValues: [
+              { value: fmtMonthly(monthlyKpi[1].amt, monthlyKpi[1].cnt), color: COLORS.primary },
+              { value: fmtMonthly(monthlyKpi[2].amt, monthlyKpi[2].cnt), color: COLORS.primary },
+            ] },
+          { label: '上月赢单', value: fmtMonthly(monthlyKpi[0].winAmt, monthlyKpi[0].winCnt), color: COLORS.success, icon: '🏆',
+            prevValues: [
+              { value: fmtMonthly(monthlyKpi[1].winAmt, monthlyKpi[1].winCnt), color: COLORS.success },
+              { value: fmtMonthly(monthlyKpi[2].winAmt, monthlyKpi[2].winCnt), color: COLORS.success },
+            ] },
+          { label: '上月新增', value: fmtMonthly(monthlyKpi[0].newAmt, monthlyKpi[0].newCnt), color: COLORS.amber, icon: '✨',
+            prevValues: [
+              { value: fmtMonthly(monthlyKpi[1].newAmt, monthlyKpi[1].newCnt), color: COLORS.amber },
+              { value: fmtMonthly(monthlyKpi[2].newAmt, monthlyKpi[2].newCnt), color: COLORS.amber },
+            ] },
+          { label: '上月交付', value: fmtMonthly(monthlyKpi[0].deliveredAmt, monthlyKpi[0].deliveredCnt), color: COLORS.success, icon: '🚚',
+            prevValues: [
+              { value: fmtMonthly(monthlyKpi[1].deliveredAmt, monthlyKpi[1].deliveredCnt), color: COLORS.success },
+              { value: fmtMonthly(monthlyKpi[2].deliveredAmt, monthlyKpi[2].deliveredCnt), color: COLORS.success },
+            ] },
+          { label: '交付中', value: fmtMonthly(monthlyKpi[0].delAmt, monthlyKpi[0].delCnt), color: COLORS.purple, icon: '🚧',
+            prevValues: [
+              { value: fmtMonthly(monthlyKpi[1].delAmt, monthlyKpi[1].delCnt), color: COLORS.purple },
+              { value: fmtMonthly(monthlyKpi[2].delAmt, monthlyKpi[2].delCnt), color: COLORS.purple },
+            ] },
+        ]}
+        iconSize={26}
+        marginBottom={10}
+        flexWrap
+      />
 
       {/* ── 交付状态 ── */}
       <div style={{ display: 'flex', gap: 20, marginBottom: 10 }}>
@@ -713,7 +688,7 @@ const Dashboard: React.FC = () => {
                         <span>{formatBeijing(doneDate?.toISOString() || p.updatedAt)}</span>
                       </div>
                     </div>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: COLORS.success, whiteSpace: 'nowrap' }}>¥{fmtK(exTaxOfDelivery(p, quotationsById))}</span>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: COLORS.success, whiteSpace: 'nowrap' }}>¥{fmtK(deliveryExTax(p, deliveryQuoteInfo))}</span>
                     <RightOutlined style={{ color: COLORS.textLight, fontSize: 12 }} />
                   </div>
                 );

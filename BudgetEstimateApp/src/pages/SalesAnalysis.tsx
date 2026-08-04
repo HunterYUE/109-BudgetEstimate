@@ -3,12 +3,13 @@ import { Card, Spin, message } from 'antd';
 import type { SalesOpportunity, QuotationSummary, DeliveryProject } from '../types';
 import { parseReasons, REASON_TAXONOMY } from '../reasonTaxonomy';
 import { SalesFunnel, VerticalBarChart, type BarItem } from '../components/charts/SalesCharts';
+import { OverviewCards } from '../components/shared/OverviewCards';
 import { opportunityService } from '../services/opportunityService';
 import { quotationService } from '../services/quotationService';
 import { deliveryService } from '../services/deliveryService';
 import { COLORS } from '../styles/colors';
 import { parseFY, FYSelector, fiscalYearLabel } from '../utils/fiscalYear';
-import { fmtK, oppEffectiveEnd, isRealWin, monthEndOf, exAmount, stageAsOf, getProjectDoneDate, fyMonthWindows, FY_MONTH_LABELS, projectMonthlySales, deliverySalesProfit, quoteProfitExTax, buildQuoteInfoMap } from '../utils/analysisShared';
+import { fmtK, oppEffectiveEnd, isRealWin, monthEndOf, exAmount, stageAsOf, getProjectDoneDate, fyMonthWindows, FY_MONTH_LABELS, projectMonthlySales, deliverySalesProfit, quoteProfitExTax, buildQuoteInfoMap, deliveryExTax } from '../utils/analysisShared';
 import { settingsService, type UserSettings } from '../services/settingsService';
 
 /* ============================================================
@@ -30,10 +31,6 @@ const exAmt = (o: SalesOpportunity) => exAmount(o.amount, o.taxRate);
 
 const stageIdx = (s: string) => STAGES.indexOf(s as typeof STAGES[number]);
 
-/** 订单/合同金额（未税）= 持久化合同金额 contract_amount ÷ (1 + 机会报价编制表税率 tax_rate) */
-const exTaxOf = (p: DeliveryProject, info: Map<string, { taxRate: number }>): number =>
-  exAmount(p.contractAmount, info.get(p.opportunityId)?.taxRate);
-
 /** 编辑输入框共用样式 */
 const EDIT_INPUT_STYLE: React.CSSProperties = {
   border: 'none', borderRadius: 0, padding: 0, margin: 0,
@@ -54,43 +51,36 @@ function useFyFiltered(allOpps: SalesOpportunity[], fy: string) {
   }, [allOpps, fy]);
 }
 
-/* ============================================================
-   子组件 — 概览卡片
-   ============================================================ */
-interface KpiCard {
-  label: string; value: string; color: string; icon: string;
-  prevValues?: { value: string; color: string }[];
+/** 抽取指定分组（竞对/取消/放弃）的输单原因统计柱状图数据（模块级 hook，参数化输单列表） */
+function useDimReasons(fyLostByTime: SalesOpportunity[], groupLabel: string): BarItem[] {
+  return useMemo(() => {
+    const grp = REASON_TAXONOMY.loss.groups.find(g => g.groupLabel === groupLabel);
+    const allReasons: string[] = [];
+    if (grp) {
+      for (const item of grp.items) {
+        if (item.items && item.items.length > 0) {
+          for (const sub of item.items) allReasons.push(sub.label);
+        } else {
+          allReasons.push(item.label);
+        }
+      }
+    }
+    const countMap = new Map<string, number>();
+    for (const name of allReasons) countMap.set(name, 0);
+    for (const opp of fyLostByTime) {
+      if (!opp.reasons) continue;
+      for (const r of parseReasons(opp.reasons)) {
+        if (r.groupLabel !== groupLabel) continue;
+        if (r.detailItems.length > 0) {
+          for (const item of r.detailItems) { if (countMap.has(item)) countMap.set(item, countMap.get(item)! + 1); }
+        } else {
+          if (countMap.has(r.subLabel)) countMap.set(r.subLabel, countMap.get(r.subLabel)! + 1);
+        }
+      }
+    }
+    return allReasons.map((name, i) => ({ name, value: countMap.get(name) || 0, color: i % 2 === 0 ? COLORS.primary : COLORS.purple }));
+  }, [fyLostByTime, groupLabel]);
 }
-const OverviewCards: React.FC<{ items: KpiCard[] }> = ({ items }) => (
-  <div style={{ display: 'flex', gap: 16, marginBottom: 24 }}>
-    {items.map((item, i) => (
-      <Card key={i} size="small"
-        style={{
-          flex: 1, borderRadius: 8, border: `1px solid ${COLORS.borderLight}`,
-          transition: 'box-shadow 0.2s, transform 0.15s',
-        }}
-        styles={{ body: { padding: '16px 12px', textAlign: 'center' as const } }}
-        hoverable
-      >
-        <div style={{ fontSize: 20, marginBottom: 2 }}>{item.icon}</div>
-        <div style={{ fontSize: 12, color: COLORS.textLight, marginBottom: 4, letterSpacing: 0.3 }}>
-          {item.label}
-        </div>
-        <div style={{ fontSize: 22, fontWeight: 700, color: item.color, lineHeight: 1.2 }}>
-          {item.value}
-        </div>
-        {item.prevValues && item.prevValues.length === 2 && (
-          <div style={{ fontSize: 11, fontWeight: 600, lineHeight: 1.3, marginTop: 3, opacity: 0.7 }}>
-            <span style={{ color: item.prevValues[0].color }}>{item.prevValues[0].value}</span>
-            <span style={{ color: COLORS.textLight, margin: '0 4px' }}>|</span>
-            <span style={{ color: item.prevValues[1].color }}>{item.prevValues[1].value}</span>
-          </div>
-        )}
-      </Card>
-    ))}
-  </div>
-);
-
 
 const SalesAnalysis: React.FC = () => {
   const [msg, ctx] = message.useMessage();
@@ -98,43 +88,41 @@ const SalesAnalysis: React.FC = () => {
   const [quotationSummaries, setQuotationSummaries] = useState<QuotationSummary[]>([]);
   const [deliveryProjects, setDeliveryProjects] = useState<DeliveryProject[]>([]);
   const [loading, setLoading] = useState(true);
-  const defaultFy = fiscalYearLabel(new Date());
-  const [fySelect, setFySelect] = useState(defaultFy);
+  const [fySelect, setFySelect] = useState(() => fiscalYearLabel(new Date()));
 
   // ⚠️ 财年范围缓存一次复用（原每个 useMemo 内各自 parseFY）
   const fyRange = useMemo(() => parseFY(fySelect), [fySelect]);
 
+  const aliveRef = useRef(true);
   const loadAll = useCallback(async () => {
-    try {
-      // ⚠️ 全部传 limit:'1000'，避免后端默认 limit=100 导致统计静默截断（对齐 Dashboard/DeliveryAnalysis）
-      const [opps, qs, dps] = await Promise.all([
-        opportunityService.list({ limit: '1000' }),
-        quotationService.list({ limit: '1000' }),
-        deliveryService.list({ limit: '1000' }),
-      ]);
-      setAllOpps(opps);
-      setQuotationSummaries(qs);
-      setDeliveryProjects(dps);
-    } catch (err: unknown) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      msg.error('加载销售分析数据失败：' + errMsg);
-      setAllOpps([]);
-      setQuotationSummaries([]);
-      setDeliveryProjects([]);
-    } finally {
-      setLoading(false);
-    }
+    // ⚠️ allSettled：单个接口失败不拖垮整页；全部传 limit:'1000' 避免后端默认 limit=100 静默截断
+    const [opps, qs, dps] = await Promise.allSettled([
+      opportunityService.list({ limit: '1000' }),
+      quotationService.list({ limit: '1000' }),
+      deliveryService.list({ limit: '1000' }),
+    ]);
+    if (!aliveRef.current) return;
+    if (opps.status === 'fulfilled') setAllOpps(opps.value);
+    if (qs.status === 'fulfilled') setQuotationSummaries(qs.value);
+    if (dps.status === 'fulfilled') setDeliveryProjects(dps.value);
+    const failed = [opps, qs, dps].filter(r => r.status === 'rejected').length;
+    if (failed > 0) msg.warning(`有 ${failed} 项数据加载失败，已显示可用数据`);
+    setLoading(false);
   }, [msg]);
 
   useEffect(() => {
+    aliveRef.current = true;
     loadAll();
+    return () => { aliveRef.current = false; };
   }, [loadAll]);
 
-  // ── 机会关联报价（最新版本报价编制表）的持久化数据：税率、折后报价、概算利润（含税）──
-  // 订单金额（未税）/概算利润/概算利润率全部以此为准，不再运行时从组数据估算
-  const oppQuoteInfo = useMemo(
-    () => buildQuoteInfoMap(allOpps, qid => quotationSummaries.find(q => q.id === qid)),
-    [allOpps, quotationSummaries],
+  // ── 报价按 id 建索引（避免 find O(N×M)），供 deliveryQuoteInfo 与月度 KPI 复用 ──
+  const quotationById = useMemo(() => new Map(quotationSummaries.map(q => [q.id, q])), [quotationSummaries]);
+  // ── 交付关联报价（按交付项目 id 索引，与 DeliveryAnalysis 同口径）：税率/折后报价/概算利润/利润率 ──
+  // ⚠️ 税率一律取交付项目自身 quotationId（不再经机会反查），消除跨页税率分叉
+  const deliveryQuoteInfo = useMemo(
+    () => buildQuoteInfoMap(deliveryProjects, qid => quotationById.get(qid)),
+    [deliveryProjects, quotationById],
   );
 
   const fyFiltered = useFyFiltered(allOpps, fySelect);
@@ -196,6 +184,7 @@ const SalesAnalysis: React.FC = () => {
     settingsTimerRef.current = setTimeout(flushServerSave, 3000);
   };
 
+  // 三个目标保存器：写 state + 本地持久化（按财年键）+ 服务端防抖提交（直接函数，避免工厂模式触发 react-hooks/refs）
   const saveSalesTarget = (v: string) => {
     setAnnualSalesTarget(v);
     const key = fyTargetKey('saAnnualSalesTarget');
@@ -226,14 +215,14 @@ const SalesAnalysis: React.FC = () => {
     return fyMonthWindows(fyRange).map((w, i) => {
       let amount = 0, profit = 0;
       for (const p of deliveryProjects) {
-        const info = oppQuoteInfo.get(p.opportunityId);
+        const info = deliveryQuoteInfo.get(p.id);
         const pt = projectMonthlySales(p, w.start, w.end, info?.taxRate, info?.gp3Amt);
         amount += pt.orderAmt;
         profit += pt.orderProfit;
       }
       return { name: FY_MONTH_LABELS[i], value: amount, subValue: profit || undefined };
     });
-  }, [fyRange, oppQuoteInfo, deliveryProjects]);
+  }, [fyRange, deliveryQuoteInfo, deliveryProjects]);
 
   // ── 月度销售数据（当月完成交付项目的销售金额与销售利润之和，按财年月汇总）──
   // 复用共享归集 projectMonthlySales：销售金额 = salesAmt，销售利润 = salesProfit（未税 − 实际成本）
@@ -242,7 +231,7 @@ const SalesAnalysis: React.FC = () => {
     return fyMonthWindows(fyRange).map((w, i) => {
       let amount = 0, profit = 0, incomplete = false;
       for (const p of deliveryProjects) {
-        const info = oppQuoteInfo.get(p.opportunityId);
+        const info = deliveryQuoteInfo.get(p.id);
         const pt = projectMonthlySales(p, w.start, w.end, info?.taxRate, info?.gp3Amt);
         amount += pt.salesAmt;
         if (pt.salesProfit !== undefined) profit += pt.salesProfit;
@@ -250,7 +239,7 @@ const SalesAnalysis: React.FC = () => {
       }
       return { name: FY_MONTH_LABELS[i], value: amount, subValue: incomplete ? undefined : profit || undefined };
     });
-  }, [fyRange, oppQuoteInfo, deliveryProjects]);
+  }, [fyRange, deliveryQuoteInfo, deliveryProjects]);
 
   // ── 共享：财年已过月数 ──
   const elapsedMonths = useMemo(() => {
@@ -331,15 +320,15 @@ const SalesAnalysis: React.FC = () => {
     if (inFy.length === 0) return 0;
     let totalAmt = 0, weighted = 0;
     for (const p of inFy) {
-      const oppProfit = oppQuoteInfo.get(p.opportunityId);
+      const oppProfit = deliveryQuoteInfo.get(p.id);
       if (!oppProfit || oppProfit.discounted <= 0) continue;
       // ⚠️ 权重用未税金额（与月度订单/未税口径一致），而非含税 contractAmount
-      const ex = exTaxOf(p, oppQuoteInfo);
+      const ex = deliveryExTax(p, deliveryQuoteInfo);
       totalAmt += ex;
       weighted += ex * oppProfit.rate;
     }
     return totalAmt > 0 ? (weighted / totalAmt * 100) : 0;
-  }, [fyRange, oppQuoteInfo, deliveryProjects]);
+  }, [fyRange, deliveryQuoteInfo, deliveryProjects]);
 
   // ── 已交付项目实际 GP3（已完成项目总结且成本审批通过的项目的加权平均实际 GP3）──
   const deliveredActualGP3 = useMemo(() => {
@@ -355,7 +344,7 @@ const SalesAnalysis: React.FC = () => {
     if (delivered.length === 0) return 0;
     let totalAmt = 0, weighted = 0;
     for (const p of delivered) {
-      const exTax = exTaxOf(p, oppQuoteInfo);
+      const exTax = deliveryExTax(p, deliveryQuoteInfo);
       totalAmt += exTax;
       // 实际销售利润（共享 deliverySalesProfit：未税 − 实际成本；成本已被过滤保证非空）
       const actProfit = deliverySalesProfit(exTax, p.totalActualCost);
@@ -363,7 +352,7 @@ const SalesAnalysis: React.FC = () => {
       weighted += exTax * actGP3;
     }
     return totalAmt > 0 ? (weighted / totalAmt * 100) : 0;
-  }, [fyRange, oppQuoteInfo, deliveryProjects]);
+  }, [fyRange, deliveryQuoteInfo, deliveryProjects]);
 
   // ── 漏斗右侧 FY 累计用 ──
   const fyWon = useMemo(() => ({
@@ -438,14 +427,14 @@ const SalesAnalysis: React.FC = () => {
       for (const o of pipelineOpps) {
         const w = Math.round(exAmt(o) * o.winRate / 100);
         weighted += w;
-        const q = o.quotationId ? quotationSummaries.find(q => q.id === o.quotationId) : undefined;
+        const q = o.quotationId ? quotationById.get(o.quotationId) : undefined;
         // 机会必须编制报价；无报价的机会利润率为 0（不假定 15%），低利润率可暴露管理问题
         profit += Math.round(w * (q ? (q.profitRate ?? 0) / 100 : 0));
       }
       return { weightedPipeline: weighted, weightedProfit: profit, weightedProfitRate: weighted > 0 ? profit / weighted * 100 : 0, valid: true };
     };
     return overviewRefMonths.map(calcMonth);
-  }, [allOpps, quotationSummaries, overviewRefMonths]);
+  }, [allOpps, quotationById, overviewRefMonths]);
 
   // ── 机会 → 转交付时间（交付项目创建时间），销售周期终点 ──
   const deliveryCreatedByOpp = useMemo(() => {
@@ -487,40 +476,9 @@ const SalesAnalysis: React.FC = () => {
   }, [allOpps, overviewRefMonths, deliveryCreatedByOpp]);
 
   // ── 输单原因柱状图（按输单时间归入财年）──
-  /** 抽取指定分组的原因统计柱状图数据 */
-  function useDimReasons(groupLabel: string): BarItem[] {
-    return useMemo(() => {
-      const grp = REASON_TAXONOMY.loss.groups.find(g => g.groupLabel === groupLabel);
-      const allReasons: string[] = [];
-      if (grp) {
-        for (const item of grp.items) {
-          if (item.items && item.items.length > 0) {
-            for (const sub of item.items) allReasons.push(sub.label);
-          } else {
-            allReasons.push(item.label);
-          }
-        }
-      }
-      const countMap = new Map<string, number>();
-      for (const name of allReasons) countMap.set(name, 0);
-      for (const opp of fyLostByTime) {
-        if (!opp.reasons) continue;
-        for (const r of parseReasons(opp.reasons)) {
-          if (r.groupLabel !== groupLabel) continue;
-          if (r.detailItems.length > 0) {
-            for (const item of r.detailItems) { if (countMap.has(item)) countMap.set(item, countMap.get(item)! + 1); }
-          } else {
-            if (countMap.has(r.subLabel)) countMap.set(r.subLabel, countMap.get(r.subLabel)! + 1);
-          }
-        }
-      }
-      return allReasons.map((name, i) => ({ name, value: countMap.get(name) || 0, color: i % 2 === 0 ? COLORS.primary : COLORS.purple }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [fyLostByTime]);
-  }
-  const dimLossReasons = useDimReasons('竞对');
-  const dimCancelReasons = useDimReasons('取消');
-  const dimAbandonReasons = useDimReasons('放弃');
+  const dimLossReasons = useDimReasons(fyLostByTime, '竞对');
+  const dimCancelReasons = useDimReasons(fyLostByTime, '取消');
+  const dimAbandonReasons = useDimReasons(fyLostByTime, '放弃');
 
   // ── 销售员统一统计 ──
   const salesmenStats = useMemo(() => {
@@ -556,10 +514,10 @@ const SalesAnalysis: React.FC = () => {
       if (!opp?.salesman) continue;
       let s = map.get(opp.salesman);
       if (!s) { s = newEntry(opp.salesman); map.set(opp.salesman, s); }
-      const exTax = exTaxOf(p, oppQuoteInfo);
+      const exTax = deliveryExTax(p, deliveryQuoteInfo);
       s.orderAmount += exTax;
       // 订单利润：报价编制表概算利润转未税（共享 quoteProfitExTax）
-      const oppProfit = oppQuoteInfo.get(p.opportunityId);
+      const oppProfit = deliveryQuoteInfo.get(p.id);
       s.profitTotal += quoteProfitExTax(oppProfit?.gp3Amt, oppProfit?.taxRate);
     }
     // 管道潜力：与「加权管道」同源（财年活跃期 + 机会锚点 + 已转交付赢单不计入），原始金额（不含赢率加权）
@@ -575,7 +533,7 @@ const SalesAnalysis: React.FC = () => {
       ...s,
       conversionEff: s.totalCount > 0 ? s.wins / s.totalCount * 100 : 0,
     }));
-  }, [fyWonByTime, fyFiltered, fyRange, deliveryProjects, allOpps, oppQuoteInfo]);
+  }, [fyWonByTime, fyFiltered, fyRange, deliveryProjects, allOpps, deliveryQuoteInfo]);
 
   // ── 4 个维度提取（图表通过 topN=10 自动排序取前10名）──
   const dimEfficiency: BarItem[] = salesmenStats.map(s => ({ name: s.name, value: Math.round(s.conversionEff * 10) / 10 }));
@@ -583,46 +541,41 @@ const SalesAnalysis: React.FC = () => {
   const dimPipeline: BarItem[] = salesmenStats.map(s => ({ name: s.name, value: s.pipelinePotential }));
   const dimProfit: BarItem[] = salesmenStats.map(s => ({ name: s.name, value: s.profitTotal }));
 
+  // 概览卡片值/颜色格式化：无效（未来财年）显示 —，避免重复 valid 三元
+  const kpiCell = (valid: boolean, value: number, fmt: (n: number) => string, color: string): { value: string; color: string } =>
+    valid ? { value: fmt(value), color } : { value: '—', color: COLORS.textLight };
+
   // 概览卡片（按月数据）
   const overviewItems = [
     { label: '加权管道',
-      value: monthlyKpi[0].valid ? `¥${fmtK(monthlyKpi[0].weightedPipeline)}` : '—',
-      color: monthlyKpi[0].valid ? COLORS.primary : COLORS.textLight, icon: '📊',
+      ...kpiCell(monthlyKpi[0].valid, monthlyKpi[0].weightedPipeline, v => `¥${fmtK(v)}`, COLORS.primary), icon: '📊',
       prevValues: [
-        { value: monthlyKpi[1].valid ? `¥${fmtK(monthlyKpi[1].weightedPipeline)}` : '—', color: monthlyKpi[1].valid ? COLORS.primary : COLORS.textLight },
-        { value: monthlyKpi[2].valid ? `¥${fmtK(monthlyKpi[2].weightedPipeline)}` : '—', color: monthlyKpi[2].valid ? COLORS.primary : COLORS.textLight },
+        kpiCell(monthlyKpi[1].valid, monthlyKpi[1].weightedPipeline, v => `¥${fmtK(v)}`, COLORS.primary),
+        kpiCell(monthlyKpi[2].valid, monthlyKpi[2].weightedPipeline, v => `¥${fmtK(v)}`, COLORS.primary),
       ] },
     { label: '加权利润',
-      value: monthlyKpi[0].valid ? `¥${fmtK(monthlyKpi[0].weightedProfit)}` : '—',
-      color: monthlyKpi[0].valid ? COLORS.purple : COLORS.textLight, icon: '💰',
+      ...kpiCell(monthlyKpi[0].valid, monthlyKpi[0].weightedProfit, v => `¥${fmtK(v)}`, COLORS.purple), icon: '💰',
       prevValues: [
-        { value: monthlyKpi[1].valid ? `¥${fmtK(monthlyKpi[1].weightedProfit)}` : '—', color: monthlyKpi[1].valid ? COLORS.purple : COLORS.textLight },
-        { value: monthlyKpi[2].valid ? `¥${fmtK(monthlyKpi[2].weightedProfit)}` : '—', color: monthlyKpi[2].valid ? COLORS.purple : COLORS.textLight },
+        kpiCell(monthlyKpi[1].valid, monthlyKpi[1].weightedProfit, v => `¥${fmtK(v)}`, COLORS.purple),
+        kpiCell(monthlyKpi[2].valid, monthlyKpi[2].weightedProfit, v => `¥${fmtK(v)}`, COLORS.purple),
       ] },
     { label: '加权利润率',
-      value: monthlyKpi[0].valid ? `${monthlyKpi[0].weightedProfitRate.toFixed(1)}%` : '—',
-      color: monthlyKpi[0].valid ? (monthlyKpi[0].weightedProfitRate >= 15 ? COLORS.success : COLORS.warning) : COLORS.textLight, icon: '📈',
+      ...kpiCell(monthlyKpi[0].valid, monthlyKpi[0].weightedProfitRate, v => `${v.toFixed(1)}%`, monthlyKpi[0].weightedProfitRate >= 15 ? COLORS.success : COLORS.warning), icon: '📈',
       prevValues: [
-        { value: monthlyKpi[1].valid ? `${monthlyKpi[1].weightedProfitRate.toFixed(1)}%` : '—', color: monthlyKpi[1].valid ? (monthlyKpi[1].weightedProfitRate >= 15 ? COLORS.success : COLORS.warning) : COLORS.textLight },
-        { value: monthlyKpi[2].valid ? `${monthlyKpi[2].weightedProfitRate.toFixed(1)}%` : '—', color: monthlyKpi[2].valid ? (monthlyKpi[2].weightedProfitRate >= 15 ? COLORS.success : COLORS.warning) : COLORS.textLight },
+        kpiCell(monthlyKpi[1].valid, monthlyKpi[1].weightedProfitRate, v => `${v.toFixed(1)}%`, monthlyKpi[1].weightedProfitRate >= 15 ? COLORS.success : COLORS.warning),
+        kpiCell(monthlyKpi[2].valid, monthlyKpi[2].weightedProfitRate, v => `${v.toFixed(1)}%`, monthlyKpi[2].weightedProfitRate >= 15 ? COLORS.success : COLORS.warning),
       ] },
     { label: '销售周期',
-      value: rolling12mKpi[0].salesCycle > 0 ? `${rolling12mKpi[0].salesCycle} 天` : '—',
-      color: rolling12mKpi[0].salesCycle > 0 ? (rolling12mKpi[0].salesCycle <= 120 ? COLORS.success : COLORS.warning) : COLORS.textLight, icon: '⏱️',
+      ...kpiCell(rolling12mKpi[0].salesCycle > 0, rolling12mKpi[0].salesCycle, v => `${v} 天`, rolling12mKpi[0].salesCycle <= 120 ? COLORS.success : COLORS.warning), icon: '⏱️',
       prevValues: [
-        { value: rolling12mKpi[1].salesCycle > 0 ? `${rolling12mKpi[1].salesCycle} 天` : '—',
-          color: rolling12mKpi[1].salesCycle > 0 ? (rolling12mKpi[1].salesCycle <= 120 ? COLORS.success : COLORS.warning) : COLORS.textLight },
-        { value: rolling12mKpi[2].salesCycle > 0 ? `${rolling12mKpi[2].salesCycle} 天` : '—',
-          color: rolling12mKpi[2].salesCycle > 0 ? (rolling12mKpi[2].salesCycle <= 120 ? COLORS.success : COLORS.warning) : COLORS.textLight },
+        kpiCell(rolling12mKpi[1].salesCycle > 0, rolling12mKpi[1].salesCycle, v => `${v} 天`, rolling12mKpi[1].salesCycle <= 120 ? COLORS.success : COLORS.warning),
+        kpiCell(rolling12mKpi[2].salesCycle > 0, rolling12mKpi[2].salesCycle, v => `${v} 天`, rolling12mKpi[2].salesCycle <= 120 ? COLORS.success : COLORS.warning),
       ] },
     { label: '赢单转化率',
-      value: rolling12mKpi[0].wonDecided > 0 ? `${rolling12mKpi[0].decidedWinRate.toFixed(1)}%` : '—',
-      color: rolling12mKpi[0].wonDecided > 0 ? (rolling12mKpi[0].decidedWinRate >= 20 ? COLORS.success : COLORS.warning) : COLORS.textLight, icon: '🎯',
+      ...kpiCell(rolling12mKpi[0].wonDecided > 0, rolling12mKpi[0].decidedWinRate, v => `${v.toFixed(1)}%`, rolling12mKpi[0].decidedWinRate >= 20 ? COLORS.success : COLORS.warning), icon: '🎯',
       prevValues: [
-        { value: rolling12mKpi[1].wonDecided > 0 ? `${rolling12mKpi[1].decidedWinRate.toFixed(1)}%` : '—',
-          color: rolling12mKpi[1].wonDecided > 0 ? (rolling12mKpi[1].decidedWinRate >= 20 ? COLORS.success : COLORS.warning) : COLORS.textLight },
-        { value: rolling12mKpi[2].wonDecided > 0 ? `${rolling12mKpi[2].decidedWinRate.toFixed(1)}%` : '—',
-          color: rolling12mKpi[2].wonDecided > 0 ? (rolling12mKpi[2].decidedWinRate >= 20 ? COLORS.success : COLORS.warning) : COLORS.textLight },
+        kpiCell(rolling12mKpi[1].wonDecided > 0, rolling12mKpi[1].decidedWinRate, v => `${v.toFixed(1)}%`, rolling12mKpi[1].decidedWinRate >= 20 ? COLORS.success : COLORS.warning),
+        kpiCell(rolling12mKpi[2].wonDecided > 0, rolling12mKpi[2].decidedWinRate, v => `${v.toFixed(1)}%`, rolling12mKpi[2].decidedWinRate >= 20 ? COLORS.success : COLORS.warning),
       ] },
   ];
 

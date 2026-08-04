@@ -178,6 +178,14 @@ export const buildQuoteInfoMap = <T extends { id: string; quotationId?: string }
   return map;
 };
 
+/**
+ * 交付未税金额 = 合同金额 ÷ (1+报价税率)。
+ * 税率一律取自「交付项目自身 quotationId」关联的报价（SalesAnalysis/DeliveryAnalysis 共用），
+ * 消除此前三页分别按机会 quotationId / 交付 id / 报价 id 查找导致的口径分叉。
+ */
+export const deliveryExTax = (p: DeliveryProject, info: Map<string, QuoteRefInfo>): number =>
+  exAmount(p.contractAmount, info.get(p.id)?.taxRate);
+
 /** 单个项目在月窗口内的订单/销售金额与利润（未税口径） */
 export interface MonthlySalesPoint {
   /** 订单金额（转交付月 createdAt 归集） */

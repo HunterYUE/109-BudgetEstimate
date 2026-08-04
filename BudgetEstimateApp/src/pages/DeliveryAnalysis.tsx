@@ -1,52 +1,18 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Card } from 'antd';
 import { deliveryService } from '../services/deliveryService';
 import { quotationService } from '../services/quotationService';
 import type { DeliveryProject } from '../types';
 import { COLORS } from '../styles/colors';
 import { NODE_DISPLAY_NAMES } from '../utils/constants';
 import { parseFY, FYSelector, fiscalYearLabel } from '../utils/fiscalYear';
-import { fmtK, compressNo, monthEndOf, exAmount, getNodeBaseline, getNodeDelay, getProjectDelay, isProjectDelivered, getProjectDoneDate, quoteProfitExTax, deliverySalesProfit, buildQuoteInfoMap } from '../utils/analysisShared';
+import { fmtK, compressNo, monthEndOf, getNodeBaseline, getNodeDelay, getProjectDelay, isProjectDelivered, getProjectDoneDate, quoteProfitExTax, deliverySalesProfit, buildQuoteInfoMap, deliveryExTax } from '../utils/analysisShared';
 import { VerticalBarChart, ProfitChart, ProjectGantt, BubbleChart } from '../components/charts/DeliveryCharts';
 import type { ProfitItem, BubbleDataItem } from '../components/charts/DeliveryCharts';
+import { OverviewCards, type KpiCardItem } from '../components/shared/OverviewCards';
 
 /* ============================================================
-   子组件 — 概览卡片
+   概览卡片（共享组件 OverviewCards，valueFontSize=26 保持交付分析视觉）
    ============================================================ */
-interface KpiCard {
-  label: string; value: string; color: string; icon: string;
-  prevValues?: { value: string; color: string }[];
-}
-const OverviewCards: React.FC<{ items: KpiCard[] }> = ({ items }) => (
-  <div style={{ display: 'flex', gap: 16, marginBottom: 24 }}>
-    {items.map(item => (
-      <Card key={item.label} size="small"
-        style={{
-          flex: 1, borderRadius: 8, border: `1px solid ${COLORS.borderLight}`,
-          transition: 'box-shadow 0.2s, transform 0.15s',
-        }}
-        styles={{ body: { padding: '16px 12px', textAlign: 'center' as const } }}
-        hoverable
-      >
-        <div style={{ fontSize: 20, marginBottom: 2 }}>{item.icon}</div>
-        <div style={{ fontSize: 12, color: COLORS.textLight, marginBottom: 4, letterSpacing: 0.3 }}>
-          {item.label}
-        </div>
-        <div style={{ fontSize: 26, fontWeight: 700, color: item.color, lineHeight: 1.2 }}>
-          {item.value}
-        </div>
-        {item.prevValues && item.prevValues.length === 2 && (
-          <div style={{ fontSize: 11, fontWeight: 600, lineHeight: 1.3, marginTop: 3, opacity: 0.7 }}>
-            <span style={{ color: item.prevValues[0].color }}>{item.prevValues[0].value}</span>
-            <span style={{ color: COLORS.textLight, margin: '0 4px' }}>|</span>
-            <span style={{ color: item.prevValues[1].color }}>{item.prevValues[1].value}</span>
-          </div>
-        )}
-      </Card>
-    ))}
-  </div>
-);
-
 
 /** 某财年截止到某月月底的累计 KPI 口径；hasData=false 表示该月早于财年起点、无完整月数据 */
 interface MonthlyCum {
@@ -85,9 +51,6 @@ const calcProjDelay = (p: DeliveryProject): number => getProjectDelay(p).days;
 /** 交付报价信息映射类型（报价编制表持久化数据：税率/折后报价/概算利润/概算利润率） */
 type DeliveryQuoteMap = Map<string, { taxRate: number; discounted: number; gp3Amt: number; rate: number }>;
 
-/** 交付未税金额 = 合同金额 ÷ (1+报价税率) */
-const exTaxOf = (p: DeliveryProject, info: DeliveryQuoteMap): number =>
-  exAmount(p.contractAmount, info.get(p.id)?.taxRate);
 /** 交付概算利润（未税）= 报价概算利润转未税（共享 quoteProfitExTax） */
 const estProfitOf = (p: DeliveryProject, info: DeliveryQuoteMap): number => {
   const i = info.get(p.id);
@@ -95,7 +58,7 @@ const estProfitOf = (p: DeliveryProject, info: DeliveryQuoteMap): number => {
 };
 /** 交付概算总成本（未税）= 未税金额 − 概算利润 */
 const grandEstimatedOf = (p: DeliveryProject, info: DeliveryQuoteMap): number =>
-  exTaxOf(p, info) - estProfitOf(p, info);
+  deliveryExTax(p, info) - estProfitOf(p, info);
 /** 交付概算GP3 = 报价概算利润率 */
 const estGP3Of = (p: DeliveryProject, info: DeliveryQuoteMap): number =>
   info.get(p.id)?.rate ?? 0;
@@ -230,7 +193,7 @@ const DeliveryAnalysis: React.FC = () => {
     const items: ProfitItem[] = fyFiltered
       .filter(p => isNode15CompletedInFy(p, fyRange) && deliveryQuoteInfo.has(p.id))
       .map(p => {
-        const exTax = exTaxOf(p, deliveryQuoteInfo);
+        const exTax = deliveryExTax(p, deliveryQuoteInfo);
         const estGP3 = estGP3Of(p, deliveryQuoteInfo);
         const estProfit = estProfitOf(p, deliveryQuoteInfo);
         // 实际销售利润（共享 deliverySalesProfit：无成本数据返回 undefined，图表不显示实际）
@@ -263,7 +226,7 @@ const DeliveryAnalysis: React.FC = () => {
       for (const p of fyFiltered) {
         if (new Date(p.createdAt) > mEnd) continue;
         totalCount++;
-        const ex = exTaxOf(p, deliveryQuoteInfo);
+        const ex = deliveryExTax(p, deliveryQuoteInfo);
         tAmt += ex;
         // 已完成交付判定：节点15实际完成日或 updatedAt 回退（统一共享口径）
         const doneDate = getProjectDoneDate(p);
@@ -313,7 +276,7 @@ const DeliveryAnalysis: React.FC = () => {
 
 
   // ── 健康 KPI 卡片（使用财年截止到各月月底的累计值）──
-  const overviewItems = useMemo((): KpiCard[] => {
+  const overviewItems = useMemo((): KpiCardItem[] => {
     const mk = monthlyCumKpi;
     const main = mk[0]; // 截止到最近完整月（已完结财年=Jun；当前财年无完整月时 hasData=false）
 
@@ -396,7 +359,7 @@ const DeliveryAnalysis: React.FC = () => {
 
   // ── 各项目未税金额查找表（甘特图交付负荷按节点级计算时需要）──
   const projectExTaxLookup = useMemo(() => {
-    return fyFiltered.map(p => ({ projectId: compressNo(p.salesNo), exTax: exTaxOf(p, deliveryQuoteInfo) }));
+    return fyFiltered.map(p => ({ projectId: compressNo(p.salesNo), exTax: deliveryExTax(p, deliveryQuoteInfo) }));
   }, [fyFiltered, deliveryQuoteInfo]);
 
   // ── 气泡图数据（仅含当前财年内完成节点15的项目）──
@@ -418,7 +381,7 @@ const DeliveryAnalysis: React.FC = () => {
       const start = new Date(node1.plannedStartDate);
       // 实际结束 = 已完成项目实际完成日（updatedAt 回退）；未完成 → 现在
       const end = getProjectDoneDate(p) ?? now;
-      const exTax = exTaxOf(p, deliveryQuoteInfo);
+      const exTax = deliveryExTax(p, deliveryQuoteInfo);
       lifecycles.set(p.id, { start, end, exTax });
     }
 
@@ -428,7 +391,7 @@ const DeliveryAnalysis: React.FC = () => {
       const projDuration = lc.end.getTime() - lc.start.getTime();
 
       const projDelay = calcProjDelay(p);
-      const exTax = exTaxOf(p, deliveryQuoteInfo);
+      const exTax = deliveryExTax(p, deliveryQuoteInfo);
       const estTotal = grandEstimatedOf(p, deliveryQuoteInfo);
       const costDev = p.costStatus === 'approved' && p.totalActualCost != null && estTotal > 0
         ? (p.totalActualCost - estTotal) / estTotal * 100 : 0;
@@ -481,7 +444,7 @@ const DeliveryAnalysis: React.FC = () => {
               return arr[idx] || '—';
             };
             return { ...item, prevValues: [{ value: val(mk[1], i), color: item.color }, { value: val(mk[2], i), color: item.color }] };
-          })} />
+          })} valueFontSize={26} />
 
           <div style={{ display: 'flex', gap: 16, marginTop: 16, alignItems: 'stretch' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16, flex: '0 0 calc(3 / 7 * (100% - 96px) + 32px)' }}>
