@@ -41,7 +41,8 @@ function shortDate(d: string) { return d ? d.slice(2) : '—'; }
 
 /** 节点实际开始时间：actualStartDate 优先，兼容旧数据从变更历史推断进入 in_progress 的时刻 */
 function actualStartOf(node: DeliveryNode): string | null {
-  return node.actualStartDate || node.history.find(h => h.field === 'status' && h.newValue === 'in_progress')?.changedAt || null;
+  // ⚠️ history 判空防御：旧数据可能缺该字段
+  return node.actualStartDate || node.history?.find(h => h.field === 'status' && h.newValue === 'in_progress')?.changedAt || null;
 }
 
 const cellStyle: React.CSSProperties = {
@@ -73,7 +74,7 @@ const DeliveryNodeTimeline: React.FC<Props> = ({
   };
 
   const showHistory = (node: DeliveryNode) => {
-    if (node.history.length === 0) return;
+    if (!node.history?.length) return;
     Modal.info({
       title: `${node.name} — 变更历史`,
       width: 500,
@@ -237,7 +238,7 @@ const DeliveryNodeTimeline: React.FC<Props> = ({
                       </span>
                     )}
                   </span>
-                  {node.history.length > 0 && (
+                  {!!node.history?.length && (
                     <span style={{ cursor: 'pointer', color: '#bbb', fontSize: 10, marginLeft: 4 }}
                       onClick={() => showHistory(node)}>
                       <HistoryOutlined style={{ fontSize: 10 }} /> {node.history.length}次

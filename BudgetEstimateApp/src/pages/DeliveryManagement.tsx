@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, Tag, message, Empty, Spin } from 'antd';
 import { SyncOutlined, HistoryOutlined } from '@ant-design/icons';
@@ -14,6 +14,19 @@ const statusTag: Record<string, { label: string; color: string }> = {
   '已完成': { label: '已完成', color: 'green' },
 };
 
+const statusLabelMap: Record<string, string> = {
+  draft: '待提交', pending: '待审批', approved: '已通过', rejected: '已驳回',
+};
+const statusColorMap: Record<string, string> = {
+  draft: COLORS.textLight, pending: COLORS.warning, approved: COLORS.success, rejected: COLORS.danger,
+};
+
+/** 审批状态徽标（草稿可自定义标签，如成本对比显示"草稿"） */
+const StatusBadge: React.FC<{ status: string; draftLabel?: string }> = ({ status, draftLabel }) => {
+  const label = status === 'draft' && draftLabel ? draftLabel : (statusLabelMap[status] || status);
+  return <span style={{ color: statusColorMap[status] || COLORS.textLight, fontWeight: 600 }}>{label}</span>;
+};
+
 const DeliveryManagement: React.FC = () => {
   const navigate = useNavigate();
   const [filter, setFilter] = useState<'active' | 'completed'>('active');
@@ -22,20 +35,20 @@ const DeliveryManagement: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [messageApi, msgContextHolder] = message.useMessage();
 
-  const fetchProjects = async () => {
+  const fetchProjects = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await deliveryService.list();
+      // ⚠️ 传 limit:'1000'，避免后端默认 limit=100 导致列表截断
+      const data = await deliveryService.list({ limit: '1000' });
       setProjects(data);
     } catch {
       messageApi.warning('加载交付项目失败');
     } finally {
       setLoading(false);
     }
-  };
+  }, [messageApi]);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { fetchProjects(); }, []);
+  useEffect(() => { fetchProjects(); }, [fetchProjects]);
 
   const grouped = useMemo(() => {
     const active = projects.filter(p => p.status !== '已完成');
@@ -139,18 +152,6 @@ const DeliveryManagement: React.FC = () => {
       )}
     </div>
   );
-};
-
-const statusLabelMap: Record<string, string> = {
-  draft: '待提交', pending: '待审批', approved: '已通过', rejected: '已驳回',
-};
-const statusColorMap: Record<string, string> = {
-  draft: COLORS.textLight, pending: COLORS.warning, approved: COLORS.success, rejected: COLORS.danger,
-};
-
-const StatusBadge: React.FC<{ status: string; draftLabel?: string }> = ({ status, draftLabel }) => {
-  const label = status === 'draft' && draftLabel ? draftLabel : (statusLabelMap[status] || status);
-  return <span style={{ color: statusColorMap[status] || COLORS.textLight, fontWeight: 600 }}>{label}</span>;
 };
 
 export default DeliveryManagement;
