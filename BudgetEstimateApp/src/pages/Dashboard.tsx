@@ -13,8 +13,8 @@ import { quotationService } from '../services/quotationService';
 import type { SalesOpportunity, DeliveryProject, Client, QuotationSummary, DeliveryNode } from '../types';
 
 /** 交付合同额未税：取机会关联报价的实际税率（与销售分析 exTaxOf 同口径），无报价回退 13% */
-const exTaxOfDelivery = (p: DeliveryProject, quotations: QuotationSummary[]): number => {
-  const q = quotations.find(q => q.id === p.quotationId);
+const exTaxOfDelivery = (p: DeliveryProject, quoteById: Map<string, QuotationSummary>): number => {
+  const q = quoteById.get(p.quotationId);
   return exAmount(p.contractAmount, q?.taxRate);
 };
 
@@ -26,9 +26,12 @@ const fmtMonthly = (amt: number, cnt: number): string =>
 const monthsAgoStart = (now: Date, n: number): Date =>
   new Date(now.getFullYear(), now.getMonth() - n, 1);
 
-/** 最近 3 个完整月的英文缩写标签（[前3月, 前2月, 前1月]） */
-const last3MonthLabels = (now: Date): string[] =>
-  [3, 2, 1].map(i => monthsAgoStart(now, i).toLocaleString('en', { month: 'short' }));
+/** 近 3 个完整月的起止窗口（[前3月, 前2月, 前1月]，与展示标签顺序一致）；全页统计 memo 共享的唯一来源 */
+const last3MonthsOf = (now: Date): { start: Date; end: Date }[] =>
+  [3, 2, 1].map(mi => {
+    const start = monthsAgoStart(now, mi);
+    return { start, end: monthEndOf(start.getFullYear(), start.getMonth()) };
+  });
 
 /* ── KPI 卡片（与销售分析完全一致） ── */
 const KpiCard: React.FC<{
@@ -108,7 +111,7 @@ const VerticalBars: React.FC<{
               marginLeft: groupGaps?.includes(i - 1) ? gapSize : 0,
               position: 'relative', zIndex: 1,
             }}>
-              {item && item.color !== 'transparent' ? (
+              {item ? (
                 <>
                   {item.displayValue ? (
                     <div style={{ fontSize: 9, fontWeight: 600, color: item.color, marginBottom: 3, textAlign: 'center', lineHeight: 1.2 }}>
@@ -130,7 +133,7 @@ const VerticalBars: React.FC<{
                   )}
                 </>
               ) : (
-                <div style={{ width: item && item.color === 'transparent' ? 16 : barWidth, height: 0 }} />
+                <div style={{ width: barWidth, height: 0 }} />
               )}
             </div>
           ))}
@@ -143,11 +146,11 @@ const VerticalBars: React.FC<{
           {slots.map((item, i) => (
             <span key={i} style={{
               flex: 1, textAlign: 'center', fontSize: 9, color: COLORS.textSecondary,
-              lineHeight: 1.3, opacity: item && item.color !== 'transparent' ? 1 : 0,
+              lineHeight: 1.3, opacity: item ? 1 : 0,
               minWidth: 0,  // 与立柱槽位同构，确保逐柱对齐
               marginLeft: groupGaps?.includes(i - 1) ? gapSize : 0,
             }}>
-              {item && item.color !== 'transparent' ? item.label.split('\n').map((l, j) => <span key={j} style={{ display: 'block' }}>{l}</span>) : ''}
+              {item ? item.label.split('\n').map((l, j) => <span key={j} style={{ display: 'block' }}>{l}</span>) : ''}
             </span>
           ))}
         </div>
@@ -221,29 +224,36 @@ const Dashboard: React.FC = () => {
   const [quotations, setQuotations] = useState<QuotationSummary[]>([]);
 
   useEffect(() => {
-    Promise.all([
-      // ⚠️ 全部传 limit:'1000'，避免后端默认 limit=100 导致统计静默截断（对齐 DeliveryAnalysis）
+    let cancelled = false;
+    // ⚠️ allSettled：单个接口失败不拖垮整页（Promise.all 会整体拒绝导致仪表盘全空）
+    Promise.allSettled([
+      // 全部传 limit:'1000'，避免后端默认 limit=100 导致统计静默截断（对齐 DeliveryAnalysis）
       opportunityService.list({ limit: '1000' }),
       deliveryService.list({ limit: '1000' }),
       clientService.list({ limit: '1000' }),
       quotationService.list({ limit: '1000' }),
     ]).then(([opps, dels, clis, quots]) => {
-      setOpportunities(opps);
-      setDeliveries(dels);
-      setClients(clis);
-      setQuotations(quots);
-    }).catch(() => console.warn('[Dashboard] 加载数据失败'));
+      if (cancelled) return;
+      if (opps.status === 'fulfilled') setOpportunities(opps.value);
+      if (dels.status === 'fulfilled') setDeliveries(dels.value);
+      if (clis.status === 'fulfilled') setClients(clis.value);
+      if (quots.status === 'fulfilled') setQuotations(quots.value);
+    });
+    return () => { cancelled = true; };
   }, []);
 
   const now = useMemo(() => new Date(), []);
-  const last3Labels = useMemo(() => last3MonthLabels(now), [now]);
+  // 近 3 个月窗口唯一事实来源：各统计 memo 共享，避免各自重复计算
+  const last3Months = useMemo(() => last3MonthsOf(now), [now]);
+  const last3Labels = useMemo(() => last3Months.map(w => w.start.toLocaleString('en', { month: 'short' })), [last3Months]);
+  // 报价按 id 建索引，避免 exTaxOfDelivery / 利润概览反复 find（O(N×M)）
+  const quotationsById = useMemo(() => new Map(quotations.map(q => [q.id, q])), [quotations]);
 
   // ── 按月 KPI（最近3个完整月） ──
   const monthlyKpi = useMemo(() => {
     const calcMonth = (offset: number) => {
-      const d = new Date(now.getFullYear(), now.getMonth() - offset, 1);
-      const mStart = new Date(d.getFullYear(), d.getMonth(), 1);
-      const mEnd = monthEndOf(d.getFullYear(), d.getMonth());
+      // offset 1→上月(索引2)、2→前2月(索引1)、3→前3月(索引0)
+      const { start: mStart, end: mEnd } = last3Months[3 - offset];
       const monthOpps = opportunities.filter(o => {
         const created = new Date(o.createdAt);
         // ⚠️ 有效结束用 oppEffectiveEnd（赢→wonAt/输→lostAt），与销售分析/财年规则一致，不用 updatedAt
@@ -274,13 +284,13 @@ const Dashboard: React.FC = () => {
         amt: monthOpps.reduce((s, o) => s + exAmount(o.amount, o.taxRate), 0), cnt: monthOpps.length,
         winAmt: monthWins.reduce((s, o) => s + exAmount(o.amount, o.taxRate), 0), winCnt,
         newAmt: monthNew.reduce((s, o) => s + exAmount(o.amount, o.taxRate), 0), newCnt: monthNew.length,
-        delAmt: activeDel.reduce((s, p) => s + exTaxOfDelivery(p, quotations), 0), delCnt: activeDel.length,
-        deliveredAmt: monthDelivered.reduce((s, p) => s + exTaxOfDelivery(p, quotations), 0),
+        delAmt: activeDel.reduce((s, p) => s + exTaxOfDelivery(p, quotationsById), 0), delCnt: activeDel.length,
+        deliveredAmt: monthDelivered.reduce((s, p) => s + exTaxOfDelivery(p, quotationsById), 0),
         deliveredCnt: monthDelivered.length,
       };
     };
     return [calcMonth(1), calcMonth(2), calcMonth(3)];
-  }, [opportunities, deliveries, quotations, now]);
+  }, [opportunities, deliveries, quotationsById, last3Months]);
 
   const recentWins = useMemo(() => {
     // 近 2 个月窗口：前两个月首日（避免 setMonth 月末溢出）
@@ -310,14 +320,13 @@ const Dashboard: React.FC = () => {
     const result: { label: string; value: number; color: string }[] = [];
     stages.forEach((stage, ci) => {
       for (let mi = 3; mi >= 1; mi--) {
-        const d = monthsAgoStart(now, mi);
-        const monthEnd = monthEndOf(d.getFullYear(), d.getMonth());
+        const { end: monthEnd } = last3Months[3 - mi];
         const count = opportunities.filter(o => getPipelineStage(o, monthEnd) === stage).length;
         result.push({ label: last3Labels[3 - mi], value: count, color: colors[ci] });
       }
     });
     return result;
-  }, [opportunities, now, last3Labels]);
+  }, [opportunities, last3Months, last3Labels]);
 
   // −− 近期交付（已完成的项目，按实际完成时间倒序）−−
   const recentDeliveries = useMemo(() => {
@@ -360,8 +369,7 @@ const Dashboard: React.FC = () => {
     const projectStatus: { label: string; value: number; color: string }[] = [];
     for (let si = 0; si < 3; si++) {
       for (let mi = 3; mi >= 1; mi--) {
-        const d = monthsAgoStart(now, mi);
-        const monthEnd = monthEndOf(d.getFullYear(), d.getMonth());
+        const { end: monthEnd } = last3Months[3 - mi];
         const count = deliveries.filter(p => getStatusInMonth(p, monthEnd) === statusNames[si]).length;
         projectStatus.push({ label: last3Labels[3 - mi], value: count, color: statusColors[si] });
       }
@@ -397,8 +405,7 @@ const Dashboard: React.FC = () => {
     const allNodes = deliveries.flatMap(p => p.nodes || []);
     for (let si = 0; si < 3; si++) {
       for (let mi = 3; mi >= 1; mi--) {
-        const d = monthsAgoStart(now, mi);
-        const monthEnd = monthEndOf(d.getFullYear(), d.getMonth());
+        const { end: monthEnd } = last3Months[3 - mi];
         const count = allNodes.filter(n => getNodeBucketsInMonth(n, monthEnd).includes(nodeStNames[si])).length;
         nodeStatus.push({ label: last3Labels[3 - mi], value: count, color: nodeStColors[si] });
       }
@@ -414,9 +421,11 @@ const Dashboard: React.FC = () => {
     });
     const onTimeRate = [...inFyDels].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).map(p => {
       // 到期节点 = 已完成 或 已超基线（事实延期）；与事实延期判定一致（基线口径，非当前计划）
-      const scheduled = (p.nodes || []).filter(n => n.actualDate || getNodeDelay(n, now).delayed);
-      const delayed = scheduled.filter(n => getNodeDelay(n, now).delayed);
-      const onTime = scheduled.length - delayed.length;
+      // ⚠️ 每个节点只算一次 getNodeDelay（先前在 filter 与二次 filter 中各算一次）
+      const due = (p.nodes || []).map(n => ({ node: n, delay: getNodeDelay(n, now) }));
+      const scheduled = due.filter(({ node, delay }) => node.actualDate || delay.delayed);
+      const delayedCnt = scheduled.filter(({ delay }) => delay.delayed).length;
+      const onTime = scheduled.length - delayedCnt;
       const hasDue = scheduled.length > 0;
       const rate = hasDue ? Math.round((onTime / scheduled.length) * 100) : 0; // 无到期节点 → 0 并显示 —
       return {
@@ -431,9 +440,8 @@ const Dashboard: React.FC = () => {
     //   概算 = 每月转交付项目的订单利润（报价概算利润未税）→ 观察近3月订单利润
     //   实际 = 每月完成交付项目的销售利润（未税 − 实际成本）→ 观察近3月销售利润
     // ⚠️ 近 3 个月窗口（含边界）预过滤交付项目，避免对每个月份窗口全量遍历（O(M×N)）
-    const m3 = [3, 2, 1].map(mi => { const d = monthsAgoStart(now, mi); return { start: new Date(d.getFullYear(), d.getMonth(), 1), end: monthEndOf(d.getFullYear(), d.getMonth()) }; });
-    // m3[0]=3个月前(最早月)，m3[2]=上个月(最晚月)；窗口取最早起点~最晚终点
-    const winLo = m3[0].start, winHi = m3[2].end;
+    // last3Months[0]=3个月前(最早月)，[2]=上个月(最晚月)；窗口取最早起点~最晚终点
+    const winLo = last3Months[0].start, winHi = last3Months[2].end;
     const profitDels = deliveries.filter(p => {
       const created = new Date(p.createdAt);
       const done = getProjectDoneDate(p);
@@ -441,12 +449,10 @@ const Dashboard: React.FC = () => {
     });
     for (const prefix of ['概算', '实际'] as const) {
       for (let mi = 3; mi >= 1; mi--) {
-        const d = monthsAgoStart(now, mi);
-        const monthStart = new Date(d.getFullYear(), d.getMonth(), 1);
-        const monthEnd = monthEndOf(d.getFullYear(), d.getMonth());
+        const { start: monthStart, end: monthEnd } = last3Months[3 - mi];
         let totalAmt = 0, totalProfit = 0, incomplete = false;
         profitDels.forEach(p => {
-          const q = quotations.find(q => q.id === p.quotationId);
+          const q = quotationsById.get(p.quotationId);
           const pt = projectMonthlySales(p, monthStart, monthEnd, q?.taxRate, q?.gp3Amount);
           if (prefix === '概算') {
             totalProfit += pt.orderProfit;
@@ -467,7 +473,7 @@ const Dashboard: React.FC = () => {
       }
     }
     return { projectStatus, nodeStatus, onTimeRate, profitOverview };
-  }, [deliveries, quotations, now, currentFy, last3Labels]);
+  }, [deliveries, quotationsById, now, currentFy, last3Months, last3Labels]);
 
 
 
@@ -484,6 +490,7 @@ const Dashboard: React.FC = () => {
       const amount = monthOpps.reduce((s, o) => s + exAmount(o.amount, o.taxRate), 0);
       return {
         label: FY_MONTH_LABELS[i],
+        count, // 机会数（空判断用）；value 是 K 金额（徽标累加用）——两者用途不同
         value: count > 0 ? Math.round(amount / 1000) : 0,
         color: COLORS.primary,
         displayValue: count > 0 ? `${fmtK(amount)}\n(${count})` : undefined,
@@ -614,7 +621,7 @@ const Dashboard: React.FC = () => {
           style={{ flex: 1, borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
           styles={{ body: { padding: '16px 18px' } }}>
           <SectionTitle title="新增机会" count={fyTrend.reduce((s, m) => s + m.value, 0)} />
-          {fyTrend.every(m => m.value === 0) ? (
+          {fyTrend.every(m => m.count === 0) ? (
             <div style={{ padding: 24, textAlign: 'center', color: COLORS.textLight, fontSize: 13 }}>当前财年暂无新增</div>
           ) : (
             <div style={{ marginTop: 50 }}>
@@ -706,7 +713,7 @@ const Dashboard: React.FC = () => {
                         <span>{formatBeijing(doneDate?.toISOString() || p.updatedAt)}</span>
                       </div>
                     </div>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: COLORS.success, whiteSpace: 'nowrap' }}>¥{fmtK(exTaxOfDelivery(p, quotations))}</span>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: COLORS.success, whiteSpace: 'nowrap' }}>¥{fmtK(exTaxOfDelivery(p, quotationsById))}</span>
                     <RightOutlined style={{ color: COLORS.textLight, fontSize: 12 }} />
                   </div>
                 );
