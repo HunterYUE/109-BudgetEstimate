@@ -327,7 +327,8 @@ const SystemManagement: React.FC = () => {
   }, [logs]);
 
   const filteredLogs = useMemo(() => {
-    if (!logModuleFilter || logModuleFilter === '全部') return logs;
+    // 点击「全部」时存 null（见下方模块筛选 onClick），logModuleFilter 不会等于 '全部'
+    if (!logModuleFilter) return logs;
     return logs.filter(l => l.module === logModuleFilter);
   }, [logs, logModuleFilter]);
 

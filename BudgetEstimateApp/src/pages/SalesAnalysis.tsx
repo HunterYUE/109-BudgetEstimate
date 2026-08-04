@@ -7,8 +7,8 @@ import { opportunityService } from '../services/opportunityService';
 import { quotationService } from '../services/quotationService';
 import { deliveryService } from '../services/deliveryService';
 import { COLORS } from '../styles/colors';
-import { parseFY, FYSelector } from '../utils/fiscalYear';
-import { fmtK, oppEffectiveEnd, isRealWin, monthEndOf, exAmount, stageAsOf, getProjectDoneDate, fyMonthWindows, projectMonthlySales, deliverySalesProfit, quoteProfitExTax } from '../utils/analysisShared';
+import { parseFY, FYSelector, fiscalYearLabel } from '../utils/fiscalYear';
+import { fmtK, oppEffectiveEnd, isRealWin, monthEndOf, exAmount, stageAsOf, getProjectDoneDate, fyMonthWindows, FY_MONTH_LABELS, projectMonthlySales, deliverySalesProfit, quoteProfitExTax, buildQuoteInfoMap } from '../utils/analysisShared';
 import { settingsService, type UserSettings } from '../services/settingsService';
 
 /* ============================================================
@@ -98,18 +98,19 @@ const SalesAnalysis: React.FC = () => {
   const [quotationSummaries, setQuotationSummaries] = useState<QuotationSummary[]>([]);
   const [deliveryProjects, setDeliveryProjects] = useState<DeliveryProject[]>([]);
   const [loading, setLoading] = useState(true);
-  const nowY = new Date().getFullYear(), nowM = new Date().getMonth();
-  const fyY1 = nowM >= 6 ? nowY : nowY - 1;
-  const fyY2 = nowM >= 6 ? nowY + 1 : nowY;
-  const defaultFy = `FY${String(fyY1 % 100).padStart(2,'0')}${String(fyY2 % 100).padStart(2,'0')}`;
+  const defaultFy = fiscalYearLabel(new Date());
   const [fySelect, setFySelect] = useState(defaultFy);
+
+  // ⚠️ 财年范围缓存一次复用（原每个 useMemo 内各自 parseFY）
+  const fyRange = useMemo(() => parseFY(fySelect), [fySelect]);
 
   const loadAll = useCallback(async () => {
     try {
+      // ⚠️ 全部传 limit:'1000'，避免后端默认 limit=100 导致统计静默截断（对齐 Dashboard/DeliveryAnalysis）
       const [opps, qs, dps] = await Promise.all([
-        opportunityService.list(),
-        quotationService.list(),
-        deliveryService.list(),
+        opportunityService.list({ limit: '1000' }),
+        quotationService.list({ limit: '1000' }),
+        deliveryService.list({ limit: '1000' }),
       ]);
       setAllOpps(opps);
       setQuotationSummaries(qs);
@@ -131,19 +132,10 @@ const SalesAnalysis: React.FC = () => {
 
   // ── 机会关联报价（最新版本报价编制表）的持久化数据：税率、折后报价、概算利润（含税）──
   // 订单金额（未税）/概算利润/概算利润率全部以此为准，不再运行时从组数据估算
-  const oppQuoteInfo = useMemo(() => {
-    const map = new Map<string, { taxRate: number; gp3Amt: number; discounted: number; rate: number }>();
-    for (const o of allOpps) {
-      if (!o.quotationId) continue;
-      const q = (quotationSummaries||[]).find(q => q.id === o.quotationId);
-      if (!q) continue;
-      const taxRate = q.taxRate ?? 0.13;
-      const discounted = q.discountedPrice ?? 0;
-      const gp3Amt = q.gp3Amount ?? 0;
-      map.set(o.id, { taxRate, gp3Amt, discounted, rate: discounted > 0 ? gp3Amt / discounted : 0 });
-    }
-    return map;
-  }, [allOpps, quotationSummaries]);
+  const oppQuoteInfo = useMemo(
+    () => buildQuoteInfoMap(allOpps, qid => quotationSummaries.find(q => q.id === qid)),
+    [allOpps, quotationSummaries],
+  );
 
   const fyFiltered = useFyFiltered(allOpps, fySelect);
 
@@ -231,26 +223,22 @@ const SalesAnalysis: React.FC = () => {
   // ── 月度订单数据（当月转交付项目的合同金额与订单利润之和，按财年月汇总）──
   // 复用共享归集 projectMonthlySales：订单金额 = orderAmt，订单利润 = orderProfit（报价概算利润未税）
   const monthlyOrderData = useMemo(() => {
-    const fyRange = parseFY(fySelect);
-    const MONTH_LABELS = ['Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar','Apr','May','Jun'];
     return fyMonthWindows(fyRange).map((w, i) => {
       let amount = 0, profit = 0;
-      for (const p of (deliveryProjects||[])) {
+      for (const p of deliveryProjects) {
         const info = oppQuoteInfo.get(p.opportunityId);
         const pt = projectMonthlySales(p, w.start, w.end, info?.taxRate, info?.gp3Amt);
         amount += pt.orderAmt;
         profit += pt.orderProfit;
       }
-      return { name: MONTH_LABELS[i], value: amount, subValue: profit || undefined };
+      return { name: FY_MONTH_LABELS[i], value: amount, subValue: profit || undefined };
     });
-  }, [fySelect, oppQuoteInfo, deliveryProjects]);
+  }, [fyRange, oppQuoteInfo, deliveryProjects]);
 
   // ── 月度销售数据（当月完成交付项目的销售金额与销售利润之和，按财年月汇总）──
   // 复用共享归集 projectMonthlySales：销售金额 = salesAmt，销售利润 = salesProfit（未税 − 实际成本）
   // ⚠️ 某月任一完成交付项目无成本数据 → 该月销售利润为无值（undefined），提示成本缺失
   const monthlySalesData = useMemo(() => {
-    const fyRange = parseFY(fySelect);
-    const MONTH_LABELS = ['Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar','Apr','May','Jun'];
     return fyMonthWindows(fyRange).map((w, i) => {
       let amount = 0, profit = 0, incomplete = false;
       for (const p of deliveryProjects) {
@@ -260,19 +248,18 @@ const SalesAnalysis: React.FC = () => {
         if (pt.salesProfit !== undefined) profit += pt.salesProfit;
         else incomplete = true;
       }
-      return { name: MONTH_LABELS[i], value: amount, subValue: incomplete ? undefined : profit || undefined };
+      return { name: FY_MONTH_LABELS[i], value: amount, subValue: incomplete ? undefined : profit || undefined };
     });
-  }, [fySelect, oppQuoteInfo, deliveryProjects]);
+  }, [fyRange, oppQuoteInfo, deliveryProjects]);
 
   // ── 共享：财年已过月数 ──
   const elapsedMonths = useMemo(() => {
     const now = new Date();
-    const fyRange = parseFY(fySelect);
     if (now > fyRange.end) return 12;
     if (now < fyRange.start) return 0;
     const jsMonth = now.getMonth();
     return (jsMonth >= 6 ? jsMonth - 6 : jsMonth + 6) + 1;
-  }, [fySelect]);
+  }, [fyRange]);
 
   // ── 销售累计 ──
   const salesCumulative = useMemo(() => {
@@ -305,7 +292,6 @@ const SalesAnalysis: React.FC = () => {
 
   // ── 漏斗：财年内的管道快照（仅统计在所选财年内活跃的过程机会，按"该财年结束时的历史阶段"分桶）──
   const funnelSnapshot = useMemo(() => {
-    const fyRange = parseFY(fySelect);
     const byStage = new Map<string, { count: number; amount: number }>();
     for (const s of STAGES) byStage.set(s, { count: 0, amount: 0 });
     for (const o of currentPipeline) {
@@ -323,24 +309,22 @@ const SalesAnalysis: React.FC = () => {
       amount: byStage.get(stage)!.amount,
       color: stageColors[stage] || COLORS.textLight,
     }));
-  }, [currentPipeline, fySelect]);
+  }, [currentPipeline, fyRange]);
 
   // ── 中标（按转交付时间 wonAt 归入财年；赢单以「转交付 terminated」为终极确认）──
   const fyWonByTime = useMemo(() => {
-    const fyRange = parseFY(fySelect);
     return allOpps.filter(o => {
       // ⚠️ 全局规则：手动标赢未转交付不计赢单
       if (!isRealWin(o) || !o.wonAt) return false;
       const d = new Date(o.wonAt);
       return d >= fyRange.start && d <= fyRange.end;
     });
-  }, [fySelect, allOpps]);
+  }, [fyRange, allOpps]);
 
   // ── 订单加权 GP3（财年内获得订单的交付项目加权平均 GP3，取自最新版本报价编制表概算利润）──
   const orderWeightedGP3 = useMemo(() => {
-    const fyRange = parseFY(fySelect);
     // 订单按获得（转交付 createdAt）时间归入财年，与「月度订单」同口径
-    const inFy = (deliveryProjects||[]).filter(p => {
+    const inFy = deliveryProjects.filter(p => {
       const created = new Date(p.createdAt);
       return created >= fyRange.start && created <= fyRange.end;
     });
@@ -349,17 +333,18 @@ const SalesAnalysis: React.FC = () => {
     for (const p of inFy) {
       const oppProfit = oppQuoteInfo.get(p.opportunityId);
       if (!oppProfit || oppProfit.discounted <= 0) continue;
-      totalAmt += p.contractAmount;
-      weighted += p.contractAmount * oppProfit.rate;
+      // ⚠️ 权重用未税金额（与月度订单/未税口径一致），而非含税 contractAmount
+      const ex = exTaxOf(p, oppQuoteInfo);
+      totalAmt += ex;
+      weighted += ex * oppProfit.rate;
     }
     return totalAmt > 0 ? (weighted / totalAmt * 100) : 0;
-  }, [fySelect, oppQuoteInfo, deliveryProjects]);
+  }, [fyRange, oppQuoteInfo, deliveryProjects]);
 
   // ── 已交付项目实际 GP3（已完成项目总结且成本审批通过的项目的加权平均实际 GP3）──
   const deliveredActualGP3 = useMemo(() => {
-    const fyRange = parseFY(fySelect);
     // 与「月度销售」同口径：节点15完成且完成日 ∈ 财年（销售金额只归集到完成月/财年，不可跨年重复）
-    const delivered = (deliveryProjects||[]).filter(p => {
+    const delivered = deliveryProjects.filter(p => {
       // 已完成交付判定：节点15实际完成日或 updatedAt 回退（统一共享口径）
       const doneDate = getProjectDoneDate(p);
       if (!doneDate) return false;
@@ -378,7 +363,7 @@ const SalesAnalysis: React.FC = () => {
       weighted += exTax * actGP3;
     }
     return totalAmt > 0 ? (weighted / totalAmt * 100) : 0;
-  }, [fySelect, oppQuoteInfo, deliveryProjects]);
+  }, [fyRange, oppQuoteInfo, deliveryProjects]);
 
   // ── 漏斗右侧 FY 累计用 ──
   const fyWon = useMemo(() => ({
@@ -388,28 +373,23 @@ const SalesAnalysis: React.FC = () => {
 
   // ── 输单（按输单时间 updatedAt 归入财年）──
   const fyLostByTime = useMemo(() => {
-    const fyRange = parseFY(fySelect);
     return allOpps.filter(o => {
       if (o.status !== '输') return false;
       const d = new Date(o.lostAt || o.updatedAt);
       return d >= fyRange.start && d <= fyRange.end;
     });
-  }, [fySelect, allOpps]);
+  }, [fyRange, allOpps]);
   // 财年"机会+"阶段输单（漏斗中标转化率分母 = 赢 + 机会+输单；剔除线索/信息阶段输单——它们未进入机会阶段）
   const fyOppLost = useMemo(() => {
     const oppLost = fyLostByTime.filter(o => stageIdx(o.stage) >= stageIdx('机会'));
     return { count: oppLost.length, amount: oppLost.reduce((s, o) => s + exAmt(o), 0) };
   }, [fyLostByTime]);
 
-  // ── 财年各阶段汇总（用于漏斗右侧 FY 累计显示）──
-  const fyInfo = useMemo(() => {
-    const inFy = allOpps.filter(o => {
-      const fyRange = parseFY(fySelect);
-      const created = new Date(o.createdAt);
-      return created <= fyRange.end && oppEffectiveEnd(o) >= fyRange.start;
-    });
-    return { count: inFy.length, amount: inFy.reduce((s, o) => s + exAmt(o), 0) };
-  }, [fySelect, allOpps]);
+  // ── 财年各阶段汇总（用于漏斗右侧 FY 累计显示；过滤逻辑与 useFyFiltered 相同，直接复用 fyFiltered）──
+  const fyInfo = useMemo(() => ({
+    count: fyFiltered.length,
+    amount: fyFiltered.reduce((s, o) => s + exAmt(o), 0),
+  }), [fyFiltered]);
 
   const fyLead = useMemo(() => {
     const items = fyFiltered.filter(o => stageIdx(o.stage) >= stageIdx('线索') || o.wonAt);
@@ -426,7 +406,6 @@ const SalesAnalysis: React.FC = () => {
   // （新财年初自动继承前一财年 6/5/4 月的管道与滚动数据，避免从 0 开始）；未来财年 → 全null
   const overviewRefMonths = useMemo<(Date | null)[]>(() => {
     const now = new Date();
-    const fyRange = parseFY(fySelect);
     if (now > fyRange.end) {
       const y2 = fyRange.end.getFullYear();
       return [monthEndOf(y2, 5), monthEndOf(y2, 4), monthEndOf(y2, 3)]; // 6月/5月/4月
@@ -438,7 +417,7 @@ const SalesAnalysis: React.FC = () => {
       monthEndOf(cur.getFullYear(), cur.getMonth() - 2),
       monthEndOf(cur.getFullYear(), cur.getMonth() - 3),
     ];
-  }, [fySelect]);
+  }, [fyRange]);
 
   // ── 按财年锚定的月度 KPI（加权管道/加权利润/加权利润率）──
   // 销售周期/赢单转化率已由 rolling12mKpi 负责，此处仅输出管道三项
@@ -449,16 +428,17 @@ const SalesAnalysis: React.FC = () => {
       const monthEnd = refEnd;
       const activeOpps = allOpps.filter(o => {
         const created = new Date(o.createdAt);
-        return created <= monthEnd && oppEffectiveEnd(o) >= monthStart;
+        // 冻结机会不属于活跃（全页面统一口径），不计入管道
+        return created <= monthEnd && oppEffectiveEnd(o) >= monthStart && o.status !== '冻结';
       });
-      // 管道基数 = 该月活跃（过程中/未转交付标赢，含此后已输/仍过程中/冻结）且阶段≥机会的项目；
+      // 管道基数 = 该月活跃（过程中/未转交付标赢；冻结已排除）且阶段≥机会的项目；
       // 已转交付的赢单不计入管道；终止（输）后经 oppEffectiveEnd 不再计入后续月份
       const pipelineOpps = activeOpps.filter(o => !isRealWin(o) && stageIdx(o.stage) >= stageIdx('机会'));
       let weighted = 0, profit = 0;
       for (const o of pipelineOpps) {
         const w = Math.round(exAmt(o) * o.winRate / 100);
         weighted += w;
-        const q = o.quotationId ? (quotationSummaries||[]).find(q => q.id === o.quotationId) : undefined;
+        const q = o.quotationId ? quotationSummaries.find(q => q.id === o.quotationId) : undefined;
         // 机会必须编制报价；无报价的机会利润率为 0（不假定 15%），低利润率可暴露管理问题
         profit += Math.round(w * (q ? (q.profitRate ?? 0) / 100 : 0));
       }
@@ -470,7 +450,7 @@ const SalesAnalysis: React.FC = () => {
   // ── 机会 → 转交付时间（交付项目创建时间），销售周期终点 ──
   const deliveryCreatedByOpp = useMemo(() => {
     const map = new Map<string, Date>();
-    for (const p of (deliveryProjects||[])) {
+    for (const p of deliveryProjects) {
       if (p.opportunityId) map.set(p.opportunityId, new Date(p.createdAt));
     }
     return map;
@@ -480,7 +460,7 @@ const SalesAnalysis: React.FC = () => {
   // 销售周期 = 转交付时间(交付项目创建) − 进入机会时间(opportunityAt；回退 createdAt)；仅统计已转交付的赢单
   const rolling12mKpi = useMemo(() => {
     const calcWindow = (refEnd: Date | null) => {
-      if (!refEnd) return { salesCycle: 0, leadToWonRate: 0, wonDecided: 0, valid: false };
+      if (!refEnd) return { salesCycle: 0, decidedWinRate: 0, wonDecided: 0, valid: false };
       const wEnd = refEnd;
       // 真正的12个月窗口：起点 = 参考月往前推11个月的首日（如参考6月 → 去年7月1日）
       const wStart = new Date(wEnd.getFullYear(), wEnd.getMonth() - 11, 1);
@@ -500,7 +480,8 @@ const SalesAnalysis: React.FC = () => {
       });
       const cycle = cycles.length > 0 ? Math.round(cycles.reduce((s, d) => s + d, 0) / cycles.length) : 0;
       const total = won.length + lost.length;
-      return { salesCycle: cycle, leadToWonRate: total > 0 ? won.length / total * 100 : 0, wonDecided: total, valid: true };
+      // decidedWinRate = 中标转化率（赢 / (赢+机会+输)）：仅已决出的机会+项目，与销售漏斗最终转化率同公式、异窗口（此处为滚动12个月）
+      return { salesCycle: cycle, decidedWinRate: total > 0 ? won.length / total * 100 : 0, wonDecided: total, valid: true };
     };
     return overviewRefMonths.map(calcWindow);
   }, [allOpps, overviewRefMonths, deliveryCreatedByOpp]);
@@ -548,7 +529,6 @@ const SalesAnalysis: React.FC = () => {
       pipelinePotential: number; profitTotal: number; totalCount: number;
     }>();
     const newEntry = (name: string) => ({ name, wins: 0, orderAmount: 0, pipelinePotential: 0, profitTotal: 0, totalCount: 0 });
-    const fyRange = parseFY(fySelect);
 
     // 赢单数量（转化效率分子，按 wonAt 归入财年）
     for (const o of fyWonByTime) {
@@ -568,7 +548,7 @@ const SalesAnalysis: React.FC = () => {
     }
     // 订单金额/订单利润：财年内转交付的交付项目合同金额（未税，与「月度订单」同口径），经机会关联销售员
     const oppById = new Map(allOpps.map(o => [o.id, o]));
-    for (const p of (deliveryProjects||[])) {
+    for (const p of deliveryProjects) {
       const created = new Date(p.createdAt);
       if (created < fyRange.start || created > fyRange.end) continue; // 财年隔断：转交付时间
       if (!p.opportunityId) continue;
@@ -585,7 +565,7 @@ const SalesAnalysis: React.FC = () => {
     // 管道潜力：与「加权管道」同源（财年活跃期 + 机会锚点 + 已转交付赢单不计入），原始金额（不含赢率加权）
     for (const o of fyFiltered) {
       if (!o.salesman) continue;
-      if (isRealWin(o)) continue;
+      if (isRealWin(o) || o.status === '冻结') continue; // 冻结机会不计入管道（全页面统一口径）
       if (stageIdx(o.stage) < stageIdx('机会')) continue;
       let s = map.get(o.salesman);
       if (!s) { s = newEntry(o.salesman); map.set(o.salesman, s); }
@@ -595,7 +575,7 @@ const SalesAnalysis: React.FC = () => {
       ...s,
       conversionEff: s.totalCount > 0 ? s.wins / s.totalCount * 100 : 0,
     }));
-  }, [fyWonByTime, fyFiltered, fySelect, deliveryProjects, allOpps, oppQuoteInfo]);
+  }, [fyWonByTime, fyFiltered, fyRange, deliveryProjects, allOpps, oppQuoteInfo]);
 
   // ── 4 个维度提取（图表通过 topN=10 自动排序取前10名）──
   const dimEfficiency: BarItem[] = salesmenStats.map(s => ({ name: s.name, value: Math.round(s.conversionEff * 10) / 10 }));
@@ -636,13 +616,13 @@ const SalesAnalysis: React.FC = () => {
           color: rolling12mKpi[2].salesCycle > 0 ? (rolling12mKpi[2].salesCycle <= 120 ? COLORS.success : COLORS.warning) : COLORS.textLight },
       ] },
     { label: '赢单转化率',
-      value: rolling12mKpi[0].wonDecided > 0 ? `${rolling12mKpi[0].leadToWonRate.toFixed(1)}%` : '—',
-      color: rolling12mKpi[0].wonDecided > 0 ? (rolling12mKpi[0].leadToWonRate >= 20 ? COLORS.success : COLORS.warning) : COLORS.textLight, icon: '🎯',
+      value: rolling12mKpi[0].wonDecided > 0 ? `${rolling12mKpi[0].decidedWinRate.toFixed(1)}%` : '—',
+      color: rolling12mKpi[0].wonDecided > 0 ? (rolling12mKpi[0].decidedWinRate >= 20 ? COLORS.success : COLORS.warning) : COLORS.textLight, icon: '🎯',
       prevValues: [
-        { value: rolling12mKpi[1].wonDecided > 0 ? `${rolling12mKpi[1].leadToWonRate.toFixed(1)}%` : '—',
-          color: rolling12mKpi[1].wonDecided > 0 ? (rolling12mKpi[1].leadToWonRate >= 20 ? COLORS.success : COLORS.warning) : COLORS.textLight },
-        { value: rolling12mKpi[2].wonDecided > 0 ? `${rolling12mKpi[2].leadToWonRate.toFixed(1)}%` : '—',
-          color: rolling12mKpi[2].wonDecided > 0 ? (rolling12mKpi[2].leadToWonRate >= 20 ? COLORS.success : COLORS.warning) : COLORS.textLight },
+        { value: rolling12mKpi[1].wonDecided > 0 ? `${rolling12mKpi[1].decidedWinRate.toFixed(1)}%` : '—',
+          color: rolling12mKpi[1].wonDecided > 0 ? (rolling12mKpi[1].decidedWinRate >= 20 ? COLORS.success : COLORS.warning) : COLORS.textLight },
+        { value: rolling12mKpi[2].wonDecided > 0 ? `${rolling12mKpi[2].decidedWinRate.toFixed(1)}%` : '—',
+          color: rolling12mKpi[2].wonDecided > 0 ? (rolling12mKpi[2].decidedWinRate >= 20 ? COLORS.success : COLORS.warning) : COLORS.textLight },
       ] },
   ];
 

@@ -2,9 +2,9 @@ import React, { useMemo, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card } from 'antd';
 import { RightOutlined } from '@ant-design/icons';
-import { parseFY } from '../utils/fiscalYear';
+import { parseFY, fiscalYearLabel } from '../utils/fiscalYear';
 import { formatBeijing } from '../utils/timeFormat';
-import { fmtK, compressNo, oppEffectiveEnd, isRealWin, monthEndOf, exAmount, stageAsOf, getNode15, getNodeDelay, getProjectDelay, getProjectDoneDate, projectMonthlySales } from '../utils/analysisShared';
+import { fmtK, compressNo, oppEffectiveEnd, isRealWin, monthEndOf, exAmount, stageAsOf, getNodeDelay, getProjectDelay, isProjectDelivered, getProjectDoneDate, projectMonthlySales, FY_MONTH_LABELS } from '../utils/analysisShared';
 import { COLORS } from '../styles/colors';
 import { opportunityService } from '../services/opportunityService';
 import { deliveryService } from '../services/deliveryService';
@@ -21,6 +21,14 @@ const exTaxOfDelivery = (p: DeliveryProject, quotations: QuotationSummary[]): nu
 /** 月度 KPI 卡片展示：数量为 0 时显示 —（避免 "0K / 0" 误导） */
 const fmtMonthly = (amt: number, cnt: number): string =>
   cnt === 0 ? '—' : `${fmtK(amt)} / ${cnt}`;
+
+/** 距今 n 个月的 1 号（首日，避免 setMonth 月末溢出） */
+const monthsAgoStart = (now: Date, n: number): Date =>
+  new Date(now.getFullYear(), now.getMonth() - n, 1);
+
+/** 最近 3 个完整月的英文缩写标签（[前3月, 前2月, 前1月]） */
+const last3MonthLabels = (now: Date): string[] =>
+  [3, 2, 1].map(i => monthsAgoStart(now, i).toLocaleString('en', { month: 'short' }));
 
 /* ── KPI 卡片（与销售分析完全一致） ── */
 const KpiCard: React.FC<{
@@ -228,6 +236,7 @@ const Dashboard: React.FC = () => {
   }, []);
 
   const now = useMemo(() => new Date(), []);
+  const last3Labels = useMemo(() => last3MonthLabels(now), [now]);
 
   // ── 按月 KPI（最近3个完整月） ──
   const monthlyKpi = useMemo(() => {
@@ -238,7 +247,8 @@ const Dashboard: React.FC = () => {
       const monthOpps = opportunities.filter(o => {
         const created = new Date(o.createdAt);
         // ⚠️ 有效结束用 oppEffectiveEnd（赢→wonAt/输→lostAt），与销售分析/财年规则一致，不用 updatedAt
-        return created <= mEnd && oppEffectiveEnd(o) >= mStart;
+        // 冻结机会不属于活跃（全页面统一口径），不计入
+        return created <= mEnd && oppEffectiveEnd(o) >= mStart && o.status !== '冻结';
       });
       const monthWins = monthOpps.filter(o => {
         // ⚠️ 赢单以「转交付（terminated）」为终极确认：手动标赢未转交付不算赢单，仍当作机会
@@ -274,13 +284,13 @@ const Dashboard: React.FC = () => {
 
   const recentWins = useMemo(() => {
     // 近 2 个月窗口：前两个月首日（避免 setMonth 月末溢出）
-    const cutoff = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+    const cutoff = monthsAgoStart(now, 2);
     return opportunities.filter(o => isRealWin(o) && o.wonAt && new Date(o.wonAt) >= cutoff).sort((a, b) => new Date(b.wonAt!).getTime() - new Date(a.wonAt!).getTime()).slice(0, 5);
   }, [opportunities, now]);
 
   const recentLosses = useMemo(() => {
     // 近 2 个月窗口：前两个月首日（避免 setMonth 月末溢出）
-    const cutoff = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+    const cutoff = monthsAgoStart(now, 2);
     return opportunities.filter(o => o.status === '输' && o.lostAt && new Date(o.lostAt) >= cutoff).sort((a, b) => new Date(b.lostAt!).getTime() - new Date(a.lostAt!).getTime()).slice(0, 5);
   }, [opportunities, now]);
 
@@ -288,57 +298,50 @@ const Dashboard: React.FC = () => {
   const stageDist = useMemo(() => {
     const stages = ['信息', '线索', '机会', '投标', '议价'];
     const colors = [COLORS.chartGray, COLORS.primary, COLORS.purple, COLORS.warning, COLORS.amber];
-    const monthLabels = [3,2,1].map(i => new Date(now.getFullYear(), now.getMonth() - i, 1).toLocaleString('en', {month:'short'}));
-    const getPipelineStage = (o: typeof opportunities[0], monthEnd: Date) => {
+    const getPipelineStage = (o: SalesOpportunity, monthEnd: Date) => {
       if (new Date(o.createdAt) > monthEnd) return null;
+      // 冻结机会排除在管道之外（全页面统一口径）
+      if (o.status === '冻结') return null;
       if (isRealWin(o) && o.wonAt && new Date(o.wonAt) <= monthEnd) return null;
       if (o.status === '输' && o.lostAt && new Date(o.lostAt) <= monthEnd) return null;
       // ⚠️ 用阶段推进时间还原该月月底的历史阶段（与销售分析漏斗 stageAsOf 同口径），而非当前阶段
       return stageAsOf(o, monthEnd);
     };
     const result: { label: string; value: number; color: string }[] = [];
-    for (const stage of stages) {
-      const ci = stages.indexOf(stage);
+    stages.forEach((stage, ci) => {
       for (let mi = 3; mi >= 1; mi--) {
-        const d = new Date(now.getFullYear(), now.getMonth() - mi, 1);
+        const d = monthsAgoStart(now, mi);
         const monthEnd = monthEndOf(d.getFullYear(), d.getMonth());
         const count = opportunities.filter(o => getPipelineStage(o, monthEnd) === stage).length;
-        result.push({ label: monthLabels[3 - mi], value: count, color: colors[ci] });
+        result.push({ label: last3Labels[3 - mi], value: count, color: colors[ci] });
       }
-    }
+    });
     return result;
-  }, [opportunities, now]);
+  }, [opportunities, now, last3Labels]);
 
-  // −− 近期交付（已完成的项目，按第15节点实际完成时间倒序）−−
+  // −− 近期交付（已完成的项目，按实际完成时间倒序）−−
   const recentDeliveries = useMemo(() => {
     // 近 2 个月窗口：前两个月首日（避免 setMonth 月末溢出）
-    const cutoff = new Date(now.getFullYear(), now.getMonth() - 2, 1);
-    const done = deliveries.filter(p => {
-      const node15 = getNode15(p.nodes);
-      if (!node15 || node15.status !== 'completed') return false;
-      return node15.actualDate && new Date(node15.actualDate) >= cutoff;
+    const cutoff = monthsAgoStart(now, 2);
+    return deliveries.filter(p => {
+      const doneDate = getProjectDoneDate(p);
+      return !!doneDate && doneDate >= cutoff;
     }).sort((a, b) => {
-      const da = new Date(getNode15(a.nodes)?.actualDate || 0).getTime();
-      const db = new Date(getNode15(b.nodes)?.actualDate || 0).getTime();
+      const da = getProjectDoneDate(a)?.getTime() ?? 0;
+      const db = getProjectDoneDate(b)?.getTime() ?? 0;
       return db - da;
     }).slice(0, 5);
-    return done;
   }, [deliveries, now]);
 
 
-  const currentFy = useMemo(() => {
-    const y = now.getFullYear(), m = now.getMonth();
-    const y1 = m >= 6 ? y : y - 1;
-    const y2 = m >= 6 ? y + 1 : y;
-    return `FY${String(y1 % 100).padStart(2, '0')}${String(y2 % 100).padStart(2, '0')}`;
-  }, [now]);
+  const currentFy = useMemo(() => fiscalYearLabel(now), [now]);
 
   const deliveryStats = useMemo(() => {
     // 项目延期判断（以第15节点为准，共享延期口径 getProjectDelay）：
     // 该月月底前已完成→已完成；否则该月底超出初始审批基线（计划排后或已超期）→已延期
-    const getProjDelayedAt = (p: typeof deliveries[0], refDate: Date): boolean =>
+    const getProjDelayedAt = (p: DeliveryProject, refDate: Date): boolean =>
       getProjectDelay(p, refDate).delayed;
-    const getStatusInMonth = (p: typeof deliveries[0], monthEnd: Date): string | null => {
+    const getStatusInMonth = (p: DeliveryProject, monthEnd: Date): string | null => {
       const created = new Date(p.createdAt);
       if (created > monthEnd) return null;
       const doneDate = getProjectDoneDate(p);
@@ -352,16 +355,15 @@ const Dashboard: React.FC = () => {
       if (getProjDelayedAt(p, monthEnd)) return '已延期';
       return '进行中';
     };
-    const monthLabels = [3,2,1].map(i => new Date(now.getFullYear(), now.getMonth() - i, 1).toLocaleString('en', {month:'short'}));
     const statusNames = ['已完成', '进行中', '已延期'] as const;
     const statusColors = [COLORS.success, COLORS.primary, COLORS.danger] as const;
     const projectStatus: { label: string; value: number; color: string }[] = [];
     for (let si = 0; si < 3; si++) {
       for (let mi = 3; mi >= 1; mi--) {
-        const d = new Date(now.getFullYear(), now.getMonth() - mi, 1);
+        const d = monthsAgoStart(now, mi);
         const monthEnd = monthEndOf(d.getFullYear(), d.getMonth());
         const count = deliveries.filter(p => getStatusInMonth(p, monthEnd) === statusNames[si]).length;
-        projectStatus.push({ label: monthLabels[3 - mi], value: count, color: statusColors[si] });
+        projectStatus.push({ label: last3Labels[3 - mi], value: count, color: statusColors[si] });
       }
     }
     // 节点在月内的各桶（当月口径，不含未开始）：已完成=当月完成；进行中=当月执行过（含当月完成者）；
@@ -392,36 +394,35 @@ const Dashboard: React.FC = () => {
     const nodeStNames = ['completed', 'in_progress', 'delayed'] as const;
     const nodeStColors = [COLORS.success, COLORS.primary, COLORS.danger];
     const nodeStatus: { label: string; value: number; color: string }[] = [];
-    const allNodes = (deliveries||[]).flatMap(p => p.nodes || []);
+    const allNodes = deliveries.flatMap(p => p.nodes || []);
     for (let si = 0; si < 3; si++) {
       for (let mi = 3; mi >= 1; mi--) {
-        const d = new Date(now.getFullYear(), now.getMonth() - mi, 1);
+        const d = monthsAgoStart(now, mi);
         const monthEnd = monthEndOf(d.getFullYear(), d.getMonth());
         const count = allNodes.filter(n => getNodeBucketsInMonth(n, monthEnd).includes(nodeStNames[si])).length;
-        nodeStatus.push({ label: monthLabels[3 - mi], value: count, color: nodeStColors[si] });
+        nodeStatus.push({ label: last3Labels[3 - mi], value: count, color: nodeStColors[si] });
       }
     }
     const fyRange = parseFY(currentFy);
     const inFyDels = deliveries.filter(p => {
       const created = new Date(p.createdAt);
       if (created > fyRange.end) return false;
-      // 有效结束：已完成→实际完成日（updatedAt 回退）；未完成→至今
+      // 有效结束：已完成→实际完成日；未完成→至今（统一共享口径，时基与 now 一致）
       const doneDate = getProjectDoneDate(p);
-      const effEnd = doneDate ?? new Date();
+      const effEnd = doneDate ?? now;
       return effEnd >= fyRange.start;
     });
     const onTimeRate = [...inFyDels].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).map(p => {
-      const nowD = new Date();
       // 到期节点 = 已完成 或 已超基线（事实延期）；与事实延期判定一致（基线口径，非当前计划）
-      const scheduled = (p.nodes || []).filter(n => n.actualDate || getNodeDelay(n, nowD).delayed);
-      const delayed = scheduled.filter(n => getNodeDelay(n, nowD).delayed);
+      const scheduled = (p.nodes || []).filter(n => n.actualDate || getNodeDelay(n, now).delayed);
+      const delayed = scheduled.filter(n => getNodeDelay(n, now).delayed);
       const onTime = scheduled.length - delayed.length;
       const hasDue = scheduled.length > 0;
-      const rate = hasDue ? Math.round((onTime / scheduled.length) * 100) : -1; // -1 = 无到期节点
+      const rate = hasDue ? Math.round((onTime / scheduled.length) * 100) : 0; // 无到期节点 → 0 并显示 —
       return {
         label: (() => { const s = compressNo(p.salesNo); return s.length > 4 ? s.slice(0, 4) + '\n' + s.slice(4) : s; })(),
-        value: hasDue ? rate : 0,
-        color: !hasDue ? COLORS.textLight : (p.status === '已完成' ? COLORS.chartGray : (rate >= 90 ? COLORS.success : rate >= 70 ? COLORS.warning : COLORS.danger)),
+        value: rate,
+        color: !hasDue ? COLORS.textLight : (isProjectDelivered(p) ? COLORS.chartGray : (rate >= 90 ? COLORS.success : rate >= 70 ? COLORS.warning : COLORS.danger)),
         displayValue: hasDue ? undefined : '—',
       };
     });
@@ -431,7 +432,7 @@ const Dashboard: React.FC = () => {
     //   实际 = 每月完成交付项目的销售利润（未税 − 实际成本）→ 观察近3月销售利润
     for (const prefix of ['概算', '实际'] as const) {
       for (let mi = 3; mi >= 1; mi--) {
-        const d = new Date(now.getFullYear(), now.getMonth() - mi, 1);
+        const d = monthsAgoStart(now, mi);
         const monthStart = new Date(d.getFullYear(), d.getMonth(), 1);
         const monthEnd = monthEndOf(d.getFullYear(), d.getMonth());
         let totalAmt = 0, totalProfit = 0, incomplete = false;
@@ -449,7 +450,7 @@ const Dashboard: React.FC = () => {
           }
         });
         profitOverview.push({
-          label: monthLabels[3 - mi],
+          label: last3Labels[3 - mi],
           value: incomplete ? 0 : Math.round(totalProfit / 1000),
           color: prefix === '概算' ? COLORS.primary : COLORS.success,
           displayValue: incomplete ? '—' : (totalProfit > 0 ? `${fmtK(totalProfit)}\n（${fmtK(totalAmt)}）` : undefined),
@@ -457,7 +458,7 @@ const Dashboard: React.FC = () => {
       }
     }
     return { projectStatus, nodeStatus, onTimeRate, profitOverview };
-  }, [deliveries, quotations, now, currentFy]);
+  }, [deliveries, quotations, now, currentFy, last3Labels]);
 
 
 
@@ -467,14 +468,13 @@ const Dashboard: React.FC = () => {
       const created = new Date(o.createdAt);
       return created >= fyRange.start && created <= fyRange.end && oppEffectiveEnd(o) >= fyRange.start;
     });
-    const monthLabels = ['Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar','Apr','May','Jun'];
     return Array.from({ length: 12 }, (_, i) => {
       const month = (6 + i) % 12;
       const monthOpps = fyOpps.filter(o => new Date(o.createdAt).getMonth() === month);
       const count = monthOpps.length;
       const amount = monthOpps.reduce((s, o) => s + exAmount(o.amount, o.taxRate), 0);
       return {
-        label: monthLabels[i],
+        label: FY_MONTH_LABELS[i],
         value: count > 0 ? Math.round(amount / 1000) : 0,
         color: COLORS.primary,
         displayValue: count > 0 ? `${fmtK(amount)}\n(${count})` : undefined,

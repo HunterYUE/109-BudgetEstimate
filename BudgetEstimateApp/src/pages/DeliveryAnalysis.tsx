@@ -5,8 +5,8 @@ import { quotationService } from '../services/quotationService';
 import type { DeliveryProject } from '../types';
 import { COLORS } from '../styles/colors';
 import { NODE_DISPLAY_NAMES } from '../utils/constants';
-import { parseFY, FYSelector } from '../utils/fiscalYear';
-import { fmtK, compressNo, monthEndOf, exAmount, isNode15Done, getNodeBaseline, getNodeDelay, getProjectDelay, isProjectDelivered, getProjectDoneDate, quoteProfitExTax, deliverySalesProfit } from '../utils/analysisShared';
+import { parseFY, FYSelector, fiscalYearLabel } from '../utils/fiscalYear';
+import { fmtK, compressNo, monthEndOf, exAmount, getNodeBaseline, getNodeDelay, getProjectDelay, isProjectDelivered, getProjectDoneDate, quoteProfitExTax, deliverySalesProfit, buildQuoteInfoMap } from '../utils/analysisShared';
 import { VerticalBarChart, ProfitChart, ProjectGantt, BubbleChart } from '../components/charts/DeliveryCharts';
 import type { ProfitItem, BubbleDataItem } from '../components/charts/DeliveryCharts';
 
@@ -107,14 +107,8 @@ const isNode15CompletedInFy = (p: DeliveryProject, fyRange: ReturnType<typeof pa
   return !!d && d >= fyRange.start && d <= fyRange.end;
 };
 
-/** 默认财年：当前日历月 ≥ 7 月 → 当年~次年，否则上一年~当年 */
-const defaultFy = (() => {
-  const now = new Date();
-  const m = now.getMonth();
-  const y1 = m >= 6 ? now.getFullYear() : now.getFullYear() - 1;
-  const y2 = m >= 6 ? now.getFullYear() + 1 : now.getFullYear();
-  return `FY${String(y1 % 100).padStart(2, '0')}${String(y2 % 100).padStart(2, '0')}`;
-})();
+/** 默认财年：当前日期所属财年（7月起），共享 fiscalYearLabel */
+const defaultFy = fiscalYearLabel(new Date());
 
 // ── 布局常量（左列 3 张卡片：利润分析/延期天数/节点分析，每张高225px，间距16px）──
 const CARD_H = 225;
@@ -156,10 +150,10 @@ const DeliveryAnalysis: React.FC = () => {
   const fyFiltered = useMemo(() => {
     return deliveryProjects.filter(p => {
       const created = new Date(p.createdAt);
-      // 有效结束：未完成→至今；已完成→实际完成日（节点15实际日或 updatedAt 回退，统一共享口径）
-      const effectiveEnd = (p.status !== '已完成')
-        ? new Date()
-        : (getProjectDoneDate(p) ?? new Date(p.updatedAt));
+      // 有效结束：未完结→至今；已完结→实际完成日（统一共享口径 getProjectDoneDate）
+      // ⚠️ 不用 p.status==='已完成' 区分：节点15已完成但未点「完成项目」的项目同样算已完结，
+      //    否则会因其 active 状态被计入后续财年，造成财年归属漂移
+      const effectiveEnd = getProjectDoneDate(p) ?? new Date();
       return created <= fyRange.end && effectiveEnd >= fyRange.start;
     });
   }, [deliveryProjects, fyRange]);
@@ -206,7 +200,8 @@ const DeliveryAnalysis: React.FC = () => {
         if (delay.delayed && delay.hasBaseline) {
           delayCount[n.nodeNo - 1]++;
           delayedProjects[n.nodeNo - 1].push(shortName);
-          delayDays[n.nodeNo - 1] += Math.max(0, delay.days);
+          // delayed=true 已保证 days > 0，无需 Math.max 兜底
+          delayDays[n.nodeNo - 1] += delay.days;
         }
       }
     }
@@ -225,20 +220,11 @@ const DeliveryAnalysis: React.FC = () => {
 
   // ── 交付项目 → 其报价编制表（最新版本）持久化数据：税率/折后报价/概算利润（含税）──
   // 概算成本/概算利润/概算GP3 全部以此为准，不再运行时从组数据估算
-  const deliveryQuoteInfo = useMemo(() => {
-    const map = new Map<string, { taxRate: number; discounted: number; gp3Amt: number; rate: number }>();
-    for (const p of (deliveryProjects||[])) {
-      if (!p.quotationId) continue;
-      const q = quoteMap[p.quotationId];
-      if (!q) continue;
-      const taxRate = q.taxRate ?? 0.13;
-      const discounted = q.discountedPrice ?? 0;
-      const gp3Amt = q.gp3Amount ?? 0;
-      map.set(p.id, { taxRate, discounted, gp3Amt, rate: discounted > 0 ? gp3Amt / discounted : 0 });
-    }
-    return map;
-  }, [deliveryProjects, quoteMap]);
-  /** 交付项目未税金额 = 持久化合同金额 ÷ (1 + 报价编制表税率) */
+  const deliveryQuoteInfo = useMemo(
+    () => buildQuoteInfoMap(deliveryProjects, qid => quoteMap[qid]),
+    [deliveryProjects, quoteMap],
+  );
+
   // ── 利润分析数据（仅已完成项目总结的项目，按GP3偏差排序）──
   const profitChartData = useMemo(() => {
     const items: ProfitItem[] = fyFiltered
@@ -310,7 +296,7 @@ const DeliveryAnalysis: React.FC = () => {
       const costDevRate = costDevDenominator > 0 ? (costDevNumerator / costDevDenominator * 100) : 0;
       return {
         hasData: true, total: totalCount, tAmt, active, aAmt, completed, cAmt, delayed, dAmt,
-        avgDelay: completed > 0 ? (tDelay / completed >= 0 ? Math.round(tDelay / completed) : -Math.round(-tDelay / completed)) : 0,
+        avgDelay: completed > 0 ? Math.sign(tDelay) * Math.round(Math.abs(tDelay) / completed) : 0,
         onTimeRate: tN > 0 ? Math.round(onT / tN * 100) : -1,
         costDev: costDevRate, costDevDenom: costDevDenominator,
       };
@@ -399,7 +385,7 @@ const DeliveryAnalysis: React.FC = () => {
       return {
         name: compressNo(p.salesNo),
         slots,
-        doneCount: p.nodes.filter(n => isNode15Done(n)).length,
+        doneCount: p.nodes.filter(n => n.status === 'completed').length,
         totalCount: p.nodes.length,
         status: p.status,
         delayed: getProjectDelay(p).delayed,

@@ -134,7 +134,7 @@ const ClientManagement: React.FC = () => {
     if (codeMatch) setEditCity(codeMatch[2]);
     // 获取完整数据（含联系人）
     let detail = client;
-    try { detail = await clientService.getDetail(client.id); } catch { console.warn("[Caught]"); }
+    try { detail = await clientService.getDetail(client.id); } catch { /* 详情加载失败时回退列表数据 */ }
     setEditForm({
       code: detail.code,
       name: detail.name,

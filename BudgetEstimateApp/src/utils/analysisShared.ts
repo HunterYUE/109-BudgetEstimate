@@ -13,10 +13,10 @@ export const compressNo = (sn: string | undefined | null): string => {
 export const isRealWin = (o: SalesOpportunity): boolean =>
   o.status === '赢' && o.terminated === true;
 
-/** 机会的有效结束日期：过程中/冻结/未转交付标赢→至今；已转交付赢→wonAt；输→lostAt；缺失回退 updatedAt */
+/** 机会的有效结束日期：过程中/冻结/未转交付标赢→至今；已转交付赢→wonAt（缺失回退 updatedAt）；输→lostAt；其余回退 updatedAt */
 export const oppEffectiveEnd = (o: SalesOpportunity): Date => {
   if (o.status === '过程中' || o.status === '冻结') return new Date();
-  if (o.status === '赢' && o.terminated && o.wonAt) return new Date(o.wonAt);
+  if (o.status === '赢' && o.terminated) return o.wonAt ? new Date(o.wonAt) : new Date(o.updatedAt);
   if (o.status === '赢') return new Date();
   if (o.status === '输' && o.lostAt) return new Date(o.lostAt);
   return new Date(o.updatedAt);
@@ -75,6 +75,19 @@ export interface NodeDelayInfo {
 }
 
 /**
+ * 统一延期判定内核（节点/项目共用）：以基线为准，参考完成日（actualEnd ?? 判定时点）与基线相差的天数。
+ * - 实际完成日 ≤ 判定时点 → 用实际完成日（结果永久）
+ * - 否则 → 判定时点（未完成，仅已超期判延期，结果临时）
+ */
+const delayOf = (baseline: string, actualEnd: Date | null, asOf: Date): { delayed: boolean; days: number } => {
+  const baselineD = new Date(baseline);
+  // 参考完成日：已完成→实际完成日；未完成→判定时点
+  const end = actualEnd ?? asOf;
+  const days = Math.round((end.getTime() - baselineD.getTime()) / DAY_MS);
+  return { delayed: days > 0, days };
+};
+
+/**
  * 统一节点延期判定（事实延期口径）。
  * - 已完成（实际完成日 ≤ 判定时点）→ 实际完成日 vs 基线，结果永久
  * - 未完成 → 判定时点（当前日期）vs 基线，仅已超期判延期，结果临时
@@ -85,31 +98,34 @@ export const getNodeDelay = (node: DeliveryNode | undefined, asOf?: Date): NodeD
   const baseline = getNodeBaseline(node);
   if (!baseline) return { hasBaseline: false, delayed: false, days: 0 };
   const t = asOf ?? new Date();
-  const baselineD = new Date(baseline);
   // 实际完成日期（actualDate 优先，兼容旧数据 actualEndDate）
   const actualEnd = node.actualDate || node.actualEndDate;
-  // 判定时点的完成状态：completed 且实际完成日 ≤ 时点
+  // 判定时点的完成状态：completed 且实际完成日 ≤ 时点 → 用实际完成日，否则用判定时点
   const doneByAsOf = node.status === 'completed' && !!actualEnd && new Date(actualEnd) <= t;
-  // 参考完成日：已完成→实际完成日；未完成→判定时点（当前日期）
-  const end = doneByAsOf ? new Date(actualEnd!) : t;
-  const days = Math.round((end.getTime() - baselineD.getTime()) / DAY_MS);
-  return { hasBaseline: true, delayed: days > 0, days };
+  const { delayed, days } = delayOf(baseline, doneByAsOf ? new Date(actualEnd!) : null, t);
+  return { hasBaseline: true, delayed, days };
 };
 
 /** 交付项目是否已完结交付：节点15完成 或 项目状态已完成（执行状态三态，延期中为派生维度） */
 export const isProjectDelivered = (p: DeliveryProject): boolean =>
-  getNode15(p.nodes)?.status === 'completed' || p.status === '已完成';
+  isNode15Done(getNode15(p.nodes)) || p.status === '已完成';
 
 /**
  * 交付项目实际完成日期。
- * - 节点15完成且填实际日 → 实际完成日（actualDate，兼容旧数据 actualEndDate）
- * - 项目已完成但节点无实际日 → 状态切到已完成的时刻（updatedAt）
+ * - 节点15完成且填实际日 → 实际完成日（actualDate，兼容旧数据 actualEndDate）【正常路径】
+ * - 项目 status='已完成' 但节点15无实际日 → updatedAt 兜底【防御分支，正常流程不可达】
  * - 未完结 → null
+ *
+ * ⚠️ 业务不变量：节点15决定项目完成（DeliveryDetail「完成项目」按钮仅在全部节点 completed
+ * 且成本审批通过时可用，line ~670）；节点切 completed 必写 actualDate/actualEndDate
+ * （handleNodeStatusClick，line ~227）。故「项目已完成但节点15缺实际日」在正常流程中不存在；
+ * 该 updatedAt 分支仅为异常/历史数据留的代码安全兜底——用最后修改时间近似完成时间，
+ * 避免把已完结项目误判为未完结而在后续财年长期算活跃。
  */
 export const getProjectDoneDate = (p: DeliveryProject): Date | null => {
   const node15 = getNode15(p.nodes);
   const actualEnd = node15?.actualDate || node15?.actualEndDate;
-  if (node15?.status === 'completed' && actualEnd) return new Date(actualEnd);
+  if (isNode15Done(node15) && actualEnd) return new Date(actualEnd);
   if (p.status === '已完成') return new Date(p.updatedAt);
   return null;
 };
@@ -117,9 +133,9 @@ export const getProjectDoneDate = (p: DeliveryProject): Date | null => {
 /* ============================================================
    月度订单/销售归集（销售分析月度订单/月度销售、仪表盘利润概览共用）
    ============================================================ */
-/** 报价概算利润转未税：gp3_amount（含税）÷ (1+税率)，缺省 13%；无概算利润为 0 */
+/** 报价概算利润转未税：gp3_amount（含税）÷ (1+税率)，缺省 13%；无概算利润为 0，负值（亏损报价）如实保留 */
 export const quoteProfitExTax = (gp3Amt: number | undefined, taxRate?: number): number =>
-  !!gp3Amt && gp3Amt > 0 ? Math.round(gp3Amt / (1 + (taxRate ?? 0.13))) : 0;
+  gp3Amt ? exAmount(gp3Amt, taxRate) : 0;
 
 /**
  * 交付实际销售利润（未税）：未税金额 − 实际总成本。
@@ -127,6 +143,40 @@ export const quoteProfitExTax = (gp3Amt: number | undefined, taxRate?: number): 
  */
 export const deliverySalesProfit = (exTax: number, totalActualCost?: number): number | undefined =>
   totalActualCost != null ? (exTax - totalActualCost) : undefined;
+
+/** 报价关联信息（按 quotationId 关联后，entityId → 报价数据） */
+export interface QuoteRefInfo {
+  /** 税率（缺省 13%） */
+  taxRate: number;
+  /** 折后报价（含税） */
+  discounted: number;
+  /** 概算利润金额（含税 gp3_amount） */
+  gp3Amt: number;
+  /** 概算利润率 = gp3Amt / discounted（discounted 为 0 时为 0） */
+  rate: number;
+}
+
+/**
+ * 按 entity.quotationId 关联报价摘要，构建 entityId → 报价信息 的映射。
+ * DeliveryAnalysis（交付项目→quotationId→quoteMap）与 SalesAnalysis（机会→quotationId→quotationSummaries）
+ * 共用同一遍历/兜底/rate 计算，消除两处重复。
+ */
+export const buildQuoteInfoMap = <T extends { id: string; quotationId?: string }>(
+  entities: T[],
+  quoteById: (quotationId: string) => { taxRate?: number; discountedPrice?: number; gp3Amount?: number } | undefined,
+): Map<string, QuoteRefInfo> => {
+  const map = new Map<string, QuoteRefInfo>();
+  for (const e of entities) {
+    if (!e.quotationId) continue;
+    const q = quoteById(e.quotationId);
+    if (!q) continue;
+    const taxRate = q.taxRate ?? 0.13;
+    const discounted = q.discountedPrice ?? 0;
+    const gp3Amt = q.gp3Amount ?? 0;
+    map.set(e.id, { taxRate, discounted, gp3Amt, rate: discounted > 0 ? gp3Amt / discounted : 0 });
+  }
+  return map;
+};
 
 /** 单个项目在月窗口内的订单/销售金额与利润（未税口径） */
 export interface MonthlySalesPoint {
@@ -161,7 +211,10 @@ export const projectMonthlySales = (
   };
 };
 
-/** 财年 12 个月的起止窗口（index 0 = 7月，与销售分析 MONTH_LABELS 对齐） */
+/** 财年 12 个月的标签（index 0 = 7月，与 fyMonthWindows 对齐） */
+export const FY_MONTH_LABELS = ['Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar','Apr','May','Jun'] as const;
+
+/** 财年 12 个月的起止窗口（index 0 = 7月，与 FY_MONTH_LABELS 对齐） */
 export const fyMonthWindows = (fyRange: { start: Date; end: Date }): { start: Date; end: Date }[] =>
   Array.from({ length: 12 }, (_, i) => {
     const m = (6 + i) % 12;
@@ -179,12 +232,9 @@ export const getProjectDelay = (p: DeliveryProject, asOf?: Date): NodeDelayInfo 
   const baseline = getNodeBaseline(node15);
   if (!baseline) return { hasBaseline: false, delayed: false, days: 0 };
   const t = asOf ?? new Date();
-  const baselineD = new Date(baseline);
   // 实际完成日期：已完成项目 → 实际完成日（节点日或 updatedAt 回退）
   const doneDate = isProjectDelivered(p) ? getProjectDoneDate(p) : null;
   const doneByAsOf = !!doneDate && doneDate <= t;
-  // 参考完成日：已完成→实际完成日；未完成→判定时点（当前日期）
-  const end = doneByAsOf ? doneDate! : t;
-  const days = Math.round((end.getTime() - baselineD.getTime()) / DAY_MS);
-  return { hasBaseline: true, delayed: days > 0, days };
+  const { delayed, days } = delayOf(baseline, doneByAsOf ? doneDate : null, t);
+  return { hasBaseline: true, delayed, days };
 };

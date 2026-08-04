@@ -42,7 +42,7 @@ export interface GroupItem {
   description: string;             // 描述（原spec）
   qtyTotal: number;
   unit: string;
-  sourcingType: SourcingType;    // 自制=true, 外购=false
+  sourcingType: SourcingType;    // 'SELF_MANUFACTURED'=自制, 'PURCHASED'=外购
   unitCost: number;
   designHours: number;
   assemblyHours: number;
@@ -219,8 +219,8 @@ export interface ApprovalRequest {
   submitter: string;
   submitTime: string;
   status: ReviewStatus;
-  /** 最新审批记录（后端列表查询返回） */
-  latestRecord?: { reviewer: string; action: 'approved' | 'rejected'; comment: string; createdAt: string };
+  /** 最新审批记录（后端列表查询返回），形状同 ApprovalInfo */
+  latestRecord?: ApprovalInfo;
 }
 
 // ===== 交付管理 =====

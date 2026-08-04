@@ -67,8 +67,6 @@ interface BubbleHoverInfo {
 /** 格式化日期为短格式 "M/d" */
 const fmtShort = (d: Date) => `${String(d.getFullYear()).slice(2)}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 
-const toK = (v: number) => Math.round(v / 1000).toLocaleString() + 'K';
-
 /** 节点状态条颜色：未开始/进行中(含延期)/已完成 */
 const GANTT_STATUS_COLOR: Record<string, string> = {
   pending: '#1a4f83', in_progress: '#593b73', completed: '#275d3e',
@@ -691,7 +689,7 @@ const BubbleTooltip: React.FC<{
       <line x1={ttx + 12} y1={tty + 29} x2={ttx + tooltipW - 12} y2={tty + 29} stroke={COLORS.borderLight} strokeWidth={1} />
       <text x={ttx + 12} y={tty + 49} fontSize={11} fill={COLORS.textLight}>合同金额</text>
       <text x={ttx + tooltipW - 12} y={tty + 49} fontSize={12} fill="#222" textAnchor="end" fontWeight={600}>
-        {toK(item.contractAmount)}
+        {fmtK(item.contractAmount)}
       </text>
       <text x={ttx + 12} y={tty + 72} fontSize={11} fill={COLORS.textLight}>延期天数</text>
       <text x={ttx + tooltipW - 12} y={tty + 72} fontSize={12} fill={item.delayDays > 0 ? COLORS.danger : COLORS.success} textAnchor="end" fontWeight={600}>

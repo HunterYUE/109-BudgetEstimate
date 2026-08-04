@@ -24,8 +24,6 @@ const STATUS_LABELS: Record<string, string> = {
   pending: '未开始', in_progress: '进行中', completed: '已完成',
 };
 
-/** 说明标签颜色表（深色系，按 nodeNo 轮转）—— 从 constants 导入 */
-
 /** 计算工作日 */
 function workDays(start: string, end: string): number {
   const s = new Date(start), e = new Date(end);
@@ -40,6 +38,11 @@ function workDays(start: string, end: string): number {
 }
 
 function shortDate(d: string) { return d ? d.slice(2) : '—'; }
+
+/** 节点实际开始时间：actualStartDate 优先，兼容旧数据从变更历史推断进入 in_progress 的时刻 */
+function actualStartOf(node: DeliveryNode): string | null {
+  return node.actualStartDate || node.history.find(h => h.field === 'status' && h.newValue === 'in_progress')?.changedAt || null;
+}
 
 const cellStyle: React.CSSProperties = {
   padding: '6px 8px', fontSize: 13, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle',
@@ -156,7 +159,7 @@ const DeliveryNodeTimeline: React.FC<Props> = ({
         <tbody>
           {sorted.map(node => {
             const planDays = workDays(node.plannedStartDate, node.plannedEndDate);
-            const startDate = node.actualStartDate || (node.history.find(h => h.field === 'status' && h.newValue === 'in_progress')?.changedAt) || null;
+            const startDate = actualStartOf(node);
             const actualDays = node.status === 'completed' && node.actualDate && startDate
               ? workDays(startDate, node.actualDate) : 0;
 
@@ -242,17 +245,15 @@ const DeliveryNodeTimeline: React.FC<Props> = ({
                   )}
                 </td>
                 <td style={{ ...cellStyle, textAlign: 'center', fontSize: 11, color: COLORS.textMuted }}>{planDays}</td>
-                <td style={{ ...cellStyle, textAlign: 'center', fontSize: 12, color: node.status === 'completed' ? COLORS.primary : COLORS.primary }}>
+                <td style={{ ...cellStyle, textAlign: 'center', fontSize: 12, color: COLORS.primary }}>
                   {node.status === 'in_progress' && node.actualStartDate ? shortDate(node.actualStartDate) :
                    node.status === 'completed' && node.actualDate ? (() => {
-                    const startD = node.actualStartDate || (node.history.find(h => h.field === 'status' && h.newValue === 'in_progress')?.changedAt) || null;
+                    const startD = actualStartOf(node);
                     return <span>{startD ? shortDate(startD) : '—'}~{shortDate(node.actualDate)}</span>;
                   })() : '—'}
                 </td>
                 <td style={{ ...cellStyle, textAlign: 'center', fontSize: 11, color: COLORS.textMuted }}>
-                  {node.status === 'completed' ? (() => {
-                    return <span>{node.status === 'completed' && actualDays > 0 ? <span style={{ color: COLORS.primary, fontWeight: 600 }}>{actualDays}</span> : '—'}</span>;
-                  })() : (actualDays > 0 ? <span style={{ color: COLORS.primary, fontWeight: 600 }}>{actualDays}</span> : '—')}
+                  {actualDays > 0 ? <span style={{ color: COLORS.primary, fontWeight: 600 }}>{actualDays}</span> : '—'}
                 </td>
                 <td style={cellStyle}>
                   {editingComments === node.id ? (

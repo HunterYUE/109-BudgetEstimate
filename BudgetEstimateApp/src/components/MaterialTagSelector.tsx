@@ -83,7 +83,7 @@ const MaterialTagSelector: React.FC<Props> = ({ value, onChange }) => {
             background: COLORS.bgTag, borderRadius: 4, padding: '0 4px',
           }}>
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 150 }}>{label}</span>
-            <span onClick={() => onChange(value.filter((_, j) => j !== i))}
+            <span onClick={(e) => { e.stopPropagation(); onChange(value.filter((_, j) => j !== i)); }}
               style={{ cursor: 'pointer', color: COLORS.textLight, fontSize: 10, lineHeight: 1, flexShrink: 0 }}>✕</span>
           </span>
         ))

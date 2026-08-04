@@ -3,6 +3,7 @@ import { Table } from 'antd';
 import type { Group } from '../types';
 import { formatMoney } from '../utils/calculations';
 import { COLORS } from '../styles/colors';
+import { DEFAULT_DESIGN_HOURLY_RATE, DEFAULT_ASSEMBLY_HOURLY_RATE } from '../utils/constants';
 
 interface VersionData {
   warrantyRate: number;
@@ -37,7 +38,6 @@ interface FlatRow {
 }
 
 const ItemCostTable: React.FC<Props> = ({ groups, actualCosts, onActualCostChange, locked, version, laborRates }) => {
-// laborRates 变化不改变成本对比计算逻辑
 const rows: FlatRow[] = useMemo(() => {
     const result: FlatRow[] = [];
 
@@ -138,11 +138,11 @@ const rows: FlatRow[] = useMemo(() => {
         for (const item of g.items) {
           if (item.designHours) {
             totalDesignHours += item.designHours * (item.qtyTotal || 1);
-            totalDesignCost += Math.round(item.designHours * (item.designHourRate || (laborRates?.design ?? 175)));
+            totalDesignCost += Math.round(item.designHours * (item.designHourRate || (laborRates?.design ?? DEFAULT_DESIGN_HOURLY_RATE)));
           }
           if (item.assemblyHours) {
             totalAssemblyHours += item.assemblyHours * (item.qtyTotal || 1);
-            totalAssemblyCost += Math.round(item.assemblyHours * (item.assemblyHourRate || (laborRates?.assembly ?? 85)) * (item.qtyTotal || 1));
+            totalAssemblyCost += Math.round(item.assemblyHours * (item.assemblyHourRate || (laborRates?.assembly ?? DEFAULT_ASSEMBLY_HOURLY_RATE)) * (item.qtyTotal || 1));
           }
         }
       }
@@ -402,9 +402,8 @@ const rows: FlatRow[] = useMemo(() => {
     }
 
     return result;
-  // laborRates 变化不改变成本对比计算逻辑
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [groups, actualCosts, version]);
+  // ⚠️ laborRates 参与人工成本计算（design/assembly 费率兜底），必须列入依赖，否则物料库费率加载后人工区不重算
+  }, [groups, actualCosts, version, laborRates]);
 
   // ---- Totals ----
   const totals = useMemo(() => {

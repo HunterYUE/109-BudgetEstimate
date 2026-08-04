@@ -18,6 +18,7 @@ import { projectService } from '../services/projectService';
 import IconButton from '../components/IconButton';
 import { COLORS } from '../styles/colors';
 import { exportHtmlTable } from '../utils/exportToExcel';
+import { DEFAULT_DESIGN_HOURLY_RATE, DEFAULT_ASSEMBLY_HOURLY_RATE } from '../utils/constants';
 
 
 /** 生成销售编号：A{年份}-{月份}-{4位流水}-S（销售阶段）
@@ -100,7 +101,7 @@ const initProject = (): Project => {
     clientName: '新项目',
     clientCode: '',
     versionNo: 'V1.0',
-    projectScope: '2年质保',
+    projectScope: '24个月', // 质保期默认值，与 ProjectHeader WARRANTY_OPTIONS 对齐（历史误填 '2年质保' 不在选项内）
     projectName: '',
     projectStage: '方案设计',
     expectedAwardDate: '',
@@ -189,7 +190,7 @@ const QuotationPage: React.FC = () => {
                 const checkOpp = await opportunityService.get(oppIdRef.current);
                 if (checkOpp.stage === '中标' && checkOpp.status === '赢') shouldLock = true;
                 if (checkOpp.terminated) shouldLock = true;
-              } catch { console.warn("[Caught]"); }
+              } catch { /* 静默忽略，使用回退值 */ }
             }
             setQuotationLocked(shouldLock);
             // ⚠️ 按版本过滤组数据；无匹配时检查是否为无版本隔离的旧数据（此时回退全量组），
@@ -220,9 +221,9 @@ const QuotationPage: React.FC = () => {
                 const clients = await clientService.list();
                 const match = clients.find((c: Client) => c.name === cn);
                 if (match) cc = match.code || '';
-              } catch { console.warn("[Caught]"); }
+              } catch { /* 静默忽略，使用回退值 */ }
               prefill = { salesNo: opp.salesNo || '', clientName: cn, clientCode: cc, expectedAwardDate: opp.expectedCloseDate || '', projectName: opp.projectName || '' };
-            } catch { console.warn("[Caught]"); }
+            } catch { /* 静默忽略，使用回退值 */ }
           }
           if (!cancelled) {
             const base = initProject();
@@ -243,8 +244,8 @@ const QuotationPage: React.FC = () => {
   useEffect(() => {
     if (!project || componentDB.length === 0) return;
     let changed = false;
-    const designRateFromDB = componentDB.find((c: Component) => c.code === 'SV-DESIGN-000000-V1.0')?.unitCost ?? 175;
-    const assemblyRateFromDB = componentDB.find((c: Component) => c.code === 'SV-INSASS-000000-V1.0')?.unitCost ?? 85;
+    const designRateFromDB = componentDB.find((c: Component) => c.code === 'SV-DESIGN-000000-V1.0')?.unitCost ?? DEFAULT_DESIGN_HOURLY_RATE;
+    const assemblyRateFromDB = componentDB.find((c: Component) => c.code === 'SV-INSASS-000000-V1.0')?.unitCost ?? DEFAULT_ASSEMBLY_HOURLY_RATE;
     const newGroups = project.groups.map(g => ({
       ...g,
       items: g.items.map(item => {
@@ -261,10 +262,14 @@ const QuotationPage: React.FC = () => {
         if (comp.unit && comp.unit !== item.unit) { updated.unit = comp.unit; itemChanged = true; }
         if (comp.sourcingType && comp.sourcingType !== item.sourcingType) { updated.sourcingType = comp.sourcingType; itemChanged = true; }
         // 填充工时费率（从数据库找 t10-1/t10-2 标签项，或使用默认值）
-        if (!updated.designHourRate) { updated.designHourRate = designRateFromDB; itemChanged = true; }
-        if (!updated.assemblyHourRate) { updated.assemblyHourRate = assemblyRateFromDB; itemChanged = true; }
+        // ⚠️ 仅当费率 > 0 时填充：0 是合法注册值（unitCost=0 时 ?? 不会回退），
+        //    若用 falsy 判断把 0 填进 0 会让 itemChanged 恒真 → effect 重跑 → 无限循环
+        if (designRateFromDB > 0 && !updated.designHourRate) { updated.designHourRate = designRateFromDB; itemChanged = true; }
+        if (assemblyRateFromDB > 0 && !updated.assemblyHourRate) { updated.assemblyHourRate = assemblyRateFromDB; itemChanged = true; }
         // 填充后重算直接成本和预期售价
-        if (itemChanged || updated.directCost === 0) {
+        // ⚠️ 仅字段实际发生变化时重算：若命中零成本物料（unitCost=0 且无工时），
+        // directCost 恒为 0 会触发 setProject → effect 再跑 → 无限循环，故不以 directCost===0 为触发条件
+        if (itemChanged) {
           updated.directCost = calcDirectCost(updated);
           const p = calcItemPrices(updated.directCost, updated.marginRate || 0.15);
           updated.basicPrice = p.basicPrice;
@@ -288,8 +293,8 @@ const QuotationPage: React.FC = () => {
 
   const handleAddItem = useCallback((groupId: string) => {
     // 从物料数据库动态获取工费费率
-    const designRate = componentDB.find(c => c.code === 'SV-DESIGN-000000-V1.0')?.unitCost ?? 175;
-    const assemblyRate = componentDB.find(c => c.code === 'SV-INSASS-000000-V1.0')?.unitCost ?? 85;
+    const designRate = componentDB.find(c => c.code === 'SV-DESIGN-000000-V1.0')?.unitCost ?? DEFAULT_DESIGN_HOURLY_RATE;
+    const assemblyRate = componentDB.find(c => c.code === 'SV-INSASS-000000-V1.0')?.unitCost ?? DEFAULT_ASSEMBLY_HOURLY_RATE;
     setProject(prev => {
       if (!prev) return prev;
       const newGroups = prev.groups.map(g => {

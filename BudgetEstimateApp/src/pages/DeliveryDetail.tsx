@@ -11,16 +11,17 @@ import { api, clearCache } from '../utils/api';
 import DeliveryNodeTimeline from '../components/DeliveryNodeTimeline';
 import IconButton from '../components/IconButton';
 import ItemCostTable from '../components/ItemCostTable';
-import type { DeliveryProject, DeliveryNode, NodeChangeEntry, Group, ProjectVersion } from '../types';
+import type { DeliveryProject, DeliveryNode, NodeChangeEntry, Group, ProjectVersion, ReviewStatus } from '../types';
 import { COLORS } from '../styles/colors';
 import { getNodeDelay, getProjectDelay } from '../utils/analysisShared';
+import { DEFAULT_DESIGN_HOURLY_RATE, DEFAULT_ASSEMBLY_HOURLY_RATE } from '../utils/constants';
 import { exportHtmlTable } from '../utils/exportToExcel';
 import { deliveryFileService, type DeliveryFile } from '../services/deliveryFileService';
 import { todayBeijing } from '../utils/timeFormat';
 import { useAuth } from '../utils/authContext';
 
 const STATUS_CYCLE: DeliveryNode['status'][] = ['pending', 'in_progress', 'completed'];
-const STATUS_LABELS: Record<string, { label: string; color: string }> = {
+const STATUS_LABELS: Record<ReviewStatus, { label: string; color: string }> = {
   draft: { label: '草稿', color: COLORS.textSecondary },
   pending: { label: '待审批', color: COLORS.warning },
   approved: { label: '已通过', color: COLORS.success },
@@ -59,13 +60,12 @@ const DeliveryDetail: React.FC = () => {
   const [savingPlan, setSavingPlan] = useState(false);
   const [submitCostOpen, setSubmitCostOpen] = useState(false);
   const [costOverride, setCostOverride] = useState(false);
-  const [laborRates, setLaborRates] = useState<{ design: number; assembly: number }>({ design: 175, assembly: 85 });
+  const [laborRates, setLaborRates] = useState<{ design: number; assembly: number }>({ design: DEFAULT_DESIGN_HOURLY_RATE, assembly: DEFAULT_ASSEMBLY_HOURLY_RATE });
   const initialCostsLoaded = useRef(false);
   const [costDirty, setCostDirty] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
   const [submitPlanOpen, setSubmitPlanOpen] = useState(false);
   const [quotationProject, setQuotationProject] = useState<{ groups: Group[]; versions?: ProjectVersion[]; currentVersion?: ProjectVersion; [k: string]: unknown } | null>(null);
-  const baselinesRef = useRef<Record<string, string>>({});
 
   // 待刷新的计划日期变更（审批通过后，3分钟内的多次编辑合并为一次历史记录）
   const pendingDateChangesRef = useRef<Map<string, {
@@ -88,7 +88,6 @@ const DeliveryDetail: React.FC = () => {
         setActualCosts(data.actualCosts);
         initialCostsLoaded.current = true;
       }
-      if (data.nodes) data.nodes.forEach((n: DeliveryNode) => { const b = n.baselineEndDate || n.baselinePlannedEndDate; if (b && n.id) baselinesRef.current[n.id] = b; });
       if (data.quotationId) {
         // 通过 api.get 加载报价数据（使用统一转换/缓存/错误处理）
         api.get<Record<string, unknown>>(`/quotations/${data.quotationId}`).then(quote => {
@@ -109,8 +108,8 @@ const DeliveryDetail: React.FC = () => {
         componentService.list({ search: 'SV-INSASS-000000-V1.0' }),
       ]).then(([designComps, assyComps]) => {
         if (cancelled) return;
-        const designRate = designComps?.[0]?.unitCost || 175;
-        const assyRate = assyComps?.[0]?.unitCost || 85;
+        const designRate = designComps?.[0]?.unitCost || DEFAULT_DESIGN_HOURLY_RATE;
+        const assyRate = assyComps?.[0]?.unitCost || DEFAULT_ASSEMBLY_HOURLY_RATE;
         setLaborRates({ design: Number(designRate), assembly: Number(assyRate) });
       }).catch(() => {/* empty */});
     }).catch(() => {/* empty */}).finally(() => setLoading(false));
@@ -532,10 +531,10 @@ const DeliveryDetail: React.FC = () => {
       if (g.groupType === 'EQUIPMENT' || g.groupType === 'INTEGRATION') {
         for (const item of g.items) {
           if (item.designHours) {
-            designEst += Math.round(item.designHours * (item.designHourRate || (laborRates?.design ?? 175)));
+            designEst += Math.round(item.designHours * (item.designHourRate || (laborRates?.design ?? DEFAULT_DESIGN_HOURLY_RATE)));
           }
           if (item.assemblyHours) {
-            assyEst += Math.round(item.assemblyHours * (item.assemblyHourRate || (laborRates?.assembly ?? 85)) * (item.qtyTotal || 1));
+            assyEst += Math.round(item.assemblyHours * (item.assemblyHourRate || (laborRates?.assembly ?? DEFAULT_ASSEMBLY_HOURLY_RATE)) * (item.qtyTotal || 1));
           }
         }
       }
