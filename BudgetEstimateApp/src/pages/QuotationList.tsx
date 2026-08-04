@@ -5,7 +5,7 @@ import { EyeOutlined } from '@ant-design/icons';
 import { quotationService } from '../services/quotationService';
 import { formatMoney } from '../utils/calculations';
 import { formatBeijing } from '../utils/timeFormat';
-import { parseFY, FYSelector } from '../utils/fiscalYear';
+import { parseFY, FYSelector, fiscalYearLabel } from '../utils/fiscalYear';
 import type { QuotationSummary } from '../types';
 import { COLORS } from '../styles/colors';
 
@@ -21,12 +21,7 @@ const QuotationList: React.FC = () => {
   const navigate = useNavigate();
   const [statusTab, setStatusTab] = useState<string>('all');
   const [searchText, setSearchText] = useState('');
-  const now = new Date();
-  const y = now.getFullYear(), m = now.getMonth();
-  const y1 = m >= 6 ? y : y - 1;
-  const y2 = m >= 6 ? y + 1 : y;
-  const defaultFy = `FY${String(y1 % 100).padStart(2,'0')}${String(y2 % 100).padStart(2,'0')}`;
-  const [fySelect, setFySelect] = useState(defaultFy);
+  const [fySelect, setFySelect] = useState(() => fiscalYearLabel(new Date()));
 
   const [data, setData] = useState<QuotationSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -35,7 +30,7 @@ const QuotationList: React.FC = () => {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    quotationService.list()
+    quotationService.list({ limit: '1000' })
       .then(res => {
         if (!cancelled) setData(res);
       })
@@ -49,33 +44,31 @@ const QuotationList: React.FC = () => {
     return () => { cancelled = true; };
   }, [messageApi]);
 
-  const filtered = useMemo(() => {
+  /** 报价是否属于所选财年（创建或更新落在财年内）；表格过滤与 Tab 徽标共用，避免口径分叉 */
+  const inFy = useCallback((q: QuotationSummary): boolean => {
     const fyRange = parseFY(fySelect);
-    // 未来财年不显示任何数据
-    if (fyRange.start > new Date()) return [];
-    return data.filter(q => {
-      // 财年过滤：创建或更新在财年范围内的报价
-      const created = q.createdAt ? new Date(q.createdAt) : null;
-      const updated = new Date(q.updatedAt);
-      const inFy = (created && created >= fyRange.start && created <= fyRange.end)
-                || (updated >= fyRange.start && updated <= fyRange.end);
-      if (!inFy) return false;
-      // 状态标签过滤
-      if (statusTab === 'all') return true;
-      return q.status === statusTab;
-    }).filter(q => {
-      if (!searchText.trim()) return true;
-      const s = searchText.trim().toLowerCase();
-      return (q.salesNo || '').toLowerCase().includes(s) || (q.clientName || '').toLowerCase().includes(s);
-    });
-  }, [data, statusTab, fySelect, searchText]);
+    if (fyRange.start > new Date()) return false; // 未来财年不显示任何数据
+    const created = q.createdAt ? new Date(q.createdAt) : null;
+    const updated = new Date(q.updatedAt);
+    return (!!created && created >= fyRange.start && created <= fyRange.end)
+        || (updated >= fyRange.start && updated <= fyRange.end);
+  }, [fySelect]);
 
+  const filtered = useMemo(() => {
+    const s = searchText.trim().toLowerCase();
+    return data.filter(q =>
+      inFy(q) &&
+      (statusTab === 'all' || q.status === statusTab) &&
+      (!s || (q.salesNo || '').toLowerCase().includes(s) || (q.clientName || '').toLowerCase().includes(s))
+    );
+  }, [data, inFy, statusTab, searchText]);
+
+  // Tab 徽标计数：与表格同口径（仅财年+状态过滤，不随搜索词变化）
   const getCount = useCallback((status?: string) => {
-    if (!status) return data.length;
-    return data.filter(q => q.status === status).length;
-  }, [data]);
+    return data.filter(q => inFy(q) && (!status || q.status === status)).length;
+  }, [data, inFy]);
 
-  const columns = [
+  const columns = useMemo(() => [
     { title: '客户', dataIndex: 'clientName', width: 240,
       render: (v: string) => <span style={{ color: COLORS.primary }}>{v}</span> },
     { title: '项目', dataIndex: 'projectName', width: 200 },
@@ -100,8 +93,9 @@ const QuotationList: React.FC = () => {
     {
       title: '利润率', dataIndex: 'profitRate', width: 70, align: 'center' as const,
       render: (v: number) => {
-        const color = v >= 20 ? COLORS.success : v >= 15 ? COLORS.amber : COLORS.danger;
-        return <span style={{ fontWeight: 600, color }}>{v.toFixed(1)}%</span>;
+        const p = v || 0; // profitRate 可选字段，防缺值
+        const color = p >= 20 ? COLORS.success : p >= 15 ? COLORS.amber : COLORS.danger;
+        return <span style={{ fontWeight: 600, color }}>{p.toFixed(1)}%</span>;
       },
     },
     { title: '更新时间', dataIndex: 'updatedAt', width: 100,
@@ -116,7 +110,7 @@ const QuotationList: React.FC = () => {
         );
       },
     },
-  ];
+  ], [navigate]);
 
   return (
     <div>

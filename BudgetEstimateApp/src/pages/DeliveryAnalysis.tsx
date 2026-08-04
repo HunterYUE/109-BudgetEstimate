@@ -33,6 +33,21 @@ const NO_DATA_CUM: MonthlyCum = {
   delayed: 0, dAmt: 0, avgDelay: 0, onTimeRate: -1, costDev: 0, costDevDenom: 0,
 };
 
+/** 第 idx 个 KPI 的当月格式化值（0-6：项目总数/进行中/已完成/延期/平均延期天数/节点按时率/成本偏差率）；无数据返回 — */
+const cumVal = (m: MonthlyCum, idx: number): string => {
+  if (!m.hasData) return '—';
+  const arr = [
+    `${fmtK(m.tAmt)} / ${m.total}`,
+    `${fmtK(m.aAmt)} / ${m.active}`,
+    `${fmtK(m.cAmt)} / ${m.completed}`,
+    `${fmtK(m.dAmt)} / ${m.delayed}`,
+    m.completed > 0 ? m.avgDelay + '天' : '—',
+    m.onTimeRate >= 0 ? m.onTimeRate + '%' : '—',
+    m.costDevDenom > 0 ? (m.costDev > 0 ? '+' : '') + m.costDev.toFixed(1) + '%' : '—',
+  ];
+  return arr[idx] || '—';
+};
+
 /* ============================================================
    模块级工具函数（不依赖组件状态，避免每次渲染重建）
    ============================================================ */
@@ -91,16 +106,19 @@ const DeliveryAnalysis: React.FC = () => {
   useEffect(() => {
     let cancelled = false;
     // 分析页需要最新数据：交付一次取全量（limit=1000）并绕过 api.ts 的 30s GET 缓存
-    Promise.all([
+    // ⚠️ allSettled：单个接口失败不拖垮整页（Promise.all 会整体拒绝导致整页空白）
+    Promise.allSettled([
       deliveryService.list({ limit: '1000' }, { noCache: true }),
       quotationService.list({ limit: '1000' }),
     ]).then(([dps, quotes]) => {
       if (cancelled) return;
-      setDeliveryProjects(dps.map(p => ({ ...p, nodes: p.nodes || [] })));
-      const m: Record<string, { taxRate?: number; discountedPrice?: number; gp3Amount?: number }> = {};
-      for (const q of quotes) m[q.id] = { taxRate: q.taxRate, discountedPrice: q.discountedPrice, gp3Amount: q.gp3Amount };
-      setQuoteMap(m);
-    }).catch(() => { if (!cancelled) setDeliveryProjects([]); });
+      if (dps.status === 'fulfilled') setDeliveryProjects(dps.value.map(p => ({ ...p, nodes: p.nodes || [] })));
+      if (quotes.status === 'fulfilled') {
+        const m: Record<string, { taxRate?: number; discountedPrice?: number; gp3Amount?: number }> = {};
+        for (const q of quotes.value) m[q.id] = { taxRate: q.taxRate, discountedPrice: q.discountedPrice, gp3Amount: q.gp3Amount };
+        setQuoteMap(m);
+      }
+    });
     return () => { cancelled = true; };
   }, []);
 
@@ -146,7 +164,10 @@ const DeliveryAnalysis: React.FC = () => {
     for (const p of fyFiltered) {
       const shortName = compressNo(p.salesNo) || p.clientName;
       for (const n of p.nodes) {
-        // ⚠️ 节点级财年裁剪（与节点按时率/甘特图同口径）：
+        // ⚠️ 节点编号越界防护：nodeNo 应 1~15，异常数据跳过避免污染统计
+        const idx = n.nodeNo - 1;
+        if (idx < 0 || idx >= NODE_COUNT) continue;
+        // 节点级财年裁剪（与节点按时率/甘特图同口径）：
         //   已完成节点：完成日 ∈ 财年才计入；未完成节点：计划窗口与财年有交集才计入
         if (n.status === 'completed' && n.actualDate) {
           const doneD = new Date(n.actualDate);
@@ -156,15 +177,15 @@ const DeliveryAnalysis: React.FC = () => {
         }
         // 未开始的 pending 不计入「到达次数」，但若其基线已过（事实延期）仍需计入延期
         const isFuturePending = n.status === 'pending' && new Date(n.plannedStartDate) > now;
-        if (!isFuturePending) reached[n.nodeNo - 1]++;
+        if (!isFuturePending) reached[idx]++;
 
         // ⚠️ 共享延期判定：基线 = 初始审批实施计划；无审批基线不判延期
         const delay = getNodeDelay(n, now);
         if (delay.delayed && delay.hasBaseline) {
-          delayCount[n.nodeNo - 1]++;
-          delayedProjects[n.nodeNo - 1].push(shortName);
+          delayCount[idx]++;
+          delayedProjects[idx].push(shortName);
           // delayed=true 已保证 days > 0，无需 Math.max 兜底
-          delayDays[n.nodeNo - 1] += delay.days;
+          delayDays[idx] += delay.days;
         }
       }
     }
@@ -277,22 +298,15 @@ const DeliveryAnalysis: React.FC = () => {
 
   // ── 健康 KPI 卡片（使用财年截止到各月月底的累计值）──
   const overviewItems = useMemo((): KpiCardItem[] => {
-    const mk = monthlyCumKpi;
-    const main = mk[0]; // 截止到最近完整月（已完结财年=Jun；当前财年无完整月时 hasData=false）
-
-    const fmtVal = (amt: number, cnt: number) => main.hasData ? fmtK(amt) + ' / ' + cnt : '—';
-    const costShow = main.hasData && main.costDevDenom > 0 ? `${main.costDev > 0 ? '+' : ''}${main.costDev.toFixed(1)}%` : '—';
-    const delayShow = main.hasData && main.completed > 0 ? `${main.avgDelay}天` : '—';
-    const onTimeShow = main.hasData && main.onTimeRate >= 0 ? `${main.onTimeRate}%` : '—';
-
+    const main = monthlyCumKpi[0]; // 截止到最近完整月（已完结财年=Jun；当前财年无完整月时 hasData=false）
     return [
-      { label: '项目总数', value: fmtVal(main.tAmt, main.total), color: COLORS.primary, icon: '📊' },
-      { label: '进行中项目', value: fmtVal(main.aAmt, main.active), color: COLORS.primary, icon: '🚧' },
-      { label: '已完成项目', value: fmtVal(main.cAmt, main.completed), color: COLORS.success, icon: '✅' },
-      { label: '延期项目', value: fmtVal(main.dAmt, main.delayed), color: main.hasData && main.delayed > 0 ? COLORS.danger : COLORS.success, icon: '🚨' },
-      { label: '平均延期天数', value: delayShow, color: main.hasData && main.avgDelay > 0 ? COLORS.danger : COLORS.success, icon: '📅' },
-      { label: '节点按时率', value: onTimeShow, color: main.hasData && main.onTimeRate >= 0 ? (main.onTimeRate >= 80 ? COLORS.success : main.onTimeRate >= 50 ? COLORS.warning : COLORS.danger) : COLORS.textLight, icon: '🎯' },
-      { label: '成本偏差率', value: costShow, color: main.hasData && main.costDev <= 0 ? COLORS.success : COLORS.danger, icon: '💰' },
+      { label: '项目总数', value: cumVal(main, 0), color: COLORS.primary, icon: '📊' },
+      { label: '进行中项目', value: cumVal(main, 1), color: COLORS.primary, icon: '🚧' },
+      { label: '已完成项目', value: cumVal(main, 2), color: COLORS.success, icon: '✅' },
+      { label: '延期项目', value: cumVal(main, 3), color: main.hasData && main.delayed > 0 ? COLORS.danger : COLORS.success, icon: '🚨' },
+      { label: '平均延期天数', value: cumVal(main, 4), color: main.hasData && main.avgDelay > 0 ? COLORS.danger : COLORS.success, icon: '📅' },
+      { label: '节点按时率', value: cumVal(main, 5), color: main.hasData && main.onTimeRate >= 0 ? (main.onTimeRate >= 80 ? COLORS.success : main.onTimeRate >= 50 ? COLORS.warning : COLORS.danger) : COLORS.textLight, icon: '🎯' },
+      { label: '成本偏差率', value: cumVal(main, 6), color: main.hasData && main.costDev <= 0 ? COLORS.success : COLORS.danger, icon: '💰' },
     ];
   }, [monthlyCumKpi]);
 
@@ -388,7 +402,8 @@ const DeliveryAnalysis: React.FC = () => {
     return completed.map(p => {
       const lc = lifecycles.get(p.id); if (!lc) return null;
       // null items 在末尾 filter(Boolean) 剔除
-      const projDuration = lc.end.getTime() - lc.start.getTime();
+      // ⚠️ 防止同日创建/完成的项目 duration=0 导致并行度除零得 Infinity
+      const projDuration = Math.max(1, lc.end.getTime() - lc.start.getTime());
 
       const projDelay = calcProjDelay(p);
       const exTax = deliveryExTax(p, deliveryQuoteInfo);
@@ -436,15 +451,13 @@ const DeliveryAnalysis: React.FC = () => {
       </div>
 
 
-      <OverviewCards items={overviewItems.map((item, i) => {
-            const mk = monthlyCumKpi;
-            const val = (m: MonthlyCum, idx: number) => {
-              if (!m.hasData) return '—';
-              const arr = [`${fmtK(m.tAmt)} / ${m.total}`, `${fmtK(m.aAmt)} / ${m.active}`, `${fmtK(m.cAmt)} / ${m.completed}`, `${fmtK(m.dAmt)} / ${m.delayed}`, m.hasData && m.completed > 0 ? m.avgDelay + '天' : '—', m.onTimeRate >= 0 ? m.onTimeRate + '%' : '—', m.costDevDenom > 0 ? (m.costDev > 0 ? '+' : '') + m.costDev.toFixed(1) + '%' : '—'];
-              return arr[idx] || '—';
-            };
-            return { ...item, prevValues: [{ value: val(mk[1], i), color: item.color }, { value: val(mk[2], i), color: item.color }] };
-          })} valueFontSize={26} />
+      <OverviewCards items={overviewItems.map((item, i) => ({
+            ...item,
+            prevValues: [
+              { value: cumVal(monthlyCumKpi[1], i), color: item.color },
+              { value: cumVal(monthlyCumKpi[2], i), color: item.color },
+            ],
+          }))} valueFontSize={26} />
 
           <div style={{ display: 'flex', gap: 16, marginTop: 16, alignItems: 'stretch' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16, flex: '0 0 calc(3 / 7 * (100% - 96px) + 32px)' }}>
