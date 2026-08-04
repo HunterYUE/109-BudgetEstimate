@@ -430,13 +430,22 @@ const Dashboard: React.FC = () => {
     // 利润概览（与销售分析月度订单/月度销售同源，共享 projectMonthlySales）：
     //   概算 = 每月转交付项目的订单利润（报价概算利润未税）→ 观察近3月订单利润
     //   实际 = 每月完成交付项目的销售利润（未税 − 实际成本）→ 观察近3月销售利润
+    // ⚠️ 近 3 个月窗口（含边界）预过滤交付项目，避免对每个月份窗口全量遍历（O(M×N)）
+    const m3 = [3, 2, 1].map(mi => { const d = monthsAgoStart(now, mi); return { start: new Date(d.getFullYear(), d.getMonth(), 1), end: monthEndOf(d.getFullYear(), d.getMonth()) }; });
+    // m3[0]=3个月前(最早月)，m3[2]=上个月(最晚月)；窗口取最早起点~最晚终点
+    const winLo = m3[0].start, winHi = m3[2].end;
+    const profitDels = deliveries.filter(p => {
+      const created = new Date(p.createdAt);
+      const done = getProjectDoneDate(p);
+      return (created >= winLo && created <= winHi) || (done != null && done >= winLo && done <= winHi);
+    });
     for (const prefix of ['概算', '实际'] as const) {
       for (let mi = 3; mi >= 1; mi--) {
         const d = monthsAgoStart(now, mi);
         const monthStart = new Date(d.getFullYear(), d.getMonth(), 1);
         const monthEnd = monthEndOf(d.getFullYear(), d.getMonth());
         let totalAmt = 0, totalProfit = 0, incomplete = false;
-        deliveries.forEach(p => {
+        profitDels.forEach(p => {
           const q = quotations.find(q => q.id === p.quotationId);
           const pt = projectMonthlySales(p, monthStart, monthEnd, q?.taxRate, q?.gp3Amount);
           if (prefix === '概算') {

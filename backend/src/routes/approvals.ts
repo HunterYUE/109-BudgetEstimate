@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { query, getClient } from '../db/index.js';
 import { AppError } from '../middleware/index.js';
-import { requireRole } from '../middleware/auth.js';
+import { requirePermission, hasPermission } from '../middleware/auth.js';
 import { crudRoutes, logAudit, objKeysToSnake } from './helpers.js';
 
 const fields = [
@@ -130,7 +130,7 @@ router.post('/:id/records', async (req, res, next) => {
     if (!['approved', 'rejected'].includes(action)) throw new AppError(400, `无效操作: ${action}`);
     const ar = (await query('SELECT * FROM approval_requests WHERE id = $1', [id])).rows[0];
     if (!ar) throw new AppError(404, '审批请求未找到');
-    if (!['director', 'admin'].includes(req.user?.role || '')) throw new AppError(403, '仅部门总监和管理员可审批');
+    if (!hasPermission(req.user?.permissions, '审批管理', '全部查看权限')) throw new AppError(403, '无审批权限');
     client = await getClient();
     await client.query('BEGIN');
     const record = (await client.query('INSERT INTO approval_records (approval_request_id, reviewer, action, comment) VALUES ($1,$2,$3,$4) RETURNING *', [id, reviewer, action, comment || ''])).rows[0];
@@ -159,7 +159,7 @@ router.post('/:id/records', async (req, res, next) => {
       }
     }
     await client.query('COMMIT');
-    logAudit(req, action === 'approved' ? 'å®¡æ¹éè¿' : 'å®¡æ¹é©³å', 'approval', 'å®¡æ¹ ID:' + id + ' ç±»å:' + (ar.approval_type || '') + ' ' + (action === 'approved' ? 'å·²éè¿' : 'å·²é©³å'));
+    logAudit(req, action === 'approved' ? '审批通过' : '审批驳回', 'approval', '审批 ID:' + id + ' 类型:' + (ar.approval_type || '') + ' ' + (action === 'approved' ? '已通过' : '已驳回'));
     res.status(201).json(record);
   } catch (err) {
     if (client) await client.query('ROLLBACK').catch(() => {});
@@ -172,7 +172,7 @@ router.post('/:id/records', async (req, res, next) => {
 // 标准 CRUD 更新/删除需角色验证
 router.use((req, res, next) => {
   if (req.method === 'PUT' || req.method === 'DELETE') {
-    return requireRole('director', 'admin')(req, res, next);
+    return requirePermission('审批管理', '全部查看权限')(req, res, next);
   }
   next();
 });

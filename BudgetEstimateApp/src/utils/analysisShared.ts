@@ -135,7 +135,7 @@ export const getProjectDoneDate = (p: DeliveryProject): Date | null => {
    ============================================================ */
 /** 报价概算利润转未税：gp3_amount（含税）÷ (1+税率)，缺省 13%；无概算利润为 0，负值（亏损报价）如实保留 */
 export const quoteProfitExTax = (gp3Amt: number | undefined, taxRate?: number): number =>
-  gp3Amt ? exAmount(gp3Amt, taxRate) : 0;
+  gp3Amt != null ? exAmount(gp3Amt, taxRate) : 0;
 
 /**
  * 交付实际销售利润（未税）：未税金额 − 实际总成本。

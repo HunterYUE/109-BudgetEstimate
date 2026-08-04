@@ -318,46 +318,24 @@ const TagManagement: React.FC = () => {
 
   const moveNode = (id: string, direction: -1 | 1, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    let movedId: string | undefined;
-    let swappedId: string | undefined;
-    setTree(prev => {
-      const t = cloneTree(prev);
-      const path = findPath(t, id);
-      if (!path) return prev;
-      const idx = path[path.length - 1];
-      const newIdx = idx + direction;
-      if (newIdx < 0) return prev;
-      if (path.length === 1) {
-        if (newIdx >= t.length) return prev;
-        swappedId = t[newIdx].id;
-        [t[idx], t[newIdx]] = [t[newIdx], t[idx]];
-      } else {
-        const parentPath = path.slice(0, -1);
-        const parent = getNodeByPath(t, parentPath);
-        if (!parent?.children || newIdx >= parent.children.length) return prev;
-        swappedId = parent.children[newIdx].id;
-        [parent.children[idx], parent.children[newIdx]] = [parent.children[newIdx], parent.children[idx]];
+    // 从当前 state 直接计算（事件处理器中 state 即最新），不依赖函数式更新的延迟执行
+    const t = cloneTree(tree);
+    const path = findPath(t, id);
+    if (!path) return;
+    const idx = path[path.length - 1];
+    const newIdx = idx + direction;
+    if (newIdx < 0) return;
+    const siblings = path.length === 1 ? t : (getNodeByPath(t, path.slice(0, -1))?.children || []);
+    if (newIdx >= siblings.length) return;
+    // 交换相邻两个节点
+    [siblings[idx], siblings[newIdx]] = [siblings[newIdx], siblings[idx]];
+    setTree(t);
+    // ⚠️ 对受影响兄弟重新分配连续整数 sortOrder（避免 Date.now() 污染整数排序字段）；仅持久化变化的节点
+    siblings.forEach((sib, i) => {
+      if ((sib as { sortOrder?: number }).sortOrder !== i) {
+        tagService.update(sib.id, { sortOrder: i });
       }
-      movedId = id;
-      return t;
     });
-    // 持久化排序（更新两个被交换节点的 sort_order）
-    if (movedId && swappedId) {
-      const now = Date.now();
-      if (direction > 0) {
-        // 下移：movedId 获得更大 sort_order（排在 swappedId 之后）
-        tagService.update(movedId, { sortOrder: now }).then(
-          () => tagService.update(swappedId!, { sortOrder: now - 1 }),
-          () => {}
-        ).catch(() => {});
-      } else {
-        // 上移：movedId 获得更小 sort_order（排在 swappedId 之前）
-        tagService.update(movedId, { sortOrder: now - 1 }).then(
-          () => tagService.update(swappedId!, { sortOrder: now }),
-          () => {}
-        ).catch(() => {});
-      }
-    }
   };
 
   // ── 渲染表格 ──

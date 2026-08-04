@@ -253,6 +253,7 @@ const ProjectLayoutUpload: React.FC<{ value: string; onChange: (v: string) => vo
       dragRef.current.active = false;
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
+      dragRefCleanup.current = null; // 本次操作结束，清空共享清理引用（避免残留闭包被后续操作覆盖）
     };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
@@ -296,7 +297,11 @@ const ProjectLayoutUpload: React.FC<{ value: string; onChange: (v: string) => vo
         h: Math.max(300, start.h + (ev.clientY - start.y)),
       });
     };
-    const onUp = () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      dragRefCleanup.current = null; // 本次缩放结束，清空共享清理引用
+    };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
     // 存储清理函数以便组件卸载时移除残留监听器

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { query, getClient } from '../db/index.js';
 import { AppError } from '../middleware/index.js';
+import { hasPermission } from '../middleware/auth.js';
 import { crudRoutes, logAudit, objKeysToSnake } from './helpers.js';
 
 const fields = [
@@ -190,7 +191,7 @@ router.put('/:id', async (req, res, next) => {
     // 如果只改 promote_locked（锁定/解锁），跳过检查
     const isOnlyLockToggle = Object.keys(body).length === 1 && 'promote_locked' in body;
     if (isOnlyLockToggle) {
-      if (!['director', 'admin'].includes(req.user?.role || '')) {
+      if (!hasPermission(req.user?.permissions, '全部查看权限')) {
         throw new AppError(403, '仅部门总监和管理员可锁定/解锁机会');
       }
     } else {

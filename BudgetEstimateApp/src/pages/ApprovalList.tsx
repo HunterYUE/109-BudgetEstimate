@@ -286,11 +286,11 @@ const ApprovalList: React.FC = () => {
                     <span><strong style={{ color: COLORS.primary }}>&yen;{formatMoney(req.discountedPrice || 0)}</strong>
                       {req.discountRate !== undefined ? (
                         <span style={{ color: COLORS.textLight, marginLeft: 2 }}>(
-                          {(() => { const v = (-req.discountRate * 100); return (v > 0 ? '+' : '') + v.toFixed(1); })()}%)
+                          {(() => { const v = -(req.discountRate || 0) * 100; const shown = Math.abs(v) < 0.05 ? 0 : v; return (shown > 0 ? '+' : '') + shown.toFixed(1); })()}%)
                         </span>
                       ) : null}
                     </span>
-                    <span><strong style={{ color: COLORS.primary }}>&yen;{formatMoney(req.gp3Amount || 0)}</strong> <span style={{ color: COLORS.textLight }}>(<Gauge value={req.gp3 * 100} />%)</span></span>
+                    <span><strong style={{ color: COLORS.primary }}>&yen;{formatMoney(req.gp3Amount || 0)}</strong> <span style={{ color: COLORS.textLight }}>(<Gauge value={Math.round((req.gp3 || 0) * 10000) / 100} />%)</span></span>
                   </div>
                   <div style={{ marginTop: 4, fontSize: 12, color: COLORS.textLight }}>
                     {req.submitter}@{formatBeijing(req.submitTime)}

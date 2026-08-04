@@ -135,7 +135,7 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
     const newItems = [...items];
     const item = { ...newItems[index], ...partial };
 
-    // 确保工时费率有值（历史数据可能为 0）
+    // 确保工时费率有值：所有人工服务必须有时费率，0 表示缺失（历史数据可能为 0），统一补默认/目录费率
     const effectiveDesignRate = item.designHourRate || catalog.find((c: Component) => c.code === 'SV-DESIGN-000000-V1.0')?.unitCost || 175;
     const effectiveAssemblyRate = item.assemblyHourRate || catalog.find((c: Component) => c.code === 'SV-INSASS-000000-V1.0')?.unitCost || 85;
     if (!item.designHourRate) item.designHourRate = effectiveDesignRate;

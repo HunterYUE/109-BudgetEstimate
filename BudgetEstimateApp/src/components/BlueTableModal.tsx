@@ -364,14 +364,14 @@ const BlueTableModal: React.FC<BlueTableModalProps> = ({ open, opportunity, onSa
                 flex: 1, padding: '7px 12px', background: '#fff', display: 'flex', gap: 4, alignItems: 'center',
               }}>
                 <span style={{ fontSize: 13, fontWeight: 600, color: COLORS.textSecondary }}>¥</span>
-                <input value={bt.budgetAmount ? Math.round(bt.budgetAmount).toLocaleString() : ''}
+                <input value={bt.budgetAmount != null ? Math.round(bt.budgetAmount).toLocaleString() : ''}
                   onChange={e => {
                     const v = e.target.value.replace(/[^0-9]/g, '');
                     setBt(prev => ({ ...prev, budgetAmount: v ? parseInt(v, 10) : undefined }));
                   }}
                   onBlur={e => {
                     const v = bt.budgetAmount;
-                    if (v) e.target.value = Math.round(v).toLocaleString();
+                    if (v != null) e.target.value = Math.round(v).toLocaleString();
                   }}
                   placeholder="0"
                   style={{

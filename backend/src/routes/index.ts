@@ -1,5 +1,5 @@
-import { Router } from 'express';
-import { requireAuth, requireRole } from '../middleware/auth.js';
+import { Router, type Request, type Response, type NextFunction } from 'express';
+import { requireAuth, requirePermission } from '../middleware/auth.js';
 import auth from './auth.js';
 import users from './users.js';
 import components from './components.js';
@@ -35,10 +35,19 @@ router.use('/projects', requireAuth, projects);
 router.use('/opportunities', requireAuth, opportunities);
 router.use('/quotations', requireAuth, quotations);
 router.use('/approvals', requireAuth, approvals);
-router.use('/deliveries', requireAuth, requireRole('manager', 'admin', 'director'), deliveries);
+// ── 方案A：后端鉴权改用 permissions 数组（与前端 permissions.ts 职务权限模型对齐）──
+// 读改写分离：GET 读取开放（仪表盘/销售分析等跨页读取共享数据），非 GET 需指定权限
+const writeGuard = (perms: string[]) => (req: Request, res: Response, next: NextFunction) => {
+  if (req.method !== 'GET') return requirePermission(...perms)(req, res, next);
+  next();
+};
+// 交付写操作需 交付管理 或 销售机会管理（转交付创建/初始化节点）
+router.use('/deliveries', requireAuth, writeGuard(['交付管理', '销售机会管理', '全部查看权限']), deliveries);
 router.use('/clients', requireAuth, clients);
-router.use('/tags', requireAuth, requireRole('manager', 'admin', 'director'), tags);
-router.use('/audit-logs', requireAuth, requireRole('director', 'admin'), auditLogs);
+// 标签写操作需 新建标签（读取开放给物料打标）
+router.use('/tags', requireAuth, writeGuard(['新建标签', '全部查看权限']), tags);
+// 审计日志：与前端 /settings 同口径（用户管理/系统配置）
+router.use('/audit-logs', requireAuth, requirePermission('用户管理', '系统配置', '全部查看权限'), auditLogs);
 
 // 用户设置
 router.use('/settings', requireAuth, settings);

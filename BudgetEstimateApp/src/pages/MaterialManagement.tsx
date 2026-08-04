@@ -7,7 +7,7 @@ import {
 } from '@ant-design/icons';
 import { componentService } from '../services/componentService';
 import { tagService } from '../services/tagService';
-import { collectTagPaths, collectDescendantIds } from '../utils/tagHelpers';
+import { collectTagPaths, collectDescendantIds, findPath } from '../utils/tagHelpers';
 import { formatMoney } from '../utils/calculations';
 import type { Component, ItemType, SourcingType, ReviewStatus, TagNode } from '../types';
 import { COLORS, LABEL_CELL_STYLE } from '../styles/colors';
@@ -29,6 +29,65 @@ function deepClone(c: Component): Component {
 
 function makeId(): string {
   return 'mat-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6);
+}
+
+/** 编辑 payload：editForm 有值用 editForm，否则保留 target（`??` 保留合法 0） */
+function buildEditFields(form: Partial<Component>, target: Component): Partial<Component> {
+  return {
+    code: form.code ?? target.code,
+    nameCn: form.nameCn ?? target.nameCn,
+    category: form.category ?? target.category,
+    brand: form.brand ?? target.brand,
+    model: form.model ?? target.model,
+    specification: form.specification ?? target.specification,
+    note: form.note ?? target.note,
+    supplier: form.supplier ?? target.supplier,
+    unit: form.unit ?? target.unit,
+    sourcingType: form.sourcingType ?? target.sourcingType,
+    unitCost: form.unitCost ?? target.unitCost,
+    designHours: form.designHours ?? target.designHours,
+    assemblyHours: form.assemblyHours ?? target.assemblyHours,
+    hasWarranty: form.hasWarranty ?? target.hasWarranty,
+    tags: form.tags ?? target.tags,
+  };
+}
+
+/** 新建 payload（默认值兜底） */
+function buildCreateFields(form: Partial<Component>, parsedVersion: string, now: string): Partial<Component> {
+  return {
+    code: form.code || '',
+    nameCn: form.nameCn || '',
+    category: form.category || 'COMPLETE_SET',
+    brand: form.brand || '',
+    model: form.model || '',
+    specification: form.specification || '',
+    note: '[新建]',
+    supplier: form.supplier || '',
+    unit: form.unit || '套',
+    sourcingType: form.sourcingType || 'SELF_MANUFACTURED',
+    unitCost: form.unitCost || 0,
+    designHours: form.designHours || 0,
+    assemblyHours: form.assemblyHours || 0,
+    hasWarranty: form.hasWarranty ?? true,
+    reviewStatus: 'pending',
+    tags: form.tags || [],
+    version: parsedVersion || 'V0.1',
+    createdAt: now,
+    updatedAt: now,
+    changeLog: [{ version: parsedVersion || 'V0.1', date: now, note: '新建' }],
+  };
+}
+
+/** 编码变更时计算新版本号与变更日志条目（编辑场景） */
+function versionAndLog(form: Partial<Component>, currentCode: string, currentVersion: string, now: string) {
+  const verChanged = form.code && form.code !== currentCode;
+  const newVersion = verChanged
+    ? (parseVersionFromCode(form.code || '')?.version || currentVersion)
+    : currentVersion;
+  const logEntry = verChanged
+    ? { version: newVersion, date: now, note: '编码变更' }
+    : { version: currentVersion, date: now, note: '信息更新' };
+  return { newVersion, logEntry };
 }
 
 function parseVersionFromCode(code: string): { version: string; isTemp: boolean } | null {
@@ -128,14 +187,9 @@ const MaterialManagement: React.FC = () => {
       let bestId: string | null = null;
       let bestDepth = -1;
       for (const id of t) {
-        let depth = 1;
-        let cur = tagTree;
-        for (;;) {
-          const found = cur.find(n => n.id === id);
-          if (!found || !found.children) break;
-          depth++;
-          cur = found.children;
-        }
+        // ⚠️ 用 findPath 计算真实深度（原实现只在直接子级查找，≥2 层标签恒被当 depth=1，排序偏向根标签）
+        const path = findPath(tagTree, id);
+        const depth = path ? path.length : 0;
         if (depth > bestDepth) { bestDepth = depth; bestId = id; }
       }
       if (bestId) return idToLabel.get(bestId) || '';
@@ -214,94 +268,32 @@ const MaterialManagement: React.FC = () => {
       if (editingId) {
         const target = materials.find(c => c.id === editingId);
         if (!target) return;
-        const verChanged = editForm.code && editForm.code !== target.code;
-        const newVersion = verChanged
-          ? (parseVersionFromCode(editForm.code || '')?.version || target.version)
-          : target.version;
-        const logEntry = verChanged
-          ? { version: newVersion, date: now, note: '编码变更' }
-          : { version: target.version, date: now, note: '信息更新' };
+        const { newVersion, logEntry } = versionAndLog(editForm, target.code, target.version, now);
         await componentService.update(editingId, {
-          code: editForm.code ?? target.code,
-          nameCn: editForm.nameCn ?? target.nameCn,
-          category: (editForm.category as ItemType) ?? target.category,
-          brand: editForm.brand ?? target.brand,
-          model: editForm.model ?? target.model,
-          specification: editForm.specification ?? target.specification,
-          note: editForm.note ?? target.note,
-          supplier: editForm.supplier ?? target.supplier,
-          unit: editForm.unit ?? target.unit,
-          sourcingType: (editForm.sourcingType as SourcingType) ?? target.sourcingType,
-          unitCost: editForm.unitCost ?? target.unitCost,
-          designHours: editForm.designHours ?? target.designHours,
-          assemblyHours: editForm.assemblyHours ?? target.assemblyHours,
-          hasWarranty: editForm.hasWarranty ?? target.hasWarranty,
+          ...buildEditFields(editForm, target),
           version: newVersion,
-          tags: editForm.tags ?? target.tags,
           updatedAt: now,
           changeLog: [...target.changeLog, logEntry],
           reviewStatus: 'pending',
-        } as Partial<Component>);
+        });
         messageApi.success('物料已更新，需重新审核');
       } else {
         const parsed = parseVersionFromCode(editForm.code || '');
-        await componentService.create({
-          code: editForm.code || '',
-          nameCn: editForm.nameCn || '',
-          category: (editForm.category as ItemType) || 'COMPLETE_SET',
-          brand: editForm.brand || '',
-          model: editForm.model || '',
-          specification: editForm.specification || '',
-          note: '[新建]',
-          supplier: editForm.supplier || '',
-          unit: editForm.unit || '套',
-          sourcingType: (editForm.sourcingType as SourcingType) || 'SELF_MANUFACTURED',
-          unitCost: editForm.unitCost || 0,
-          designHours: editForm.designHours || 0,
-          assemblyHours: editForm.assemblyHours || 0,
-          hasWarranty: editForm.hasWarranty ?? true,
-          reviewStatus: 'pending',
-          tags: editForm.tags || [],
-          version: parsed?.version || 'V0.1',
-          createdAt: now,
-          updatedAt: now,
-          changeLog: [{ version: parsed?.version || 'V0.1', date: now, note: '新建' }],
-        } as Partial<Component>);
+        await componentService.create(buildCreateFields(editForm, parsed?.version || 'V0.1', now));
         messageApi.success('物料已创建');
       }
       await loadMaterials();
     } catch (err) {
       console.error('[Material] 保存失败:', err);
-      // API 失败，回退到本地更新
+      // API 失败，回退到本地更新（仅本地展示，刷新后丢失）
       if (editingId) {
         setMaterials(prev => prev.map(c => {
           if (c.id !== editingId) return c;
-          const verChanged = editForm.code && editForm.code !== c.code;
-          const newVersion = verChanged
-            ? (parseVersionFromCode(editForm.code || '')?.version || c.version)
-            : c.version;
-          const logEntry = verChanged
-            ? { version: newVersion, date: now, note: '编码变更' }
-            : { version: c.version, date: now, note: '信息更新' };
-
+          const { newVersion, logEntry } = versionAndLog(editForm, c.code, c.version, now);
           return {
             ...c,
-            code: editForm.code ?? c.code,
-            nameCn: editForm.nameCn ?? c.nameCn,
-            category: (editForm.category as ItemType) ?? c.category,
-            brand: editForm.brand ?? c.brand,
-            model: editForm.model ?? c.model,
-            specification: editForm.specification ?? c.specification,
-            note: editForm.note ?? c.note,
-            supplier: editForm.supplier ?? c.supplier,
-            unit: editForm.unit ?? c.unit,
-            sourcingType: (editForm.sourcingType as SourcingType) ?? c.sourcingType,
-            unitCost: editForm.unitCost ?? c.unitCost,
-            designHours: editForm.designHours ?? c.designHours,
-            assemblyHours: editForm.assemblyHours ?? c.assemblyHours,
-            hasWarranty: editForm.hasWarranty ?? c.hasWarranty,
+            ...buildEditFields(editForm, c),
             version: newVersion,
-            tags: editForm.tags ?? c.tags,
             updatedAt: now,
             changeLog: [...c.changeLog, logEntry],
             reviewStatus: 'pending',
@@ -310,29 +302,7 @@ const MaterialManagement: React.FC = () => {
         messageApi.warning('保存失败，已保存到本地');
       } else {
         const parsed = parseVersionFromCode(editForm.code || '');
-        const newItem: Component = {
-          id: makeId(),
-          code: editForm.code || '',
-          nameCn: editForm.nameCn || '',
-          category: (editForm.category as ItemType) || 'COMPLETE_SET',
-          brand: editForm.brand || '',
-          model: editForm.model || '',
-          specification: editForm.specification || '',
-          note: '[新建]',
-          supplier: editForm.supplier || '',
-          unit: editForm.unit || '套',
-          sourcingType: (editForm.sourcingType as SourcingType) || 'SELF_MANUFACTURED',
-          unitCost: editForm.unitCost || 0,
-          designHours: editForm.designHours || 0,
-          assemblyHours: editForm.assemblyHours || 0,
-          hasWarranty: editForm.hasWarranty ?? true,
-          reviewStatus: 'pending',
-          tags: editForm.tags || [],
-          version: parsed?.version || 'V0.1',
-          createdAt: now,
-          updatedAt: now,
-          changeLog: [{ version: parsed?.version || 'V0.1', date: now, note: '新建' }],
-        };
+        const newItem: Component = { id: makeId(), ...buildCreateFields(editForm, parsed?.version || 'V0.1', now) } as Component;
         setMaterials(prev => [...prev, newItem]);
         messageApi.warning('保存失败，已保存到本地');
       }
@@ -375,6 +345,7 @@ const MaterialManagement: React.FC = () => {
   // ── 审核操作 ──
 
   const handleApprove = async (item: Component) => {
+    if (item.reviewStatus !== 'pending') { messageApi.warning('仅待审核状态的物料可审核'); return; }
     try {
       if (item.note?.startsWith('[删除]')) {
         await componentService.delete(item.id);
@@ -398,6 +369,7 @@ const MaterialManagement: React.FC = () => {
   };
 
   const handleReject = async (item: Component) => {
+    if (item.reviewStatus !== 'pending') { messageApi.warning('仅待审核状态的物料可审核'); return; }
     try {
       if (item.note?.startsWith('[删除]')) {
         await componentService.update(item.id, { reviewStatus: 'approved' as ReviewStatus, note: '' } as Partial<Component>);

@@ -431,7 +431,7 @@ const SalesOpportunityList: React.FC = () => {
                 taxRate = ver.taxRate || 0.13;
                 amount = ver.discountedPrice || amount;
                 gp3 = ver.gp3ProfitRate || 0;
-                // ⚠️ 优先读存储的 gp3Amount，为 0 时从汇总值回退计算（兼容旧数据）
+                // ⚠️ 优先读存储的 gp3Amount，为 0 时从汇总值回退计算（兼容旧数据；本系统 0 表示缺失而非真实零值）
                 gp3Amount = ver.gp3Amount || Math.round((ver.discountedPrice || 0) - Math.round((ver.totalCost || 0) * (1 + (ver.taxRate || 0.13))));
                 profitRate = Math.round((ver.gp3ProfitRate || 0) * 10000) / 100;
               } else {
@@ -553,17 +553,14 @@ const SalesOpportunityList: React.FC = () => {
     } else {
 
       // 从后端API获取下一个销售编号（避免本地计数不准确导致重复）
-      let salesNo;
+      let salesNo: string;
       try {
         const resp = await api.get<{ salesNo: string }>('/opportunities/next-sales-no');
         salesNo = resp.salesNo;
       } catch {
-        // fallback: 本地计数
-        const d = new Date();
-        const y = d.getFullYear();
-        const m = String(d.getMonth() + 1).padStart(2, '0');
-        const count = opportunities.filter(o => o.salesNo.startsWith('A' + y + '-' + m)).length;
-        salesNo = 'A' + y + '-' + m + '-' + String(count + 1).padStart(3, '0') + '-S';
+        // ⚠️ 不本地计数兜底：本地计数与服务端 MAX 不一致，并发/未刷新时会产生重复销售编号（撞 UNIQUE 约束），直接提示重试
+        msg.error('获取销售编号失败，请重试');
+        return;
       }
 
       const createdStage = formData.stage || '信息';
@@ -598,7 +595,7 @@ const SalesOpportunityList: React.FC = () => {
 
     setModalOpen(false);
 
-  }, [editing, formData, opportunities, msg, enterpriseClients, loadOpportunities]);
+  }, [editing, formData, msg, enterpriseClients, loadOpportunities]);
 
 
 

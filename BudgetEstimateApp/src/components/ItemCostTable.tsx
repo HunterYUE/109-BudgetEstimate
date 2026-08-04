@@ -137,7 +137,8 @@ const rows: FlatRow[] = useMemo(() => {
       if (g.groupType === 'EQUIPMENT' || g.groupType === 'INTEGRATION') {
         for (const item of g.items) {
           if (item.designHours) {
-            totalDesignHours += item.designHours * (item.qtyTotal || 1);
+            // ⚠️ 设计工时=整行总工时（设计只发生一次），不乘数量；装配工时=单件工时，乘数量（见下）
+            totalDesignHours += item.designHours;
             totalDesignCost += Math.round(item.designHours * (item.designHourRate || (laborRates?.design ?? DEFAULT_DESIGN_HOURLY_RATE)));
           }
           if (item.assemblyHours) {

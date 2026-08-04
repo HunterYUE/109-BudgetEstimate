@@ -137,13 +137,14 @@ export function calcBlueTableWinRate(blueTable: BlueTable): CalcIntermediate {
   let weightedSupport = 0;
 
   for (const role of roles) {
-    const w = role.influenceWeight;
-    const normSupport = (role.support + 5) / 10; // -5→0, 0→0.5, +5→1
+    // ⚠️ Number(?? 0) 防御畸形数据：字段缺失/NaN 时不再污染加权和
+    const w = Number(role.influenceWeight ?? 0);
+    const normSupport = (Number(role.support ?? 0) + 5) / 10; // -5→0, 0→0.5, +5→1
     totalWeight += w;
     weightedSupport += w * normSupport;
   }
 
-  if (totalWeight === 0) {
+  if (!(totalWeight > 0)) { // 兜底：totalWeight 为 0 或 NaN 时按无有效角色处理
     result.finalRate = 0;
     return result;
   }

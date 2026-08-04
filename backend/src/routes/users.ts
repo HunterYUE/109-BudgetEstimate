@@ -1,15 +1,15 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { query } from '../db/index.js';
-import { requireAuth, requireRole } from '../middleware/auth.js';
+import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { AppError } from '../middleware/index.js';
 import { logAudit, objKeysToSnake } from './helpers.js';
 
 const router = Router();
 
-// 所有用户管理接口需要登录 + director/admin 角色
+// 所有用户管理接口需要登录 + 用户管理/系统配置权限（与前端 /settings 同口径）
 router.use(requireAuth);
-router.use(requireRole('director', 'admin'));
+router.use(requirePermission('用户管理', '系统配置', '全部查看权限'));
 
 const USER_FIELDS = 'id, email, display_name, title, phone, role, is_active, created_at, permissions';
 

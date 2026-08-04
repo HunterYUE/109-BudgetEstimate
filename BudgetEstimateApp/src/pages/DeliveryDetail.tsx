@@ -36,6 +36,26 @@ const ATTACHMENT_TYPES = [
   { key: 'contract' as const, label: '商务合同' },
 ];
 
+/** 由一次 pending 日期变更构建审计历史条目（无实际变更返回 null） */
+function buildChangeEntry(
+  change: { oldStart: string; newStartVal: string; oldEnd: string; newEndVal: string },
+  modifier: string,
+): NodeChangeEntry | null {
+  const startChanged = change.oldStart !== change.newStartVal;
+  const endChanged = change.oldEnd !== change.newEndVal;
+  if (!startChanged && !endChanged) return null;
+  const oldDesc = (startChanged ? '开始: ' + change.oldStart : '') +
+    (startChanged && endChanged ? ', ' : '') +
+    (endChanged ? '结束: ' + change.oldEnd : '');
+  const newDesc = (startChanged ? '开始: ' + change.newStartVal : '') +
+    (startChanged && endChanged ? ', ' : '') +
+    (endChanged ? '结束: ' + change.newEndVal : '');
+  const now = new Date();
+  const beijingDate = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' });
+  const beijingTs = new Date(now.getTime() + 8 * 3600 * 1000).toISOString().replace('T', ' ').slice(0, 19);
+  return { id: crypto.randomUUID(), field: 'plannedDate', oldValue: oldDesc, newValue: newDesc, changedAt: beijingDate, modifier, changedAtFull: beijingTs };
+}
+
 const DeliveryDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -111,7 +131,7 @@ const DeliveryDetail: React.FC = () => {
         const designRate = designComps?.[0]?.unitCost || DEFAULT_DESIGN_HOURLY_RATE;
         const assyRate = assyComps?.[0]?.unitCost || DEFAULT_ASSEMBLY_HOURLY_RATE;
         setLaborRates({ design: Number(designRate), assembly: Number(assyRate) });
-      }).catch(() => {/* empty */});
+      }).catch(err => console.warn('[DeliveryDetail] 工时费率查询失败，使用默认费率', (err as Error).message));
     }).catch(() => {/* empty */}).finally(() => setLoading(false));
     return () => { cancelled = true; };
   }, [id]);
@@ -265,7 +285,18 @@ const DeliveryDetail: React.FC = () => {
           existing.newEndVal = date;
         }
       } else {
-        // 新建待刷新增条目
+        // 新分组（距上次编辑 >3 分钟）：先把本节点上一组的变更写入 history，避免被覆盖而丢失审计
+        const prior = pendingDateChangesRef.current.get(nodeId);
+        if (prior) {
+          const entry = buildChangeEntry(prior, modifierName);
+          if (entry) {
+            setProject(prev => prev ? {
+              ...prev,
+              nodes: prev.nodes.map(n => n.id === nodeId ? { ...n, history: [...n.history, entry] } : n),
+            } : prev);
+          }
+        }
+        // 新建待刷新增条目（oldStart/oldEnd 取当前已生效的计划值，即本次编辑前的值）
         pendingDateChangesRef.current.set(nodeId, {
           oldStart: node.plannedStartDate,
           newStartVal: field === 'plannedStartDate' ? date : node.plannedStartDate,
@@ -285,7 +316,7 @@ const DeliveryDetail: React.FC = () => {
         }),
       };
     });
-  }, [project, msg]);
+  }, [project, msg, modifierName]);
 
   const handleNodeCommentsChange = useCallback((nodeId: string, comments: string) => {
     if (!project) return;
@@ -304,39 +335,13 @@ const DeliveryDetail: React.FC = () => {
     if (projectData.planStatus !== 'approved') return projectData;
     const pending = pendingDateChangesRef.current;
     if (pending.size === 0) return projectData;
-    const now = new Date();
-    // 北京时间完整时间戳
-    const beijingOffset = 8 * 60 * 60 * 1000;
-    const beijingTs = new Date(now.getTime() + beijingOffset).toISOString().replace('T', ' ').slice(0, 19);
-    const beijingDate = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' });
-
     const updatedNodes = projectData.nodes.map(n => {
       if (!n.id) return n;
       const change = pending.get(n.id);
       if (!change) return n;
-      // 检查是否有实际变更（开始或结束）
-      const startChanged = change.oldStart !== change.newStartVal;
-      const endChanged = change.oldEnd !== change.newEndVal;
-      if (!startChanged && !endChanged) {
-        pending.delete(n.id);
-        return n;
-      }
-      const oldDesc = (startChanged ? '开始: ' + change.oldStart : '') +
-        (startChanged && endChanged ? ', ' : '') +
-        (endChanged ? '结束: ' + change.oldEnd : '');
-      const newDesc = (startChanged ? '开始: ' + change.newStartVal : '') +
-        (startChanged && endChanged ? ', ' : '') +
-        (endChanged ? '结束: ' + change.newEndVal : '');
-      const entry: NodeChangeEntry = {
-        id: crypto.randomUUID(),
-        field: 'plannedDate',
-        oldValue: oldDesc,
-        newValue: newDesc,
-        changedAt: beijingDate,
-        modifier: modifierName,
-        changedAtFull: beijingTs,
-      };
+      const entry = buildChangeEntry(change, modifierName);
       pending.delete(n.id);
+      if (!entry) return n;
       return { ...n, history: [...n.history, entry] };
     });
     return { ...projectData, nodes: updatedNodes };
