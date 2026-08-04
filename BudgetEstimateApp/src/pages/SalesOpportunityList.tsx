@@ -15,7 +15,8 @@ import { approvalService } from '../services/approvalService';
 import { quotationService } from '../services/quotationService';
 import { projectService } from '../services/projectService';
 import { REASON_TAXONOMY, formatReasons } from '../reasonTaxonomy';
-import { parseFY, FYSelector } from '../utils/fiscalYear';
+import { parseFY, FYSelector, fiscalYearLabel } from '../utils/fiscalYear';
+import { oppEffectiveEnd } from '../utils/analysisShared';
 import { COLORS } from '../styles/colors';
 import { api, clearCache } from '../utils/api';
 import { calcBlueTableWinRate } from '../utils/blueTableCalculation';
@@ -41,21 +42,28 @@ const statusColors: Record<string, string> = {
 
 };
 
-const getWinRateColumn = (tab: string, _opp: SalesOpportunity | null, setOpp: (o: SalesOpportunity | null) => void, setOpen: (v: boolean) => void) => {
+const getWinRateColumn = (tab: string, setOpp: (o: SalesOpportunity | null) => void, setOpen: (v: boolean) => void) => {
   if (tab === 'info') return [];
+  // ⚠️ 区间连续无缝隙：首段含下界，后续段上开下闭（>lo && <=hi），非整数赢率也有归属
+  const WIN_RATE_RANGES = [
+    { label: '0-25%', lo: 0, hi: 25, loExclusive: false },
+    { label: '26-50%', lo: 25, hi: 50, loExclusive: true },
+    { label: '51-75%', lo: 50, hi: 75, loExclusive: true },
+    { label: '76-100%', lo: 75, hi: 100, loExclusive: true },
+  ] as const;
   return [{
     title: '赢率', dataIndex: 'winRate', width: 30, align: 'center' as const,
-    filters: ['__all__', [0, 25], [26, 50], [51, 75], [76, 100]].map(r => ({
-      text: r === '__all__' ? '全部' : `${r[0]}-${r[1]}%`,
-      // ⚠️ 赢率用区间数组作筛选值，antd FilterValue 类型仅收 Key|boolean，需显式 cast（合法互操作）
+    filters: [{ text: '全部', value: '__all__' }, ...WIN_RATE_RANGES.map(r => ({
+      text: r.label,
+      // ⚠️ 赢率区间对象作筛选值，antd FilterValue 类型仅收 Key|boolean，需显式 cast（合法互操作）
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       value: r as any,
-    })),
+    }))],
     filterSearch: true,
     onFilter: (value: unknown, record: SalesOpportunity) => {
       if (value === '__all__') return true;
-      const range = value as number[];
-      return record.winRate >= range[0] && record.winRate <= range[1];
+      const r = value as { lo: number; hi: number; loExclusive: boolean };
+      return (r.loExclusive ? record.winRate > r.lo : record.winRate >= r.lo) && record.winRate <= r.hi;
     },
     render: (v: number, rec: SalesOpportunity) => {
       const isReadOnly = rec.terminated || rec.promoteLocked;
@@ -78,6 +86,10 @@ const CELL_INPUT: React.CSSProperties = {
   width: '100%', border: 'none', background: 'transparent', outline: 'none',
   fontSize: 13, color: COLORS.textPrimary, padding: '2px 0',
 };
+
+/** 编辑弹窗表格的固定标签列/单元格样式 */
+const labelStyle2: React.CSSProperties = { padding: '7px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle', fontWeight: 600, background: COLORS.bgLight, whiteSpace: 'nowrap', color: COLORS.labelDark };
+const cellStyle2: React.CSSProperties = { padding: '7px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' };
 
 const OPP_STAGES = ['机会', '投标', '议价', '中标'];
 
@@ -121,7 +133,8 @@ const SalesOpportunityList: React.FC = () => {
 
   const loadOpportunities = useCallback(async () => {
     try {
-      const data = await opportunityService.list();
+      // ⚠️ 传 limit:'1000'，避免后端默认 limit=100 导致列表截断（对齐其他页面）
+      const data = await opportunityService.list({ limit: '1000' });
       setOpportunities(data || []);
     } catch { setOpportunities([]); }
   }, []);
@@ -141,22 +154,13 @@ const SalesOpportunityList: React.FC = () => {
     setTabFilter(tab);
     localStorage.setItem('sales_tab_filter', tab);
   }, []);
-  const now = new Date();
-  const y = now.getFullYear(), m = now.getMonth();
-  const y1 = m >= 6 ? y : y - 1;
-  const y2 = m >= 6 ? y + 1 : y;
-  const defaultFy = `FY${String(y1 % 100).padStart(2,'0')}${String(y2 % 100).padStart(2,'0')}`;
-  const [fySelect, setFySelect] = useState(defaultFy);
+  const [fySelect, setFySelect] = useState(() => fiscalYearLabel(new Date()));
   const [showTerminated, setShowTerminated] = useState(false);
 
 
 
-  // Edit modal state
-
+  // ── 新建弹窗 ──
   const [modalOpen, setModalOpen] = useState(false);
-
-  const [editing, setEditing] = useState<SalesOpportunity | null>(null);
-
   const [formData, setFormData] = useState<Partial<SalesOpportunity>>({});
 
 
@@ -165,7 +169,6 @@ const SalesOpportunityList: React.FC = () => {
   const [terminateOpp, setTerminateOpp] = useState<SalesOpportunity | null>(null);
   const [promoteOpp, setPromoteOpp] = useState<{ opp: SalesOpportunity; targetStage: string } | null>(null);
 
-  // ── 阶段晋升弹窗 ──
   // ── 蓝表弹窗 ──
   const [blueTableOpp, setBlueTableOpp] = useState<SalesOpportunity | null>(null);
   const [blueTableOpen, setBlueTableOpen] = useState(false);
@@ -211,12 +214,9 @@ const SalesOpportunityList: React.FC = () => {
 
       if (!showTerminated && o.terminated) return false;
 
-      // 财年过滤：项目中/冻结视为持续到现在，其余以 updatedAt 为终止时间
+      // ⚠️ 财年归属用共享 oppEffectiveEnd（赢→wonAt/输→lostAt，不用 updatedAt），与分析页同口径
       const created = new Date(o.createdAt);
-      const effectiveEnd = (o.status === '过程中' || o.status === '冻结')
-        ? new Date()
-        : new Date(o.updatedAt);
-      if (created > fyRange.end || effectiveEnd < fyRange.start) return false;
+      if (created > fyRange.end || oppEffectiveEnd(o) < fyRange.start) return false;
 
       return true;
 
@@ -251,6 +251,8 @@ const SalesOpportunityList: React.FC = () => {
     if (action === 'loss' && reasonModal.winner) {
       updates.winner = reasonModal.winner;
     }
+    // ⚠️ 输单记录当次时间；离开输状态（赢/冻结）清空本地 lostAt（与后端 now()/NULL 一致）
+    updates.lostAt = action === 'loss' ? nowISO() : undefined;
     // 如果原因弹窗附加了阶段变更（如"中标"→赢），同步更新 stage
     if (reasonModal.pendingStage) {
       updates.stage = reasonModal.pendingStage;
@@ -282,8 +284,8 @@ const SalesOpportunityList: React.FC = () => {
 
   const handleStatusAction = useCallback((opp: SalesOpportunity, action: 'win' | 'loss' | 'freeze' | 'resume') => {
     if (action === 'resume') {
-      // 恢复到过程中：清除原因，无需弹窗
-      setOpportunities(prev => prev.map(o => o.id === opp.id ? { ...o, status: '过程中', reasons: '', updatedAt: nowISO() } : o));
+      // 恢复到过程中：清除原因与 lostAt（后端同步 lost_at=NULL），无需弹窗
+      setOpportunities(prev => prev.map(o => o.id === opp.id ? { ...o, status: '过程中', reasons: '', lostAt: undefined, updatedAt: nowISO() } : o));
       opportunityService.update(opp.id, { status: '过程中', reasons: '', updatedAt: nowISO() }).catch(e => console.warn('[Resume] 保存失败', e));
       msg.success('已恢复为过程中');
       return;
@@ -344,8 +346,9 @@ const SalesOpportunityList: React.FC = () => {
         name,
         nodeNo: i + 1,
         status: 'pending' as const,
-        plannedStartDate: ps.toISOString().slice(0, 10),
-        plannedEndDate: pe.toISOString().slice(0, 10),
+        // ⚠️ 用本地日期字符串（toISOString 是 UTC，北京时间早 8 点前会差一天）
+        plannedStartDate: ps.toLocaleDateString('en-CA'),
+        plannedEndDate: pe.toLocaleDateString('en-CA'),
         comments: '', history: [],
       };
     });
@@ -510,8 +513,6 @@ const SalesOpportunityList: React.FC = () => {
 
   const openCreateModal = useCallback((initialStage: string = '信息') => {
 
-    setEditing(null);
-
     setFormData({
 
       clientName: '', projectName: '', amount: 0, stage: initialStage,
@@ -541,18 +542,7 @@ const SalesOpportunityList: React.FC = () => {
       return;
     }
 
-    if (editing) {
-
-      opportunityService.update(editing.id, formData).then(() => {
-        loadOpportunities();
-        msg.success('机会已更新');
-      }).catch(() => {
-        msg.error('更新失败，请重试');
-      });
-
-    } else {
-
-      // 从后端API获取下一个销售编号（避免本地计数不准确导致重复）
+    // 从后端API获取下一个销售编号（避免本地计数不准确导致重复）
       let salesNo: string;
       try {
         const resp = await api.get<{ salesNo: string }>('/opportunities/next-sales-no');
@@ -591,11 +581,9 @@ const SalesOpportunityList: React.FC = () => {
         msg.error('创建失败，请重试');
       });
 
-    }
-
     setModalOpen(false);
 
-  }, [editing, formData, msg, enterpriseClients, loadOpportunities]);
+  }, [formData, msg, enterpriseClients, loadOpportunities]);
 
 
 
@@ -681,7 +669,7 @@ const SalesOpportunityList: React.FC = () => {
         );
       }},
 
-    ...getWinRateColumn(tabFilter, blueTableOpp, setBlueTableOpp, setBlueTableOpen),
+    ...getWinRateColumn(tabFilter, setBlueTableOpp, setBlueTableOpen),
     { title: '竞争对手', dataIndex: 'competitor', width: 145,
       render: (v: string, rec: SalesOpportunity) => {
         if (rec.terminated || rec.promoteLocked) return <span style={{ fontSize: 13, color: COLORS.textLight }}>{v || '—'}</span>;
@@ -822,7 +810,7 @@ const SalesOpportunityList: React.FC = () => {
     },
     { title: '操作日期', dataIndex: 'updatedAt', width: 100,
       render: (v: string) => <span style={{ fontSize: 13, color: COLORS.textLight }}>{formatBeijing(v)}</span> },
-  ], [tabFilter, touch, handlePromote, handleConfirmTerminate, handleWinDeliver, opportunities, handleStatusAction, navigate, blueTableOpp]);
+  ], [tabFilter, touch, handlePromote, handleConfirmTerminate, handleWinDeliver, opportunities, handleStatusAction, navigate]);
 
 
 
@@ -949,7 +937,7 @@ const SalesOpportunityList: React.FC = () => {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{ width: 3, height: 18, background: COLORS.primary, borderRadius: 1 }} />
             <span style={{ fontSize: 15, fontWeight: 600, color: COLORS.textDark, letterSpacing: 0.5 }}>
-              {editing ? '编辑销售机会' : `新建${tabFilter === 'info' ? '信息' : tabFilter === 'lead' ? '线索' : '机会'}`}
+              {`新建${tabFilter === 'info' ? '信息' : tabFilter === 'lead' ? '线索' : '机会'}`}
             </span>
           </div>
         }
@@ -1326,14 +1314,5 @@ const SalesOpportunityList: React.FC = () => {
 
 
 
-const labelStyle2: React.CSSProperties = { padding: '7px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle', fontWeight: 600, background: COLORS.bgLight, whiteSpace: 'nowrap', color: COLORS.labelDark };
-
-const cellStyle2: React.CSSProperties = { padding: '7px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' };
-
-
-
-// ── 项目名称下拉搜索器 ──
-
-// ── 客户名称下拉搜索器 ──
 export default SalesOpportunityList;
 

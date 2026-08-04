@@ -209,9 +209,13 @@ router.put('/:id', async (req, res, next) => {
     const rawValues = updateCols.map(f => body[f]);
     // ⚠️ won_at 仅在转交付（terminated）时采集（69d3de6 语义，勿回归）：
     // 手动标赢未转交付不算赢单，won_at 保持 NULL；转交付时由下方 terminated 块 COALESCE 写入
-    // 状态变"输"时写入 lost_at（首次写入后不覆盖）
+    // 状态变"输"：lost_at 记录当次输单时间（每次输单都更新，不留存旧值）
     if (body.status === '输') {
-      setClause += `, lost_at = COALESCE(lost_at, now())`;
+      setClause += `, lost_at = now()`;
+    }
+    // 状态离开"输"（恢复过程中/转赢/冻结）：清除 lost_at，避免陈旧输单时间残留导致财年归集失真
+    if (body.status && body.status !== '输') {
+      setClause += `, lost_at = NULL`;
     }
     // 记录进入各阶段时间（首次写入后不覆盖）：线索/机会/投标/议价；信息=创建时间、中标=won_at
     if (body.stage && ['线索', '机会', '投标', '议价', '中标'].includes(body.stage)) {
