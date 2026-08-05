@@ -3,7 +3,6 @@ import type { Project, ProjectVersion, Group, GroupItem } from '../types';
 
 export const projectService = {
   /** 获取项目列表 */
-  list: () => api.get<Project[]>('/projects'),
 
   /** 获取单个项目（含版本、组、明细） */
   getFull: (id: string, opts?: { noCache?: boolean }) =>
@@ -34,6 +33,4 @@ export const projectService = {
     api.delete(`/project-groups/by-version/${versionId}`),
 
   /** 更新项目版本的审核状态 */
-  updateVersionStatus: (projectId: string, versionNo: string, status: string) =>
-    api.put(`/projects/${projectId}/versions/${versionNo}/status`, { reviewStatus: status }),
 };

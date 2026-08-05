@@ -10,6 +10,8 @@ import { formatBeijing } from '../utils/timeFormat';
 import type { ApprovalRequest, QuotationSummary, DeliveryProject } from '../types';
 import { COLORS } from '../styles/colors';
 import { useAuth } from '../utils/authContext';
+import { BARE_INPUT_STYLE } from '../utils/tableUtils';
+import { tabItemStyle } from '../utils/tableUtils';
 
 const statusConfig: Record<string, { label: string; color: string }> = {
   pending:  { label: '待审批', color: COLORS.warning },
@@ -24,14 +26,6 @@ const TYPE_LABELS: Record<string, string> = { quotation: '报价审批', plan: '
 const typeLabel = (t: string) => TYPE_LABELS[t] || t;
 
 /** Tab 样式（active 高亮色/文字色可配），收敛 5 个 Tab 的重复内联样式 */
-const tabStyle = (active: boolean, activeColor: string, textColor: string): React.CSSProperties => ({
-  padding: '8px 20px', cursor: 'pointer', fontSize: 14,
-  borderBottom: `2px solid ${active ? activeColor : 'transparent'}`,
-  color: active ? activeColor : textColor,
-  fontWeight: active ? 600 : 400,
-  marginBottom: -2, transition: 'all 0.15s',
-});
-
 /** 利润率 Gauge（百分比值，>=20 绿 / >=15 橙 / <15 红） */
 const Gauge: React.FC<{ value: number }> = ({ value }) => {
   const color = value >= 20 ? COLORS.success : value >= 15 ? COLORS.amber : COLORS.danger;
@@ -164,11 +158,11 @@ const ApprovalList: React.FC = () => {
       <div style={{ fontSize: 17, fontWeight: 700, color: COLORS.textDark, marginBottom: 24 }}>审批管理</div>
 
       <div style={{ display: 'flex', gap: 0, marginBottom: 20 }}>
-        <div onClick={() => setFilter('draft')} style={tabStyle(filter === 'draft', COLORS.textLight, COLORS.textSecondary)}>草稿({draftItems.length})</div>
-        <div onClick={() => setFilter('pending')} style={tabStyle(filter === 'pending', COLORS.warning, COLORS.textSecondary)}>待审批({tabCounts.pending})</div>
-        <div onClick={() => setFilter('done')} style={tabStyle(filter === 'done', COLORS.success, COLORS.textSecondary)}>已审批({tabCounts.done})</div>
-        <div onClick={() => setFilter('mine')} style={tabStyle(filter === 'mine', COLORS.primary, COLORS.textSecondary)}>我的提交({tabCounts.mine})</div>
-        <div onClick={() => setFilter('all')} style={tabStyle(filter === 'all', COLORS.primary, COLORS.textSecondary)}>全部({tabCounts.all})</div>
+        <div onClick={() => setFilter('draft')} style={tabItemStyle(filter === 'draft', COLORS.textLight, COLORS.textSecondary)}>草稿({draftItems.length})</div>
+        <div onClick={() => setFilter('pending')} style={tabItemStyle(filter === 'pending', COLORS.warning, COLORS.textSecondary)}>待审批({tabCounts.pending})</div>
+        <div onClick={() => setFilter('done')} style={tabItemStyle(filter === 'done', COLORS.success, COLORS.textSecondary)}>已审批({tabCounts.done})</div>
+        <div onClick={() => setFilter('mine')} style={tabItemStyle(filter === 'mine', COLORS.primary, COLORS.textSecondary)}>我的提交({tabCounts.mine})</div>
+        <div onClick={() => setFilter('all')} style={tabItemStyle(filter === 'all', COLORS.primary, COLORS.textSecondary)}>全部({tabCounts.all})</div>
         <div style={{ flex: 1 }} />
         <table style={{ borderCollapse: 'collapse', marginLeft: 8 }}>
           <tbody>
@@ -178,7 +172,7 @@ const ApprovalList: React.FC = () => {
                 <input placeholder="客户名称/销售编号/项目名称"
                   value={searchText}
                   onChange={e => setSearchText(e.target.value)}
-                  style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 12, fontFamily: 'inherit', padding: 0, margin: 0, boxSizing: 'border-box', verticalAlign: 'middle' }} />
+                  style={{ width: '100%', ...BARE_INPUT_STYLE, fontSize: 12, fontFamily: 'inherit', padding: 0, margin: 0, boxSizing: 'border-box', verticalAlign: 'middle' }} />
               </td>
               <td style={{ padding: '11px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, fontWeight: 600, background: COLORS.bgLight, whiteSpace: 'nowrap', color: COLORS.labelDark }}>类型</td>
               <td style={{ padding: '11px 12px', fontSize: 10, border: `1px solid ${COLORS.border}`, cursor: 'pointer', color: COLORS.primary, background: '#fff', whiteSpace: 'nowrap', userSelect: 'none', width: 130, verticalAlign: 'middle' }}

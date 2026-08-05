@@ -5,6 +5,7 @@ import type { ColumnsType } from 'antd/es/table';
 import type { BlueTable, BlueTableRole, VetoBudgetOption, TimelineOption, InfluenceLevel, PricingLevel, ReactionMode, SalesOpportunity, RoleType } from '../types';
 import { PRICING_ADJUSTMENTS, PRICING_LABELS, POSITIONING_LABELS, POSITIONING_EXPLANATIONS, REACTION_LABELS, REACTION_EXPLANATIONS, calcBlueTableWinRate, getDefaultWeight } from '../utils/blueTableCalculation';
 import { COLORS } from '../styles/colors';
+import { lockCellWidth, BARE_INPUT_STYLE } from '../utils/tableUtils';
 
 interface BlueTableModalProps {
   open: boolean;
@@ -60,7 +61,18 @@ function createEmptyBlueTable(): BlueTable {
   };
 }
 
+/* ─── 子组件：三角形 ▲/▼ 增减列（供各 Triangle 控件复用，消除 4 份重复箭头样式） ─── */
+const TriangleArrows: React.FC<{ onUp: () => void; onDown: () => void }> = ({ onUp, onDown }) => (
+  <div style={{ display: 'flex', flexDirection: 'column', gap: 0, lineHeight: 1 }}>
+    <span onClick={onUp}
+      style={{ cursor: 'pointer', color: '#999', fontSize: 9, lineHeight: 1, height: 12, display: 'block', userSelect: 'none' }}>▲</span>
+    <span onClick={onDown}
+      style={{ cursor: 'pointer', color: '#999', fontSize: 9, lineHeight: 1, height: 12, display: 'block', userSelect: 'none' }}>▼</span>
+  </div>
+);
+
 /* ─── 子组件：三角形数字增减 ─── */
+
 const TriangleNumberCell: React.FC<{
   value: number; onChange: (v: number) => void;
   min: number; max: number; step?: number;
@@ -73,12 +85,7 @@ const TriangleNumberCell: React.FC<{
         fontSize: 13, fontWeight: 600, color: c,
         minWidth: 18, textAlign: 'center',
       }}>{value}</span>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 0, lineHeight: 1 }}>
-        <span onClick={() => onChange(Math.min(max, value + step))}
-          style={{ cursor: 'pointer', color: '#999', fontSize: 9, lineHeight: 1, height: 12, display: 'block', userSelect: 'none' }}>▲</span>
-        <span onClick={() => onChange(Math.max(min, value - step))}
-          style={{ cursor: 'pointer', color: '#999', fontSize: 9, lineHeight: 1, height: 12, display: 'block', userSelect: 'none' }}>▼</span>
-      </div>
+      <TriangleArrows onUp={() => onChange(Math.min(max, value + step))} onDown={() => onChange(Math.max(min, value - step))} />
     </div>
   );
 };
@@ -97,12 +104,7 @@ const TriangleInfluenceCell: React.FC<{
         <span style={{ fontSize: 12, fontWeight: 700, color: COLORS.textDark, lineHeight: 1.2 }}>{label}</span>
         <span style={{ fontSize: 12, fontWeight: 700, color: COLORS.chartGray, lineHeight: 1.2 }}>{weight}</span>
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 0, lineHeight: 1 }}>
-        <span onClick={() => onInfluence(levels[(curIdx + 1) % 3])}
-          style={{ cursor: 'pointer', color: '#999', fontSize: 9, lineHeight: 1, height: 12, display: 'block', userSelect: 'none' }}>▲</span>
-        <span onClick={() => onInfluence(levels[(curIdx + 2) % 3])}
-          style={{ cursor: 'pointer', color: '#999', fontSize: 9, lineHeight: 1, height: 12, display: 'block', userSelect: 'none' }}>▼</span>
-      </div>
+      <TriangleArrows onUp={() => onInfluence(levels[(curIdx + 1) % 3])} onDown={() => onInfluence(levels[(curIdx + 2) % 3])} />
     </div>
   );
 };
@@ -121,12 +123,7 @@ const TrianglePositioningCell: React.FC<{
           {label}（{value}）
         </span>
       </Tooltip>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 0, lineHeight: 1 }}>
-        <span onClick={() => onChange(value >= 10 ? 1 : value + 1)}
-          style={{ cursor: 'pointer', color: '#999', fontSize: 9, lineHeight: 1, height: 12, userSelect: 'none' }}>▲</span>
-        <span onClick={() => onChange(value <= 1 ? 10 : value - 1)}
-          style={{ cursor: 'pointer', color: '#999', fontSize: 9, lineHeight: 1, height: 12, userSelect: 'none' }}>▼</span>
-      </div>
+      <TriangleArrows onUp={() => onChange(value >= 10 ? 1 : value + 1)} onDown={() => onChange(value <= 1 ? 10 : value - 1)} />
     </div>
   );
 };
@@ -146,12 +143,7 @@ const TriangleReactionCell: React.FC<{
           {REACTION_LABELS[value]}
         </span>
       </Tooltip>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 0, lineHeight: 1 }}>
-        <span onClick={() => onChange(REACTION_MODES[(curIdx + 1) % 4])}
-          style={{ cursor: 'pointer', color: '#999', fontSize: 9, lineHeight: 1, height: 12, userSelect: 'none' }}>▲</span>
-        <span onClick={() => onChange(REACTION_MODES[(curIdx + 3) % 4])}
-          style={{ cursor: 'pointer', color: '#999', fontSize: 9, lineHeight: 1, height: 12, userSelect: 'none' }}>▼</span>
-      </div>
+      <TriangleArrows onUp={() => onChange(REACTION_MODES[(curIdx + 1) % 4])} onDown={() => onChange(REACTION_MODES[(curIdx + 3) % 4])} />
     </div>
   );
 };
@@ -252,7 +244,7 @@ const BlueTableModal: React.FC<BlueTableModalProps> = ({ open, opportunity, onSa
   }, [bt]);
 
   // ── 角色矩阵列 ──
-  const onCellLock = (w: number) => () => ({ style: { width: w, minWidth: w, maxWidth: w, textAlign: 'center' as const } });
+  const onCellLock = (w: number) => lockCellWidth(w, 'center');
 
   const roleColumns: ColumnsType<BlueTableRole & { _idx: number }> = useMemo(() => [
     {
@@ -384,7 +376,7 @@ const BlueTableModal: React.FC<BlueTableModalProps> = ({ open, opportunity, onSa
                   }}
                   placeholder="0"
                   style={{
-                    flex: 1, border: 'none', background: 'transparent', outline: 'none',
+                    flex: 1, ...BARE_INPUT_STYLE,
                     fontSize: 13, padding: 0, margin: 0, fontWeight: 600,
                   }} />
                 {(() => {
@@ -419,7 +411,7 @@ const BlueTableModal: React.FC<BlueTableModalProps> = ({ open, opportunity, onSa
                   onChange={e => setBt(prev => ({ ...prev, timelinePlan: e.target.value }))}
                   placeholder="项目节点"
                   style={{
-                    flex: 1, border: 'none', background: 'transparent', outline: 'none',
+                    flex: 1, ...BARE_INPUT_STYLE,
                     fontSize: 13, padding: 0, margin: 0,
                   }} />
                 {(() => {
@@ -589,7 +581,7 @@ const BlueTableModal: React.FC<BlueTableModalProps> = ({ open, opportunity, onSa
                             onChange={e => updateTarget(i, { roleId: e.target.value })}
                             style={{
                               fontSize: 12, fontWeight: 700, padding: '1px 2px',
-                              border: 'none', background: 'transparent', outline: 'none', color: COLORS.textDark,
+                              ...BARE_INPUT_STYLE, color: COLORS.textDark,
                               cursor: 'pointer', textAlign: 'center', width: 82,
                             }}
                           >
@@ -624,7 +616,7 @@ const BlueTableModal: React.FC<BlueTableModalProps> = ({ open, opportunity, onSa
                             rows={1}
                             style={{
                               width: '100%', boxSizing: 'border-box',
-                              border: 'none', background: 'transparent', outline: 'none',
+                              ...BARE_INPUT_STYLE,
                               fontSize: 13, fontFamily: 'inherit', color: COLORS.textPrimary,
                               padding: '3px 0', margin: 0, resize: 'none',
                               overflow: 'hidden', minHeight: 24, lineHeight: 1.5,
@@ -821,10 +813,10 @@ const BlueTableModal: React.FC<BlueTableModalProps> = ({ open, opportunity, onSa
 
 const selStyle: React.CSSProperties = {
   fontSize: 12, fontWeight: 700, padding: '1px 2px',
-  border: 'none', background: 'transparent', outline: 'none', color: COLORS.textDark, cursor: 'pointer',
+  ...BARE_INPUT_STYLE, color: COLORS.textDark, cursor: 'pointer',
 };
 const cellInput: React.CSSProperties = {
-  border: 'none', background: 'transparent', outline: 'none',
+  ...BARE_INPUT_STYLE,
   fontSize: 13, fontFamily: 'inherit', width: '100%',
 };
 

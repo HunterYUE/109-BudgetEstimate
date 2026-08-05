@@ -32,7 +32,6 @@ const loginLimiter = rateLimit({
   legacyHeaders: false,
 });
 app.use('/api/v1/auth/login', loginLimiter);
-app.use('/api/auth/login', loginLimiter);
 app.use(express.json({ limit: '20mb' }));
 
 // 健康检查（含数据库状态）

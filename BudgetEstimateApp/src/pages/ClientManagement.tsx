@@ -13,6 +13,7 @@ import {
 } from '../components/client/clientConstants';
 import { ClientEditModal, ClientSubModal } from '../components/client/ClientModals';
 import ClientDrawer from '../components/client/ClientDrawer';
+import { BARE_INPUT_STYLE } from '../utils/tableUtils';
 
 // ── 组件 ──
 
@@ -379,7 +380,7 @@ const ClientManagement: React.FC = () => {
               <input placeholder="搜索客户名称 / 编号"
                 value={searchText}
                 onChange={e => setSearchText(e.target.value)}
-                style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 12, padding: 0, margin: 0, display: 'block', boxSizing: 'border-box' }} />
+                style={{ width: '100%', ...BARE_INPUT_STYLE, fontSize: 12, padding: 0, margin: 0, display: 'block', boxSizing: 'border-box' }} />
             </td>
             <td style={LABEL_CELL_STYLE}>行业</td>
             <td style={{ padding: '6px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>

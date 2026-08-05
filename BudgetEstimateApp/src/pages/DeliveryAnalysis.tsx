@@ -5,7 +5,7 @@ import type { DeliveryProject } from '../types';
 import { COLORS } from '../styles/colors';
 import { NODE_DISPLAY_NAMES } from '../utils/constants';
 import { parseFY, FYSelector, fiscalYearLabel } from '../utils/fiscalYear';
-import { fmtK, compressNo, monthEndOf, getNodeBaseline, getNodeDelay, getProjectDelay, isProjectDelivered, getProjectDoneDate, quoteProfitExTax, deliverySalesProfit, buildQuoteInfoMap, deliveryExTax } from '../utils/analysisShared';
+import { fmtK, compressNo, chartLabel, monthEndOf, getNodeBaseline, getNodeDelay, getProjectDelay, isProjectDelivered, getProjectDoneDate, quoteProfitExTax, deliverySalesProfit, buildQuoteInfoMap, deliveryExTax } from '../utils/analysisShared';
 import { VerticalBarChart, ProfitChart, ProjectGantt, BubbleChart } from '../components/charts/DeliveryCharts';
 import type { ProfitItem, BubbleDataItem } from '../components/charts/DeliveryCharts';
 import { OverviewCards, type KpiCardItem } from '../components/shared/OverviewCards';
@@ -53,12 +53,6 @@ const cumVal = (m: MonthlyCum, idx: number): string => {
    ============================================================ */
 /** 节点总数（与 NODE_DISPLAY_NAMES 一一对应，避免硬编码 15） */
 const NODE_COUNT = NODE_DISPLAY_NAMES.length;
-
-/** 压缩销售编号并换行：A2026-07-003-E → 2607003E，超4位时拆两行（图表 X 轴标签用） */
-const chartLabel = (salesNo: string | undefined): string => {
-  const s = compressNo(salesNo);
-  return s.length > 4 ? s.slice(0, 4) + '\n' + s.slice(4) : s;
-};
 
 /** 计算项目延期天数（共享延期口径，以第15节点为准，与实施计划一致），负值表示提前 */
 const calcProjDelay = (p: DeliveryProject): number => getProjectDelay(p).days;

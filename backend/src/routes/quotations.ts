@@ -47,13 +47,14 @@ customRouter.put('/sync', async (req, res, next) => {
       throw new AppError(400, '缺少必填字段：project_id, version_no');
     }
 
-    // ⚠️ F18 修复：锁定中的报价不允许被 sync 覆盖（审批挂起期间编辑流程可能仍调用 sync，会覆盖 amount/status）
+    // ⚠️ F18 修复：待审批（status='pending'）的报价不允许被 sync 覆盖。
+    //    此前检查 locked 字段但全库无任何路径置 true（死守卫），改为检查真实信号 status='pending'
     const existing = (await query(
-      'SELECT id, locked FROM quotations WHERE project_id = $1 AND version_no = $2',
+      'SELECT id, status FROM quotations WHERE project_id = $1 AND version_no = $2',
       [project_id, version_no]
     )).rows[0];
-    if (existing?.locked) {
-      throw new AppError(409, '该报价已锁定，无法同步保存');
+    if (existing?.status === 'pending') {
+      throw new AppError(409, '该报价待审批中，无法同步保存');
     }
 
     const result = await query(

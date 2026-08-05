@@ -5,8 +5,6 @@ export const componentService = {
   list: (params?: Record<string, string>) =>
     api.get<Component[]>('/components' + (params ? '?' + new URLSearchParams(params).toString() : '')),
 
-  get: (id: string) => api.get<Component>(`/components/${id}`),
-
   create: (data: Partial<Component>) => api.post<Component>('/components', data),
 
   update: (id: string, data: Partial<Component>) => api.put<Component>(`/components/${id}`, data),

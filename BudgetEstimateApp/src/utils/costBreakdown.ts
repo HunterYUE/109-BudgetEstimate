@@ -1,5 +1,6 @@
 import type { Group } from '../types.ts';
 import { DEFAULT_DESIGN_HOURLY_RATE, DEFAULT_ASSEMBLY_HOURLY_RATE } from './constants.ts';
+import { computeCostComponents } from './calculations.ts';
 
 /** 成本对比所需的版本财务参数 */
 export interface CostBreakdownVersion {
@@ -131,21 +132,14 @@ export function buildCostLines(
 
   // ===== 6. 风险 / 商业 / 质保 =====
   if (version) {
-    // ⚠️ 可选字段用 ?? 0 收窄（TS 关系比较不排除 undefined）
-    const riskRate = version.riskRate ?? 0;
-    if (riskRate > 0) {
-      const totalDirectCost = groups.reduce((s, g) => s + g.items.reduce((si, i) => si + i.directCost, 0), 0);
-      lines.push({ key: '_risk', category: '风险费用', code: 'R-RISKCOST', detail: '审批使用', qty: 0, estimated: Math.round(totalDirectCost * riskRate), actual: act('_risk') });
+    // ⚠️ 质保基数/风险/商业费用统一走 computeCostComponents（与 calcProjectSummary / computeDeliveryEstGP3 同口径）
+    const { riskCost, commercialCost, warrantyCost } = computeCostComponents(groups, version);
+    // 行显隐按费率判断（与原始实现一致），金额用共享计算值
+    if ((version.riskRate ?? 0) > 0) {
+      lines.push({ key: '_risk', category: '风险费用', code: 'R-RISKCOST', detail: '审批使用', qty: 0, estimated: riskCost, actual: act('_risk') });
     }
-    const cc = version.commercialCost || 0;
-    lines.push({ key: '_commercial', category: '商业费用', code: 'C-COMMERCIAL', detail: '商业费用', qty: 0, estimated: cc, actual: act('_commercial') });
-    const warrantyRate = version.warrantyRate ?? 0;
-    if (warrantyRate > 0) {
-      const warrantyBase = groups.reduce((s, g) =>
-        (g.groupType === 'EQUIPMENT' || g.groupType === 'INTEGRATION')
-          ? s + g.items.filter(i => !i.hasWarranty).reduce((si, i) => si + i.directCost, 0)
-          : s, 0);
-      const warrantyCost = Math.round(warrantyBase * warrantyRate);
+    lines.push({ key: '_commercial', category: '商业费用', code: 'C-COMMERCIAL', detail: '商业费用', qty: 0, estimated: commercialCost, actual: act('_commercial') });
+    if ((version.warrantyRate ?? 0) > 0) {
       lines.push({ key: '_warranty', category: '质保费用', code: 'W-WARRANTY', detail: '不可使用', qty: 0, estimated: warrantyCost, actual: warrantyCost, readonly: true });
     }
   }

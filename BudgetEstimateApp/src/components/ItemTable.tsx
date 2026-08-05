@@ -6,6 +6,7 @@ import type { GroupItem, SourcingType, GroupType, Component, ItemType } from '..
 import { componentService } from '../services/componentService';
 import { calcDirectCost, calcItemPrices } from '../utils/calculations';
 import { COLORS } from '../styles/colors';
+import { lockCellWidth, BARE_INPUT_STYLE } from '../utils/tableUtils';
 
 // 组件目录缓存（模块级，避免重复加载）
 let catalogCache: Component[] | null = null;
@@ -18,7 +19,8 @@ function loadCatalog(): Promise<Component[]> {
     return new Promise(resolve => { catalogWaiters.push(resolve); });
   }
   catalogLoading = true;
-  return componentService.list().then(data => {
+  // ⚠️ 传 limit:'1000'：物料目录是报价编码下拉唯一数据源，默认 100 会截断合法编码（与 QuotationPage 校验的 1000 条不一致）
+  return componentService.list({ limit: '1000' }).then(data => {
     catalogCache = data || [];
     catalogLoading = false;
     catalogWaiters.forEach(r => r(catalogCache!));
@@ -79,7 +81,7 @@ const MarginInput: React.FC<{ value: number; onCommit: (val: number) => void }> 
       onChange={(e) => setText(e.target.value)}
       onBlur={commit}
       onKeyDown={(e) => { if (e.key === 'Enter') commit(); }}
-      style={{ width: 60, textAlign: 'center', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, MozAppearance: 'textfield' }}
+      style={{ width: 60, textAlign: 'center', ...BARE_INPUT_STYLE, fontSize: 13, MozAppearance: 'textfield' }}
     />
   );
 };
@@ -170,7 +172,7 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
   };
 
   // Define columns with locked widths
-  const onCellLock = (w: number) => () => ({ style: { width: w, minWidth: w, maxWidth: w } });
+  const onCellLock = (w: number) => lockCellWidth(w);
 
   const colSeq = {
     title: '序号', dataIndex: 'itemNo', width: 44, align: 'center' as const,
@@ -224,7 +226,7 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
       }
       const matched = isInDB(v);
       return <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-        <CodeCell value={v} onSelect={(item) => updateItem(idx, { code: item.code, description: item.nameCn, itemType: item.category, unitCost: item.unitCost, sourcingType: item.sourcingType, designHours: item.designHours, assemblyHours: item.assemblyHours, designHourRate: _rec.designHourRate || 175, assemblyHourRate: _rec.assemblyHourRate || 85, unit: item.unit || '套' })} />
+        <CodeCell value={v} onSelect={(item) => updateItem(idx, { code: item.code, description: item.nameCn, itemType: item.category, unitCost: item.unitCost, sourcingType: item.sourcingType, designHours: item.designHours, assemblyHours: item.assemblyHours, designHourRate: _rec.designHourRate || 175, assemblyHourRate: _rec.assemblyHourRate || 85, unit: item.unit || '套', hasWarranty: item.hasWarranty })} />
         {v && matched === false && (
           <Tooltip title="此编码不在组件数据库中，请先注册">
             <span style={{ color: 'red', fontWeight: 700, fontSize: 16, lineHeight: 1, flexShrink: 0 }}>!</span>
@@ -271,7 +273,7 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
       <input type="number" min={0} defaultValue={v}
         onChange={e => { const raw = e.target.value; if (raw === '') return; const val = parseInt(raw, 10); if (!isNaN(val) && val >= 0) updateItem(idx, { qtyTotal: val }); }}
         onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-        style={{ width: '100%', textAlign: 'center', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, MozAppearance: 'textfield' }} />
+        style={{ width: '100%', textAlign: 'center', ...BARE_INPUT_STYLE, fontSize: 13, MozAppearance: 'textfield' }} />
     ) : <span style={{ display: 'block', textAlign: 'center' }}>{v}</span>,
   }];
 
@@ -286,7 +288,7 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
         <input type="number" min={0} step={1} defaultValue={v}
           onChange={e => { const raw = e.target.value; if (raw === '') return; const val = parseFloat(raw); if (!isNaN(val) && val >= 0) updateItem(idx, { unitCost: val }); }}
           onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-          style={{ width: '100%', textAlign: 'right', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, MozAppearance: 'textfield' }} />
+          style={{ width: '100%', textAlign: 'right', ...BARE_INPUT_STYLE, fontSize: 13, MozAppearance: 'textfield' }} />
       );
     },
   }];
@@ -302,7 +304,7 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
         <input type="number" min={0} step={0.5} defaultValue={v}
           onChange={e => { const raw = e.target.value; if (raw === '') return; const val = parseFloat(raw); if (!isNaN(val) && val >= 0) updateItem(idx, { designHours: val }); }}
           onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-          style={{ width: '100%', textAlign: 'right', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, MozAppearance: 'textfield' }} />
+          style={{ width: '100%', textAlign: 'right', ...BARE_INPUT_STYLE, fontSize: 13, MozAppearance: 'textfield' }} />
       );
     },
   }] : [];
@@ -318,7 +320,7 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
         <input type="number" min={0} step={0.5} defaultValue={v}
           onChange={e => { const raw = e.target.value; if (raw === '') return; const val = parseFloat(raw); if (!isNaN(val) && val >= 0) updateItem(idx, { assemblyHours: val }); }}
           onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-          style={{ width: '100%', textAlign: 'right', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, MozAppearance: 'textfield' }} />
+          style={{ width: '100%', textAlign: 'right', ...BARE_INPUT_STYLE, fontSize: 13, MozAppearance: 'textfield' }} />
       );
     },
   }] : [];

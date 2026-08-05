@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import { message, Modal } from 'antd';
 import type { Project } from '../types';
 import { COLORS } from '../styles/colors';
+import { BARE_INPUT_STYLE } from '../utils/tableUtils';
 
 interface Props {
   project: Project;
@@ -20,7 +21,7 @@ const labelStyle: React.CSSProperties = {
 };
 
 const inputStyle: React.CSSProperties = {
-  width: '100%', border: 'none', background: 'transparent', outline: 'none',
+  width: '100%', ...BARE_INPUT_STYLE,
   fontSize: 12, padding: 0, margin: 0, display: 'block', boxSizing: 'border-box',
 };
 

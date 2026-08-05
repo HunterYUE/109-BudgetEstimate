@@ -7,13 +7,10 @@ export const quotationService = {
 
   get: (id: string) => api.get<QuotationSummary>(`/quotations/${id}`),
 
-  create: (data: Partial<QuotationSummary>) => api.post<QuotationSummary>('/quotations', data),
-
-  update: (id: string, data: Partial<QuotationSummary>) => api.put<QuotationSummary>(`/quotations/${id}`, data),
-
-  delete: (id: string) => api.delete(`/quotations/${id}`),
-
-  /** 同步报价摘要（upsert）：保存项目时调用，写入/更新报价汇总记录 */
+  /**
+   * 同步报价摘要（upsert）：保存项目时调用，写入/更新报价汇总记录。
+   * ⚠️ D6 修复：签名收敛为后端实际读取的 10 字段（折扣/GP3/成本分解等存于 project_versions，sync 不处理）
+   */
   sync: (data: {
     projectId: string;
     versionNo: string;
@@ -22,16 +19,7 @@ export const quotationService = {
     projectName: string;
     status?: string;
     amount?: number;
-    totalDirectCost?: number;
-    totalAccountingPrice?: number;
-    discountedPrice?: number;
-    discountRate?: number;
-    gp3ProfitRate?: number;
     totalCost?: number;
-    warrantyCost?: number;
-    riskCost?: number;
-    materialCost?: number;
-    laborCost?: number;
     profitRate?: number;
     opportunityId?: string | null;
   }) => api.put<QuotationSummary>('/quotations/sync', data),

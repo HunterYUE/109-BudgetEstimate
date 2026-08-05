@@ -60,6 +60,25 @@ export interface ProjectSummary {
   projectExpense: number;
 }
 
+/**
+ * 成本构成共享计算：全部项次直接成本合计、质保基数、质保/风险/商业费用。
+ * ⚠️ calcProjectSummary / computeDeliveryEstGP3 / buildCostLines 三处共用，防口径漂移（质保基数仅 EQUIPMENT/INTEGRATION 免质保项）。
+ */
+export function computeCostComponents(
+  groups: Group[],
+  version: { warrantyRate?: number; riskRate?: number; commercialCost?: number },
+) {
+  const totalDirectCost = groups.reduce((s, g) => s + g.items.reduce((si, i) => si + i.directCost, 0), 0);
+  const warrantyBase = groups.reduce((s, g) =>
+    (g.groupType === 'EQUIPMENT' || g.groupType === 'INTEGRATION')
+      ? s + g.items.filter(i => !i.hasWarranty).reduce((si, i) => si + i.directCost, 0)
+      : s, 0);
+  const warrantyCost = Math.round(warrantyBase * (version.warrantyRate ?? 0));
+  const riskCost = Math.round(totalDirectCost * (version.riskRate ?? 0));
+  const commercialCost = version.commercialCost ?? 0;
+  return { totalDirectCost, warrantyBase, warrantyCost, riskCost, commercialCost };
+}
+
 /** 计算版本汇总（含物料/人工/项目费用分解）
  *  ⚠️ discountedPrice 参数必须为未税值（内部使用），返回的 totalAccountingPrice/discountedPrice 为含税值
  */
@@ -73,8 +92,8 @@ export function calcProjectSummary(
   },
   discountedPriceUntaxed?: number
 ): ProjectSummary {
-  let totalDirectCost = 0;
-  let warrantyBase = 0;
+  // ⚠️ 质保基数/质保/风险/商业费用统一走 computeCostComponents（防与成本对比表口径漂移）
+  const { totalDirectCost, warrantyBase, warrantyCost, riskCost, commercialCost } = computeCostComponents(groups, version);
   let totalAccountingPrice = 0;
   let materialCost = 0;
   let laborCost = 0;
@@ -82,11 +101,7 @@ export function calcProjectSummary(
 
   for (const group of groups) {
     for (const item of group.items) {
-      totalDirectCost += item.directCost;
       totalAccountingPrice += item.accountingPrice;
-      if (!item.hasWarranty && (group.groupType === 'EQUIPMENT' || group.groupType === 'INTEGRATION')) {
-        warrantyBase += item.directCost;
-      }
       const mat = Math.round((item.unitCost || 0) * (item.qtyTotal || 1));
       const lab = item.directCost - mat;
       if (group.groupType === 'PROJECT_DELIVERY') {
@@ -106,9 +121,6 @@ export function calcProjectSummary(
     : 0;
 
   const taxRate = version.taxRate ?? 0.13;
-  const warrantyCost = Math.round(warrantyBase * version.warrantyRate);
-  const riskCost = Math.round(totalDirectCost * version.riskRate);
-  const commercialCost = version.commercialCost;
   const totalCost = totalDirectCost + warrantyCost + riskCost + commercialCost;
 
   // 输出含税值（总成本也需 × (1+税率) 才能与含税收入一致口径）
@@ -159,19 +171,8 @@ export function computeDeliveryEstGP3(
   const TAX_RATE = version?.taxRate ?? 0.13;
   const exTax = Math.round(contractAmount / (1 + TAX_RATE));
 
-  const totalEstimated = groups.reduce((s, g) => s + g.items.reduce((si, i) => si + i.directCost, 0), 0);
-
-  // 质保基数 = 标"✕"（不含质保）项次的直接成本之和 × 质保费率
-  const warrantyBase = version ? groups.reduce((s, g) =>
-    (g.groupType === 'EQUIPMENT' || g.groupType === 'INTEGRATION')
-      ? s + g.items.filter(i => !i.hasWarranty).reduce((si, i) => si + i.directCost, 0)
-      : s, 0
-  ) : 0;
-  const warrantyCost = version ? Math.round(warrantyBase * (version.warrantyRate ?? 0)) : 0;
-
-  const riskCost = version ? Math.round(totalEstimated * (version.riskRate ?? 0)) : 0;
-
-  const commercialCost = version?.commercialCost ?? 0;
+  // ⚠️ 质保/风险/商业费用统一走 computeCostComponents（防与 calcProjectSummary / buildCostLines 口径漂移）
+  const { totalDirectCost: totalEstimated, warrantyCost, riskCost, commercialCost } = computeCostComponents(groups, version ?? {});
 
   const grandEstimated = totalEstimated + riskCost + warrantyCost + commercialCost;
   const estGP3 = exTax > 0 ? (exTax - grandEstimated) / exTax : 0;

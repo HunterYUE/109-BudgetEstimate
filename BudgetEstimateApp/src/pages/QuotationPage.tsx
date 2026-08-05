@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { exAmount } from '../utils/analysisShared';
 import { Button, message, Modal, ConfigProvider, Spin } from 'antd';
 import { PlusOutlined, DownloadOutlined, SaveOutlined, SendOutlined, CheckOutlined, CloseOutlined, ArrowLeftOutlined } from '@ant-design/icons';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
@@ -534,7 +535,7 @@ const QuotationPage: React.FC = () => {
     if (!project) return undefined;
     const p = project.currentVersion;
     const pid = overrideProjectId || project.id;
-    const syncUntaxed = p.discountedPrice ? Math.round(p.discountedPrice / (1 + (p.taxRate || 0.13))) : undefined;
+    const syncUntaxed = p.discountedPrice ? exAmount(p.discountedPrice, p.taxRate) : undefined;
     const summary = calcProjectSummary(project.groups || [], p, syncUntaxed);
     const result = await quotationService.sync({
       projectId: pid,
@@ -593,7 +594,7 @@ const QuotationPage: React.FC = () => {
       if (isNew) {
         const created = await projectService.create(buildProjectPayload(project, { withSalesMeta: true }));
         const newId = created.id;
-        const newVerUntaxed = curVer.discountedPrice ? Math.round(curVer.discountedPrice / (1 + (curVer.taxRate || 0.13))) : undefined;
+        const newVerUntaxed = curVer.discountedPrice ? exAmount(curVer.discountedPrice, curVer.taxRate) : undefined;
         const newVerSummary = calcProjectSummary(project.groups || [], curVer, newVerUntaxed);
         const sv = await projectService.saveVersion(newId, buildVersionPayload(curVer, newVerSummary, { versionNo: versionForSave, reviewStatus: statusForSave }));
         const svId = sv.id;
@@ -620,7 +621,7 @@ const QuotationPage: React.FC = () => {
         if (qid && quoteId === 'new') navigate('/quotations/' + qid, { replace: true });
       } else {
         await projectService.update(project.id, buildProjectPayload(project));
-        const versionUntaxed = curVer.discountedPrice ? Math.round(curVer.discountedPrice / (1 + (curVer.taxRate || 0.13))) : undefined;
+        const versionUntaxed = curVer.discountedPrice ? exAmount(curVer.discountedPrice, curVer.taxRate) : undefined;
         const versionSummary = calcProjectSummary(project.groups || [], curVer, versionUntaxed);
         const versionPayload = buildVersionPayload(curVer, versionSummary, { versionNo: versionForSave, reviewStatus: statusForSave });
         const savedVersion = await projectService.saveVersion(project.id, versionPayload);
@@ -673,7 +674,7 @@ const QuotationPage: React.FC = () => {
       setIsSaving(true); // ⚠️ 防止重复点击
       await projectService.update(project.id, buildProjectPayload(project));
       // ⚠️ 必须先重新计算汇总值再保存版本，否则 curVer 中的 discountRate/gp3ProfitRate 是过期数据
-      const submitUntaxed = curVer.discountedPrice ? Math.round(curVer.discountedPrice / (1 + (curVer.taxRate || 0.13))) : undefined;
+      const submitUntaxed = curVer.discountedPrice ? exAmount(curVer.discountedPrice, curVer.taxRate) : undefined;
       const submitSummary = calcProjectSummary(project.groups || [], curVer, submitUntaxed);
       const updatedVersion = buildVersionPayload(curVer, submitSummary, { reviewStatus: 'pending' });
       const savedVer = await projectService.saveVersion(project.id, updatedVersion);
@@ -732,7 +733,7 @@ const QuotationPage: React.FC = () => {
   const summary = useMemo(() => {
     if (!project || !project.currentVersion) return null;
     const memoUntaxed = project.currentVersion.discountedPrice
-      ? Math.round(project.currentVersion.discountedPrice / (1 + (project.currentVersion.taxRate || 0.13)))
+      ? exAmount(project.currentVersion.discountedPrice, project.currentVersion.taxRate)
       : undefined;
     return calcProjectSummary(project.groups, project.currentVersion, memoUntaxed);
   }, [project]);

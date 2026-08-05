@@ -64,22 +64,6 @@ const router = crudRoutes('projects', projectsFields, {
       } catch (err) { next(err); }
     });
 
-    // 更新项目版本的审核状态（前端审批级联时使用）
-    r.put('/:id/versions/:versionNo/status', async (req, res, next) => {
-      try {
-        const { id, versionNo } = req.params;
-        const { review_status, reviewStatus } = req.body;
-        const status = review_status || reviewStatus;
-        if (!status) throw new AppError(400, '缺少必填字段：review_status');
-        const result = await query(
-          `UPDATE project_versions SET review_status = $1, updated_at = now()
-           WHERE project_id = $2 AND version_no = $3 RETURNING *`,
-          [status, id, versionNo]
-        );
-        if (result.rows.length === 0) throw new AppError(404, '版本未找到');
-        res.json(result.rows[0]);
-      } catch (err) { next(err); }
-    });
   },
 });
 

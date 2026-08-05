@@ -191,11 +191,12 @@ router.put('/time-records/:id', requireAuth, async (req, res, next) => {
     values.push(req.params.id);
     // 归属校验：非管理员只能改自己的记录
     if (!admin) values.push(user.userId);
+    // ⚠️ N2 修复：已审核（approved/rejected）记录不可直改（须走审批流程），防止绕过审核篡改工时
     const r = (await query(
-      `UPDATE timerecording.time_records SET ${updates.join(', ')} WHERE id = $${idx}${admin ? '' : ` AND user_id = $${idx + 1}`} RETURNING *`,
+      `UPDATE timerecording.time_records SET ${updates.join(', ')} WHERE id = $${idx}${admin ? '' : ` AND user_id = $${idx + 1}`} AND status NOT IN ('approved', 'rejected') RETURNING *`,
       values
     )).rows[0];
-    if (!r) throw new AppError(404, admin ? '未找到' : '记录不存在或无权修改');
+    if (!r) throw new AppError(400, admin ? '记录不存在或已审核' : '记录不存在、无权修改或已审核');
     res.json(r);
   } catch (err) { next(err); }
 });

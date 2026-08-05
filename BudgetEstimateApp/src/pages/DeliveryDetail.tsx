@@ -20,6 +20,7 @@ import { exportHtmlTable } from '../utils/exportToExcel';
 import { deliveryFileService, type DeliveryFile } from '../services/deliveryFileService';
 import { todayBeijing } from '../utils/timeFormat';
 import { useAuth } from '../utils/authContext';
+import { tabItemStyle } from '../utils/tableUtils';
 
 const STATUS_CYCLE: DeliveryNode['status'][] = ['pending', 'in_progress', 'completed'];
 const STATUS_LABELS: Record<ReviewStatus, { label: string; color: string }> = {
@@ -125,8 +126,8 @@ const DeliveryDetail: React.FC = () => {
       }
       // 加载物料费率（设计会签/装配调试）
       Promise.all([
-        componentService.list({ search: 'SV-DESIGN-000000-V1.0' }),
-        componentService.list({ search: 'SV-INSASS-000000-V1.0' }),
+        componentService.list({ search: 'SV-DESIGN-000000-V1.0', limit: '1000' }),
+        componentService.list({ search: 'SV-INSASS-000000-V1.0', limit: '1000' }),
       ]).then(([designComps, assyComps]) => {
         if (cancelled) return;
         const designRate = designComps?.[0]?.unitCost || DEFAULT_DESIGN_HOURLY_RATE;
@@ -760,30 +761,15 @@ const DeliveryDetail: React.FC = () => {
       {/* 标签切换 — 多 Tab 风格 */}
       <div style={{ display: 'flex', gap: 0, marginBottom: 16, borderBottom: `2px solid ${COLORS.border}` }}>
         <div onClick={() => handleTabChange('plan')}
-          style={{
-            padding: '8px 20px', cursor: 'pointer', fontSize: 14,
-            borderBottom: tab === 'plan' ? `2px solid ${COLORS.primary}` : '2px solid transparent',
-            color: tab === 'plan' ? COLORS.primary : COLORS.textSecondary, fontWeight: tab === 'plan' ? 600 : 400,
-            marginBottom: -2, transition: 'all 0.15s',
-          }}>
+          style={tabItemStyle(tab === 'plan', COLORS.primary)}>
           <ScheduleOutlined style={{ color: COLORS.primary, marginRight: 6 }} />实施计划
         </div>
         <div onClick={() => handleTabChange('cost')}
-          style={{
-            padding: '8px 20px', cursor: 'pointer', fontSize: 14,
-            borderBottom: tab === 'cost' ? `2px solid ${COLORS.success}` : '2px solid transparent',
-            color: tab === 'cost' ? COLORS.success : COLORS.textSecondary, fontWeight: tab === 'cost' ? 600 : 400,
-            marginBottom: -2, transition: 'all 0.15s',
-          }}>
+          style={tabItemStyle(tab === 'cost', COLORS.success)}>
           <AuditOutlined style={{ color: COLORS.success, marginRight: 6 }} />成本对比
         </div>
         <div onClick={() => handleTabChange('files')}
-          style={{
-            padding: '8px 20px', cursor: 'pointer', fontSize: 14,
-            borderBottom: tab === 'files' ? `2px solid ${COLORS.purple}` : '2px solid transparent',
-            color: tab === 'files' ? COLORS.purple : COLORS.textSecondary, fontWeight: tab === 'files' ? 600 : 400,
-            marginBottom: -2, transition: 'all 0.15s',
-          }}>
+          style={tabItemStyle(tab === 'files', COLORS.purple)}>
           <UploadOutlined style={{ color: COLORS.purple, marginRight: 6 }} />附件管理
         </div>
       </div>

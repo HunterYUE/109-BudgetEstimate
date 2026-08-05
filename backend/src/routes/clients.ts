@@ -112,10 +112,11 @@ const router = crudRoutes('clients', fields, {
         )).rows;
         res.json({ ...updated, contacts: savedContacts });
       } catch (err) {
-        await tx.query('ROLLBACK').catch(() => {});
+        // ⚠️ N1 修复：getClient() 失败时 tx 为 undefined，须判空（与 deliveries F8 同款）
+        if (tx) await tx.query('ROLLBACK').catch(() => {});
         next(err);
       } finally {
-        tx!.release();
+        if (tx) tx.release();
       }
     });
 

@@ -6,6 +6,7 @@ import type { TagNode } from '../types';
 import { COLORS } from '../styles/colors';
 import { cloneTree, findPath, getNodeByPath, uid, flattenTree } from '../utils/tagHelpers';
 import { tagService } from '../services/tagService';
+import { tabItemStyle } from '../utils/tableUtils';
 
 // ── 组件 ──
 
@@ -345,22 +346,10 @@ const TagManagement: React.FC = () => {
                 const walk = (ns: TagNode[]) => ns.forEach(n => { all.push(n.id); if (n.children) walk(n.children); });
                 walk(tree);
                 setExpandedIds(new Set(all));
-              }} style={{
-                padding: '8px 20px', cursor: 'pointer', fontSize: 14,
-                borderBottom: expandView === 'expand' ? `2px solid ${COLORS.primary}` : '2px solid transparent',
-                color: expandView === 'expand' ? COLORS.primary : COLORS.textSecondary,
-                fontWeight: expandView === 'expand' ? 600 : 400,
-                marginBottom: -2, transition: 'all 0.15s',
-              }}>全部展开</div>
+              }} style={tabItemStyle(expandView === 'expand', COLORS.primary)}>全部展开</div>
               <div onClick={() => {
                 setExpandedIds(new Set());
-              }} style={{
-                padding: '8px 20px', cursor: 'pointer', fontSize: 14,
-                borderBottom: expandView === 'collapse' ? `2px solid ${COLORS.primary}` : '2px solid transparent',
-                color: expandView === 'collapse' ? COLORS.primary : COLORS.textSecondary,
-                fontWeight: expandView === 'collapse' ? 600 : 400,
-                marginBottom: -2, transition: 'all 0.15s',
-              }}>全部折叠</div>
+              }} style={tabItemStyle(expandView === 'collapse', COLORS.primary)}>全部折叠</div>
             </div>
             <Button type="default" ghost icon={<PlusOutlined />}
               onClick={() => addChild(null)}

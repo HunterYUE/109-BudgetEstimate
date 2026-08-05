@@ -8,6 +8,7 @@ import type { Client, Contact, CreditLevel, ClientGrade } from '../../types';
 import { COLORS } from '../../styles/colors';
 import { INDUSTRIES, REGIONS } from './clientConstants';
 import { LABEL_CELL_STYLE } from '../../styles/colors';
+import { BARE_INPUT_STYLE } from '../../utils/tableUtils';
 
 // ── 行业下拉选择器（Popover 实现，样式与点击选择器一致） ──
 
@@ -158,7 +159,7 @@ export const ClientEditModal: React.FC<ClientEditModalProps> = ({
                 <input value={editForm.name || ''}
                   onChange={e => onFormChange({ name: e.target.value })}
                   disabled={editForm.type === 'subsidiary' && !!editingId}
-                  style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 12, padding: 0, margin: 0, display: 'block', boxSizing: 'border-box' }} />
+                  style={{ width: '100%', ...BARE_INPUT_STYLE, fontSize: 12, padding: 0, margin: 0, display: 'block', boxSizing: 'border-box' }} />
               </td>
               <td style={LABEL_CELL_STYLE}>客户编号</td>
               <td style={{ padding: '6px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>
@@ -188,14 +189,14 @@ export const ClientEditModal: React.FC<ClientEditModalProps> = ({
               <td style={{ padding: '6px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>
                 <input value={editForm.salesman || ''}
                   onChange={e => onFormChange({ salesman: e.target.value })}
-                  style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 12, padding: 0, margin: 0, display: 'block', boxSizing: 'border-box' }} />
+                  style={{ width: '100%', ...BARE_INPUT_STYLE, fontSize: 12, padding: 0, margin: 0, display: 'block', boxSizing: 'border-box' }} />
               </td>
               <td style={LABEL_CELL_STYLE}>城市代码</td>
               <td style={{ padding: '6px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>
                 <input value={editCity}
                   onChange={e => onCityChange(e.target.value.toUpperCase().slice(0, 4))}
                   placeholder="2~4位大写字母，如 SH"
-                  style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 12, padding: 0, margin: 0, display: 'block', boxSizing: 'border-box', fontFamily: 'monospace', fontWeight: 600 }} />
+                  style={{ width: '100%', ...BARE_INPUT_STYLE, fontSize: 12, padding: 0, margin: 0, display: 'block', boxSizing: 'border-box', fontFamily: 'monospace', fontWeight: 600 }} />
               </td>
             </tr>
             <tr>
@@ -264,11 +265,11 @@ export const ClientEditModal: React.FC<ClientEditModalProps> = ({
                     <input value={c.name}
                       onChange={e => onUpdateContact(c.id, 'name', e.target.value)}
                       placeholder="姓名"
-                      style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, fontWeight: 600, color: COLORS.textDark, padding: 0, margin: 0, display: 'block', boxSizing: 'border-box' }} />
+                      style={{ width: '100%', ...BARE_INPUT_STYLE, fontSize: 13, fontWeight: 600, color: COLORS.textDark, padding: 0, margin: 0, display: 'block', boxSizing: 'border-box' }} />
                     <input value={c.position}
                       onChange={e => onUpdateContact(c.id, 'position', e.target.value)}
                       placeholder="职位"
-                      style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 11, color: COLORS.textFormLabel, padding: 0, margin: 0, display: 'block', boxSizing: 'border-box' }} />
+                      style={{ width: '100%', ...BARE_INPUT_STYLE, fontSize: 11, color: COLORS.textFormLabel, padding: 0, margin: 0, display: 'block', boxSizing: 'border-box' }} />
                   </div>
                 </div>
               ),
@@ -280,7 +281,7 @@ export const ClientEditModal: React.FC<ClientEditModalProps> = ({
                 <input value={v || ''}
                   onChange={e => onUpdateContact(c.id, 'superior', e.target.value)}
                   placeholder="—"
-                  style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 12, color: COLORS.textFormLabel, padding: 0, margin: 0, display: 'block', boxSizing: 'border-box' }} />
+                  style={{ width: '100%', ...BARE_INPUT_STYLE, fontSize: 12, color: COLORS.textFormLabel, padding: 0, margin: 0, display: 'block', boxSizing: 'border-box' }} />
               ),
             },
             {
@@ -292,7 +293,7 @@ export const ClientEditModal: React.FC<ClientEditModalProps> = ({
                   <input value={v || ''}
                     onChange={e => onUpdateContact(c.id, 'phone', e.target.value)}
                     placeholder="电话"
-                    style={{ flex: 1, border: 'none', background: 'transparent', outline: 'none', fontSize: 12, color: COLORS.textPrimary, padding: 0, margin: 0, display: 'block', boxSizing: 'border-box' }} />
+                    style={{ flex: 1, ...BARE_INPUT_STYLE, fontSize: 12, color: COLORS.textPrimary, padding: 0, margin: 0, display: 'block', boxSizing: 'border-box' }} />
                 </span>
               ),
             },
@@ -305,7 +306,7 @@ export const ClientEditModal: React.FC<ClientEditModalProps> = ({
                   <input value={v || ''}
                     onChange={e => onUpdateContact(c.id, 'email', e.target.value)}
                     placeholder="邮箱"
-                    style={{ flex: 1, border: 'none', background: 'transparent', outline: 'none', fontSize: 12, color: COLORS.textPrimary, padding: 0, margin: 0, display: 'block', boxSizing: 'border-box' }} />
+                    style={{ flex: 1, ...BARE_INPUT_STYLE, fontSize: 12, color: COLORS.textPrimary, padding: 0, margin: 0, display: 'block', boxSizing: 'border-box' }} />
                 </span>
               ),
             },
@@ -426,13 +427,13 @@ export const ClientSubModal: React.FC<ClientSubModalProps> = ({
               <input value={subForm.name}
                 onChange={e => onFormChange({ name: e.target.value })}
                 placeholder="输入简称"
-                style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 12, padding: 0, margin: 0, display: 'block', boxSizing: 'border-box' }} />
+                style={{ width: '100%', ...BARE_INPUT_STYLE, fontSize: 12, padding: 0, margin: 0, display: 'block', boxSizing: 'border-box' }} />
             </td>
             <td style={LABEL_CELL_STYLE}>编号</td>
             <td style={{ padding: '6px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>
               <input value={subForm.code}
                 onChange={e => onFormChange({ code: e.target.value })}
-                style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 12, padding: 0, margin: 0, display: 'block', boxSizing: 'border-box' }} />
+                style={{ width: '100%', ...BARE_INPUT_STYLE, fontSize: 12, padding: 0, margin: 0, display: 'block', boxSizing: 'border-box' }} />
             </td>
           </tr>
           <tr>
@@ -456,7 +457,7 @@ export const ClientSubModal: React.FC<ClientSubModalProps> = ({
             <td style={{ padding: '6px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>
               <input value={subForm.salesman || ''}
                 onChange={e => onFormChange({ salesman: e.target.value })}
-                style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 12, padding: 0, margin: 0, display: 'block', boxSizing: 'border-box' }} />
+                style={{ width: '100%', ...BARE_INPUT_STYLE, fontSize: 12, padding: 0, margin: 0, display: 'block', boxSizing: 'border-box' }} />
             </td>
             <td style={LABEL_CELL_STYLE}>信用等级</td>
             <td style={{ padding: '6px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>

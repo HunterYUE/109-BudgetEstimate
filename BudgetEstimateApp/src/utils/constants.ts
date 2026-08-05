@@ -22,11 +22,5 @@ export const NODE_DISPLAY_NAMES = [
 ] as const;
 
 // ===== 默认业务常量 =====
-export const DEFAULT_TAX_RATE = 0.13;
 export const DEFAULT_DESIGN_HOURLY_RATE = 175;
 export const DEFAULT_ASSEMBLY_HOURLY_RATE = 85;
-export const DEFAULT_EUR_RATE = 7.8;
-export const DEFAULT_WARRANTY_RATE = 0.01;
-export const DEFAULT_RISK_RATE = 0.03;
-export const DEFAULT_MARGIN_RATE = 0.15;
-export const DEFAULT_NEW_USER_PASSWORD = 'ChangeMe@2024';

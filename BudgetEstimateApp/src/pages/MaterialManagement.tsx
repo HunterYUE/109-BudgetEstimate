@@ -11,6 +11,7 @@ import { collectTagPaths, collectDescendantIds, findPath } from '../utils/tagHel
 import { formatMoney } from '../utils/calculations';
 import type { Component, ItemType, SourcingType, ReviewStatus, TagNode } from '../types';
 import { COLORS, LABEL_CELL_STYLE } from '../styles/colors';
+import { lockCellWidth, BARE_INPUT_STYLE } from '../utils/tableUtils';
 import {
   MaterialEditModal, MaterialDeleteModal,
 } from '../components/material/MaterialModals';
@@ -19,6 +20,7 @@ import {
   SOURCES, UNITS, STATUS_CONFIG, validateCodeFormat,
 } from '../components/material/materialConstants';
 import { MaterialDrawer } from '../components/material/MaterialDrawer';
+import { tabItemStyle } from '../utils/tableUtils';
 
 
 // ── 辅助函数 ──
@@ -96,18 +98,9 @@ function parseVersionFromCode(code: string): { version: string; isTemp: boolean 
   return { version: 'V' + m[1], isTemp: parseInt(m[1], 10) < 1 };
 }
 
-/** 表格列宽锁定（onCell 返回固定 width/minWidth/maxWidth） */
-const onCellLock = (w: number) => () => ({ style: { width: w, minWidth: w, maxWidth: w } });
+const onCellLock = (w: number) => lockCellWidth(w);
 
 /** 状态 Tab 样式（active 高亮色可配），收敛重复内联样式 */
-const tabStyle = (active: boolean, activeColor: string): React.CSSProperties => ({
-  padding: '8px 20px', cursor: 'pointer', fontSize: 14,
-  borderBottom: `2px solid ${active ? activeColor : 'transparent'}`,
-  color: active ? activeColor : COLORS.textSecondary,
-  fontWeight: active ? 600 : 400,
-  marginBottom: -2, transition: 'all 0.15s',
-});
-
 // ── 组件 ──
 
 const MaterialManagement: React.FC = () => {
@@ -584,7 +577,7 @@ const MaterialManagement: React.FC = () => {
               <input placeholder="搜索物料名称 / 编码 / 品牌"
                 value={searchText}
                 onChange={e => setSearchText(e.target.value)}
-                style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, padding: '2px 0', margin: 0, display: 'block', boxSizing: 'border-box', lineHeight: 1.3 }} />
+                style={{ width: '100%', ...BARE_INPUT_STYLE, fontSize: 13, padding: '2px 0', margin: 0, display: 'block', boxSizing: 'border-box', lineHeight: 1.3 }} />
             </td>
             <td style={LABEL_CELL_STYLE}>类型</td>
             <td style={{ padding: '7px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>
@@ -627,9 +620,9 @@ const MaterialManagement: React.FC = () => {
 
       {/* 状态标签 */}
       <div style={{ display: 'flex', gap: 0, marginBottom: 16, borderBottom: `2px solid ${COLORS.border}` }}>
-        <div onClick={() => setStatusTab('all')} style={tabStyle(statusTab === 'all', COLORS.primary)}>全部({tabCounts.all})</div>
-        <div onClick={() => setStatusTab('approved')} style={tabStyle(statusTab === 'approved', COLORS.success)}>已通过({tabCounts.approved})</div>
-        <div onClick={() => setStatusTab('pending')} style={tabStyle(statusTab === 'pending', COLORS.warning)}>待审核({tabCounts.pending})</div>
+        <div onClick={() => setStatusTab('all')} style={tabItemStyle(statusTab === 'all', COLORS.primary)}>全部({tabCounts.all})</div>
+        <div onClick={() => setStatusTab('approved')} style={tabItemStyle(statusTab === 'approved', COLORS.success)}>已通过({tabCounts.approved})</div>
+        <div onClick={() => setStatusTab('pending')} style={tabItemStyle(statusTab === 'pending', COLORS.warning)}>待审核({tabCounts.pending})</div>
       </div>
 
       {/* 表格 */}

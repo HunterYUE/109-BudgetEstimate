@@ -9,6 +9,12 @@ export const compressNo = (sn: string | undefined | null): string => {
   return sn || '';
 };
 
+/** 图表标签：压缩销售编号 + 超 4 位换行（Dashboard / DeliveryAnalysis 共用，防重复实现） */
+export const chartLabel = (salesNo: string | undefined | null): string => {
+  const s = compressNo(salesNo);
+  return s.length > 4 ? s.slice(0, 4) + '\n' + s.slice(4) : s;
+};
+
 /** 机会是否已确认为真正的赢单：需先标记为赢（status='赢'）再转交付（terminated=true），两者缺一不可 */
 export const isRealWin = (o: SalesOpportunity): boolean =>
   o.status === '赢' && o.terminated === true;
@@ -42,11 +48,11 @@ export const stageAsOf = (o: SalesOpportunity, date: Date): string => {
 };
 
 /** 取交付项目第15节点（项目总结） */
-export const getNode15 = (nodes: DeliveryNode[] | undefined): DeliveryNode | undefined =>
+const getNode15 = (nodes: DeliveryNode[] | undefined): DeliveryNode | undefined =>
   (nodes || []).find(n => n.nodeNo === 15);
 
 /** 节点15是否已完成（交付完成判定；执行状态三态，完成=completed；延期中为派生维度） */
-export const isNode15Done = (node: DeliveryNode | undefined): boolean =>
+const isNode15Done = (node: DeliveryNode | undefined): boolean =>
   !!node && node.status === 'completed';
 
 /** 节点初始审批基线结束日（审批通过的实施计划；无审批基线则无参考，不判延期） */

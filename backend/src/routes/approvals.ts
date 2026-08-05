@@ -18,6 +18,8 @@ const crudRouter = crudRoutes('approval_requests', fields, {
   searchFields: ['sales_no', 'client_name', 'project_name', 'submitter'],
   orderBy: 'updated_at DESC',
   excludeOnCreate: ['id', 'created_at', 'updated_at'],
+  // ⚠️ L1 修复：status 只能经 POST /:id/records 走审批状态机（写记录+级联），禁止通用 PUT 直改（会绕过级联/审计断链）
+  excludeOnUpdate: ['id', 'created_at', 'updated_at', 'status', 'submit_time'],
 });
 
 // 顶层路由 — 自定义 LIST 优先于 crudRouter 的默认 LIST（否则默认 LIST 永远拦截请求）
@@ -145,7 +147,11 @@ router.post('/:id/records', async (req, res, next) => {
     const appraisal = JSON.stringify({ reviewer, action, comment: comment || '', createdAt: new Date().toISOString() });
     if (ar.approval_type === 'promote' && ar.opportunity_id) {
       await client.query('UPDATE sales_opportunities SET promote_locked = false, updated_at = now() WHERE id = $1', [ar.opportunity_id]);
-      if (newStatus === 'approved') await client.query("UPDATE sales_opportunities SET stage = '机会', updated_at = now() WHERE id = $1", [ar.opportunity_id]);
+      // ⚠️ L3 修复：晋升到"机会"须写 lead_at/opportunity_at（COALESCE 首次写入不覆盖，与 opportunities.ts 阶段规则一致），否则财年归集丢失
+      if (newStatus === 'approved') await client.query(
+        "UPDATE sales_opportunities SET stage = '机会', lead_at = COALESCE(lead_at, now()), opportunity_at = COALESCE(opportunity_at, now()), updated_at = now() WHERE id = $1",
+        [ar.opportunity_id]
+      );
     }
     if (ar.approval_type === 'plan' && ar.delivery_id) {
       await client.query('UPDATE delivery_projects SET plan_status = $1, plan_approval = $2, updated_at = now() WHERE id = $3', [newStatus, appraisal, ar.delivery_id]);
@@ -193,7 +199,7 @@ router.delete('/:id', async (req, res, next) => {
     client = await getClient();
     await client.query('BEGIN');
     const row = (await client.query(
-      'SELECT approval_type, opportunity_id, delivery_id FROM approval_requests WHERE id = $1', [id]
+      'SELECT approval_type, opportunity_id, delivery_id, quotation_id FROM approval_requests WHERE id = $1', [id]
     )).rows[0];
     if (!row) throw new AppError(404, '审批请求不存在');
     // 回滚级联（仅当关联记录仍处于该审批设置的 pending/locked 状态时复位，避免覆盖后续新审批）
@@ -205,6 +211,14 @@ router.delete('/:id', async (req, res, next) => {
     }
     if (row.approval_type === 'promote' && row.opportunity_id) {
       await client.query(`UPDATE sales_opportunities SET promote_locked = false, updated_at = now() WHERE id = $1 AND promote_locked = true`, [row.opportunity_id]);
+    }
+    // ⚠️ 报价审批：删除后回滚前端提交时写入的 pending 状态（报价与版本），避免永久卡在 pending
+    if (row.approval_type === 'quotation' && row.quotation_id) {
+      await client.query(`UPDATE quotations SET status = 'draft', updated_at = now() WHERE id = $1 AND status = 'pending'`, [row.quotation_id]);
+      const qi = (await client.query('SELECT project_id, version_no FROM quotations WHERE id = $1', [row.quotation_id])).rows[0];
+      if (qi?.project_id && qi.version_no) {
+        await client.query(`UPDATE project_versions SET review_status = 'draft', updated_at = now() WHERE project_id = $1 AND version_no = $2 AND review_status = 'pending'`, [qi.project_id, qi.version_no]);
+      }
     }
     await client.query('DELETE FROM approval_requests WHERE id = $1', [id]);
     await client.query('COMMIT');

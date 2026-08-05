@@ -23,6 +23,7 @@ import { calcBlueTableWinRate } from '../utils/blueTableCalculation';
 import { NODE_NAMES } from '../utils/constants';
 import { formatBeijing } from '../utils/timeFormat';
 import { useAuth } from '../utils/authContext';
+import { BARE_INPUT_STYLE, tabItemStyle, parseMoneyInput } from '../utils/tableUtils';
 
 
 
@@ -83,7 +84,7 @@ const getWinRateColumn = (tab: string, setOpp: (o: SalesOpportunity | null) => v
 };
 
 const CELL_INPUT: React.CSSProperties = {
-  width: '100%', border: 'none', background: 'transparent', outline: 'none',
+  width: '100%', ...BARE_INPUT_STYLE,
   fontSize: 13, color: COLORS.textPrimary, padding: '2px 0',
 };
 
@@ -118,7 +119,8 @@ const SalesOpportunityList: React.FC = () => {
   const [enterpriseClients, setEnterpriseClients] = useState<Array<{ name: string; salesman: string; type?: string }>>([]);
 
   const loadClients = useCallback(() => {
-    clientService.list().then(data => {
+    // ⚠️ 传 limit:'1000'：客户下拉/企业校验依赖全量客户，默认 100 会截断导致下拉缺失、校验误拒
+    clientService.list({ limit: '1000' }).then(data => {
       if (data) setEnterpriseClients(data.filter((c: Client) => c.type === 'enterprise'));
     }).catch(() => {});
   }, []);
@@ -330,10 +332,16 @@ const SalesOpportunityList: React.FC = () => {
     const opp = deliveryOpp;
     if (!opp) return;
     if (opp.terminated) { msg.warning('该项目已转交付'); setDeliveryOpp(null); return; }
+    // ⚠️ 转交付必须有关联报价：delivery_projects.quotation_id 为 UUID NOT NULL，传 '' 会撞后端 500
+    if (!opp.quotationId) {
+      msg.warning('该机会未关联报价，无法转交付。请先在报价编制中创建并审批报价。');
+      setDeliveryOpp(null);
+      return;
+    }
     const d = new Date();
 
-    // 取机会关联的报价ID
-    const bestQuoteId = opp.quotationId || '';
+    // 取机会关联的报价ID（已在上方守卫保证非空）
+    const bestQuoteId = opp.quotationId;
 
     // 生成默认交付节点（15个标准节点，从共享常量导入）
     const startDate = new Date(d);
@@ -473,8 +481,8 @@ const SalesOpportunityList: React.FC = () => {
           status: 'pending',
         });
 
-        // 审批提交成功后锁定机会
-        await opportunityService.update(opp.id, { promoteLocked: true, updatedAt: nowISO() });
+        // ⚠️ 后端审批创建已在事务内 promote_locked=true（approvals.ts:43），前端无需再 update 锁定；
+        //    冗余 update 在 F1 权限收紧后对销售经理（无『全部查看权限』）必 403，导致假报错 + 重试重复审批
         // 更新本地状态（立即生效，无需刷新页面）
         setOpportunities(prev => prev.map(o =>
           o.id === opp.id ? { ...o, promoteLocked: true } : o
@@ -742,7 +750,7 @@ const SalesOpportunityList: React.FC = () => {
         <input type="text" defaultValue={v || ''}
           onBlur={e => touch(rec.id, { expectedCloseDate: e.target.value })}
           placeholder="yyyy-mm-dd"
-          style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, color: COLORS.textPrimary }}
+          style={{ width: '100%', ...BARE_INPUT_STYLE, fontSize: 13, color: COLORS.textPrimary }}
         />
       )},
     { title: '报价', dataIndex: 'quotationId', width: 50, align: 'center' as const,
@@ -832,49 +840,19 @@ const SalesOpportunityList: React.FC = () => {
 
         <div onClick={() => handleTabChange('info')}
 
-          style={{
-
-            padding: '8px 20px', cursor: 'pointer', fontSize: 14,
-
-            borderBottom: tabFilter === 'info' ? `2px solid ${COLORS.primary}` : '2px solid transparent',
-
-            color: tabFilter === 'info' ? COLORS.primary : COLORS.textSecondary, fontWeight: tabFilter === 'info' ? 600 : 400,
-
-            marginBottom: -2, transition: 'all 0.15s',
-
-          }}>销售信息
+          style={tabItemStyle(tabFilter === 'info', COLORS.primary)}>销售信息
 
         </div>
 
         <div onClick={() => handleTabChange('lead')}
 
-          style={{
-
-            padding: '8px 20px', cursor: 'pointer', fontSize: 14,
-
-            borderBottom: tabFilter === 'lead' ? `2px solid ${COLORS.purple}` : '2px solid transparent',
-
-            color: tabFilter === 'lead' ? COLORS.purple : COLORS.textSecondary, fontWeight: tabFilter === 'lead' ? 600 : 400,
-
-            marginBottom: -2, transition: 'all 0.15s',
-
-          }}>销售线索
+          style={tabItemStyle(tabFilter === 'lead', COLORS.purple)}>销售线索
 
         </div>
 
         <div onClick={() => handleTabChange('opp')}
 
-          style={{
-
-            padding: '8px 20px', cursor: 'pointer', fontSize: 14,
-
-            borderBottom: tabFilter === 'opp' ? `2px solid ${COLORS.success}` : '2px solid transparent',
-
-            color: tabFilter === 'opp' ? COLORS.success : COLORS.textSecondary, fontWeight: tabFilter === 'opp' ? 600 : 400,
-
-            marginBottom: -2, transition: 'all 0.15s',
-
-          }}>销售机会
+          style={tabItemStyle(tabFilter === 'opp', COLORS.success)}>销售机会
 
         </div>
 
@@ -981,7 +959,7 @@ const SalesOpportunityList: React.FC = () => {
               <td style={labelStyle2}>项目名称 *</td>
               <td style={cellStyle2}>
                 <input value={formData.projectName || ''} onChange={e => setFormData(p => ({ ...p, projectName: e.target.value }))}
-                  style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, padding: '2px 0', margin: 0, display: 'block', boxSizing: 'border-box' }} />
+                  style={{ width: '100%', ...BARE_INPUT_STYLE, fontSize: 13, padding: '2px 0', margin: 0, display: 'block', boxSizing: 'border-box' }} />
               </td>
             </tr>
             <tr>
@@ -1009,11 +987,10 @@ const SalesOpportunityList: React.FC = () => {
                   <span style={{ fontSize: 13, color: COLORS.textSecondary, fontWeight: 600 }}>¥</span>
                   <input type="text" value={formData.amount ? Math.round(formData.amount).toLocaleString() : ''}
                     onChange={e => {
-                      const raw = e.target.value.replace(/[^0-9]/g, '');
-                      setFormData(p => ({ ...p, amount: parseInt(raw, 10) || 0 }));
+                      setFormData(p => ({ ...p, amount: parseMoneyInput(e.target.value) }));
                     }}
                     placeholder="0"
-                    style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, padding: '2px 0', margin: 0, display: 'block', boxSizing: 'border-box', fontWeight: 600 }} />
+                    style={{ width: '100%', ...BARE_INPUT_STYLE, fontSize: 13, padding: '2px 0', margin: 0, display: 'block', boxSizing: 'border-box', fontWeight: 600 }} />
                 </div>
               </td>
             </tr>
@@ -1021,13 +998,13 @@ const SalesOpportunityList: React.FC = () => {
               <td style={labelStyle2}>赢率 (%)</td>
               <td style={cellStyle2}>
                 <input type="number" min={0} max={100} value={formData.winRate ?? ''} onChange={e => setFormData(p => ({ ...p, winRate: e.target.value === '' ? 0 : parseInt(e.target.value, 10) || 0 }))}
-                  style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, padding: '2px 0', margin: 0, display: 'block', boxSizing: 'border-box' }} />
+                  style={{ width: '100%', ...BARE_INPUT_STYLE, fontSize: 13, padding: '2px 0', margin: 0, display: 'block', boxSizing: 'border-box' }} />
               </td>
               <td style={labelStyle2}>竞争对手</td>
               <td style={cellStyle2}>
                 <input value={formData.competitor || ''} onChange={e => setFormData(p => ({ ...p, competitor: e.target.value }))}
                   placeholder="用 ，/ / 、 分隔"
-                  style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, padding: '2px 0', margin: 0, display: 'block', boxSizing: 'border-box' }} />
+                  style={{ width: '100%', ...BARE_INPUT_STYLE, fontSize: 13, padding: '2px 0', margin: 0, display: 'block', boxSizing: 'border-box' }} />
               </td>
             </tr>
             <tr>
@@ -1036,13 +1013,13 @@ const SalesOpportunityList: React.FC = () => {
                 {/* 销售员从所属客户信息带出（客户管理中维护），创建时自动填入、不可手动修改 */}
                 <input value={formData.salesman || ''} readOnly
                   title="销售员取自客户信息（客户管理维护），创建后不可修改"
-                  style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, padding: '2px 0', margin: 0, display: 'block', boxSizing: 'border-box', color: COLORS.textLight, cursor: 'not-allowed' }} />
+                  style={{ width: '100%', ...BARE_INPUT_STYLE, fontSize: 13, padding: '2px 0', margin: 0, display: 'block', boxSizing: 'border-box', color: COLORS.textLight, cursor: 'not-allowed' }} />
               </td>
               <td style={labelStyle2}>定标日期</td>
               <td style={cellStyle2}>
                 <input value={formData.expectedCloseDate || ''} onChange={e => setFormData(p => ({ ...p, expectedCloseDate: e.target.value }))}
                   placeholder="yyyy/mm/dd"
-                  style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, padding: '2px 0', margin: 0, display: 'block', boxSizing: 'border-box' }} />
+                  style={{ width: '100%', ...BARE_INPUT_STYLE, fontSize: 13, padding: '2px 0', margin: 0, display: 'block', boxSizing: 'border-box' }} />
               </td>
             </tr>
             <tr>
@@ -1050,7 +1027,7 @@ const SalesOpportunityList: React.FC = () => {
               <td colSpan={3} style={cellStyle2}>
                 <textarea value={formData.notes || ''} onChange={e => setFormData(p => ({ ...p, notes: e.target.value }))}
                   rows={2}
-                  style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, padding: '2px 0', margin: 0, display: 'block', boxSizing: 'border-box', resize: 'none' }} />
+                  style={{ width: '100%', ...BARE_INPUT_STYLE, fontSize: 13, padding: '2px 0', margin: 0, display: 'block', boxSizing: 'border-box', resize: 'none' }} />
               </td>
             </tr>
           </tbody>

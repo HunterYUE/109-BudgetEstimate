@@ -238,7 +238,7 @@ CREATE TABLE IF NOT EXISTS project_groups (
   sort_order  INTEGER NOT NULL DEFAULT 0,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-  UNIQUE(version_id, group_no)  -- 迁移 028：版本隔离下同版本组号唯一，防重复组
+  CONSTRAINT uq_project_groups_version_no UNIQUE (version_id, group_no)  -- 迁移 028：版本隔离下同版本组号唯一，防重复组（约束名与 028 一致，重跑 028 不会加冗余约束）
 );
 
 CREATE INDEX IF NOT EXISTS idx_project_groups_project_id ON project_groups(project_id);
@@ -750,3 +750,107 @@ DO $$ BEGIN
     FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
+
+-- ============================================================
+-- 19. 工时系统（timerecording schema）
+-- ⚠️ 从零建库必需（此前缺失导致工时路由不可用）；profiles.id 与 public.users.id 一一对应（无显式 FK）
+-- 结构从生产库提取（2026-08-05），与部署库一致
+-- ============================================================
+CREATE SCHEMA IF NOT EXISTS timerecording;
+
+CREATE OR REPLACE FUNCTION timerecording.handle_updated_at()
+RETURNS TRIGGER AS $$ BEGIN NEW.updated_at = now(); RETURN NEW; END; $$ LANGUAGE plpgsql;
+
+CREATE TABLE IF NOT EXISTS timerecording.notifications (
+  id         uuid DEFAULT gen_random_uuid() NOT NULL PRIMARY KEY,
+  user_id    uuid NOT NULL,
+  title      text NOT NULL,
+  message    text,
+  type       text NOT NULL,
+  is_read    boolean DEFAULT false NOT NULL,
+  link_url   text,
+  created_at timestamptz DEFAULT now() NOT NULL,
+  CONSTRAINT notifications_type_check CHECK (type = ANY (ARRAY['approval','rejection','submission']))
+);
+
+CREATE TABLE IF NOT EXISTS timerecording.profiles (
+  id          uuid NOT NULL PRIMARY KEY,
+  employee_id text NOT NULL UNIQUE,
+  name        text NOT NULL,
+  email       text,
+  role        text DEFAULT 'employee' NOT NULL,
+  is_active   boolean DEFAULT true NOT NULL,
+  created_at  timestamptz DEFAULT now() NOT NULL,
+  updated_at  timestamptz DEFAULT now() NOT NULL,
+  CONSTRAINT profiles_role_check CHECK (role = ANY (ARRAY['admin','employee']))
+);
+
+CREATE TABLE IF NOT EXISTS timerecording.task_assignments (
+  id             uuid DEFAULT gen_random_uuid() NOT NULL PRIMARY KEY,
+  user_id        uuid NOT NULL,
+  task_name      text NOT NULL,
+  color          text NOT NULL,
+  start_datetime timestamptz NOT NULL,
+  end_datetime   timestamptz NOT NULL,
+  status         text DEFAULT 'in_progress' NOT NULL,
+  created_by     uuid NOT NULL,
+  note           text,
+  created_at     timestamptz DEFAULT now() NOT NULL,
+  updated_at     timestamptz DEFAULT now() NOT NULL,
+  CONSTRAINT chk_end_after_start CHECK (end_datetime > start_datetime),
+  CONSTRAINT task_assignments_status_check CHECK (status = ANY (ARRAY['in_progress','completed','cancelled','postponed','delayed']))
+);
+
+CREATE TABLE IF NOT EXISTS timerecording.time_records (
+  id               uuid DEFAULT gen_random_uuid() NOT NULL PRIMARY KEY,
+  user_id          uuid NOT NULL,
+  date             date NOT NULL,
+  week_number      integer NOT NULL,
+  year             integer NOT NULL,
+  start_time       time,
+  end_time         time,
+  hours            numeric(3,1) DEFAULT 0 NOT NULL,
+  hour_type        text DEFAULT 'normal' NOT NULL,
+  cost_center      text,
+  task_description text,
+  status           text DEFAULT 'draft' NOT NULL,
+  review_notes     text,
+  reviewed_by      uuid,
+  reviewed_at      timestamptz,
+  created_at       timestamptz DEFAULT now() NOT NULL,
+  updated_at       timestamptz DEFAULT now() NOT NULL,
+  CONSTRAINT time_records_hour_type_check CHECK (hour_type = ANY (ARRAY['normal','overtime'])),
+  CONSTRAINT time_records_status_check CHECK (status = ANY (ARRAY['draft','submitted','approved','rejected','locked']))
+);
+
+-- 外键（工时主体为 profiles；profiles.id 与 public.users.id 一一对应，无显式 FK）
+ALTER TABLE timerecording.time_records ADD CONSTRAINT time_records_user_id_fkey FOREIGN KEY (user_id) REFERENCES timerecording.profiles(id) ON DELETE CASCADE;
+ALTER TABLE timerecording.time_records ADD CONSTRAINT time_records_reviewed_by_fkey FOREIGN KEY (reviewed_by) REFERENCES timerecording.profiles(id);
+ALTER TABLE timerecording.task_assignments ADD CONSTRAINT task_assignments_user_id_fkey FOREIGN KEY (user_id) REFERENCES timerecording.profiles(id) ON DELETE CASCADE;
+ALTER TABLE timerecording.task_assignments ADD CONSTRAINT task_assignments_created_by_fkey FOREIGN KEY (created_by) REFERENCES timerecording.profiles(id);
+ALTER TABLE timerecording.notifications ADD CONSTRAINT notifications_user_id_fkey FOREIGN KEY (user_id) REFERENCES timerecording.profiles(id) ON DELETE CASCADE;
+
+-- updated_at 触发器（与生产库一致）
+DO $$ BEGIN
+  CREATE TRIGGER trg_tr_profiles_updated_at BEFORE UPDATE ON timerecording.profiles
+    FOR EACH ROW EXECUTE FUNCTION timerecording.handle_updated_at();
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  CREATE TRIGGER trg_tr_task_assignments_updated_at BEFORE UPDATE ON timerecording.task_assignments
+    FOR EACH ROW EXECUTE FUNCTION timerecording.handle_updated_at();
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  CREATE TRIGGER trg_tr_time_records_updated_at BEFORE UPDATE ON timerecording.time_records
+    FOR EACH ROW EXECUTE FUNCTION timerecording.handle_updated_at();
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- 索引
+CREATE INDEX IF NOT EXISTS idx_tr_notifications_unread ON timerecording.notifications (user_id, is_read);
+CREATE INDEX IF NOT EXISTS idx_tr_notifications_user ON timerecording.notifications (user_id);
+CREATE INDEX IF NOT EXISTS idx_tr_task_assignments_dates ON timerecording.task_assignments (start_datetime, end_datetime);
+CREATE INDEX IF NOT EXISTS idx_tr_task_assignments_user ON timerecording.task_assignments (user_id);
+CREATE INDEX IF NOT EXISTS idx_tr_time_records_date ON timerecording.time_records (date);
+CREATE INDEX IF NOT EXISTS idx_tr_time_records_review ON timerecording.time_records (status) WHERE status = 'submitted';

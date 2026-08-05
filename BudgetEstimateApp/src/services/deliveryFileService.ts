@@ -1,4 +1,4 @@
-import { api } from '../utils/api';
+import { api, toCamel } from '../utils/api';
 
 export interface DeliveryFile {
   id: string;
@@ -21,9 +21,11 @@ export const deliveryFileService = {
       method: 'POST',
       headers: { Authorization: 'Bearer ' + (localStorage.getItem('budget_token') || '') },
       body: formData,
-    }).then(res => {
+    }).then(async res => {
       if (!res.ok) throw new Error('上传失败');
-      return res.json();
+      // ⚠️ D5 修复：原生 fetch 不经 api.ts 自动 toCamel，须手动转换与 DeliveryFile 类型对齐
+      const data = await res.json();
+      return toCamel(data) as DeliveryFile;
     });
   },
 

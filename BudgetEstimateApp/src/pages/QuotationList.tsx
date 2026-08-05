@@ -8,6 +8,8 @@ import { formatBeijing } from '../utils/timeFormat';
 import { parseFY, FYSelector, fiscalYearLabel } from '../utils/fiscalYear';
 import type { QuotationSummary } from '../types';
 import { COLORS } from '../styles/colors';
+import { BARE_INPUT_STYLE } from '../utils/tableUtils';
+import { tabItemStyle } from '../utils/tableUtils';
 
 const statusConfig: Record<string, { label: string; color: string }> = {
   draft:    { label: '草稿',   color: COLORS.textSecondary },
@@ -121,7 +123,7 @@ const QuotationList: React.FC = () => {
           <table style={{ borderCollapse: 'collapse' }}><tbody><tr>
             <td style={{ padding: '6px 12px', fontSize: 12, border: '1px solid ' + COLORS.border, verticalAlign: 'middle' }}>
               <input placeholder="搜索客户/销售号" value={searchText} onChange={e => setSearchText(e.target.value)}
-                style={{ width: 180, border: 'none', background: 'transparent', outline: 'none', fontSize: 12, padding: 0, margin: 0, display: 'block', boxSizing: 'border-box' }} />
+                style={{ width: 180, ...BARE_INPUT_STYLE, fontSize: 12, padding: 0, margin: 0, display: 'block', boxSizing: 'border-box' }} />
             </td>
           </tr></tbody></table>
           <FYSelector value={fySelect} onChange={setFySelect} />
@@ -130,36 +132,16 @@ const QuotationList: React.FC = () => {
 
       <div style={{ display: 'flex', gap: 0, marginBottom: 16, borderBottom: `2px solid ${COLORS.border}` }}>
         <div onClick={() => setStatusTab('all')}
-          style={{
-            padding: '8px 20px', cursor: 'pointer', fontSize: 14,
-            borderBottom: statusTab === 'all' ? `2px solid ${COLORS.primary}` : '2px solid transparent',
-            color: statusTab === 'all' ? COLORS.primary : COLORS.textSecondary, fontWeight: statusTab === 'all' ? 600 : 400,
-            marginBottom: -2, transition: 'all 0.15s',
-          }}>全部({getCount()})
+          style={tabItemStyle(statusTab === 'all', COLORS.primary)}>全部({getCount()})
         </div>
         <div onClick={() => setStatusTab('draft')}
-          style={{
-            padding: '8px 20px', cursor: 'pointer', fontSize: 14,
-            borderBottom: statusTab === 'draft' ? `2px solid ${COLORS.textSecondary}` : '2px solid transparent',
-            color: statusTab === 'draft' ? COLORS.textSecondary : COLORS.textLight, fontWeight: statusTab === 'draft' ? 600 : 400,
-            marginBottom: -2, transition: 'all 0.15s',
-          }}>草稿({getCount('draft')})
+          style={tabItemStyle(statusTab === 'draft', COLORS.textSecondary, COLORS.textLight)}>草稿({getCount('draft')})
         </div>
         <div onClick={() => setStatusTab('pending')}
-          style={{
-            padding: '8px 20px', cursor: 'pointer', fontSize: 14,
-            borderBottom: statusTab === 'pending' ? `2px solid ${COLORS.warning}` : '2px solid transparent',
-            color: statusTab === 'pending' ? COLORS.warning : COLORS.textLight, fontWeight: statusTab === 'pending' ? 600 : 400,
-            marginBottom: -2, transition: 'all 0.15s',
-          }}>待审批({getCount('pending')})
+          style={tabItemStyle(statusTab === 'pending', COLORS.warning, COLORS.textLight)}>待审批({getCount('pending')})
         </div>
         <div onClick={() => setStatusTab('approved')}
-          style={{
-            padding: '8px 20px', cursor: 'pointer', fontSize: 14,
-            borderBottom: statusTab === 'approved' ? `2px solid ${COLORS.success}` : '2px solid transparent',
-            color: statusTab === 'approved' ? COLORS.success : COLORS.textLight, fontWeight: statusTab === 'approved' ? 600 : 400,
-            marginBottom: -2, transition: 'all 0.15s',
-          }}>已通过({getCount('approved')})
+          style={tabItemStyle(statusTab === 'approved', COLORS.success, COLORS.textLight)}>已通过({getCount('approved')})
         </div>
       </div>
 

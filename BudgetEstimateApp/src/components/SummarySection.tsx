@@ -1,8 +1,10 @@
 import React from 'react';
+import { exAmount } from '../utils/analysisShared';
 import { Card, Row, Col } from 'antd';
 import type { Group, ProjectVersion } from '../types';
 import { calcProjectSummary, formatMoney } from '../utils/calculations';
 import { COLORS } from '../styles/colors';
+import { moneyInputFilter, parseMoneyInput } from '../utils/tableUtils';
 
 interface Props {
   groups: Group[];
@@ -59,11 +61,13 @@ const PctBadge: React.FC<{ value: number; label: string; onClick?: () => void }>
 const SummarySection: React.FC<Props> = ({ groups, version, onDiscountChange, onVersionUpdate, readOnly }) => {
   // calcProjectSummary 的 discountedPrice 参数需为未税值，从含税版本值转换回
   const untaxedDiscounted = version.discountedPrice
-    ? Math.round(version.discountedPrice / (1 + (version.taxRate ?? 0.13)))
+    ? exAmount(version.discountedPrice, version.taxRate)
     : undefined;
   const summary = calcProjectSummary(groups, version, untaxedDiscounted);
   const { materialCost, laborCost, projectExpense } = summary;
   const directCost = materialCost + laborCost + projectExpense;
+  // 折后报价显示存值（避免含税↔未税往返 ±1 漂移）；未设置（0=未打折）时回退 calcProjectSummary 全价，避免新报价默认显示 ¥0
+  const displayDiscounted = version.discountedPrice > 0 ? version.discountedPrice : summary.discountedPrice;
   const warnPct = Math.round(version.warrantyRate * 100);
   const riskPct = Math.round(version.riskRate * 100);
 
@@ -147,12 +151,10 @@ const SummarySection: React.FC<Props> = ({ groups, version, onDiscountChange, on
             defaultValue={'¥' + formatMoney(version.commercialCost)}
             onInput={(e) => {
               const input = e.currentTarget;
-              const raw = input.value.replace(/[^0-9]/g, '');
-              input.value = raw ? '¥' + parseInt(raw, 10).toLocaleString() : '¥';
+              input.value = moneyInputFilter(input.value);
             }}
             onBlur={(e) => {
-              const val = parseInt(e.target.value.replace(/[^0-9]/g, ''), 10) || 0;
-              onVersionUpdate?.('commercialCost', val);
+              onVersionUpdate?.('commercialCost', parseMoneyInput(e.target.value));
             }}
             onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
             style={{
@@ -197,20 +199,18 @@ const SummarySection: React.FC<Props> = ({ groups, version, onDiscountChange, on
             </div>
             {readOnly ? (
               <div style={{ fontWeight: 700, fontSize: 24, color: COLORS.textDark, lineHeight: 1.2 }}>
-                ¥{Math.round(summary.discountedPrice).toLocaleString()}
+                ¥{Math.round(displayDiscounted).toLocaleString()}
               </div>
             ) : (
             <input type="text" inputMode="numeric"
-              // ⚠️ discountedPrice 已含税（由 calcProjectSummary 计算时乘以 1+taxRate）
-              defaultValue={'¥' + Math.round(summary.discountedPrice).toLocaleString()}
+              // ⚠️ 显示存储的含税值（直接展示避免含税↔未税往返取整 ±1 漂移；calcProjectSummary 内部另算未税值供 GP3）
+              defaultValue={'¥' + Math.round(displayDiscounted).toLocaleString()}
               onInput={(e) => {
                 const input = e.currentTarget;
-                const raw = input.value.replace(/[^0-9]/g, '');
-                input.value = raw ? '¥' + parseInt(raw, 10).toLocaleString() : '¥';
+                input.value = moneyInputFilter(input.value);
               }}
               onBlur={(e) => {
-                const val = parseInt(e.target.value.replace(/[^0-9]/g, ''), 10) || 0;
-                onDiscountChange(val);  // 直接存含税值，不再除以 (1+taxRate)
+                onDiscountChange(parseMoneyInput(e.target.value));  // 直接存含税值，不再除以 (1+taxRate)
               }}
               onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
               style={{ fontWeight: 700, fontSize: 24, color: COLORS.textDark, lineHeight: 1.2,

@@ -4,7 +4,7 @@ import { Card } from 'antd';
 import { RightOutlined } from '@ant-design/icons';
 import { parseFY, fiscalYearLabel } from '../utils/fiscalYear';
 import { formatBeijing } from '../utils/timeFormat';
-import { fmtK, compressNo, oppEffectiveEnd, isRealWin, monthEndOf, exAmount, stageAsOf, getNodeDelay, getProjectDelay, isProjectDelivered, getProjectDoneDate, projectMonthlySales, FY_MONTH_LABELS, buildQuoteInfoMap, deliveryExTax } from '../utils/analysisShared';
+import { fmtK, chartLabel, oppEffectiveEnd, isRealWin, monthEndOf, exAmount, stageAsOf, getNodeDelay, getProjectDelay, isProjectDelivered, getProjectDoneDate, projectMonthlySales, FY_MONTH_LABELS, buildQuoteInfoMap, deliveryExTax } from '../utils/analysisShared';
 import { COLORS } from '../styles/colors';
 import { OverviewCards } from '../components/shared/OverviewCards';
 import { opportunityService } from '../services/opportunityService';
@@ -399,7 +399,7 @@ const Dashboard: React.FC = () => {
       const hasDue = scheduled.length > 0;
       const rate = hasDue ? Math.round((onTime / scheduled.length) * 100) : 0; // 无到期节点 → 0 并显示 —
       return {
-        label: (() => { const s = compressNo(p.salesNo); return s.length > 4 ? s.slice(0, 4) + '\n' + s.slice(4) : s; })(),
+        label: chartLabel(p.salesNo),
         value: rate,
         color: !hasDue ? COLORS.textLight : (isProjectDelivered(p) ? COLORS.chartGray : (rate >= 90 ? COLORS.success : rate >= 70 ? COLORS.warning : COLORS.danger)),
         displayValue: hasDue ? undefined : '—',

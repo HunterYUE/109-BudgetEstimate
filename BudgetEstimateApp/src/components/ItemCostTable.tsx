@@ -1,9 +1,10 @@
-import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
+import React, { useMemo, useCallback } from 'react';
 import { Table } from 'antd';
 import type { Group } from '../types';
 import { formatMoney } from '../utils/calculations';
 import { buildCostLines, type CostLine } from '../utils/costBreakdown';
 import { COLORS } from '../styles/colors';
+import MoneyInput from './MoneyInput';
 
 /** 非设备组的标准成本类别（成本类别列按此区分设备组高亮） */
 const STANDARD_CATEGORIES = ['集成开发', '人工成本', '项目费用', '风险费用', '商业费用', '质保费用'];
@@ -166,7 +167,7 @@ const ItemCostTable: React.FC<Props> = ({ groups, actualCosts, onActualCostChang
         if (locked || !onActualCostChange || rec._warrantyItem) {
           return <span style={{ fontWeight: 600, fontSize: 13, color: '#000', display: 'block', textAlign: 'right', padding: '2px 4px' }}>¥{formatMoney(rec.actual)}</span>;
         }
-        return <ActualCostInput value={rec.actual} onChange={v => handleActualChange(rec, v)} />;
+        return <MoneyInput value={rec.actual} onCommit={v => handleActualChange(rec, v)} />;
       },
     },
     {
@@ -241,55 +242,4 @@ const ItemCostTable: React.FC<Props> = ({ groups, actualCosts, onActualCostChang
     </>
   );
 };
-
-/** 实际成本输入：纯文本外观，支持 ¥1,000 格式，可删除最后一位 */
-
-/** 实际成本输入：点击即改，无框体，失焦格式化 */
-const ActualCostInput: React.FC<{ value: number; onChange: (v: number) => void }> = ({ value, onChange }) => {
-  const [text, setText] = useState(() => value ? '¥' + Math.round(value).toLocaleString() : '');
-  const [editing, setEditing] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const committed = useRef(value);
-
-  useEffect(() => {
-    if (!editing && committed.current !== value) {
-      committed.current = value;
-      setText(value ? '¥' + Math.round(value).toLocaleString() : '');
-    }
-  }, [value, editing]);
-
-  const commit = () => {
-    const raw = text.replace(/[^0-9]/g, '');
-    const num = parseInt(raw, 10) || 0;
-    committed.current = num;
-    setText(num ? '¥' + num.toLocaleString() : '');
-    onChange(num);
-    setEditing(false);
-  };
-
-  if (!editing) {
-    return (
-      <span onClick={() => { setEditing(true); const raw = text.replace(/[^0-9]/g, ''); setText(raw); setTimeout(() => inputRef.current?.focus(), 0); }}
-        style={{ cursor: 'text', fontWeight: 600, fontSize: 13, color: '#000', display: 'block', textAlign: 'right', padding: '2px 4px', minHeight: 28, lineHeight: '24px' }}>
-        {text || '¥0'}
-      </span>
-    );
-  }
-
-  return (
-    <input ref={inputRef}
-      value={text}
-      onChange={e => setText(e.target.value)}
-      onBlur={commit}
-      onKeyDown={e => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') { setEditing(false); setText(committed.current ? '¥' + Math.round(committed.current).toLocaleString() : ''); } }}
-      style={{
-        width: '100%', height: 28,
-        border: 'none', padding: '2px 4px', textAlign: 'right', fontSize: 13,
-        fontWeight: 600, outline: 'none', boxSizing: 'border-box',
-        background: 'transparent', MozAppearance: 'textfield',
-      }}
-    />
-  );
-};
-
 export default ItemCostTable;

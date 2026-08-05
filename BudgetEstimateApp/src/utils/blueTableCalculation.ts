@@ -22,14 +22,14 @@ export const PRICING_LABELS: Record<PricingLevel, string> = {
 };
 
 /** 影响力默认权重 */
-export const INFLUENCE_DEFAULT_WEIGHT: Record<InfluenceLevel, number> = {
+const INFLUENCE_DEFAULT_WEIGHT: Record<InfluenceLevel, number> = {
   high: 5,
   medium: 3,
   low: 1,
 };
 
 /** EB 角色专用权重（决策者影响力更大） */
-export const EB_INFLUENCE_WEIGHT: Record<InfluenceLevel, number> = {
+const EB_INFLUENCE_WEIGHT: Record<InfluenceLevel, number> = {
   high: 10,
   medium: 5,
   low: 1,
@@ -75,7 +75,7 @@ const REACTION_EXPLANATIONS: Record<ReactionMode, { desc: string; strategy: stri
 
 export { POSITIONING_LABELS, POSITIONING_EXPLANATIONS, REACTION_LABELS, REACTION_EXPLANATIONS };
 
-export interface CalcIntermediate {
+interface CalcIntermediate {
   vetoed: boolean;
   baseSupportScore: number;           // 基础支持度分 0~100
   rolePenalty: number;                // 角色缺失修正系数

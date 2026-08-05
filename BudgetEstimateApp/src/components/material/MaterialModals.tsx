@@ -6,6 +6,7 @@ import type { Component, ItemType } from '../../types';
 import { COLORS } from '../../styles/colors';
 import { CATEGORIES, CATEGORY_OPTIONS, TYPE_ABBREV, SOURCES, UNITS } from './materialConstants';
 import { LABEL_CELL_STYLE } from '../../styles/colors';
+import { BARE_INPUT_STYLE } from '../../utils/tableUtils';
 
 // ── Edit/Create Modal ──
 
@@ -72,13 +73,13 @@ export const MaterialEditModal: React.FC<MaterialEditModalProps> = ({
                 <input value={editForm.code || ''}
                   onChange={e => onFormChange({ ...editForm, code: e.target.value })}
                   placeholder="EQ-ABCDEF-123456-V1.0"
-                  style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 12, padding: 0, margin: 0, display: 'block', boxSizing: 'border-box', fontFamily: 'monospace', fontWeight: 600 }} />
+                  style={{ width: '100%', ...BARE_INPUT_STYLE, fontSize: 12, padding: 0, margin: 0, display: 'block', boxSizing: 'border-box', fontFamily: 'monospace', fontWeight: 600 }} />
               </td>
               <td style={LABEL_CELL_STYLE}>物料名称</td>
               <td style={{ padding: '7px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>
                 <input value={editForm.nameCn || ''}
                   onChange={e => onFormChange({ ...editForm, nameCn: e.target.value })}
-                  style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, padding: '2px 0', margin: 0, display: 'block', boxSizing: 'border-box', lineHeight: 1.3 }} />
+                  style={{ width: '100%', ...BARE_INPUT_STYLE, fontSize: 13, padding: '2px 0', margin: 0, display: 'block', boxSizing: 'border-box', lineHeight: 1.3 }} />
               </td>
             </tr>
             <tr>
@@ -101,7 +102,7 @@ export const MaterialEditModal: React.FC<MaterialEditModalProps> = ({
               <td style={{ padding: '7px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>
                 <input value={editForm.brand || ''}
                   onChange={e => onFormChange({ ...editForm, brand: e.target.value })}
-                  style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, padding: '2px 0', margin: 0, display: 'block', boxSizing: 'border-box', lineHeight: 1.3 }} />
+                  style={{ width: '100%', ...BARE_INPUT_STYLE, fontSize: 13, padding: '2px 0', margin: 0, display: 'block', boxSizing: 'border-box', lineHeight: 1.3 }} />
               </td>
             </tr>
             <tr>
@@ -110,19 +111,19 @@ export const MaterialEditModal: React.FC<MaterialEditModalProps> = ({
                 <input value={editForm.supplier || ''}
                   onChange={e => onFormChange({ ...editForm, supplier: e.target.value })}
                   placeholder="贸易商/代理商/厂商"
-                  style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, padding: '2px 0', margin: 0, display: 'block', boxSizing: 'border-box', lineHeight: 1.3 }} />
+                  style={{ width: '100%', ...BARE_INPUT_STYLE, fontSize: 13, padding: '2px 0', margin: 0, display: 'block', boxSizing: 'border-box', lineHeight: 1.3 }} />
               </td>
               <td style={LABEL_CELL_STYLE}>型号</td>
               <td style={{ padding: '7px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>
                 <input value={editForm.model || ''}
                   onChange={e => onFormChange({ ...editForm, model: e.target.value })}
-                  style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, padding: '2px 0', margin: 0, display: 'block', boxSizing: 'border-box', lineHeight: 1.3 }} />
+                  style={{ width: '100%', ...BARE_INPUT_STYLE, fontSize: 13, padding: '2px 0', margin: 0, display: 'block', boxSizing: 'border-box', lineHeight: 1.3 }} />
               </td>
               <td style={LABEL_CELL_STYLE}>规格</td>
               <td style={{ padding: '7px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>
                 <input value={editForm.specification || ''}
                   onChange={e => onFormChange({ ...editForm, specification: e.target.value })}
-                  style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, padding: '2px 0', margin: 0, display: 'block', boxSizing: 'border-box', lineHeight: 1.3 }} />
+                  style={{ width: '100%', ...BARE_INPUT_STYLE, fontSize: 13, padding: '2px 0', margin: 0, display: 'block', boxSizing: 'border-box', lineHeight: 1.3 }} />
               </td>
             </tr>
             <tr>
@@ -171,7 +172,7 @@ export const MaterialEditModal: React.FC<MaterialEditModalProps> = ({
               <td style={{ padding: '7px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>
                 <input type="number" min={0} value={editForm.unitCost ?? ''}
                   onChange={e => onFormChange({ ...editForm, unitCost: e.target.value === '' ? undefined : parseInt(e.target.value, 10) })}
-                  style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, padding: '2px 0', margin: 0, display: 'block', boxSizing: 'border-box', lineHeight: 1.3 }} />
+                  style={{ width: '100%', ...BARE_INPUT_STYLE, fontSize: 13, padding: '2px 0', margin: 0, display: 'block', boxSizing: 'border-box', lineHeight: 1.3 }} />
               </td>
             </tr>
             <tr>
@@ -179,13 +180,13 @@ export const MaterialEditModal: React.FC<MaterialEditModalProps> = ({
               <td style={{ padding: '7px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>
                 <input type="number" min={0} value={editForm.designHours ?? ''}
                   onChange={e => onFormChange({ ...editForm, designHours: e.target.value === '' ? undefined : parseInt(e.target.value, 10) })}
-                  style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, padding: '2px 0', margin: 0, display: 'block', boxSizing: 'border-box', lineHeight: 1.3 }} />
+                  style={{ width: '100%', ...BARE_INPUT_STYLE, fontSize: 13, padding: '2px 0', margin: 0, display: 'block', boxSizing: 'border-box', lineHeight: 1.3 }} />
               </td>
               <td style={LABEL_CELL_STYLE}>装配工时</td>
               <td style={{ padding: '7px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>
                 <input type="number" min={0} value={editForm.assemblyHours ?? ''}
                   onChange={e => onFormChange({ ...editForm, assemblyHours: e.target.value === '' ? undefined : parseInt(e.target.value, 10) })}
-                  style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, padding: '2px 0', margin: 0, display: 'block', boxSizing: 'border-box', lineHeight: 1.3 }} />
+                  style={{ width: '100%', ...BARE_INPUT_STYLE, fontSize: 13, padding: '2px 0', margin: 0, display: 'block', boxSizing: 'border-box', lineHeight: 1.3 }} />
               </td>
             </tr>
             <tr>
@@ -214,7 +215,7 @@ export const MaterialEditModal: React.FC<MaterialEditModalProps> = ({
                 <input value={editForm.note || ''}
                   onChange={e => onFormChange({ ...editForm, note: e.target.value })}
                   placeholder="物料用途、技术参数补充说明…"
-                  style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 12, padding: 0, margin: 0, display: 'block', boxSizing: 'border-box' }} />
+                  style={{ width: '100%', ...BARE_INPUT_STYLE, fontSize: 12, padding: 0, margin: 0, display: 'block', boxSizing: 'border-box' }} />
               </td>
             </tr>
           </tbody>

@@ -6,6 +6,8 @@ import { formatBeijing } from '../utils/timeFormat';
 import { userService, type UserRecord } from '../services/userService';
 import { auditLogService, type AuditLog } from '../services/auditLogService';
 import type { TableProps } from 'antd';
+import { BARE_INPUT_STYLE } from '../utils/tableUtils';
+import { tabItemStyle } from '../utils/tableUtils';
 
 /** 新建用户的默认初始密码（建议用户在首次登录后修改） */
 const DEFAULT_USER_PASSWORD = 'ChangeMe@2024';
@@ -19,7 +21,7 @@ const VAL_CELL_STYLE: React.CSSProperties = {
 };
 
 const INP_STYLE: React.CSSProperties = {
-  width: '100%', border: 'none', background: 'transparent', outline: 'none',
+  width: '100%', ...BARE_INPUT_STYLE,
   fontSize: 13, padding: '2px 0', margin: 0, display: 'block',
   boxSizing: 'border-box', lineHeight: 1.3,
 };
@@ -167,7 +169,14 @@ const SystemManagement: React.FC = () => {
       });
       // 为新用户初始化默认权限（基于选择的职务）
       const defaultPerms = TITLE_PERMISSIONS[newTitle] || [];
-      await userService.updateRole(created.id, TITLE_ROLE_MAP[newTitle] || 'user', newTitle, defaultPerms).catch(() => {});
+      // ⚠️ updateRole 失败须回滚并提示（原静默吞掉会创建"无权限死账号"：前端显示有权限而 DB 未持久化）
+      try {
+        await userService.updateRole(created.id, TITLE_ROLE_MAP[newTitle] || 'user', newTitle, defaultPerms);
+      } catch {
+        await userService.delete(created.id).catch(() => {});
+        messageApi.error('用户已创建但权限初始化失败，已回滚删除，请重试');
+        return;
+      }
       setUsers(prev => [...prev, { ...created, permissions: defaultPerms }]);
       setAddOpen(false);
       messageApi.success(`用户 ${created.displayName} 添加成功（初始密码 ${DEFAULT_USER_PASSWORD}）`);
@@ -199,7 +208,12 @@ const SystemManagement: React.FC = () => {
         title: editTitle,
         phone: editPhone.trim(),
       });
-      setUsers(prev => prev.map(u => u.id === updated.id ? updated : u));
+      // ⚠️ B2 修复：职务变更须同步 role/permissions（否则界面显示"部门总监"但实际无总监权限，成本覆盖解锁/后端校验均失效）
+      if (editTitle !== editTarget.title) {
+        await userService.updateRole(editTarget.id, TITLE_ROLE_MAP[editTitle] || 'user', editTitle, TITLE_PERMISSIONS[editTitle] || []);
+      }
+      const newPerms = editTitle !== editTarget.title ? (TITLE_PERMISSIONS[editTitle] || []) : updated.permissions;
+      setUsers(prev => prev.map(u => u.id === updated.id ? { ...updated, permissions: newPerms } : u));
       closeModal(setEditOpen);
       messageApi.success('用户信息已更新');
     } catch (err: unknown) {
@@ -372,13 +386,7 @@ const SystemManagement: React.FC = () => {
       <div style={{ display: 'flex', gap: 0, marginBottom: 20, borderBottom: `2px solid ${COLORS.border}` }}>
         {TABS.map(t => (
           <div key={t.key} onClick={() => setTab(t.key)}
-            style={{
-              padding: '8px 20px', cursor: 'pointer', fontSize: 14,
-              borderBottom: tab === t.key ? `2px solid ${COLORS.primary}` : '2px solid transparent',
-              color: tab === t.key ? COLORS.primary : COLORS.textSecondary,
-              fontWeight: tab === t.key ? 600 : 400,
-              marginBottom: -2, transition: 'all 0.15s', userSelect: 'none',
-            }}>{t.label}</div>
+            style={tabItemStyle(tab === t.key, COLORS.primary)}>{t.label}</div>
         ))}
       </div>
 
@@ -451,7 +459,7 @@ const SystemManagement: React.FC = () => {
                   <td style={LABEL_CELL_STYLE}>职务 *</td>
                   <td style={VAL_CELL_STYLE}>
                     <select value={newTitle} onChange={e => setNewTitle(e.target.value)}
-                      style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, padding: 0, cursor: 'pointer', color: COLORS.textPrimary }}>
+                      style={{ width: '100%', ...BARE_INPUT_STYLE, fontSize: 13, padding: 0, cursor: 'pointer', color: COLORS.textPrimary }}>
                       {TITLE_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
                     </select>
                   </td>
@@ -489,7 +497,7 @@ const SystemManagement: React.FC = () => {
                     <td style={LABEL_CELL_STYLE}>职务</td>
                     <td style={VAL_CELL_STYLE}>
                       <select value={editTitle} onChange={e => setEditTitle(e.target.value)}
-                        style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: 13, padding: 0, cursor: 'pointer', color: COLORS.textPrimary }}>
+                        style={{ width: '100%', ...BARE_INPUT_STYLE, fontSize: 13, padding: 0, cursor: 'pointer', color: COLORS.textPrimary }}>
                         {TITLE_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
                       </select>
                     </td>

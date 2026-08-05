@@ -17,6 +17,4 @@ export const auditLogService = {
     api.get<AuditLog[]>('/audit-logs' + (params ? '?' + new URLSearchParams(params).toString() : '')),
 
   /** 创建操作日志 */
-  create: (data: { userName: string; action: string; module: string; detail?: string }) =>
-    api.post<AuditLog>('/audit-logs', data),
 };

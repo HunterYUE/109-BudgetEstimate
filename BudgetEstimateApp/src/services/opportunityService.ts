@@ -14,8 +14,6 @@ export const opportunityService = {
   update: (id: string, data: Partial<SalesOpportunity>) =>
     api.put<SalesOpportunity>(`/opportunities/${id}`, data),
 
-  delete: (id: string) => api.delete(`/opportunities/${id}`),
-
   saveBlueTable: (id: string, data: BlueTable) =>
     api.put<BlueTable & { roles: BlueTableRole[] }>(`/opportunities/${id}/blue-table`, data),
 };

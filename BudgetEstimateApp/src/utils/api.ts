@@ -124,6 +124,17 @@ async function request<T>(path: string, options?: RequestInit, noCache?: boolean
     const resourcePrefix = path.split('?')[0].split('/')[1] || '';
     if (!resourcePrefix) return result;
     clearCache('/' + resourcePrefix);
+    // ⚠️ 跨资源级联写：清相关资源缓存，避免 30s 内读到陈旧数据
+    //   project-versions/groups 改写 project 计算字段；审批记录级联改写 quotations/projects/deliveries/opportunities 状态
+    if (path.startsWith('/project-versions') || path.startsWith('/project-groups')) {
+      clearCache('/projects');
+    }
+    if (path.startsWith('/approvals/') && path.includes('/records')) {
+      clearCache('/quotations');
+      clearCache('/projects');
+      clearCache('/deliveries');
+      clearCache('/opportunities');
+    }
   }
 
   return result;

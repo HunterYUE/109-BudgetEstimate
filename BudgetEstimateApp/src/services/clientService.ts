@@ -10,8 +10,6 @@ export const clientService = {
 
   create: (data: Partial<Client>) => api.post<Client>('/clients', data),
 
-  update: (id: string, data: Partial<Client>) => api.put<Client>(`/clients/${id}`, data),
-
   /** 保存客户 + 联系人（事务保护） */
   saveWithContacts: (id: string, data: Partial<Client> & { contacts?: Contact[] }) =>
     api.put<Client>(`/clients/${id}/save`, data),

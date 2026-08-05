@@ -19,6 +19,7 @@ const stageColors: Record<string, string> = {
   信息: COLORS.textLight, 线索: COLORS.primary, 机会: COLORS.purple,
   投标: COLORS.warning, 议价: COLORS.amber, 中标: COLORS.success,
 };
+// ⚠️ '中标' 为占位桶：stageAsOf 只到'议价'（无中标阶段时间戳），该桶恒 0；赢单累计由 won 折线展示，勿据此推断缺陷
 const STAGES = ['信息', '线索', '机会', '投标', '议价', '中标'] as const;
 
 // localStorage 输入的 parseInt 保护
@@ -422,7 +423,8 @@ const SalesAnalysis: React.FC = () => {
       });
       // 管道基数 = 该月活跃（过程中/未转交付标赢；冻结已排除）且阶段≥机会的项目；
       // 已转交付的赢单不计入管道；终止（输）后经 oppEffectiveEnd 不再计入后续月份
-      const pipelineOpps = activeOpps.filter(o => !isRealWin(o) && stageIdx(o.stage) >= stageIdx('机会'));
+      // ⚠️ 用参考月历史阶段 stageAsOf 而非当前阶段：已推进到议价的机会不应计入早前月份的管道（与漏斗/仪表盘口径一致）
+      const pipelineOpps = activeOpps.filter(o => !isRealWin(o) && stageIdx(stageAsOf(o, monthEnd)) >= stageIdx('机会'));
       let weighted = 0, profit = 0;
       for (const o of pipelineOpps) {
         const w = Math.round(exAmt(o) * o.winRate / 100);

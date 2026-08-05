@@ -12,8 +12,6 @@ export const deliveryService = {
 
   update: (id: string, data: Partial<DeliveryProject>) => api.put<DeliveryProject>(`/deliveries/${id}`, data),
 
-  delete: (id: string) => api.delete(`/deliveries/${id}`),
-
   saveNodes: (id: string, nodes: Partial<DeliveryNode>[]) =>
     api.put<DeliveryNode[]>(`/deliveries/${id}/nodes`, { nodes }),
 };

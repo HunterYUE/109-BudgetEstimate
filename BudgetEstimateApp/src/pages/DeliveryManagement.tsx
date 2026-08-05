@@ -7,6 +7,7 @@ import { deliveryService } from '../services/deliveryService';
 import type { DeliveryProject } from '../types';
 import { COLORS } from '../styles/colors';
 import { getProjectDelay } from '../utils/analysisShared';
+import { tabItemStyle } from '../utils/tableUtils';
 
 const statusTag: Record<string, { label: string; color: string }> = {
   '未开始': { label: '未开始', color: 'default' },
@@ -123,21 +124,11 @@ const DeliveryManagement: React.FC = () => {
 
       <div style={{ display: 'flex', gap: 0, marginTop: 20, marginBottom: 20, borderBottom: `2px solid ${COLORS.border}` }}>
         <div onClick={() => setFilter('active')}
-          style={{
-            padding: '8px 20px', cursor: 'pointer', fontSize: 14,
-            borderBottom: filter === 'active' ? `2px solid ${COLORS.primary}` : '2px solid transparent',
-            color: filter === 'active' ? COLORS.primary : COLORS.textSecondary, fontWeight: filter === 'active' ? 600 : 400,
-            marginBottom: -2, transition: 'all 0.15s',
-          }}>
+          style={tabItemStyle(filter === 'active', COLORS.primary)}>
           <SyncOutlined style={{ color: COLORS.primary, marginRight: 6 }} />进行中 ({grouped.active.length})
         </div>
         <div onClick={() => setFilter('completed')}
-          style={{
-            padding: '8px 20px', cursor: 'pointer', fontSize: 14,
-            borderBottom: filter === 'completed' ? `2px solid ${COLORS.success}` : '2px solid transparent',
-            color: filter === 'completed' ? COLORS.success : COLORS.textSecondary, fontWeight: filter === 'completed' ? 600 : 400,
-            marginBottom: -2, transition: 'all 0.15s',
-          }}>
+          style={tabItemStyle(filter === 'completed', COLORS.success)}>
           <HistoryOutlined style={{ color: COLORS.success, marginRight: 6 }} />历史项目 ({grouped.completed.length})
         </div>
       </div>
