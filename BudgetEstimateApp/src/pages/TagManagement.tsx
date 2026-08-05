@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Button, Modal, Input, message as antMsg, Spin } from 'antd';
 import { PlusOutlined, DeleteOutlined, ArrowUpOutlined, ArrowDownOutlined, CheckOutlined, CloseOutlined } from '@ant-design/icons';
 
@@ -94,6 +94,37 @@ const INLINE_TAG_TREE: TagNode[] = [
   { id: 't11', name: '软件系统' },
 ];
 
+/** 层级颜色/背景（模块级常量，避免每次渲染重建） */
+const LEVEL_COLORS = [COLORS.labelDark, COLORS.primary, COLORS.purple, '#008080', COLORS.amber];
+const LEVEL_BG = ['#e8ecf0', '#e0ecfa', '#ede6f5', '#dceeea', '#f5ede4'];
+
+/** 递归将 mock 标签树种子数据写入数据库（仅挂载时空库初始化用） */
+async function seedTags(nodes: TagNode[], parentId?: string): Promise<void> {
+  for (const node of nodes) {
+    const row = await tagService.create({
+      name: node.name,
+      parentId: parentId || null,
+      description: node.description || '',
+    });
+    if (node.children && node.children.length > 0) {
+      await seedTags(node.children, row.id);
+    }
+  }
+}
+
+/** 向树中插入节点（根或指定父级下）；返回新树（t 已 clone，可变） */
+function insertNode(t: TagNode[], parentId: string | null, node: { id: string; name: string }): TagNode[] {
+  if (!parentId) { t.push(node); return t; }
+  const path = findPath(t, parentId);
+  if (!path) return t;
+  const parent = getNodeByPath(t, path);
+  if (parent) {
+    if (!parent.children) parent.children = [];
+    parent.children.push(node);
+  }
+  return t;
+}
+
 const TagManagement: React.FC = () => {
   const [tree, setTree] = useState<TagNode[]>(() => cloneTree(INLINE_TAG_TREE));
   const [msg, ctx] = antMsg.useMessage();
@@ -111,21 +142,7 @@ const TagManagement: React.FC = () => {
 
   const [loading, setLoading] = useState(true);
 
-  // 递归将 mock 标签树种子数据写入数据库
-  async function seedTags(nodes: TagNode[], parentId?: string): Promise<void> {
-    for (const node of nodes) {
-      const row = await tagService.create({
-        name: node.name,
-        parentId: parentId || null,
-        description: node.description || '',
-      });
-      if (node.children && node.children.length > 0) {
-        await seedTags(node.children, row.id);
-      }
-    }
-  }
-
-  // 挂载时从 API 加载标签树，失败则回退到 mock 数据
+  // 挂载时从 API 加载标签树，失败则回退到 mock 数据（seedTags 为模块级稳定函数）
   useEffect(() => {
     (async () => {
       try {
@@ -144,13 +161,12 @@ const TagManagement: React.FC = () => {
         setLoading(false);
       }
     })();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [msg]);
 
-  const flatRows = flattenTree(tree);
+  const flatRows = useMemo(() => flattenTree(tree), [tree]);
   const expandView: 'expand' | 'collapse' = expandedIds.size >= flatRows.length ? 'expand' : 'collapse';
-  // Only show expanded rows
-  const visibleRows = flatRows.filter((row, index) => {
+  // 仅显示展开的祖先行（memo 化，避免每次渲染重算）
+  const visibleRows = useMemo(() => flatRows.filter((row, index) => {
     if (row.level === 0) return true;
     let ancestorLevel = row.level - 1;
     for (let i = index - 1; i >= 0; i--) {
@@ -161,7 +177,7 @@ const TagManagement: React.FC = () => {
       }
     }
     return true;
-  });
+  }), [flatRows, expandedIds]);
 
   const startEditing = (id: string, currentName: string) => {
     setEditingId(id);
@@ -210,10 +226,6 @@ const TagManagement: React.FC = () => {
     );
   };
 
-  // Level colors
-  const LEVEL_COLORS = [COLORS.labelDark, COLORS.primary, COLORS.purple, '#008080', COLORS.amber];
-  const LEVEL_BG = ['#e8ecf0', '#e0ecfa', '#ede6f5', '#dceeea', '#f5ede4'];
-
   const toggleExpand = (id: string) => {
     setExpandedIds(prev => {
       const next = new Set(prev);
@@ -233,47 +245,16 @@ const TagManagement: React.FC = () => {
   const confirmAdd = () => {
     const name = addModalName.trim();
     if (!name) { msg.warning('请输入标签名称'); return; }
-    // 调用 API 创建（获取服务端生成的 ID）
+    // 调用 API 创建（获取服务端生成的 ID）；失败降级为本地内存模式
     tagService.create({ name, parentId: addModalParentId }).then(
       (row) => {
-        const newId = row.id;
-        setTree(prev => {
-          const t = cloneTree(prev);
-          if (!addModalParentId) {
-            t.push({ id: newId, name });
-          } else {
-            const path = findPath(t, addModalParentId);
-            if (!path) return prev;
-            const parent = getNodeByPath(t, path);
-            if (parent) {
-              if (!parent.children) parent.children = [];
-              parent.children.push({ id: newId, name });
-            }
-          }
-          return t;
-        });
+        setTree(prev => insertNode(cloneTree(prev), addModalParentId, { id: row.id, name }));
         if (addModalParentId) setExpandedIds(prev => new Set(prev).add(addModalParentId!));
         setAddModalOpen(false);
         msg.success('已添加标签');
       },
       () => {
-        // API 不可用，降级为本地纯内存操作
-        const newId = uid();
-        setTree(prev => {
-          const t = cloneTree(prev);
-          if (!addModalParentId) {
-            t.push({ id: newId, name });
-          } else {
-            const path = findPath(t, addModalParentId);
-            if (!path) return prev;
-            const parent = getNodeByPath(t, path);
-            if (parent) {
-              if (!parent.children) parent.children = [];
-              parent.children.push({ id: newId, name });
-            }
-          }
-          return t;
-        });
+        setTree(prev => insertNode(cloneTree(prev), addModalParentId, { id: uid(), name }));
         if (addModalParentId) setExpandedIds(prev => new Set(prev).add(addModalParentId!));
         setAddModalOpen(false);
         msg.warning('已添加（本地模式，刷新后丢失）');
