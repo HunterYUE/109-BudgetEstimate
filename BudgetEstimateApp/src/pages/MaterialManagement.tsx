@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { Table, Tag, Button, Space, message, Empty } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import {
@@ -96,6 +96,18 @@ function parseVersionFromCode(code: string): { version: string; isTemp: boolean 
   return { version: 'V' + m[1], isTemp: parseInt(m[1], 10) < 1 };
 }
 
+/** 表格列宽锁定（onCell 返回固定 width/minWidth/maxWidth） */
+const onCellLock = (w: number) => () => ({ style: { width: w, minWidth: w, maxWidth: w } });
+
+/** 状态 Tab 样式（active 高亮色可配），收敛重复内联样式 */
+const tabStyle = (active: boolean, activeColor: string): React.CSSProperties => ({
+  padding: '8px 20px', cursor: 'pointer', fontSize: 14,
+  borderBottom: `2px solid ${active ? activeColor : 'transparent'}`,
+  color: active ? activeColor : COLORS.textSecondary,
+  fontWeight: active ? 600 : 400,
+  marginBottom: -2, transition: 'all 0.15s',
+});
+
 // ── 组件 ──
 
 const MaterialManagement: React.FC = () => {
@@ -105,10 +117,11 @@ const MaterialManagement: React.FC = () => {
 
   // ── 数据加载 ──
 
-  const loadMaterials = async () => {
+  const loadMaterials = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await componentService.list();
+      // ⚠️ 传 limit:'1000'，避免后端默认 limit=100 导致列表截断
+      const res = await componentService.list({ limit: '1000' });
       if (res) {
         setMaterials(res.map(c => deepClone(c)));
       }
@@ -117,12 +130,9 @@ const MaterialManagement: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [messageApi]);
 
-  useEffect(() => {
-    loadMaterials();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  useEffect(() => { loadMaterials(); }, [loadMaterials]);
 
   // 搜索与筛选
   const [searchText, setSearchText] = useState('');
@@ -208,7 +218,7 @@ const MaterialManagement: React.FC = () => {
 
   // ── 编辑操作 ──
 
-      const openNew = () => {
+  const openNew = () => {
     setEditingId(null);
     setEditForm({
       code: '',
@@ -232,7 +242,7 @@ const MaterialManagement: React.FC = () => {
     setEditOpen(true);
   };
 
-  const openEdit = (item: Component) => {
+  const openEdit = useCallback((item: Component) => {
     setEditingId(item.id);
     setEditForm({
       code: item.code,
@@ -254,7 +264,7 @@ const MaterialManagement: React.FC = () => {
       tags: item.tags ? [...item.tags] : [],
     });
     setEditOpen(true);
-  };
+  }, []);
 
   const saveEdit = async () => {
     if (!editForm.code) { messageApi.warning('请输入物料编码'); return; }
@@ -310,9 +320,9 @@ const MaterialManagement: React.FC = () => {
     setEditOpen(false);
   };
 
-  const deleteItem = (item: Component) => {
+  const deleteItem = useCallback((item: Component) => {
     setDeleteModalItem(item);
-  };
+  }, []);
 
   const confirmDeleteItem = async () => {
     if (!deleteModalItem) return;
@@ -328,15 +338,15 @@ const MaterialManagement: React.FC = () => {
       await loadMaterials();
     } catch (err) {
       console.error('[Material] 保存失败:', err);
-      // API 失败，回退到本地更新
+      // API 失败，回退到本地更新（仅本地展示，刷新后丢失）
       if (item.note?.startsWith('[删除]')) {
         setMaterials(prev => prev.filter(c => c.id !== item.id));
-        messageApi.success('物料已永久删除');
+        messageApi.warning('删除失败，已从本地移除（刷新后恢复）');
       } else {
         setMaterials(prev => prev.map(c =>
           c.id === item.id ? { ...c, reviewStatus: 'pending' as ReviewStatus, note: '[删除]' } : c
         ));
-        messageApi.success('删除申请已提交，待总监审批');
+        messageApi.warning('删除申请提交失败，已保存到本地');
       }
     }
     setDeleteModalItem(null);
@@ -344,7 +354,7 @@ const MaterialManagement: React.FC = () => {
 
   // ── 审核操作 ──
 
-  const handleApprove = async (item: Component) => {
+  const handleApprove = useCallback(async (item: Component) => {
     if (item.reviewStatus !== 'pending') { messageApi.warning('仅待审核状态的物料可审核'); return; }
     try {
       if (item.note?.startsWith('[删除]')) {
@@ -366,9 +376,9 @@ const MaterialManagement: React.FC = () => {
         ));
       }
     }
-  };
+  }, [loadMaterials, messageApi]);
 
-  const handleReject = async (item: Component) => {
+  const handleReject = useCallback(async (item: Component) => {
     if (item.reviewStatus !== 'pending') { messageApi.warning('仅待审核状态的物料可审核'); return; }
     try {
       if (item.note?.startsWith('[删除]')) {
@@ -392,13 +402,11 @@ const MaterialManagement: React.FC = () => {
         ));
       }
     }
-  };
+  }, [loadMaterials, messageApi]);
 
   // ── 列定义 ──
 
-  const onCellLock = (w: number) => () => ({ style: { width: w, minWidth: w, maxWidth: w } });
-  
-  const columns: ColumnsType<Component> = [
+  const columns: ColumnsType<Component> = useMemo(() => [
     {
       title: '编码', dataIndex: 'code', width: 165,
       onCell: onCellLock(150),
@@ -529,7 +537,7 @@ const MaterialManagement: React.FC = () => {
         </Space>
       ),
     },
-  ];
+  ], [materials, tagTree, tagPathMap, brandFilterOptions, openEdit, deleteItem, handleApprove, handleReject]);
 
   // ── 统计 ──
 
@@ -619,30 +627,9 @@ const MaterialManagement: React.FC = () => {
 
       {/* 状态标签 */}
       <div style={{ display: 'flex', gap: 0, marginBottom: 16, borderBottom: `2px solid ${COLORS.border}` }}>
-        <div onClick={() => setStatusTab('all')}
-          style={{
-            padding: '8px 20px', cursor: 'pointer', fontSize: 14,
-            borderBottom: statusTab === 'all' ? `2px solid ${COLORS.primary}` : '2px solid transparent',
-            color: statusTab === 'all' ? COLORS.primary : COLORS.textSecondary, fontWeight: statusTab === 'all' ? 600 : 400,
-            marginBottom: -2, transition: 'all 0.15s',
-          }}>全部({tabCounts.all})
-        </div>
-        <div onClick={() => setStatusTab('approved')}
-          style={{
-            padding: '8px 20px', cursor: 'pointer', fontSize: 14,
-            borderBottom: statusTab === 'approved' ? `2px solid ${COLORS.success}` : '2px solid transparent',
-            color: statusTab === 'approved' ? COLORS.success : COLORS.textSecondary, fontWeight: statusTab === 'approved' ? 600 : 400,
-            marginBottom: -2, transition: 'all 0.15s',
-          }}>已通过({tabCounts.approved})
-        </div>
-        <div onClick={() => setStatusTab('pending')}
-          style={{
-            padding: '8px 20px', cursor: 'pointer', fontSize: 14,
-            borderBottom: statusTab === 'pending' ? `2px solid ${COLORS.warning}` : '2px solid transparent',
-            color: statusTab === 'pending' ? COLORS.warning : COLORS.textSecondary, fontWeight: statusTab === 'pending' ? 600 : 400,
-            marginBottom: -2, transition: 'all 0.15s',
-          }}>待审核({tabCounts.pending})
-        </div>
+        <div onClick={() => setStatusTab('all')} style={tabStyle(statusTab === 'all', COLORS.primary)}>全部({tabCounts.all})</div>
+        <div onClick={() => setStatusTab('approved')} style={tabStyle(statusTab === 'approved', COLORS.success)}>已通过({tabCounts.approved})</div>
+        <div onClick={() => setStatusTab('pending')} style={tabStyle(statusTab === 'pending', COLORS.warning)}>待审核({tabCounts.pending})</div>
       </div>
 
       {/* 表格 */}
