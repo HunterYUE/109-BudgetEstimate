@@ -1,6 +1,7 @@
 import { Router, type Request } from 'express';
 import { query, getClient } from '../db/index.js';
 import { AppError } from '../middleware/index.js';
+import { requirePermission } from '../middleware/auth.js';
 import multer, { type FileFilterCallback } from 'multer';
 import path from 'path';
 import fs from 'fs';
@@ -44,16 +45,6 @@ const fileUpload = multer({
 
 const router = Router();
 
-// 下载路由中间件：将 URL 查询参数中的 ?token= 转为 Authorization 头
-// 浏览器直接下载（<a href>/window.open）无法设置 Authorization 头，需通过 URL 传递 token
-router.use('/:deliveryId/files/:fileId/download', (req, _res, next) => {
-  const qToken = req.query.token as string | undefined;
-  if (qToken && !req.headers.authorization) {
-    req.headers.authorization = 'Bearer ' + qToken;
-  }
-  next();
-});
-
 // 自定义列表查询：包含节点完成统计（节点总数、已完成数）
 router.get('/', async (req, res, next) => {
   try {
@@ -84,6 +75,13 @@ router.get('/', async (req, res, next) => {
 const crudRouter = crudRoutes('delivery_projects', fields, {
   searchFields: ['sales_no', 'client_name', 'project_name'],
   orderBy: 'updated_at DESC',
+  // ⚠️ F15 修复：删除交付项目时清理磁盘上的附件文件（DB 行靠 delivery_files CASCADE 删，物理文件不会随删）
+  beforeDelete: async (id) => {
+    const files = (await query('SELECT file_path FROM delivery_files WHERE delivery_project_id = $1', [id])).rows as { file_path: string }[];
+    for (const f of files) {
+      try { if (f.file_path && fs.existsSync(f.file_path)) fs.unlinkSync(f.file_path); } catch { /* 文件可能已移动 */ }
+    }
+  },
   extra: (r) => {
     // 含节点的完整交付项目
     r.get('/:id/full', async (req, res, next) => {
@@ -154,10 +152,11 @@ const crudRouter = crudRoutes('delivery_projects', fields, {
 
         res.json(newNodes);
       } catch (err) {
-        await client.query('ROLLBACK').catch(() => {});
+        // ⚠️ F8 修复：getClient() 失败时 client 为 undefined，须判空（此前 catch 直接 client.query 同步抛错导致请求挂死）
+        if (client) await client.query('ROLLBACK').catch(() => {});
         next(err);
       } finally {
-        client!.release();
+        if (client) client.release();
       }
     });
   },
@@ -197,7 +196,8 @@ router.post('/:deliveryId/files', fileUpload.single('file'), async (req, res, ne
   } catch (err) { next(err); }
 });
 
-router.get('/:deliveryId/files/:fileId/download', async (req, res, next) => {
+// ⚠️ F19 修复：附件下载需 交付管理 权限（与交付详情页访问权限一致，GET 不被 writeGuard 拦，故单独加权限校验）
+router.get('/:deliveryId/files/:fileId/download', requirePermission('交付管理', '全部查看权限'), async (req, res, next) => {
   try {
     const { deliveryId, fileId } = req.params;
     const file = (await query(

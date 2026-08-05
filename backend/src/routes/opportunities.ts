@@ -16,6 +16,11 @@ const fields = [
 const crudRouter = crudRoutes('sales_opportunities', fields, {
   searchFields: ['sales_no', 'client_name', 'project_name', 'salesman'],
   orderBy: 'updated_at DESC',
+  // ⚠️ F3 修复：机会已转交付时删除会撞 NO ACTION 外键（delivery_projects.opportunity_id），明确提示
+  beforeDelete: async (id) => {
+    const delivery = (await query('SELECT id FROM delivery_projects WHERE opportunity_id = $1', [id])).rows[0];
+    if (delivery) throw new AppError(409, '该机会已转交付，无法删除。请先删除对应交付项目。');
+  },
 });
 
 // 顶层路由 — 自定义 LIST 优先于 crudRouter 的默认 LIST
@@ -188,9 +193,9 @@ router.put('/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
     const body = objKeysToSnake({ ...req.body });
-    // 如果只改 promote_locked（锁定/解锁），跳过检查
-    const isOnlyLockToggle = Object.keys(body).length === 1 && 'promote_locked' in body;
-    if (isOnlyLockToggle) {
+    // ⚠️ promote_locked 是特权字段：只要 body 含它（无论是否伴随其他字段）都需『全部查看权限』，
+    //    否则 { promote_locked:true, notes:'x' } 会落入 else 分支绕过检查（F1 修复）
+    if ('promote_locked' in body) {
       if (!hasPermission(req.user?.permissions, '全部查看权限')) {
         throw new AppError(403, '仅部门总监和管理员可锁定/解锁机会');
       }

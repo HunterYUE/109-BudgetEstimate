@@ -199,9 +199,18 @@ const DeliveryDetail: React.FC = () => {
     });
   };
 
-  const handleViewFile = (fileId: string) => {
+  const handleViewFile = async (fileId: string) => {
     if (!id) return;
-    window.open(deliveryFileService.getDownloadUrl(id, fileId), '_blank');
+    // ⚠️ F7 修复：fetch 带 Authorization 头取 Blob，避免 token 暴露在 URL。
+    //    先同步开空窗再在 fetch 后导航，避免 window.open 在 await 后被浏览器弹窗拦截
+    const win = window.open('', '_blank');
+    try {
+      const url = await deliveryFileService.download(id, fileId);
+      if (win) win.location.href = url; else window.open(url, '_blank');
+    } catch {
+      win?.close();
+      msg.error('文件加载失败');
+    }
   };
 
   const quotationGroups: Group[] = useMemo(() => {

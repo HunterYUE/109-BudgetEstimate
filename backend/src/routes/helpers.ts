@@ -53,6 +53,10 @@ export function crudRoutes(table: string, fields: string[], options?: {
   excludeOnUpdate?: string[];
   /** 额外路由 */
   extra?: (router: Router) => void;
+  /** 删除前钩子：抛错则阻止删除（用于业务引用检查，如删除含报价/交付的项目） */
+  beforeDelete?: (id: string) => Promise<void>;
+  /** TEXT[] 列名（空数组须序列化为 '{}' 而非 '[]'，后者对 PG 数组字面量非法） */
+  textArrayCols?: string[];
 }) {
   const router = Router();
   const {
@@ -60,7 +64,9 @@ export function crudRoutes(table: string, fields: string[], options?: {
     searchFields = [],
     excludeOnCreate = ['id', 'created_at', 'updated_at'],
     excludeOnUpdate = ['id', 'created_at', 'updated_at'],
+    textArrayCols = [],
   } = options || {};
+  const textArraySet = new Set(textArrayCols);
 
   const quotedFields = fields.map(f => `"${f}"`).join(', ');
   const quotedCols = fields.filter(f => !excludeOnCreate.includes(f));
@@ -95,14 +101,15 @@ export function crudRoutes(table: string, fields: string[], options?: {
     res.json(result.rows[0]);
   }));
 
-  /** JSONB 参数序列化：pg 不支持直接传对象数组给 JSONB 列（会把数组当 PG ARRAY），
-   *  但 TEXT[] 列需要保留数组原样传给 pg。只 stringify 包含对象的数组。 */
-  function serializeParams(vals: unknown[]): unknown[] {
-    return vals.map(v => {
+  /** JSONB/数组参数序列化：pg 不支持直接传对象数组给 JSONB 列（会把数组当 PG ARRAY），
+   *  但 TEXT[] 列需要保留数组原样传给 pg。只 stringify 包含对象的数组。
+   *  ⚠️ F9 修复：空数组按列类型区分——TEXT[] 列用 '{}'（PG 空数组字面量），JSONB 列用 '[]' */
+  function serializeParams(vals: unknown[], cols?: string[]): unknown[] {
+    return vals.map((v, i) => {
       if (v === null || v === undefined) return v;
       if (Array.isArray(v)) {
-        // 空数组序列化为 '[]' 避免 pg 库当成 PG ARRAY 处理
-        if (v.length === 0) return '[]';
+        // 空数组：TEXT[] 列用 '{}'，否则 '[]'
+        if (v.length === 0) return cols && textArraySet.has(cols[i]) ? '{}' : '[]';
         // 对象数组或包含非字符串的数组需 JSON.stringify 以匹配 JSONB 列
         if (typeof v[0] === 'object' || typeof v[0] === 'number' || typeof v[0] === 'boolean') return JSON.stringify(v);
       }
@@ -124,7 +131,7 @@ export function crudRoutes(table: string, fields: string[], options?: {
     const rawValues = activeCols.map(c => snakeBody[c]);
     const result = await query(
       `INSERT INTO "${table}" (${activeNames}) VALUES (${activePlaceholders}) RETURNING ${quotedFields}`,
-      serializeParams(rawValues)
+      serializeParams(rawValues, activeCols)
     );
     res.status(201).json(result.rows[0]);
   }));
@@ -141,7 +148,7 @@ export function crudRoutes(table: string, fields: string[], options?: {
     rawValues.push(req.params.id);
     const result = await query(
       `UPDATE "${table}" SET ${setClause} WHERE id = $${rawValues.length} RETURNING ${quotedFields}`,
-      serializeParams(rawValues)
+      serializeParams(rawValues, updateCols)
     );
     if (result.rows.length === 0) {
       throw new AppError(404, `记录不存在`);
@@ -151,6 +158,10 @@ export function crudRoutes(table: string, fields: string[], options?: {
 
   // DELETE
   router.delete('/:id', asyncHandler(async (req, res) => {
+    // ⚠️ F3/F4 修复：删除前业务引用检查（抛错则阻止并给出明确提示，而非撞外键返回通用 400）
+    if (options?.beforeDelete) {
+      await options.beforeDelete(req.params.id);
+    }
     const result = await query(
       `DELETE FROM "${table}" WHERE id = $1 RETURNING id`,
       [req.params.id]

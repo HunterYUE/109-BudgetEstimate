@@ -11,4 +11,6 @@ const fields = [
 export default crudRoutes('components', fields, {
   searchFields: ['code', 'name_cn', 'brand', 'model'],
   orderBy: 'updated_at DESC',
+  // ⚠️ F9 修复：tags 是 TEXT[] 列，空数组需序列化为 '{}'（'[]' 对 PG 数组字面量非法）
+  textArrayCols: ['tags'],
 });

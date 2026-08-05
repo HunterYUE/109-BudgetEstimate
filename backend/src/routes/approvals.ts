@@ -130,6 +130,10 @@ router.post('/:id/records', async (req, res, next) => {
     if (!['approved', 'rejected'].includes(action)) throw new AppError(400, `无效操作: ${action}`);
     const ar = (await query('SELECT * FROM approval_requests WHERE id = $1', [id])).rows[0];
     if (!ar) throw new AppError(404, '审批请求未找到');
+    // ⚠️ F11 修复：已终审的审批不允许再次写入记录（防双击重复/状态翻转；驳回后重提会新建审批，不在此流转）
+    if (ar.status === 'approved' || ar.status === 'rejected') {
+      throw new AppError(409, '该审批已处理完毕，不可重复审批');
+    }
     if (!hasPermission(req.user?.permissions, '审批管理', '全部查看权限')) throw new AppError(403, '无审批权限');
     client = await getClient();
     await client.query('BEGIN');
@@ -178,6 +182,39 @@ router.use((req, res, next) => {
     return requirePermission('审批管理', '全部查看权限')(req, res, next);
   }
   next();
+});
+
+// ⚠️ F5 修复：删除审批须回滚其创建时设置的级联状态（promote_locked / plan_status / cost_status），
+//    否则机会被永久锁定、交付状态永久停在 pending（此前通用 DELETE 只删审批行，级联残留）
+router.delete('/:id', async (req, res, next) => {
+  let client: any;
+  try {
+    const { id } = req.params;
+    client = await getClient();
+    await client.query('BEGIN');
+    const row = (await client.query(
+      'SELECT approval_type, opportunity_id, delivery_id FROM approval_requests WHERE id = $1', [id]
+    )).rows[0];
+    if (!row) throw new AppError(404, '审批请求不存在');
+    // 回滚级联（仅当关联记录仍处于该审批设置的 pending/locked 状态时复位，避免覆盖后续新审批）
+    if (row.approval_type === 'plan' && row.delivery_id) {
+      await client.query(`UPDATE delivery_projects SET plan_status = 'draft', updated_at = now() WHERE id = $1 AND plan_status = 'pending'`, [row.delivery_id]);
+    }
+    if (row.approval_type === 'cost' && row.delivery_id) {
+      await client.query(`UPDATE delivery_projects SET cost_status = 'draft', updated_at = now() WHERE id = $1 AND cost_status = 'pending'`, [row.delivery_id]);
+    }
+    if (row.approval_type === 'promote' && row.opportunity_id) {
+      await client.query(`UPDATE sales_opportunities SET promote_locked = false, updated_at = now() WHERE id = $1 AND promote_locked = true`, [row.opportunity_id]);
+    }
+    await client.query('DELETE FROM approval_requests WHERE id = $1', [id]);
+    await client.query('COMMIT');
+    res.json({ deleted: true, id });
+  } catch (err) {
+    if (client) await client.query('ROLLBACK').catch(() => {});
+    next(err);
+  } finally {
+    if (client) client.release();
+  }
 });
 
 // 挂载标准 CRUD 路由（创建、读取单条、更新、删除）

@@ -78,6 +78,15 @@ const router = crudRoutes('clients', fields, {
               [clientData.salesman, oldClient?.name]
             );
           }
+          // ⚠️ F10 修复：客户改名 → 级联更新去规范化的 client_name（机会/项目/报价/交付），
+          //    否则客户详情历史（按 client_name 关联）改名后消失
+          if (clientData.name !== undefined && clientData.name !== oldClient?.name) {
+            const oldName = oldClient?.name;
+            await tx.query('UPDATE sales_opportunities SET client_name = $1 WHERE client_name = $2', [clientData.name, oldName]);
+            await tx.query('UPDATE projects SET client_name = $1 WHERE client_name = $2', [clientData.name, oldName]);
+            await tx.query('UPDATE quotations SET client_name = $1 WHERE client_name = $2', [clientData.name, oldName]);
+            await tx.query('UPDATE delivery_projects SET client_name = $1 WHERE client_name = $2', [clientData.name, oldName]);
+          }
         }
 
         // 替换联系人

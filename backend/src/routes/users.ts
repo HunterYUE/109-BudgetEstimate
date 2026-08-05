@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
-import { query } from '../db/index.js';
+import { query, getClient } from '../db/index.js';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { AppError } from '../middleware/index.js';
 import { logAudit, objKeysToSnake } from './helpers.js';
@@ -149,6 +149,7 @@ router.put('/:id/role', async (req, res, next) => {
 
 /** DELETE /api/users/:id - 删除用户 */
 router.delete('/:id', async (req, res, next) => {
+  let client: any;
   try {
     const { id } = req.params;
     const currentUser = req.user!;
@@ -157,13 +158,23 @@ router.delete('/:id', async (req, res, next) => {
       throw new AppError(400, '不能删除自己的账号');
     }
 
-    const result = await query('DELETE FROM users WHERE id = $1 RETURNING id, email', [id]);
+    // ⚠️ F13 修复：先删 timerecording.profiles（引用 users.id），再删 users，同一事务避免孤儿/外键冲突
+    client = await getClient();
+    await client.query('BEGIN');
+    await client.query('DELETE FROM timerecording.profiles WHERE id = $1', [id]).catch(() => { /* timerecording schema 可能未部署 */ });
+    const result = await client.query('DELETE FROM users WHERE id = $1 RETURNING id, email', [id]);
     if (result.rows.length === 0) throw new AppError(404, '用户不存在');
+    await client.query('COMMIT');
 
     logAudit(req, '删除用户', 'user', `删除用户 ${result.rows[0].email}`);
 
     res.json({ success: true, id });
-  } catch (err) { next(err); }
+  } catch (err) {
+    if (client) await client.query('ROLLBACK').catch(() => {});
+    next(err);
+  } finally {
+    if (client) client.release();
+  }
 });
 
 export default router;

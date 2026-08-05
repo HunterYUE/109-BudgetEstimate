@@ -237,7 +237,8 @@ CREATE TABLE IF NOT EXISTS project_groups (
   is_fixed    BOOLEAN NOT NULL DEFAULT false,
   sort_order  INTEGER NOT NULL DEFAULT 0,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(version_id, group_no)  -- 迁移 028：版本隔离下同版本组号唯一，防重复组
 );
 
 CREATE INDEX IF NOT EXISTS idx_project_groups_project_id ON project_groups(project_id);

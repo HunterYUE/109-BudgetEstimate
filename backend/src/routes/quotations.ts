@@ -47,6 +47,15 @@ customRouter.put('/sync', async (req, res, next) => {
       throw new AppError(400, '缺少必填字段：project_id, version_no');
     }
 
+    // ⚠️ F18 修复：锁定中的报价不允许被 sync 覆盖（审批挂起期间编辑流程可能仍调用 sync，会覆盖 amount/status）
+    const existing = (await query(
+      'SELECT id, locked FROM quotations WHERE project_id = $1 AND version_no = $2',
+      [project_id, version_no]
+    )).rows[0];
+    if (existing?.locked) {
+      throw new AppError(409, '该报价已锁定，无法同步保存');
+    }
+
     const result = await query(
       `INSERT INTO quotations (project_id, version_no, sales_no, client_name,
         project_name, status, amount, total_cost, profit_rate, opportunity_id)

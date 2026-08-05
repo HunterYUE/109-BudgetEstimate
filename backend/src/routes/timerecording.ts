@@ -1,12 +1,15 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
-import { query } from '../db/index.js';
+import { query, getClient } from '../db/index.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { signToken } from '../middleware/auth.js';
 import { AppError } from '../middleware/index.js';
 import { logAudit } from './helpers.js';
 
 const router = Router();
+
+/** 是否为工时系统管理员（director/admin，JWT role） */
+const isTrAdmin = (u: { role?: string } | undefined): boolean => !!u && (u.role === 'director' || u.role === 'admin');
 
 // ─── 认证 ────────────────────────────────────────────
 
@@ -101,6 +104,11 @@ router.get('/profiles/:id', requireAuth, async (req, res, next) => {
 
 router.put('/profiles/:id', requireAuth, async (req, res, next) => {
   try {
+    const user = req.user!;
+    const admin = isTrAdmin(user);
+    // ⚠️ F6 修复：只能改自己的档案；role/is_active 等管理字段仅管理员可改（此前任意用户可改任意档案含角色）
+    if (req.params.id !== user.userId && !admin) throw new AppError(403, '无权修改他人档案');
+    if (['role', 'is_active'].some(f => f in req.body) && !admin) throw new AppError(403, '仅管理员可修改角色/启用状态');
     const fields: string[] = [];
     const values: any[] = [];
     let idx = 1;
@@ -123,12 +131,19 @@ router.put('/profiles/:id', requireAuth, async (req, res, next) => {
 /** 列表（支持按用户/日期/周筛选） */
 router.get('/time-records', requireAuth, async (req, res, next) => {
   try {
+    const user = req.user!;
+    const admin = isTrAdmin(user);
     const { user_id, date_from, date_to, year, week_number, status, cost_center } = req.query;
     const conditions: string[] = [];
     const params: any[] = [];
     let idx = 1;
 
-    if (user_id) { conditions.push(`user_id = $${idx++}`); params.push(user_id); }
+    // ⚠️ F6 修复：非管理员强制只看自己的记录（此前可传任意 user_id 读他人数据）
+    if (admin) {
+      if (user_id) { conditions.push(`user_id = $${idx++}`); params.push(user_id); }
+    } else {
+      conditions.push(`user_id = $${idx++}`); params.push(user.userId);
+    }
     if (date_from) { conditions.push(`date >= $${idx++}`); params.push(date_from); }
     if (date_to) { conditions.push(`date <= $${idx++}`); params.push(date_to); }
     if (year) { conditions.push(`year = $${idx++}`); params.push(parseInt(year as string)); }
@@ -144,13 +159,17 @@ router.get('/time-records', requireAuth, async (req, res, next) => {
 
 router.post('/time-records', requireAuth, async (req, res, next) => {
   try {
+    const user = req.user!;
+    const admin = isTrAdmin(user);
     const { user_id, date, week_number, year, start_time, end_time, hours, hour_type, cost_center, task_description } = req.body;
-    if (!user_id || !date || hours == null) throw new AppError(400, '缺少必填字段');
+    // ⚠️ F6 修复：非管理员只能为自己建记录（此前可传任意 user_id 代建）
+    const targetUserId = (admin && user_id) ? user_id : user.userId;
+    if (!targetUserId || !date || hours == null) throw new AppError(400, '缺少必填字段');
 
     const r = (await query(
       `INSERT INTO timerecording.time_records (user_id, date, week_number, year, start_time, end_time, hours, hour_type, cost_center, task_description)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
-      [user_id, date, week_number, year, start_time, end_time, hours, hour_type || 'normal', cost_center, task_description]
+      [targetUserId, date, week_number, year, start_time, end_time, hours, hour_type || 'normal', cost_center, task_description]
     )).rows[0];
     res.status(201).json(r);
   } catch (err) { next(err); }
@@ -158,7 +177,10 @@ router.post('/time-records', requireAuth, async (req, res, next) => {
 
 router.put('/time-records/:id', requireAuth, async (req, res, next) => {
   try {
-    const fields = ['date', 'week_number', 'year', 'start_time', 'end_time', 'hours', 'hour_type', 'cost_center', 'task_description', 'status'];
+    const user = req.user!;
+    const admin = isTrAdmin(user);
+    // ⚠️ F6 修复：status 不能直接改（须走 /submit 与 /review 审批流程），移除出可更新字段
+    const fields = ['date', 'week_number', 'year', 'start_time', 'end_time', 'hours', 'hour_type', 'cost_center', 'task_description'];
     const updates: string[] = [];
     const values: any[] = [];
     let idx = 1;
@@ -167,51 +189,60 @@ router.put('/time-records/:id', requireAuth, async (req, res, next) => {
     }
     if (!updates.length) throw new AppError(400, '没有要更新的字段');
     values.push(req.params.id);
+    // 归属校验：非管理员只能改自己的记录
+    if (!admin) values.push(user.userId);
     const r = (await query(
-      `UPDATE timerecording.time_records SET ${updates.join(', ')} WHERE id = $${idx} RETURNING *`,
+      `UPDATE timerecording.time_records SET ${updates.join(', ')} WHERE id = $${idx}${admin ? '' : ` AND user_id = $${idx + 1}`} RETURNING *`,
       values
     )).rows[0];
-    if (!r) throw new AppError(404, '未找到');
+    if (!r) throw new AppError(404, admin ? '未找到' : '记录不存在或无权修改');
     res.json(r);
   } catch (err) { next(err); }
 });
 
 router.delete('/time-records/:id', requireAuth, async (req, res, next) => {
   try {
-    await query('DELETE FROM timerecording.time_records WHERE id = $1', [req.params.id]);
+    const user = req.user!;
+    const admin = isTrAdmin(user);
+    // ⚠️ F6 修复：归属校验，非管理员只能删自己的记录
+    const r = (await query(
+      `DELETE FROM timerecording.time_records WHERE id = $1${admin ? '' : ' AND user_id = $2'} RETURNING id`,
+      admin ? [req.params.id] : [req.params.id, user.userId]
+    )).rows[0];
+    if (!r) throw new AppError(404, admin ? '记录不存在' : '记录不存在或无权删除');
     res.json({ success: true });
   } catch (err) { next(err); }
 });
 
 // ─── 审批 ──────────────────────────────────────────
 
-/** 提交审核 */
+/** 提交审核（⚠️ F6 补漏：只能提交自己的草稿记录） */
 router.put('/time-records/:id/submit', requireAuth, async (req, res, next) => {
   try {
     const r = (await query(
-      `UPDATE timerecording.time_records SET status = 'submitted' WHERE id = $1 AND status = 'draft' RETURNING *`,
-      [req.params.id]
+      `UPDATE timerecording.time_records SET status = 'submitted' WHERE id = $1 AND status = 'draft' AND user_id = $2 RETURNING *`,
+      [req.params.id, req.user!.userId]
     )).rows[0];
-    if (!r) throw new AppError(400, '只能提交草稿状态的记录');
+    if (!r) throw new AppError(400, '只能提交自己的草稿记录');
     res.json(r);
   } catch (err) { next(err); }
 });
 
-/** 批量提交 */
+/** 批量提交（⚠️ F6 补漏：只能提交自己的草稿记录） */
 router.post('/time-records/submit-batch', requireAuth, async (req, res, next) => {
   try {
     const { ids } = req.body;
     if (!Array.isArray(ids) || !ids.length) throw new AppError(400, 'ids 必填');
     const rows = (await query(
-      `UPDATE timerecording.time_records SET status = 'submitted' WHERE id = ANY($1::uuid[]) AND status = 'draft' RETURNING *`,
-      [ids]
+      `UPDATE timerecording.time_records SET status = 'submitted' WHERE id = ANY($1::uuid[]) AND status = 'draft' AND user_id = $2 RETURNING *`,
+      [ids, req.user!.userId]
     )).rows;
     res.json(rows);
   } catch (err) { next(err); }
 });
 
-/** 审批通过/驳回 */
-router.put('/time-records/:id/review', requireAuth, async (req, res, next) => {
+/** 审批通过/驳回（⚠️ F6 补漏：审批是管理员操作，防止任意用户代审/自审） */
+router.put('/time-records/:id/review', requireAuth, requireRole('director', 'admin'), async (req, res, next) => {
   try {
     const { action, review_notes } = req.body;
     if (!['approved', 'rejected'].includes(action)) throw new AppError(400, '操作必须是 approved 或 rejected');
@@ -229,11 +260,18 @@ router.put('/time-records/:id/review', requireAuth, async (req, res, next) => {
 
 router.get('/task-assignments', requireAuth, async (req, res, next) => {
   try {
+    const user = req.user!;
+    const admin = isTrAdmin(user);
     const { user_id, status } = req.query;
     const conditions: string[] = [];
     const params: any[] = [];
     let idx = 1;
-    if (user_id) { conditions.push(`user_id = $${idx++}`); params.push(user_id); }
+    // ⚠️ F6 修复：非管理员只能看自己的任务
+    if (admin) {
+      if (user_id) { conditions.push(`user_id = $${idx++}`); params.push(user_id); }
+    } else {
+      conditions.push(`user_id = $${idx++}`); params.push(user.userId);
+    }
     if (status) { conditions.push(`status = $${idx++}`); params.push(status); }
     const sql = `SELECT * FROM timerecording.task_assignments${conditions.length ? ' WHERE ' + conditions.join(' AND ') : ''} ORDER BY start_datetime`;
     res.json((await query(sql, params)).rows);
@@ -242,12 +280,15 @@ router.get('/task-assignments', requireAuth, async (req, res, next) => {
 
 router.post('/task-assignments', requireAuth, async (req, res, next) => {
   try {
+    const user = req.user!;
+    const admin = isTrAdmin(user);
     const { user_id, task_name, color, start_datetime, end_datetime, status, note } = req.body;
-    const creator = req.user!;
+    // ⚠️ F6 修复：给他人派任务是管理员操作；非管理员只能给自己建任务
+    const targetUserId = (admin && user_id) ? user_id : user.userId;
     const r = (await query(
       `INSERT INTO timerecording.task_assignments (user_id, task_name, color, start_datetime, end_datetime, status, created_by, note)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-      [user_id, task_name, color, start_datetime, end_datetime, status || 'in_progress', creator.userId, note || '']
+      [targetUserId, task_name, color, start_datetime, end_datetime, status || 'in_progress', user.userId, note || '']
     )).rows[0];
     res.status(201).json(r);
   } catch (err) { next(err); }
@@ -255,6 +296,8 @@ router.post('/task-assignments', requireAuth, async (req, res, next) => {
 
 router.put('/task-assignments/:id', requireAuth, async (req, res, next) => {
   try {
+    const user = req.user!;
+    const admin = isTrAdmin(user);
     const fields = ['task_name', 'color', 'start_datetime', 'end_datetime', 'status', 'note'];
     const updates: string[] = [];
     const values: any[] = [];
@@ -264,18 +307,25 @@ router.put('/task-assignments/:id', requireAuth, async (req, res, next) => {
     }
     if (!updates.length) throw new AppError(400, '没有要更新的字段');
     values.push(req.params.id);
+    if (!admin) values.push(user.userId);
     const r = (await query(
-      `UPDATE timerecording.task_assignments SET ${updates.join(', ')} WHERE id = $${idx} RETURNING *`,
+      `UPDATE timerecording.task_assignments SET ${updates.join(', ')} WHERE id = $${idx}${admin ? '' : ` AND user_id = $${idx + 1}`} RETURNING *`,
       values
     )).rows[0];
-    if (!r) throw new AppError(404, '未找到');
+    if (!r) throw new AppError(404, admin ? '未找到' : '任务不存在或无权修改');
     res.json(r);
   } catch (err) { next(err); }
 });
 
 router.delete('/task-assignments/:id', requireAuth, async (req, res, next) => {
   try {
-    await query('DELETE FROM timerecording.task_assignments WHERE id = $1', [req.params.id]);
+    const user = req.user!;
+    const admin = isTrAdmin(user);
+    const r = (await query(
+      `DELETE FROM timerecording.task_assignments WHERE id = $1${admin ? '' : ' AND user_id = $2'} RETURNING id`,
+      admin ? [req.params.id] : [req.params.id, user.userId]
+    )).rows[0];
+    if (!r) throw new AppError(404, admin ? '记录不存在' : '任务不存在或无权删除');
     res.json({ success: true });
   } catch (err) { next(err); }
 });
@@ -295,7 +345,13 @@ router.get('/notifications', requireAuth, async (req, res, next) => {
 
 router.put('/notifications/:id/read', requireAuth, async (req, res, next) => {
   try {
-    await query("UPDATE timerecording.notifications SET is_read = true WHERE id = $1", [req.params.id]);
+    const user = req.user!;
+    // ⚠️ F6 修复：只能标记自己的通知为已读
+    const r = (await query(
+      'UPDATE timerecording.notifications SET is_read = true WHERE id = $1 AND user_id = $2 RETURNING id',
+      [req.params.id, user.userId]
+    )).rows[0];
+    if (!r) throw new AppError(404, '通知不存在');
     res.json({ success: true });
   } catch (err) { next(err); }
 });
@@ -304,10 +360,14 @@ router.put('/notifications/:id/read', requireAuth, async (req, res, next) => {
 
 router.post('/notifications', requireAuth, async (req, res, next) => {
   try {
+    const user = req.user!;
+    const admin = isTrAdmin(user);
     const { user_id, title, message: msg, type, link_url } = req.body;
+    // ⚠️ F6 修复：给他人发通知是管理/系统操作；非管理员只能给自己建
+    const targetUserId = (admin && user_id) ? user_id : user.userId;
     const r = (await query(
       `INSERT INTO timerecording.notifications (user_id, title, message, type, link_url) VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-      [user_id, title, msg || '', type || 'submission', link_url]
+      [targetUserId, title, msg || '', type || 'submission', link_url]
     )).rows[0];
     res.status(201).json(r);
   } catch (err) { next(err); }
@@ -317,28 +377,35 @@ router.post('/notifications', requireAuth, async (req, res, next) => {
 
 /** 管理员创建用户（补 profile + users 表） */
 router.post('/admin/users', requireAuth, requireRole('director', 'admin'), async (req, res, next) => {
+  let client: any;
   try {
     const { email, name, password, employee_id, role = 'employee' } = req.body;
     if (!email || !name || !password) throw new AppError(400, '缺少必填字段');
 
-    // 创建系统用户
     const passwordHash = await bcrypt.hash(password, 10);
     const empId = employee_id || email.split('@')[0];
-    const user = (await query(
+    // ⚠️ F14 修复：users + profiles 两步写放入同一事务，避免中途失败留下"有 users 无 profile"半成品
+    client = await getClient();
+    await client.query('BEGIN');
+    const user = (await client.query(
       `INSERT INTO public.users (email, display_name, password_hash, role)
        VALUES ($1, $2, $3, $4) RETURNING id`,
       [email, name, passwordHash, 'user']
     )).rows[0];
-
-    // 创建 profile
-    await query(
+    await client.query(
       `INSERT INTO timerecording.profiles (id, employee_id, name, email, role)
        VALUES ($1, $2, $3, $4, $5)`,
       [user.id, empId, name, email, role]
     );
+    await client.query('COMMIT');
 
     res.status(201).json({ id: user.id, email, name, employee_id: empId, role });
-  } catch (err) { next(err); }
+  } catch (err) {
+    if (client) await client.query('ROLLBACK').catch(() => {});
+    next(err);
+  } finally {
+    if (client) client.release();
+  }
 });
 
 /** 管理员重置密码 */
@@ -356,13 +423,23 @@ router.post('/admin/users/:id/reset-password', requireAuth, requireRole('directo
 
 /** 管理员删除用户 */
 router.delete('/admin/users/:id', requireAuth, requireRole('director', 'admin'), async (req, res, next) => {
+  let client: any;
   try {
     const { id } = req.params;
-    await query('DELETE FROM timerecording.profiles WHERE id = $1', [id]);
-    await query('DELETE FROM public.users WHERE id = $1', [id]);
+    // ⚠️ F14 修复：profiles + users 两步删除放入同一事务，避免中途失败留下"有 profile 无 users"半成品
+    client = await getClient();
+    await client.query('BEGIN');
+    await client.query('DELETE FROM timerecording.profiles WHERE id = $1', [id]);
+    await client.query('DELETE FROM public.users WHERE id = $1', [id]);
+    await client.query('COMMIT');
     logAudit(req, '删除用户', 'admin', '用户 ' + id.slice(0,8) + ' 已删除');
     res.json({ success: true });
-  } catch (err) { next(err); }
+  } catch (err) {
+    if (client) await client.query('ROLLBACK').catch(() => {});
+    next(err);
+  } finally {
+    if (client) client.release();
+  }
 });
 
 /** 管理员锁定/解锁周 */

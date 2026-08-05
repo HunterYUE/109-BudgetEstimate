@@ -13,6 +13,11 @@ const projectsFields = [
 const router = crudRoutes('projects', projectsFields, {
   searchFields: ['sales_no', 'client_name'],
   orderBy: 'updated_at DESC',
+  // ⚠️ F4 修复：项目存在报价摘要时删除会撞 NO ACTION 外键，明确提示而非通用 400
+  beforeDelete: async (id) => {
+    const quote = (await query('SELECT id FROM quotations WHERE project_id = $1 LIMIT 1', [id])).rows[0];
+    if (quote) throw new AppError(409, '该项目存在报价记录，无法删除。请先删除关联报价。');
+  },
   extra: (r) => {
     // 获取项目完整信息（含版本、组、明细）
     r.get('/:id/full', async (req, res, next) => {
