@@ -136,16 +136,19 @@ router.post('/:id/records', async (req, res, next) => {
     const record = (await client.query('INSERT INTO approval_records (approval_request_id, reviewer, action, comment) VALUES ($1,$2,$3,$4) RETURNING *', [id, reviewer, action, comment || ''])).rows[0];
     const newStatus = action === 'approved' ? 'approved' : 'rejected';
     await client.query('UPDATE approval_requests SET status = $1, updated_at = now() WHERE id = $2', [newStatus, id]);
+    // ⚠️ 审批结果 JSONB：写入交付项目的 plan_approval/cost_approval（与审批记录一致），
+    //    使后端 /records 事务内完成全部级联，前端无需重复更新（避免双重应用与状态不一致）
+    const appraisal = JSON.stringify({ reviewer, action, comment: comment || '', createdAt: new Date().toISOString() });
     if (ar.approval_type === 'promote' && ar.opportunity_id) {
       await client.query('UPDATE sales_opportunities SET promote_locked = false, updated_at = now() WHERE id = $1', [ar.opportunity_id]);
       if (newStatus === 'approved') await client.query("UPDATE sales_opportunities SET stage = '机会', updated_at = now() WHERE id = $1", [ar.opportunity_id]);
     }
     if (ar.approval_type === 'plan' && ar.delivery_id) {
-      await client.query('UPDATE delivery_projects SET plan_status = $1, updated_at = now() WHERE id = $2', [newStatus, ar.delivery_id]);
+      await client.query('UPDATE delivery_projects SET plan_status = $1, plan_approval = $2, updated_at = now() WHERE id = $3', [newStatus, appraisal, ar.delivery_id]);
       if (newStatus === 'approved') await client.query('UPDATE delivery_nodes SET baseline_planned_end_date = planned_end_date WHERE delivery_project_id = $1 AND baseline_planned_end_date IS NULL', [ar.delivery_id]);
     }
     if (ar.approval_type === 'cost' && ar.delivery_id) {
-      await client.query('UPDATE delivery_projects SET cost_status = $1, updated_at = now() WHERE id = $2', [newStatus, ar.delivery_id]);
+      await client.query('UPDATE delivery_projects SET cost_status = $1, cost_approval = $2, updated_at = now() WHERE id = $3', [newStatus, appraisal, ar.delivery_id]);
     }
     if (ar.approval_type === 'quotation' && ar.quotation_id) {
       await client.query('UPDATE quotations SET locked = false, status = $1, updated_at = now() WHERE id = $2', [newStatus, ar.quotation_id]);

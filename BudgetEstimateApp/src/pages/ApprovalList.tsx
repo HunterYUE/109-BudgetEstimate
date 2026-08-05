@@ -4,9 +4,7 @@ import { Card, Tag, Button, Modal, Input, message, Empty } from 'antd';
 import { CheckCircleOutlined, CloseCircleOutlined, EyeOutlined, CheckOutlined, CloseOutlined } from '@ant-design/icons';
 import { approvalService } from '../services/approvalService';
 import { deliveryService } from '../services/deliveryService';
-import { projectService } from '../services/projectService';
 import { quotationService } from '../services/quotationService';
-import { opportunityService } from '../services/opportunityService';
 import { formatMoney } from '../utils/calculations';
 import { formatBeijing } from '../utils/timeFormat';
 import type { ApprovalRequest, QuotationSummary, DeliveryProject } from '../types';
@@ -20,6 +18,25 @@ const statusConfig: Record<string, { label: string; color: string }> = {
 };
 
 const typeColor = (t: string) => t === 'quotation' ? COLORS.primary : t === 'plan' ? COLORS.warning : t === 'cost' ? COLORS.success : COLORS.purple;
+
+/** 审批类型中文标签 */
+const TYPE_LABELS: Record<string, string> = { quotation: '报价审批', plan: '实施计划', cost: '成本对比', promote: '转机会审批' };
+const typeLabel = (t: string) => TYPE_LABELS[t] || t;
+
+/** Tab 样式（active 高亮色/文字色可配），收敛 5 个 Tab 的重复内联样式 */
+const tabStyle = (active: boolean, activeColor: string, textColor: string): React.CSSProperties => ({
+  padding: '8px 20px', cursor: 'pointer', fontSize: 14,
+  borderBottom: `2px solid ${active ? activeColor : 'transparent'}`,
+  color: active ? activeColor : textColor,
+  fontWeight: active ? 600 : 400,
+  marginBottom: -2, transition: 'all 0.15s',
+});
+
+/** 利润率 Gauge（百分比值，>=20 绿 / >=15 橙 / <15 红） */
+const Gauge: React.FC<{ value: number }> = ({ value }) => {
+  const color = value >= 20 ? COLORS.success : value >= 15 ? COLORS.amber : COLORS.danger;
+  return <span style={{ fontWeight: 600, color }}>{value.toFixed(1)}</span>;
+};
 
 interface DraftItem {
   id: string;
@@ -42,9 +59,10 @@ const ApprovalList: React.FC = () => {
 
   useEffect(() => {
     let cancelled = false;
-    approvalService.list().then(res => { if (!cancelled) setRequests(res); }).catch(() => { if (!cancelled) setRequests([]); });
-    quotationService.list().then(res => { if (!cancelled) setDraftQuotations(res); }).catch(() => { if (!cancelled) setDraftQuotations([]); });
-    deliveryService.list().then(res => { if (!cancelled) setDraftDeliveries(res); }).catch(() => { if (!cancelled) setDraftDeliveries([]); });
+    // ⚠️ 全部传 limit:'1000'，避免后端默认 limit=100 导致列表截断
+    approvalService.list({ limit: '1000' }).then(res => { if (!cancelled) setRequests(res); }).catch(() => { if (!cancelled) setRequests([]); });
+    quotationService.list({ limit: '1000' }).then(res => { if (!cancelled) setDraftQuotations(res); }).catch(() => { if (!cancelled) setDraftQuotations([]); });
+    deliveryService.list({ limit: '1000' }).then(res => { if (!cancelled) setDraftDeliveries(res); }).catch(() => { if (!cancelled) setDraftDeliveries([]); });
     return () => { cancelled = true; };
   }, []);
 
@@ -56,10 +74,11 @@ const ApprovalList: React.FC = () => {
   const filtered = useMemo(() => {
     const q = searchText.toLowerCase();
     const filteredBySearch = requests.filter(r => {
-      if (q && !r.clientName.toLowerCase().includes(q) &&
-          !r.salesNo.toLowerCase().includes(q) &&
-          !r.projectName.toLowerCase().includes(q) &&
-          !r.submitter.toLowerCase().includes(q)) return false;
+      // ⚠️ 字段判空防御（|| ''），避免个别字段缺失时 toLowerCase 抛错
+      if (q && !(r.clientName || '').toLowerCase().includes(q) &&
+          !(r.salesNo || '').toLowerCase().includes(q) &&
+          !(r.projectName || '').toLowerCase().includes(q) &&
+          !(r.submitter || '').toLowerCase().includes(q)) return false;
       if (typeFilter && r.approvalType !== typeFilter) return false;
       return true;
     });
@@ -89,6 +108,21 @@ const ApprovalList: React.FC = () => {
   const [approvalModal, setApprovalModal] = useState<{ req: ApprovalRequest; action: 'approved' | 'rejected' } | null>(null);
   const [approvalComment, setApprovalComment] = useState('');
 
+  /** 打开审批详情（转机会→首页；交付→交付详情；报价→报价编制） */
+  const openDetail = useCallback((item: { approvalType: string; deliveryId?: string; quotationId?: string }) => {
+    if (item.approvalType === 'promote') navigate('/');
+    else if (item.deliveryId) navigate('/delivery/' + item.deliveryId, { state: { tab: item.approvalType === 'cost' ? 'cost' : 'plan' } });
+    else navigate('/quotations/' + item.quotationId);
+  }, [navigate]);
+
+  /** Tab 徽标计数（仅随 requests/user 变化重算，避免每次渲染重复 filter） */
+  const tabCounts = useMemo(() => ({
+    pending: requests.filter(r => r.status === 'pending').length,
+    done: requests.filter(r => r.status !== 'pending').length,
+    mine: requests.filter(r => r.submitter === (user?.displayName || '')).length,
+    all: requests.length,
+  }), [requests, user]);
+
   const handleApprove = useCallback((req: ApprovalRequest) => {
     setApprovalModal({ req, action: 'approved' });
     setApprovalComment('');
@@ -107,44 +141,15 @@ const ApprovalList: React.FC = () => {
       return;
     }
     try {
-      const newStatus = modal.action === 'approved' ? 'approved' : 'rejected';
-      // 更新审批请求状态 + 写入审批记录（含审批人、原因、时间）
-      await approvalService.update(modal.req.id, { status: newStatus });
+      // ⚠️ 后端 POST /:id/records 在事务内完成全部级联（请求状态/报价/版本/交付/机会/审批记录/plan_approval）
+      // 前端只需提交审批记录，不再重复级联——避免双重应用与"后端成功但前端级联失败"的状态不一致
       await approvalService.createRecord(modal.req.id, {
         reviewer: user?.displayName || '审批人',
         action: modal.action,
         comment: approvalComment,
-      }).catch((e: unknown) => { console.warn('[Approval] 创建审批记录失败:', e); msg.error('审批记录创建失败'); });
+      });
       // 重新加载列表确保 latestRecord 数据最新
-      approvalService.list().then(res => setRequests(res)).catch(() => {});
-      const cascadeUpdates: Promise<unknown>[] = [];
-      if (modal.req.approvalType === 'quotation' && modal.req.quotationId) {
-        cascadeUpdates.push(
-          (async () => {
-            // 更新报价表的 locked 和 status
-            const updated = await quotationService.update(modal.req.quotationId, { status: newStatus, locked: false });
-            // ⚠️ 同步更新项目版本的审核状态（否则 QuotationPage 加载时仍视为 pending 而锁定）
-            const pid = updated.projectId;
-            if (pid && modal.req.versionNo) {
-              await projectService.updateVersionStatus(pid, modal.req.versionNo, newStatus);
-            }
-          })(),
-        );
-      }
-      if (modal.req.deliveryId) {
-        const appraisal = { reviewer: user?.displayName || '审批人', action: modal.action, comment: approvalComment, createdAt: new Date().toISOString() };
-        if (modal.req.approvalType === 'plan') cascadeUpdates.push(deliveryService.update(modal.req.deliveryId, { planStatus: newStatus, planApproval: appraisal }));
-        else if (modal.req.approvalType === 'cost') cascadeUpdates.push(deliveryService.update(modal.req.deliveryId, { costStatus: newStatus, costApproval: appraisal }));
-      }
-      if (modal.req.approvalType === 'promote' && modal.req.opportunityId) {
-        cascadeUpdates.push(
-          opportunityService.update(modal.req.opportunityId, {
-            promoteLocked: false,
-            stage: modal.action === 'approved' ? '机会' : undefined,
-          })
-        );
-      }
-      if (cascadeUpdates.length > 0) await Promise.all(cascadeUpdates);
+      approvalService.list({ limit: '1000' }).then(res => setRequests(res)).catch(() => {});
       if (modal.action === 'approved') msg.success('已通过');
       else msg.warning('已驳回');
       setApprovalModal(null);
@@ -159,40 +164,11 @@ const ApprovalList: React.FC = () => {
       <div style={{ fontSize: 17, fontWeight: 700, color: COLORS.textDark, marginBottom: 24 }}>审批管理</div>
 
       <div style={{ display: 'flex', gap: 0, marginBottom: 20 }}>
-        <div onClick={() => setFilter('draft')}
-          style={{ padding: '8px 20px', cursor: 'pointer', fontSize: 14, borderBottom: filter === 'draft' ? `2px solid ${COLORS.textLight}` : '2px solid transparent', color: filter === 'draft' ? COLORS.textLight : COLORS.textSecondary, fontWeight: filter === 'draft' ? 600 : 400, marginBottom: -2, transition: 'all 0.15s' }}>草稿({draftItems.length})</div>
-        <div onClick={() => setFilter('pending')}
-          style={{
-            padding: '8px 20px', cursor: 'pointer', fontSize: 14,
-            borderBottom: filter === 'pending' ? `2px solid ${COLORS.warning}` : '2px solid transparent',
-            color: filter === 'pending' ? COLORS.warning : COLORS.textSecondary, fontWeight: filter === 'pending' ? 600 : 400,
-            marginBottom: -2, transition: 'all 0.15s',
-          }}>待审批({requests.filter(r => r.status === 'pending').length})
-        </div>
-        <div onClick={() => setFilter('done')}
-          style={{
-            padding: '8px 20px', cursor: 'pointer', fontSize: 14,
-            borderBottom: filter === 'done' ? `2px solid ${COLORS.success}` : '2px solid transparent',
-            color: filter === 'done' ? COLORS.success : COLORS.textSecondary, fontWeight: filter === 'done' ? 600 : 400,
-            marginBottom: -2, transition: 'all 0.15s',
-          }}>已审批({requests.filter(r => r.status !== 'pending').length})
-        </div>
-        <div onClick={() => setFilter('mine')}
-          style={{
-            padding: '8px 20px', cursor: 'pointer', fontSize: 14,
-            borderBottom: filter === 'mine' ? `2px solid ${COLORS.primary}` : '2px solid transparent',
-            color: filter === 'mine' ? COLORS.primary : COLORS.textSecondary, fontWeight: filter === 'mine' ? 600 : 400,
-            marginBottom: -2, transition: 'all 0.15s',
-          }}>我的提交({requests.filter(r => r.submitter === (user?.displayName || '')).length})
-        </div>
-        <div onClick={() => setFilter('all')}
-          style={{
-            padding: '8px 20px', cursor: 'pointer', fontSize: 14,
-            borderBottom: filter === 'all' ? `2px solid ${COLORS.primary}` : '2px solid transparent',
-            color: filter === 'all' ? COLORS.primary : COLORS.textSecondary, fontWeight: filter === 'all' ? 600 : 400,
-            marginBottom: -2, transition: 'all 0.15s',
-          }}>全部({requests.length})
-        </div>
+        <div onClick={() => setFilter('draft')} style={tabStyle(filter === 'draft', COLORS.textLight, COLORS.textSecondary)}>草稿({draftItems.length})</div>
+        <div onClick={() => setFilter('pending')} style={tabStyle(filter === 'pending', COLORS.warning, COLORS.textSecondary)}>待审批({tabCounts.pending})</div>
+        <div onClick={() => setFilter('done')} style={tabStyle(filter === 'done', COLORS.success, COLORS.textSecondary)}>已审批({tabCounts.done})</div>
+        <div onClick={() => setFilter('mine')} style={tabStyle(filter === 'mine', COLORS.primary, COLORS.textSecondary)}>我的提交({tabCounts.mine})</div>
+        <div onClick={() => setFilter('all')} style={tabStyle(filter === 'all', COLORS.primary, COLORS.textSecondary)}>全部({tabCounts.all})</div>
         <div style={{ flex: 1 }} />
         <table style={{ borderCollapse: 'collapse', marginLeft: 8 }}>
           <tbody>
@@ -232,7 +208,7 @@ const ApprovalList: React.FC = () => {
 
                     <Tag color={typeColor(item.approvalType)}
                       style={{ fontSize: 12, border: 'none', fontWeight: 600 }}>
-                      {item.approvalType === 'quotation' ? '报价审批' : item.approvalType === 'plan' ? '实施计划' : item.approvalType === 'cost' ? '成本对比' : '转机会审批'}
+                      {typeLabel(item.approvalType)}
                     </Tag>
                   </div>
                   <div style={{ display: 'flex', gap: 24, fontSize: 13, color: COLORS.textSecondary, flexWrap: 'wrap' }}>
@@ -246,7 +222,7 @@ const ApprovalList: React.FC = () => {
                 </div>
                 <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginLeft: 16, flexShrink: 0 }}>
                   <Button type="text" size="small" icon={<EyeOutlined style={{ fontSize: 18 }} />}
-                    onClick={() => item.approvalType === 'promote' ? navigate('/') : item.deliveryId ? navigate('/delivery/' + item.deliveryId, { state: { tab: item.approvalType === 'cost' ? 'cost' : 'plan' } }) : navigate('/quotations/' + item.quotationId)}
+                    onClick={() => openDetail(item)}
                     style={{ color: COLORS.primary }} />
                 </div>
               </div>
@@ -277,7 +253,7 @@ const ApprovalList: React.FC = () => {
                     <span style={{ fontSize: 15, fontWeight: 600, color: COLORS.textDark }}>{req.clientName}</span>
                     <span style={{ fontSize: 12, color: COLORS.textLight }}>{req.salesNo}</span>
                     {req.status !== 'pending' && <Tag color={statusConfig[req.status]?.color} style={{ fontWeight: 600, fontSize: 12, lineHeight: '20px', borderRadius: 3 }}>{statusConfig[req.status]?.label}</Tag>}
-                    <Tag color={typeColor(req.approvalType)} style={{ fontSize: 12, border: 'none', fontWeight: 600 }}>{req.approvalType === 'quotation' ? '报价审批' : req.approvalType === 'plan' ? '实施计划' : req.approvalType === 'cost' ? '成本对比' : '转机会审批'}</Tag>
+                    <Tag color={typeColor(req.approvalType)} style={{ fontSize: 12, border: 'none', fontWeight: 600 }}>{typeLabel(req.approvalType)}</Tag>
                     {req.versionNo && <span style={{ fontSize: 12, color: COLORS.textLight }}>{req.versionNo}</span>}
                   </div>
                   <div style={{ display: 'flex', gap: 24, fontSize: 13, color: COLORS.textSecondary, flexWrap: 'wrap' }}>
@@ -304,7 +280,7 @@ const ApprovalList: React.FC = () => {
 
                 <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginLeft: 16, flexShrink: 0 }}>
                   <Button type="text" size="small" icon={<EyeOutlined style={{ fontSize: 18 }} />}
-                    onClick={() => req.approvalType === 'promote' ? navigate('/') : req.deliveryId ? navigate('/delivery/' + req.deliveryId, { state: { tab: req.approvalType === 'cost' ? 'cost' : 'plan' } }) : navigate('/quotations/' + req.quotationId)}
+                    onClick={() => openDetail(req)}
                     style={{ color: COLORS.primary }} />
                   {req.status === 'pending' && (
                     <>
@@ -360,11 +336,6 @@ const ApprovalList: React.FC = () => {
 
     </div>
   );
-};
-
-const Gauge: React.FC<{ value: number }> = ({ value }) => {
-  const color = value >= 20 ? COLORS.success : value >= 15 ? COLORS.amber : COLORS.danger;
-  return <span style={{ fontWeight: 600, color }}>{value.toFixed(1)}</span>;
 };
 
 export default ApprovalList;
