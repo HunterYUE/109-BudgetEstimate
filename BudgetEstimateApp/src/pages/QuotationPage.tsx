@@ -11,8 +11,8 @@ import { quotationService } from '../services/quotationService';
 import { opportunityService } from '../services/opportunityService';
 import { approvalService } from '../services/approvalService';
 import { clientService } from '../services/clientService';
-import type { Group, GroupItem, Project, ProjectVersion, Component, Client } from '../types';
-import { calcProjectSummary, calcDirectCost, calcItemPrices } from '../utils/calculations';
+import type { Group, GroupItem, Project, ProjectVersion, Component, Client, ReviewStatus } from '../types';
+import { calcProjectSummary, calcDirectCost, calcItemPrices, type ProjectSummary } from '../utils/calculations';
 import { clearCache } from '../utils/api';
 import { projectService } from '../services/projectService';
 import IconButton from '../components/IconButton';
@@ -43,6 +43,89 @@ function renumberEquipGroups(groups: Group[]): Group[] {
     }
     return g;
   });
+}
+
+/** 判断是否为前端临时组 id（未持久化）：以 grp- / proj- / - 前缀开头 */
+function isTempGroupId(id: string): boolean {
+  return /^(grp-|proj-|-)/.test(id);
+}
+
+/** 审核状态展示配置（标签/背景色/文字色） */
+const REVIEW_STATUS_META: Record<ReviewStatus, { label: string; bg: string; color: string }> = {
+  draft:    { label: '草稿',   bg: COLORS.bgTag,      color: COLORS.textSecondary },
+  pending:  { label: '待审批', bg: '#fff3e0',         color: COLORS.warning },
+  approved: { label: '已通过', bg: '#e8f5e9',         color: COLORS.success },
+  rejected: { label: '已驳回', bg: '#ffebee',         color: COLORS.danger },
+};
+
+/** 由汇总值构建版本保存载荷（统一 handleSave/handleSubmit 三处 saveVersion 字段映射，避免重复漂移） */
+function buildVersionPayload(
+  ver: ProjectVersion,
+  s: ProjectSummary,
+  overrides: Partial<Pick<ProjectVersion, 'versionNo' | 'reviewStatus'>> = {}
+): Partial<ProjectVersion> {
+  return {
+    ...ver,
+    ...overrides,
+    totalDirectCost: s.totalDirectCost,
+    totalAccountingPrice: s.totalAccountingPrice,
+    discountedPrice: s.discountedPrice,
+    discountRate: s.discountRate,
+    gp3ProfitRate: s.gp3,
+    gp3Amount: s.gp3Amount,
+    totalCost: s.totalCost,
+    warrantyCost: s.warrantyCost,
+    riskCost: s.riskCost,
+    materialCost: s.materialCost,
+    laborCost: s.laborCost,
+    projectExpense: s.projectExpense,
+  };
+}
+
+/** 归属 currentVersion 的字段（handleProjectUpdate 写入版本而非项目） */
+const VERSION_FIELDS: string[] = ['versionNo', 'eurRate', 'taxRate', 'warrantyRate', 'riskRate', 'commercialCost'];
+
+/** 提取项目基础字段：create 时含销售元数据，update 时仅业务字段（统一三处 projectService 载荷） */
+function buildProjectPayload(p: Project, opts: { withSalesMeta?: boolean } = {}) {
+  const base = {
+    clientName: p.clientName, clientCode: p.clientCode,
+    projectScope: p.projectScope, projectName: p.projectName || '', projectStage: p.projectStage,
+    expectedAwardDate: p.expectedAwardDate, projectLayout: p.projectLayout,
+    deliveryPeriod: p.deliveryPeriod, paymentTerms: p.paymentTerms,
+    postfix: p.postfix, note: p.note,
+  };
+  return opts.withSalesMeta
+    ? { salesNo: p.salesNo, versionNo: p.currentVersion.versionNo, ...base }
+    : base;
+}
+
+/** 通用删除确认弹窗（统一删除组/删除物料两个 Modal 结构） */
+function ConfirmDeleteModal({ title, description, open, onCancel, onConfirm }: {
+  title: string; description: string; open: boolean; onCancel: () => void; onConfirm: () => void;
+}) {
+  return (
+    <Modal
+      title={<span style={{ fontSize: 17, fontWeight: 600, color: COLORS.textDark, letterSpacing: 0.5 }}>{title}</span>}
+      open={open}
+      onCancel={onCancel}
+      width={420}
+      destroyOnHidden
+      styles={{ body: { padding: '24px 28px 12px' } }}
+      footer={
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <Button icon={<CloseOutlined />} onClick={onCancel}
+            style={{ borderRadius: 3, width: 36, height: 36 }} />
+          <Button type="primary" ghost icon={<CheckOutlined />} onClick={onConfirm}
+            style={{ borderColor: COLORS.danger, color: COLORS.danger, borderRadius: 3, width: 36, height: 36 }} />
+        </div>
+      }
+    >
+      <div style={{ textAlign: 'center', padding: '16px 0' }}>
+        <div style={{ fontSize: 40, marginBottom: 12 }}>🗑️</div>
+        <div style={{ fontSize: 14, color: COLORS.textSecondary }}>{description}</div>
+      </div>
+    </Modal>
+  );
 }
 
 
@@ -159,6 +242,14 @@ const QuotationPage: React.FC = () => {
   const [isSaving, setIsSaving] = useState(false);
   const savingRef = useRef(false); // ⚠️ 同步防重入锁（比 useState 更可靠）
   const oppIdRef = useRef<string | null>(null);
+  /** 当前 state 中 groups 所属的版本 id：版本切换保存时按版本清理目标版本旧组再重建，避免回切/切换产生重复组 */
+  const groupsVersionRef = useRef<string>('');
+
+  /** 物料编码→组件 索引：用 Map 替代 componentDB.find/some 全表扫描（填充 effect/编码校验/添加条目） */
+  const componentMap = useMemo(
+    () => new Map(componentDB.map((c: Component) => [c.code, c])),
+    [componentDB]
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -202,6 +293,7 @@ const QuotationPage: React.FC = () => {
                 versionGroups = data.groups || [];
               }
             }
+            groupsVersionRef.current = lv?.id || '';
             setProject({ ...data, currentVersion: lv || { ...FALLBACK_VERSION }, groups: versionGroups });
           }
         } else {
@@ -216,9 +308,10 @@ const QuotationPage: React.FC = () => {
               if (opp.terminated) { setQuotationLocked(true); }
               const cn = opp.clientName || '';
               // 从客户列表查找客户编号
+              // ⚠️ 传 limit:'1000'，避免后端默认 limit=100 导致客户列表截断、查不到客户编码
               let cc = '';
               try {
-                const clients = await clientService.list();
+                const clients = await clientService.list({ limit: '1000' });
                 const match = clients.find((c: Client) => c.name === cn);
                 if (match) cc = match.code || '';
               } catch { /* 静默忽略，使用回退值 */ }
@@ -227,6 +320,7 @@ const QuotationPage: React.FC = () => {
           }
           if (!cancelled) {
             const base = initProject();
+            groupsVersionRef.current = ''; // 新项目组尚未归属任何版本
             setProject({ ...base, ...prefill, salesNo: (prefill.salesNo || base.salesNo) });
             setHasChanges(true);
           }
@@ -235,22 +329,25 @@ const QuotationPage: React.FC = () => {
       } finally { if (!cancelled) setLoading(false); }
     }
     load();
-    componentService.list().then(d => { if (!cancelled && d) setComponentDB(d); }).catch(() => {});
+    // ⚠️ 传 limit:'1000'，避免后端默认 limit=100 导致物料库截断（编码填充/校验依赖全量物料库）
+    componentService.list({ limit: '1000' }).then(d => { if (!cancelled && d) setComponentDB(d); }).catch(() => {});
     return () => { cancelled = true; };
   }, [quoteId]);
 
-  /** 当物料编码匹配数据库时，自动填充成本/工时/质保/采购方式 */
-// 仅在 componentDB 加载后触发一次物料编码填充
+  /**
+   * 当物料编码匹配数据库时，自动填充成本/工时/质保/采购方式。
+   * 幂等：仅在字段为 0/空 时填充，填充后再触发本 effect 也不会二次修改（防止无限循环）。
+   */
   useEffect(() => {
-    if (!project || componentDB.length === 0) return;
+    if (!project || componentMap.size === 0) return;
     let changed = false;
-    const designRateFromDB = componentDB.find((c: Component) => c.code === 'SV-DESIGN-000000-V1.0')?.unitCost ?? DEFAULT_DESIGN_HOURLY_RATE;
-    const assemblyRateFromDB = componentDB.find((c: Component) => c.code === 'SV-INSASS-000000-V1.0')?.unitCost ?? DEFAULT_ASSEMBLY_HOURLY_RATE;
+    const designRateFromDB = componentMap.get('SV-DESIGN-000000-V1.0')?.unitCost ?? DEFAULT_DESIGN_HOURLY_RATE;
+    const assemblyRateFromDB = componentMap.get('SV-INSASS-000000-V1.0')?.unitCost ?? DEFAULT_ASSEMBLY_HOURLY_RATE;
     const newGroups = project.groups.map(g => ({
       ...g,
       items: g.items.map(item => {
         if (!item.code) return item;
-        const comp = componentDB.find(c => c.code === item.code);
+        const comp = componentMap.get(item.code);
         if (!comp) return item;
         // 逐字段填充：仅当当前值为 0/空 且数据库有值时才填充
         const updated = { ...item };
@@ -281,7 +378,7 @@ const QuotationPage: React.FC = () => {
     }));
     if (changed) setProject(prev => prev ? { ...prev, groups: newGroups } : prev);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [componentDB, project?.id, project?.groups]);
+  }, [componentMap, project?.id, project?.groups]);
 
   const handleGroupChange = useCallback((groupId: string, items: GroupItem[]) => {
     setProject(prev => {
@@ -293,8 +390,8 @@ const QuotationPage: React.FC = () => {
 
   const handleAddItem = useCallback((groupId: string) => {
     // 从物料数据库动态获取工费费率
-    const designRate = componentDB.find(c => c.code === 'SV-DESIGN-000000-V1.0')?.unitCost ?? DEFAULT_DESIGN_HOURLY_RATE;
-    const assemblyRate = componentDB.find(c => c.code === 'SV-INSASS-000000-V1.0')?.unitCost ?? DEFAULT_ASSEMBLY_HOURLY_RATE;
+    const designRate = componentMap.get('SV-DESIGN-000000-V1.0')?.unitCost ?? DEFAULT_DESIGN_HOURLY_RATE;
+    const assemblyRate = componentMap.get('SV-INSASS-000000-V1.0')?.unitCost ?? DEFAULT_ASSEMBLY_HOURLY_RATE;
     setProject(prev => {
       if (!prev) return prev;
       const newGroups = prev.groups.map(g => {
@@ -327,7 +424,7 @@ const QuotationPage: React.FC = () => {
       return { ...prev, groups: newGroups };
     });
     setHasChanges(true);
-  }, [componentDB]);
+  }, [componentMap]);
 
   const handleDeleteItem = useCallback((groupId: string, itemId: string) => {
     setDeleteItemId({ groupId, itemId });
@@ -359,8 +456,8 @@ const QuotationPage: React.FC = () => {
       const groups = renumberEquipGroups(prev.groups.filter(g => g.id !== deleteGroupId));
       return { ...prev, groups };
     });
-    // 同步从数据库删除组记录
-    if (!deleteGroupId.startsWith('grp-') && !deleteGroupId.startsWith('proj-') && !deleteGroupId.startsWith('-')) {
+    // 同步从数据库删除组记录（前端临时 id 未持久化，无需删除）
+    if (!isTempGroupId(deleteGroupId)) {
       projectService.deleteGroup(deleteGroupId).catch(() => {});
     }
     setDeleteGroupId(null);
@@ -402,7 +499,7 @@ const QuotationPage: React.FC = () => {
   const handleProjectUpdate = useCallback((field: string, value: string | number) => {
     setProject(prev => {
       if (!prev) return prev;
-      if (field === 'versionNo' || field === 'eurRate' || field === 'taxRate' || field === 'warrantyRate' || field === 'riskRate' || field === 'commercialCost') {
+      if (VERSION_FIELDS.includes(field)) {
         return { ...prev, currentVersion: { ...prev.currentVersion, [field]: value } };
       }
       return { ...prev, [field]: value };
@@ -423,13 +520,13 @@ const QuotationPage: React.FC = () => {
     const badCodes: string[] = [];
     for (const g of project.groups) {
       for (const item of g.items) {
-        if (item.code && componentDB.length > 0 && !componentDB.some((c: Component) => c.code === item.code)) {
+        if (item.code && componentMap.size > 0 && !componentMap.has(item.code)) {
           badCodes.push(item.code);
         }
       }
     }
     return badCodes;
-  }, [project, componentDB]);
+  }, [project, componentMap]);
 
 
   // ⚠️ 报价同步金额取 calcProjectSummary 汇总值，discountedPrice 需传未税（从含税存储值转换）
@@ -437,16 +534,16 @@ const QuotationPage: React.FC = () => {
     if (!project) return undefined;
     const p = project.currentVersion;
     const pid = overrideProjectId || project.id;
-    const syncUntaxed = p?.discountedPrice ? Math.round(p.discountedPrice / (1 + (p.taxRate || 0.13))) : undefined;
+    const syncUntaxed = p.discountedPrice ? Math.round(p.discountedPrice / (1 + (p.taxRate || 0.13))) : undefined;
     const summary = calcProjectSummary(project.groups || [], p, syncUntaxed);
     const result = await quotationService.sync({
       projectId: pid,
-      versionNo: versionNo,
+      versionNo,
       salesNo: project.salesNo,
       clientName: project.clientName,
       // ⚠️ projectName 不可回退到 projectScope（早期数据中 scope 被误填为"2年质保"）
       projectName: project.projectName || project.clientName,
-      status: status,
+      status,
       amount: summary.discountedPrice || 0,
       totalCost: summary.totalCost || 0,
       profitRate: Math.round((summary.gp3 || 0) * 10000) / 100,
@@ -454,6 +551,22 @@ const QuotationPage: React.FC = () => {
     });
     return result;
   }, [project]);
+
+  /**
+   * 保存所有组并返回 oldId→newId 映射。
+   * ⚠️ 版本隔离：后端发现组所属版本与目标版本不同时会 INSERT 新组（新 id），
+   *    若不把新 id 同步回 state，下次保存会带着旧 id 再次触发创建 → 重复组。
+   */
+  const saveGroups = useCallback(async (pid: string, vid: string, groups: Group[]) => {
+    const idMap = new Map<string, string>();
+    for (const g of groups) {
+      // 前端临时 id 不传给后端（让其生成真实 id）；真实 id 传过去以支持版本隔离
+      const gid = isTempGroupId(g.id) ? undefined : g.id;
+      const saved = await projectService.saveGroup(pid, vid, { ...g, id: gid, items: g.items });
+      idMap.set(g.id, saved.id);
+    }
+    return idMap;
+  }, []);
 
   const handleSave = useCallback(async () => {
     if (savingRef.current) return; // ⚠️ 同步防重入锁
@@ -471,48 +584,34 @@ const QuotationPage: React.FC = () => {
     }
     const curVer = project.currentVersion;
     // 始终使用当前版本号保存（不迭代版本，版本编辑由用户手动输入）
-    const versionForSave = curVer ? curVer.versionNo : 'V1.0';
-    const statusForSave = curVer ? curVer.reviewStatus : 'draft';
+    const versionForSave = curVer.versionNo;
+    const statusForSave = curVer.reviewStatus;
     try {
       savingRef.current = true;
       setIsSaving(true); // ⚠️ 防止重复点击
       const isNew = project.id.startsWith('proj-');
       if (isNew) {
-        const created = await projectService.create({
-          salesNo: project.salesNo, versionNo: curVer?.versionNo || 'V1.0', clientName: project.clientName, clientCode: project.clientCode,
-          projectScope: project.projectScope, projectName: project.projectName || '', projectStage: project.projectStage,
-          expectedAwardDate: project.expectedAwardDate, projectLayout: project.projectLayout,
-          deliveryPeriod: project.deliveryPeriod, paymentTerms: project.paymentTerms,
-          postfix: project.postfix, note: project.note,
-        });
+        const created = await projectService.create(buildProjectPayload(project, { withSalesMeta: true }));
         const newId = created.id;
-        setProject(prev => prev ? { ...prev, id: newId } : prev);
         const newVerUntaxed = curVer.discountedPrice ? Math.round(curVer.discountedPrice / (1 + (curVer.taxRate || 0.13))) : undefined;
         const newVerSummary = calcProjectSummary(project.groups || [], curVer, newVerUntaxed);
-        const sv = await projectService.saveVersion(newId, {
-          ...curVer, id: undefined,
-          versionNo: versionForSave, reviewStatus: statusForSave,
-          totalDirectCost: newVerSummary.totalDirectCost,
-          totalAccountingPrice: newVerSummary.totalAccountingPrice,
-          discountedPrice: newVerSummary.discountedPrice,
-          discountRate: newVerSummary.discountRate,
-          gp3ProfitRate: newVerSummary.gp3,
-          gp3Amount: newVerSummary.gp3Amount,
-          totalCost: newVerSummary.totalCost,
-          warrantyCost: newVerSummary.warrantyCost,
-          riskCost: newVerSummary.riskCost,
-          materialCost: newVerSummary.materialCost,
-          laborCost: newVerSummary.laborCost,
-          projectExpense: newVerSummary.projectExpense,
-        });
+        const sv = await projectService.saveVersion(newId, buildVersionPayload(curVer, newVerSummary, { versionNo: versionForSave, reviewStatus: statusForSave }));
         const svId = sv.id;
-        for (const g of project.groups) {
-          await projectService.saveGroup(newId, svId, { ...g, id: undefined, items: g.items.map(i => ({ ...i, id: undefined })) });
+        // ⚠️ 版本切换时按版本清理目标版本旧组再重建（新项目 ref 为空跳过，避免重复组/回切重复）
+        if (groupsVersionRef.current && groupsVersionRef.current !== svId) {
+          await projectService.deleteGroupsByVersion(svId);
         }
+        const idMap = await saveGroups(newId, svId, project.groups);
+        groupsVersionRef.current = svId;
         const syncResult = await syncQuotation(versionForSave, statusForSave, newId);
         const qid = syncResult?.id || '';
-        // ⚠️ 必须同步更新计算字段，否则 handleSubmit 会使用旧版的过期数据覆盖数据库
-        setProject(prev => prev ? { ...prev, id: newId, currentVersion: { ...prev.currentVersion, ...newVerSummary, id: svId, versionNo: versionForSave, reviewStatus: statusForSave } } : prev);
+        // ⚠️ 必须同步更新计算字段与组 id（saveGroups 后前端临时 id 需换成后端真实 id），否则 handleSubmit 会用旧数据覆盖
+        setProject(prev => prev ? {
+          ...prev,
+          id: newId,
+          groups: prev.groups.map(g => ({ ...g, id: idMap.get(g.id) || g.id })),
+          currentVersion: { ...prev.currentVersion, ...newVerSummary, id: svId, versionNo: versionForSave, reviewStatus: statusForSave },
+        } : prev);
         // 新建报价保存后跳转到报价 URL，刷新不再丢失
         // 回写 opportunity.quotationId，使销售管理页面图标变为编辑
         if (qid && oppIdRef.current) {
@@ -520,42 +619,30 @@ const QuotationPage: React.FC = () => {
         }
         if (qid && quoteId === 'new') navigate('/quotations/' + qid, { replace: true });
       } else {
-        await projectService.update(project.id, {
-          clientName: project.clientName, clientCode: project.clientCode,
-          projectScope: project.projectScope, projectName: project.projectName || '', projectStage: project.projectStage,
-          expectedAwardDate: project.expectedAwardDate, projectLayout: project.projectLayout,
-          deliveryPeriod: project.deliveryPeriod, paymentTerms: project.paymentTerms,
-          postfix: project.postfix, note: project.note,
-        });
+        await projectService.update(project.id, buildProjectPayload(project));
         const versionUntaxed = curVer.discountedPrice ? Math.round(curVer.discountedPrice / (1 + (curVer.taxRate || 0.13))) : undefined;
         const versionSummary = calcProjectSummary(project.groups || [], curVer, versionUntaxed);
-        const versionPayload = {
-          ...curVer,
-          versionNo: versionForSave, reviewStatus: statusForSave,
-          totalDirectCost: versionSummary.totalDirectCost,
-          totalAccountingPrice: versionSummary.totalAccountingPrice,
-          discountedPrice: versionSummary.discountedPrice,
-          discountRate: versionSummary.discountRate,
-          gp3ProfitRate: versionSummary.gp3,
-          gp3Amount: versionSummary.gp3Amount,
-          totalCost: versionSummary.totalCost,
-          warrantyCost: versionSummary.warrantyCost,
-          riskCost: versionSummary.riskCost,
-          materialCost: versionSummary.materialCost,
-          laborCost: versionSummary.laborCost,
-          projectExpense: versionSummary.projectExpense,
-        };
+        const versionPayload = buildVersionPayload(curVer, versionSummary, { versionNo: versionForSave, reviewStatus: statusForSave });
         const savedVersion = await projectService.saveVersion(project.id, versionPayload);
         const savedVersionId = savedVersion.id;
-        for (const g of project.groups) {
-          await projectService.saveGroup(project.id, savedVersionId, { ...g, items: g.items });
+        // ⚠️ 版本隔离/回切防护：
+        //   - 版本号变更 → 后端对旧组 id 会 INSERT 新组（新 id），必须把新 id 同步回 state，否则下次保存再 INSERT → 重复组
+        //   - 若目标版本已存在旧组（版本回切 V1→V2→V1），需先按版本清理再重建，否则旧组+新副本并存 → 重复组
+        if (groupsVersionRef.current && groupsVersionRef.current !== savedVersionId) {
+          await projectService.deleteGroupsByVersion(savedVersionId);
         }
+        const idMap = await saveGroups(project.id, savedVersionId, project.groups);
+        groupsVersionRef.current = savedVersionId;
         const syncResult = await syncQuotation(versionForSave, statusForSave);
         const newQid = syncResult?.id || "";
         if (newQid && oppIdRef.current && quoteId) {
           opportunityService.update(oppIdRef.current, { quotationId: newQid }).catch(() => {});
         }
-        setProject(prev => prev ? { ...prev, currentVersion: { ...prev.currentVersion, ...versionSummary, id: savedVersionId, versionNo: versionForSave, reviewStatus: statusForSave } } : prev);
+        setProject(prev => prev ? {
+          ...prev,
+          currentVersion: { ...prev.currentVersion, ...versionSummary, id: savedVersionId, versionNo: versionForSave, reviewStatus: statusForSave },
+          groups: prev.groups.map(g => ({ ...g, id: idMap.get(g.id) || g.id })),
+        } : prev);
       }
       clearCache('/projects');
       setHasChanges(false);
@@ -567,7 +654,7 @@ const QuotationPage: React.FC = () => {
       setIsSaving(false);
       savingRef.current = false;
     }
-  }, [validateCodes, messageApi, project, isLocked, syncQuotation, quoteId, navigate]);
+  }, [validateCodes, messageApi, project, isLocked, syncQuotation, quoteId, navigate, saveGroups]);
 
   const handleSubmit = useCallback(async () => {
     if (savingRef.current) return; // ⚠️ 同步防重入锁
@@ -580,41 +667,24 @@ const QuotationPage: React.FC = () => {
       return;
     }
     const curVer = project.currentVersion;
-    if (!curVer || !curVer.versionNo) { messageApi.warning('版本号异常'); return; }
+    if (!curVer.versionNo) { messageApi.warning('版本号异常'); return; }
     try {
       savingRef.current = true;
       setIsSaving(true); // ⚠️ 防止重复点击
-      await projectService.update(project.id, {
-        clientName: project.clientName, clientCode: project.clientCode,
-        projectScope: project.projectScope, projectStage: project.projectStage,
-        expectedAwardDate: project.expectedAwardDate, projectLayout: project.projectLayout,
-        deliveryPeriod: project.deliveryPeriod, paymentTerms: project.paymentTerms,
-        postfix: project.postfix, note: project.note,
-      });
+      await projectService.update(project.id, buildProjectPayload(project));
       // ⚠️ 必须先重新计算汇总值再保存版本，否则 curVer 中的 discountRate/gp3ProfitRate 是过期数据
-      const submitUntaxed = curVer?.discountedPrice ? Math.round(curVer.discountedPrice / (1 + (curVer.taxRate || 0.13))) : undefined;
+      const submitUntaxed = curVer.discountedPrice ? Math.round(curVer.discountedPrice / (1 + (curVer.taxRate || 0.13))) : undefined;
       const submitSummary = calcProjectSummary(project.groups || [], curVer, submitUntaxed);
-      const updatedVersion = {
-        ...curVer, reviewStatus: 'pending' as const,
-        totalDirectCost: submitSummary.totalDirectCost,
-        totalAccountingPrice: submitSummary.totalAccountingPrice,
-        discountedPrice: submitSummary.discountedPrice,
-        discountRate: submitSummary.discountRate,
-        gp3ProfitRate: submitSummary.gp3,
-        gp3Amount: submitSummary.gp3Amount,
-        totalCost: submitSummary.totalCost,
-        warrantyCost: submitSummary.warrantyCost,
-        riskCost: submitSummary.riskCost,
-        materialCost: submitSummary.materialCost,
-        laborCost: submitSummary.laborCost,
-        projectExpense: submitSummary.projectExpense,
-      };
+      const updatedVersion = buildVersionPayload(curVer, submitSummary, { reviewStatus: 'pending' });
       const savedVer = await projectService.saveVersion(project.id, updatedVersion);
       const savedVerId = savedVer.id;
       // 保存组数据（与 handleSave 逻辑一致），确保审批时组数据是最新的
-      for (const g of project.groups) {
-        await projectService.saveGroup(project.id, savedVerId, { ...g, items: g.items });
+      // ⚠️ 版本隔离/回切防护：同步新组 id 回 state；版本切换时先按版本清理目标版本旧组再重建，防止重复组
+      if (groupsVersionRef.current && groupsVersionRef.current !== savedVerId) {
+        await projectService.deleteGroupsByVersion(savedVerId);
       }
+      const idMap = await saveGroups(project.id, savedVerId, project.groups);
+      groupsVersionRef.current = savedVerId;
       const synced = await quotationService.sync({
         projectId: project.id, versionNo: curVer.versionNo,
         salesNo: project.salesNo, clientName: project.clientName,
@@ -626,7 +696,7 @@ const QuotationPage: React.FC = () => {
       const quotationId = synced?.id || '';
       await approvalService.create({
         approvalType: 'quotation', quotationId: quotationId,
-        salesNo: project.salesNo, versionNo: curVer?.versionNo || 'V1.0', clientName: project.clientName,
+        salesNo: project.salesNo, versionNo: curVer.versionNo, clientName: project.clientName,
         projectName: project.projectName || project.clientName,
         amount: submitSummary.discountedPrice || 0,
         totalCost: submitSummary.totalCost,
@@ -640,7 +710,11 @@ const QuotationPage: React.FC = () => {
         submitter: submitterName, status: 'pending',
       });
       // 提交不创建新版本，用户手动修改版本号→保存时才创建
-      setProject(prev => prev ? { ...prev, currentVersion: { ...prev.currentVersion, ...submitSummary, id: savedVerId, reviewStatus: 'pending' } } : prev);
+      setProject(prev => prev ? {
+        ...prev,
+        currentVersion: { ...prev.currentVersion, ...submitSummary, id: savedVerId, reviewStatus: 'pending' },
+        groups: prev.groups.map(g => ({ ...g, id: idMap.get(g.id) || g.id })),
+      } : prev);
       clearCache('/projects');
       setQuotationLocked(true);
       setHasChanges(false);
@@ -652,7 +726,7 @@ const QuotationPage: React.FC = () => {
       savingRef.current = false;
       setIsSaving(false);
     }
-  }, [validateCodes, messageApi, project, isLocked, submitterName]);
+  }, [validateCodes, messageApi, project, isLocked, submitterName, saveGroups]);
 
   // ⚠️ 所有 calcProjectSummary 调用必须传入未税 discountedPrice（已含税存储的 ÷(1+taxRate) 转换）
   const summary = useMemo(() => {
@@ -738,19 +812,10 @@ const QuotationPage: React.FC = () => {
             <span style={{ fontSize: 17, fontWeight: 700, color: COLORS.textDark }}>报价编制</span>
             <span style={{
               fontSize: 12, fontWeight: 600, padding: '2px 10px', borderRadius: 4,
-              background: project.currentVersion.reviewStatus === 'approved' ? '#e8f5e9' :
-                          project.currentVersion.reviewStatus === 'pending' ? '#fff3e0' :
-                          project.currentVersion.reviewStatus === 'rejected' ? '#ffebee' : COLORS.bgTag,
-              color: project.currentVersion.reviewStatus === 'approved' ? COLORS.success :
-                     project.currentVersion.reviewStatus === 'pending' ? COLORS.warning :
-                     project.currentVersion.reviewStatus === 'rejected' ? COLORS.danger : COLORS.textSecondary,
+              background: REVIEW_STATUS_META[project.currentVersion.reviewStatus].bg,
+              color: REVIEW_STATUS_META[project.currentVersion.reviewStatus].color,
             }}>
-              {{
-                draft: '草稿',
-                pending: '待审批',
-                approved: '已通过',
-                rejected: '已驳回',
-              }[project.currentVersion.reviewStatus]}
+              {REVIEW_STATUS_META[project.currentVersion.reviewStatus].label}
             </span>
             {isLocked && (
               <span style={{
@@ -812,53 +877,21 @@ const QuotationPage: React.FC = () => {
           readOnly={isLocked}
         />
 
-        {/* 删除设备组弹窗 */}
-        <Modal
-          title={<span style={{ fontSize: 17, fontWeight: 600, color: COLORS.textDark, letterSpacing: 0.5 }}>确认删除此设备组？</span>}
+        {/* 删除设备组/删除物料 确认弹窗 */}
+        <ConfirmDeleteModal
+          title="确认删除此设备组？"
+          description="删除后所有物料将丢失，设备组编号将重新排列。"
           open={!!deleteGroupId}
           onCancel={() => setDeleteGroupId(null)}
-          width={420}
-          destroyOnHidden
-          styles={{ body: { padding: '24px 28px 12px' } }}
-          footer={
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-              <Button icon={<CloseOutlined />} onClick={() => setDeleteGroupId(null)}
-                style={{ borderRadius: 3, width: 36, height: 36 }} />
-              <Button type="primary" ghost icon={<CheckOutlined />} onClick={confirmDeleteGroup}
-                style={{ borderColor: COLORS.danger, color: COLORS.danger, borderRadius: 3, width: 36, height: 36 }} />
-            </div>
-          }
-        >
-          <div style={{ textAlign: 'center', padding: '16px 0' }}>
-            <div style={{ fontSize: 40, marginBottom: 12 }}>🗑️</div>
-            <div style={{ fontSize: 14, color: COLORS.textSecondary }}>删除后所有物料将丢失，设备组编号将重新排列。</div>
-          </div>
-        </Modal>
-
-        {/* 删除物料条目弹窗 */}
-        <Modal
-          title={<span style={{ fontSize: 17, fontWeight: 600, color: COLORS.textDark, letterSpacing: 0.5 }}>确认删除此物料？</span>}
+          onConfirm={confirmDeleteGroup}
+        />
+        <ConfirmDeleteModal
+          title="确认删除此物料？"
+          description="删除后不可恢复，物料编号将重新排列。"
           open={!!deleteItemId}
           onCancel={() => setDeleteItemId(null)}
-          width={420}
-          destroyOnHidden
-          styles={{ body: { padding: '24px 28px 12px' } }}
-          footer={
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-              <Button icon={<CloseOutlined />} onClick={() => setDeleteItemId(null)}
-                style={{ borderRadius: 3, width: 36, height: 36 }} />
-              <Button type="primary" ghost icon={<CheckOutlined />} onClick={confirmDeleteItem}
-                style={{ borderColor: COLORS.danger, color: COLORS.danger, borderRadius: 3, width: 36, height: 36 }} />
-            </div>
-          }
-        >
-          <div style={{ textAlign: 'center', padding: '16px 0' }}>
-            <div style={{ fontSize: 40, marginBottom: 12 }}>🗑️</div>
-            <div style={{ fontSize: 14, color: COLORS.textSecondary }}>删除后不可恢复，物料编号将重新排列。</div>
-          </div>
-        </Modal>
-
-
+          onConfirm={confirmDeleteItem}
+        />
 
         <div style={{
           display: 'flex', justifyContent: 'flex-end', alignItems: 'center',

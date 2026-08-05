@@ -22,9 +22,9 @@ export const projectService = {
   saveVersion: (projectId: string, data: Partial<ProjectVersion>) =>
     api.post<ProjectVersion>(`/project-versions`, { ...data, projectId }),
 
-  /** 保存组和明细 */
+  /** 保存组和明细（后端返回完整组，含明细；saveGroups 依赖返回的 id 同步状态） */
   saveGroup: (projectId: string, versionId: string, data: { id?: string; projectId?: string; versionId?: string; groupNo: number; groupType: string; name: string; isFixed?: boolean; items?: Partial<GroupItem>[] }) =>
-    api.post('/project-groups', { ...data, projectId, versionId }),
+    api.post<Group>('/project-groups', { ...data, projectId, versionId }),
 
   deleteGroup: (id: string) =>
     api.delete(`/project-groups/${id}`),

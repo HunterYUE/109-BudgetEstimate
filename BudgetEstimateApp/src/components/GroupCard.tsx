@@ -108,4 +108,9 @@ const GroupCard: React.FC<Props> = ({ group, onGroupChange, onAddItem, onDeleteI
   );
 };
 
-export default GroupCard;
+/**
+ * React.memo：QuotationPage 中编辑单个物料会触发全页重渲染，
+ * 但未变更组的 group 引用保持不变（map 对非目标组原样返回），
+ * memo 使仅受影响组重渲染，其余组跳过 → 大表编辑时避免全量重渲染。
+ */
+export default React.memo(GroupCard);

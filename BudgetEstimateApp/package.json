@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "node scripts/lint-naming.cjs && npm run lint:quiet && vite build",
+    "build": "node scripts/lint-naming.cjs && npm run lint:quiet && tsc -b && vite build",
     "lint:quiet": "eslint . --no-ignore --quiet || true",
     "typecheck": "tsc -b",
     "lint": "eslint .",
