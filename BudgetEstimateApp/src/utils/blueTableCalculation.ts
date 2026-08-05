@@ -1,7 +1,7 @@
-import type { BlueTable, RoleType, InfluenceLevel } from '../types';
+import type { BlueTable, RoleType, InfluenceLevel, PricingLevel, ReactionMode } from '../types';
 
 /** 价格竞争力对应的百分点修正值 */
-export const PRICING_ADJUSTMENTS: Record<string, number> = {
+export const PRICING_ADJUSTMENTS: Record<PricingLevel, number> = {
   very_strong: 15,
   strong: 10,
   competitive: 5,
@@ -11,7 +11,7 @@ export const PRICING_ADJUSTMENTS: Record<string, number> = {
   very_weak: -15,
 };
 
-export const PRICING_LABELS: Record<string, string> = {
+export const PRICING_LABELS: Record<PricingLevel, string> = {
   very_strong: '很强',
   strong: '强',
   competitive: '较强',
@@ -22,14 +22,14 @@ export const PRICING_LABELS: Record<string, string> = {
 };
 
 /** 影响力默认权重 */
-export const INFLUENCE_DEFAULT_WEIGHT: Record<string, number> = {
+export const INFLUENCE_DEFAULT_WEIGHT: Record<InfluenceLevel, number> = {
   high: 5,
   medium: 3,
   low: 1,
 };
 
 /** EB 角色专用权重（决策者影响力更大） */
-export const EB_INFLUENCE_WEIGHT: Record<string, number> = {
+export const EB_INFLUENCE_WEIGHT: Record<InfluenceLevel, number> = {
   high: 10,
   medium: 5,
   low: 1,
@@ -59,14 +59,14 @@ const POSITIONING_EXPLANATIONS: Record<number, string> = {
   10: '基本确定要输了',
 };
 
-const REACTION_LABELS: Record<string, string> = {
+const REACTION_LABELS: Record<ReactionMode, string> = {
   G: 'G（增长）',
   T: 'T（困难）',
   EK: 'EK（平稳）',
   OC: 'OC（自满）',
 };
 
-const REACTION_EXPLANATIONS: Record<string, { desc: string; strategy: string }> = {
+const REACTION_EXPLANATIONS: Record<ReactionMode, { desc: string; strategy: string }> = {
   G: { desc: '客户想变得更好', strategy: '容易争取支持，但有竞争' },
   T: { desc: '客户遇到麻烦', strategy: '支持意愿强，抓紧解决核心问题' },
   EK: { desc: '客户认为现状挺好', strategy: '难获得支持，需制造痛点' },

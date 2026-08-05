@@ -163,7 +163,8 @@ const TriangleReactionCell: React.FC<{
 
 const BlueTableModal: React.FC<BlueTableModalProps> = ({ open, opportunity, onSave, onClose }) => {
   const readOnly = !onSave;
-  const [bt, setBt] = useState<BlueTable>(createEmptyBlueTable());
+  // ⚠️ 惰性初始化：`useState(createEmptyBlueTable())` 会在每次渲染都调用工厂（分配角色/randomUUID），浪费
+  const [bt, setBt] = useState<BlueTable>(createEmptyBlueTable);
   const calc = useMemo(() => calcBlueTableWinRate(bt), [bt]);
   const [msg, ctx] = message.useMessage();
 
@@ -199,7 +200,12 @@ const BlueTableModal: React.FC<BlueTableModalProps> = ({ open, opportunity, onSa
     setBt(prev => ({ ...prev, roles: prev.roles.map(r => r.id === roleId ? { ...r, ...updates } : r) }));
   }, []);
   const addRole = useCallback(() => setBt(prev => ({ ...prev, roles: [...prev.roles, defaultRole()] })), []);
-  const removeRole = useCallback((roleId: string) => setBt(prev => ({ ...prev, roles: prev.roles.filter(r => r.id !== roleId) })), []);
+  const removeRole = useCallback((roleId: string) => setBt(prev => ({
+    ...prev,
+    roles: prev.roles.filter(r => r.id !== roleId),
+    // ⚠️ 同步清理引用该角色的提升目标，避免孤儿 target 显示"-"或选中已删除角色
+    targets: prev.targets.filter(t => t.roleId !== roleId),
+  })), []);
 
   // ── 提升目标 ──
   const addTarget = useCallback(() => setBt(prev => ({ ...prev, targets: [...prev.targets, { roleId: '', targetSupport: 0, plan: '' }] })), []);
@@ -221,7 +227,6 @@ const BlueTableModal: React.FC<BlueTableModalProps> = ({ open, opportunity, onSa
     setBt(createEmptyBlueTable());
   }, []);
 
-  // ── 否决预算 ──
   // ── 否决预算 ──
   const handleBudget = useCallback((v: VetoBudgetOption) => {
     setBt(prev => ({ ...prev, vetoBudget: v }));
@@ -342,8 +347,12 @@ const BlueTableModal: React.FC<BlueTableModalProps> = ({ open, opportunity, onSa
     >
       {ctx}
 
-      {readOnly && <div style={{ position: 'absolute', inset: 0, zIndex: 10, cursor: 'default' }} />}
-      {/* ======== 独立卡片区块 ======== */}
+      {/* ======== 独立卡片区块（表单区）======== */}
+      {/* ⚠️ 表单区须包在 position:relative 容器内，view-only 覆盖层放在容器内部：
+          body 是滚动容器（maxHeight 限高），overlay 若直接放 body 层，absolute+inset:0 只覆盖首屏可视高度，
+          滚动后下方字段仍可编辑 → view-only 失效。包一层后 overlay 覆盖整个表单区高度 */}
+      <div style={{ position: 'relative' }}>
+        {readOnly && <div style={{ position: 'absolute', inset: 0, zIndex: 10, cursor: 'default' }} />}
         {/* ═══════ 1. 否决检查 ═══════ */}
         <div style={{
           borderRadius: 8, border: `1px solid ${COLORS.borderLight}`,
@@ -681,11 +690,11 @@ const BlueTableModal: React.FC<BlueTableModalProps> = ({ open, opportunity, onSa
                     </b>
                     {' + '}项目预算{' '}
                     <b style={{ color: calc.budgetPenalty > 0 ? COLORS.warning : COLORS.textLight }}>
-                      {calc.budgetPenalty > 0 ? '-5' : '-0'}%
+                      {calc.budgetPenalty > 0 ? '-' + calc.budgetPenalty : '-0'}%
                     </b>
                     {' + '}项目节点{' '}
                     <b style={{ color: calc.timelinePenalty > 0 ? COLORS.warning : COLORS.textLight }}>
-                      {calc.timelinePenalty > 0 ? '-5' : '-0'}%
+                      {calc.timelinePenalty > 0 ? '-' + calc.timelinePenalty : '-0'}%
                     </b>
                     {' = '}
                     <b style={{ fontSize: 16, color: calc.finalRate >= 70 ? COLORS.success : calc.finalRate >= 40 ? COLORS.warning : COLORS.danger }}>
@@ -737,7 +746,8 @@ const BlueTableModal: React.FC<BlueTableModalProps> = ({ open, opportunity, onSa
           </div>
         </div>
 
-      {/* 操作按钮行 */}
+      {/* 操作按钮行（在表单区包装层外，view-only 覆盖层不遮挡按钮） */}
+      </div>
       <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12, padding: '8px 12px' }}>
         {!readOnly && <Button type="text" icon={<DeleteOutlined />} onClick={handleClear}
           style={{ color: COLORS.danger, fontSize: 16, width: 36, height: 36, borderRadius: 3 }} />}
@@ -803,10 +813,6 @@ const BlueTableModal: React.FC<BlueTableModalProps> = ({ open, opportunity, onSa
           font-size: 12px; border-radius: 6px;
           box-shadow: 0 2px 8px rgba(0,0,0,0.1);
           color: #0d1b2a !important; padding: 6px 12px;
-        }
-        .bt-tri {
-          -webkit-font-smoothing: antialiased;
-          -moz-osx-font-smoothing: grayscale;
         }
       `}</style>
     </Modal>
