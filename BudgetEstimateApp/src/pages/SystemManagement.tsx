@@ -120,7 +120,8 @@ const SystemManagement: React.FC = () => {
   const loadLogs = useCallback(async () => {
     setLogLoading(true);
     try {
-      const data = await auditLogService.list();
+      // ⚠️ 传 limit:'1000'，避免后端默认 limit=100 导致日志截断
+      const data = await auditLogService.list({ limit: '1000' });
       setLogs(data);
     } catch {
       messageApi.error('加载操作日志失败');
@@ -141,14 +142,14 @@ const SystemManagement: React.FC = () => {
 
   /* ---- 用户管理操作 ---- */
 
-  const toggleUserActive = async (user: UserRecord) => {
+  const toggleUserActive = useCallback(async (user: UserRecord) => {
     try {
       const updated = await userService.update(user.id, { isActive: !user.isActive });
       setUsers(prev => prev.map(u => u.id === updated.id ? updated : u));
     } catch (err: unknown) {
       messageApi.error('操作失败：' + ((err as Error).message || ''));
     }
-  };
+  }, [messageApi]);
 
   const handleAddUser = async () => {
     if (!newName.trim()) { messageApi.warning('请输入用户姓名'); return; }
@@ -177,14 +178,14 @@ const SystemManagement: React.FC = () => {
     }
   };
 
-  const openEditModal = (u: UserRecord) => {
+  const openEditModal = useCallback((u: UserRecord) => {
     setEditTarget(u);
     setEditName(u.displayName);
     setEditTitle(u.title);
     setEditPhone(u.phone || '');
     setEditEmail(u.email);
     setEditOpen(true);
-  };
+  }, []);
 
   const handleEditSave = async () => {
     if (!editTarget) return;
@@ -208,11 +209,11 @@ const SystemManagement: React.FC = () => {
     }
   };
 
-  const openPwdModal = (u: UserRecord) => {
+  const openPwdModal = useCallback((u: UserRecord) => {
     setEditTarget(u);
     setResetPwd(''); setConfirmPwd('');
     setPwdOpen(true);
-  };
+  }, []);
 
   const handlePwdReset = async () => {
     if (!editTarget) return;
@@ -232,7 +233,7 @@ const SystemManagement: React.FC = () => {
     }
   };
 
-  const openPermModal = (u: UserRecord) => {
+  const openPermModal = useCallback((u: UserRecord) => {
     setEditTarget(u);
     setPermTitle(u.title);
     // 优先使用数据库已保存的权限，否则用职务预设
@@ -240,7 +241,7 @@ const SystemManagement: React.FC = () => {
       ? [...u.permissions]
       : [...(TITLE_PERMISSIONS[u.title] || [])]);
     setPermOpen(true);
-  };
+  }, []);
 
   const handlePermSave = async () => {
     if (!editTarget) return;
@@ -273,7 +274,7 @@ const SystemManagement: React.FC = () => {
   };
 
   /* ---- 表格列 ---- */
-  const userColumns: TableProps<UserRecord>['columns'] = [
+  const userColumns: TableProps<UserRecord>['columns'] = useMemo(() => [
     { title: '姓名', dataIndex: 'displayName', key: 'displayName', width: 100 },
     {
       title: '职务', dataIndex: 'title', key: 'title', width: 120,
@@ -318,7 +319,7 @@ const SystemManagement: React.FC = () => {
         </div>
       ),
     },
-  ];
+  ], [toggleUserActive, openEditModal, openPwdModal, openPermModal]);
 
   /* ---- 操作日志 ---- */
   const logModules = useMemo(() => {
@@ -332,7 +333,7 @@ const SystemManagement: React.FC = () => {
     return logs.filter(l => l.module === logModuleFilter);
   }, [logs, logModuleFilter]);
 
-  const logColumns: TableProps<AuditLog>['columns'] = [
+  const logColumns: TableProps<AuditLog>['columns'] = useMemo(() => [
     { title: '时间', dataIndex: 'time', key: 'time', width: 160,
       render: (v: string) => <span style={{ fontSize: 12, color: COLORS.textDark }}>{formatBeijing(v)}</span>,
     },
@@ -346,7 +347,7 @@ const SystemManagement: React.FC = () => {
     { title: '详情', dataIndex: 'detail', key: 'detail',
       render: (v: string) => <span style={{ fontSize: 12, color: COLORS.textSecondary, lineHeight: 1.5 }}>{v}</span>,
     },
-  ];
+  ], []);
 
   /** 弹窗通用确认/取消按钮组 */
   const modalFooter = (onConfirm: () => void, onClose: () => void, confirmColor?: string) => ({
