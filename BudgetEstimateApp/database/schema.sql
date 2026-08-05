@@ -735,8 +735,9 @@ CREATE INDEX IF NOT EXISTS idx_sales_opportunities_quotation_id ON sales_opportu
 CREATE INDEX IF NOT EXISTS idx_user_settings_user_key ON user_settings(user_id, key);
 
 -- ============================================================
--- 补齐 updated_at 触发器（quotations，迁移补充的 blue_tables/sales_opportunities）
+-- 补齐 updated_at 触发器（quotations；blue_tables 基表触发器在此补全）
 -- ⚠️ PG15 不支持 CREATE TRIGGER IF NOT EXISTS，用 DO 块 + EXCEPTION 幂等处理
+-- ⚠️ 迁移 029：已移除迁移 006 遗留的重复触发器（update_*_updated_at）与孤儿函数 update_updated_at_column()
 -- ============================================================
 DO $$ BEGIN
   CREATE TRIGGER trg_quotations_updated_at BEFORE UPDATE ON quotations
@@ -744,24 +745,8 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
--- 生产库存在两个 updated_at 触发函数（update_updated_at / update_updated_at_column），以下为生产有而 schema.sql 之前缺的触发器
-CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS $$ BEGIN NEW.updated_at = now(); RETURN NEW; END; $$ LANGUAGE plpgsql;
-
 DO $$ BEGIN
   CREATE TRIGGER trg_blue_tables_updated_at BEFORE UPDATE ON blue_tables
     FOR EACH ROW EXECUTE FUNCTION update_updated_at();
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
-
-DO $$ BEGIN
-  CREATE TRIGGER update_blue_tables_updated_at BEFORE UPDATE ON blue_tables
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
-
-DO $$ BEGIN
-  CREATE TRIGGER update_sales_opportunities_updated_at BEFORE UPDATE ON sales_opportunities
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
