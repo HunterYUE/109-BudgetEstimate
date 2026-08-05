@@ -109,6 +109,8 @@ export const ClientEditModal: React.FC<ClientEditModalProps> = ({
   onAddContact, onUpdateContact, onRemoveContact, onSave,
   onAddSubsidiary, onEditClient, onDeleteSubsidiary,
 }) => {
+  // 当前编辑客户的子公司列表（一次性计算，避免在 JSX 中重复 filter）
+  const subs = clients.filter(c => c.parentId === editingId);
   return (
     <Modal
       title={
@@ -242,7 +244,7 @@ export const ClientEditModal: React.FC<ClientEditModalProps> = ({
           size="small"
           bordered
           scroll={{ x: 705 }}
-          locale={{ emptyText: <Empty description="暂无匹配的客户" /> }}
+          locale={{ emptyText: <Empty description="暂无联系人" /> }}
           style={{ background: '#fff', borderRadius: 3 }}
           columns={[
             {
@@ -339,7 +341,7 @@ export const ClientEditModal: React.FC<ClientEditModalProps> = ({
       </div>
 
       {/* ── 子公司卡片（仅企业类型） ── */}
-      {((editingId && editForm.type === 'enterprise') || (!editingId && editForm.type === 'enterprise')) && (
+      {editForm.type === 'enterprise' && (
         <div style={{
           background: COLORS.bgCard, border: `1px solid ${COLORS.borderCard}`, borderRadius: 5,
           padding: '20px 24px', marginBottom: 4,
@@ -347,15 +349,10 @@ export const ClientEditModal: React.FC<ClientEditModalProps> = ({
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
             <div style={{ width: 3, height: 16, background: COLORS.primary, borderRadius: 1 }} />
             <span style={{ fontSize: 14, fontWeight: 600, color: COLORS.textDark, letterSpacing: 0.3 }}>子公司</span>
-            {(() => {
-              const subs = clients.filter(c => c.parentId === editingId);
-              return <span style={{ fontSize: 12, color: COLORS.textFormLabel }}>（{subs.length}）</span>;
-            })()}
+            <span style={{ fontSize: 12, color: COLORS.textFormLabel }}>（{subs.length}）</span>
           </div>
 
-          {(() => {
-            const subs = clients.filter(c => c.parentId === editingId);
-            return subs.length > 0 ? (
+          {subs.length > 0 ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>
                 {subs.map(sub => (
                   <div key={sub.id} style={{
@@ -380,8 +377,7 @@ export const ClientEditModal: React.FC<ClientEditModalProps> = ({
               <div style={{ fontSize: 12, color: '#b0b8c4', marginBottom: 14, textAlign: 'center', padding: 6 }}>
                 暂无子公司
               </div>
-            );
-          })()}
+            )}
 
           <Button type="dashed" icon={<PlusOutlined />}
             onClick={() => editingId && onAddSubsidiary(editingId)}

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Table, Tag, Button, Space, message, Modal } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import {
@@ -27,11 +27,12 @@ const ClientManagement: React.FC = () => {
 
   const [contactCounts, setContactCounts] = useState<Record<string, number>>({});
 
-  const fetchClients = async () => {
+  const fetchClients = useCallback(async () => {
     setLoading(true);
     try {
       const [data, counts] = await Promise.all([
-        clientService.list(),
+        // ⚠️ 传 limit:'1000'，避免后端默认 limit=100 导致列表截断
+        clientService.list({ limit: '1000' }),
         clientService.getContactCounts().catch(() => ({}) as Record<string, number>),
       ]);
       setClients(data);
@@ -41,10 +42,9 @@ const ClientManagement: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [messageApi]);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { fetchClients(); }, []);
+  useEffect(() => { fetchClients(); }, [fetchClients]);
 
   // Edit modal
   const [editOpen, setEditOpen] = useState(false);
@@ -127,7 +127,7 @@ const ClientManagement: React.FC = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentGrade, areaCode, editCity, editingId]);
 
-  const openEdit = async (client: Client) => {
+  const openEdit = useCallback(async (client: Client) => {
     setEditingId(client.id);
     // 从编码解析城市
     const codeMatch = client.code?.match(/^(?:[ABC]-)?([A-Z]{2})-([A-Z]{2,4})-\d{4}$/);
@@ -148,7 +148,7 @@ const ClientManagement: React.FC = () => {
     });
     setEditContacts((detail.contacts || []).map((c: Contact) => ({ ...c })));
     setEditOpen(true);
-  };
+  }, []);
 
   const openNewEnterprise = () => {
     setEditingId(null);
@@ -289,7 +289,7 @@ const ClientManagement: React.FC = () => {
 
   // ── Column definitions ──
 
-  const columns: ColumnsType<Client> = [
+  const columns: ColumnsType<Client> = useMemo(() => [
     {
       title: '客户名称', dataIndex: 'name', width: 280,
       render: (v: string, record: Client) => {
@@ -357,7 +357,7 @@ const ClientManagement: React.FC = () => {
         </Space>
       ),
     },
-  ];
+  ], [clients, contactCounts, openEdit]);
 
   // ── Render ──
 
