@@ -183,6 +183,10 @@ router.post('/:deliveryId/files', fileUpload.single('file'), async (req, res, ne
     const rf = req as any;
     if (!rf.file) throw new AppError(400, '请选择文件');
     if (!file_type) throw new AppError(400, '缺少 file_type');
+    // ⚠️ 白名单校验：与前端 ATTACHMENT_TYPES 的 4 类一一对应，防止未知类型写入
+    if (!['rfq', 'techPlan', 'techAgreement', 'contract'].includes(file_type)) {
+      throw new AppError(400, '未知文件类型');
+    }
 
     const result = await query(
       `INSERT INTO delivery_files (delivery_project_id, file_type, file_name, file_size, file_path)

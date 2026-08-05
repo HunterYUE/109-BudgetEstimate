@@ -14,6 +14,7 @@ import ItemCostTable from '../components/ItemCostTable';
 import type { DeliveryProject, DeliveryNode, NodeChangeEntry, Group, ProjectVersion, ReviewStatus } from '../types';
 import { COLORS } from '../styles/colors';
 import { getNodeDelay, getProjectDelay } from '../utils/analysisShared';
+import { buildCostLines } from '../utils/costBreakdown';
 import { DEFAULT_DESIGN_HOURLY_RATE, DEFAULT_ASSEMBLY_HOURLY_RATE } from '../utils/constants';
 import { exportHtmlTable } from '../utils/exportToExcel';
 import { deliveryFileService, type DeliveryFile } from '../services/deliveryFileService';
@@ -28,12 +29,12 @@ const STATUS_LABELS: Record<ReviewStatus, { label: string; color: string }> = {
   rejected: { label: '已驳回', color: COLORS.danger },
 };
 
-/** 附件类型配置 */
+/** 附件类型配置（short=徽标短名，color=徽标底色） */
 const ATTACHMENT_TYPES = [
-  { key: 'rfq' as const, label: '客户需求书' },
-  { key: 'techPlan' as const, label: '技术方案' },
-  { key: 'techAgreement' as const, label: '技术协议' },
-  { key: 'contract' as const, label: '商务合同' },
+  { key: 'rfq' as const, label: '客户需求书', short: 'RFQ', color: '#4a6fa5' },
+  { key: 'techPlan' as const, label: '技术方案', short: '方案', color: '#5b8c5a' },
+  { key: 'techAgreement' as const, label: '技术协议', short: '协议', color: '#7b6f9e' },
+  { key: 'contract' as const, label: '商务合同', short: '合同', color: '#9e7b5a' },
 ];
 
 /** 由一次 pending 日期变更构建审计历史条目（无实际变更返回 null） */
@@ -152,6 +153,7 @@ const DeliveryDetail: React.FC = () => {
   useEffect(() => { loadFiles(); }, [loadFiles]);
 
   const handleUploadClick = (key: string) => {
+    if (uploading) return; // ⚠️ 上传中禁止再次打开文件选择，避免并发上传
     setActiveFileKey(key);
     fileInputRef.current?.click();
   };
@@ -164,7 +166,7 @@ const DeliveryDetail: React.FC = () => {
     setUploading(true);
     try {
       await deliveryFileService.upload(id, activeFileKey, file);
-      clearCache();
+      clearCache('/deliveries'); // ⚠️ upload 走原生 fetch（非 api.*），不会自动清缓存；只需清交付前缀
       const fresh = await deliveryFileService.list(id);
       setDeliveryFiles(fresh);
       msg.success('上传成功');
@@ -176,15 +178,25 @@ const DeliveryDetail: React.FC = () => {
     }
   };
 
-  const handleRemoveFile = async (fileId: string) => {
+  const handleRemoveFile = (fileId: string) => {
     if (!id) return;
-    try {
-      await deliveryFileService.delete(id, fileId);
-      msg.success('文件已删除');
-      loadFiles();
-    } catch {
-      msg.error('删除失败');
-    }
+    // ⚠️ 附件删除不可恢复，需确认（合同/协议等关键文件误删即永久丢失）
+    Modal.confirm({
+      title: '确认删除该附件？',
+      content: '删除后不可恢复。',
+      okText: '删除',
+      cancelText: '取消',
+      okButtonProps: { style: { background: COLORS.danger, borderColor: COLORS.danger } },
+      onOk: async () => {
+        try {
+          await deliveryFileService.delete(id, fileId);
+          msg.success('文件已删除');
+          loadFiles();
+        } catch {
+          msg.error('删除失败');
+        }
+      },
+    });
   };
 
   const handleViewFile = (fileId: string) => {
@@ -224,8 +236,10 @@ const DeliveryDetail: React.FC = () => {
     if (!project) return;
     // 节点15（项目总结）切到"已完成"需要成本对比已通过
     const targetNode = project.nodes.find(n => n.id === nodeId);
-    const nextStatus = newStatus || (targetNode ? STATUS_CYCLE[(STATUS_CYCLE.indexOf(targetNode.status) + 1) % STATUS_CYCLE.length] : '');
-    if (nextStatus === 'completed' && targetNode?.nodeNo === 15 && project.costStatus !== 'approved') {
+    if (!targetNode) return;
+    // 目标节点唯一，nextStatus 只需计算一次（原实现在 map 内重复计算）
+    const nextStatus = (newStatus || STATUS_CYCLE[(STATUS_CYCLE.indexOf(targetNode.status) + 1) % STATUS_CYCLE.length]) as DeliveryNode['status'];
+    if (nextStatus === 'completed' && targetNode.nodeNo === 15 && project.costStatus !== 'approved') {
       msg.warning('节点15完成后项目将结束，请先完成成本对比审批');
       return;
     }
@@ -235,8 +249,7 @@ const DeliveryDetail: React.FC = () => {
       if (!prev) return prev;
       const newNodes = prev.nodes.map(n => {
         if (n.id !== nodeId) return n;
-        const nextStatus = newStatus || STATUS_CYCLE[(STATUS_CYCLE.indexOf(n.status) + 1) % STATUS_CYCLE.length];
-        const updated: DeliveryNode = { ...n, status: nextStatus as DeliveryNode['status'] };
+        const updated: DeliveryNode = { ...n, status: nextStatus };
         // 状态变更不记录历史（仅当审批通过后的日期变更才记历史）
         if (nextStatus === 'in_progress') {
           updated.actualStartDate = today;
@@ -320,6 +333,8 @@ const DeliveryDetail: React.FC = () => {
 
   const handleNodeCommentsChange = useCallback((nodeId: string, comments: string) => {
     if (!project) return;
+    const node = project.nodes.find(n => n.id === nodeId);
+    if (!node || node.comments === comments) return; // ⚠️ 无实际变更不置脏
     setHasChanges(true);
     setProject(prev => {
       if (!prev) return prev;
@@ -330,7 +345,11 @@ const DeliveryDetail: React.FC = () => {
     });
   }, [project]);
 
-  /** 将累积的待刷新日期变更写入各节点的 history（保存前调用） */
+  /**
+   * 将累积的待刷新日期变更写入各节点的 history（保存前调用）。
+   * ⚠️ 不在本函数删除 pending 条目：删除延迟到调用方保存成功后 clear()，
+   *    若保存失败则保留条目，重试仍能生成审计历史（避免历史丢失）。
+   */
   const flushPendingDateChanges = useCallback((projectData: DeliveryProject): DeliveryProject => {
     if (projectData.planStatus !== 'approved') return projectData;
     const pending = pendingDateChangesRef.current;
@@ -340,12 +359,29 @@ const DeliveryDetail: React.FC = () => {
       const change = pending.get(n.id);
       if (!change) return n;
       const entry = buildChangeEntry(change, modifierName);
-      pending.delete(n.id);
       if (!entry) return n;
       return { ...n, history: [...n.history, entry] };
     });
     return { ...projectData, nodes: updatedNodes };
   }, [modifierName]);
+
+  // ── 实施计划保存 ──
+  const handleSavePlan = useCallback(async () => {
+    if (!project || savingPlan) return; // ⚠️ 防止重复点击
+    setSavingPlan(true);
+    try {
+      const flushed = flushPendingDateChanges(project);
+      await deliveryService.saveNodes(project.id, flushed.nodes);
+      pendingDateChangesRef.current.clear(); // ⚠️ 保存成功后才清空待处理日期变更（失败保留，重试仍生成历史）
+      setProject(flushed);
+      setHasChanges(false);
+      msg.success('实施计划已保存');
+    } catch {
+      msg.error('保存失败，请重试');
+    } finally {
+      setSavingPlan(false);
+    }
+  }, [project, savingPlan, flushPendingDateChanges, msg]);
 
   // ---- Cost handlers ----
   const handleActualCostChange = useCallback((itemId: string, value: number) => {
@@ -376,6 +412,7 @@ const DeliveryDetail: React.FC = () => {
     try {
       const flushed = flushPendingDateChanges(project);
       await deliveryService.saveNodes(project.id, flushed.nodes);
+      pendingDateChangesRef.current.clear(); // ⚠️ 保存成功后才清空待处理日期变更（失败保留，重试仍生成历史）
       setProject(flushed);
       setHasChanges(false);
     } catch {
@@ -474,10 +511,10 @@ const DeliveryDetail: React.FC = () => {
 
   const handleExportPlan = useCallback(() => {
     if (!project) return;
+    const statusMap = { pending: '未开始', in_progress: '进行中', completed: '已完成' };
     let rows = '';
     for (let i = 0; i < project.nodes.length; i++) {
       const n = project.nodes[i];
-      const statusMap = { pending: '未开始', in_progress: '进行中', completed: '已完成' };
       // ⚠️ 共享延期判定：基线 = 初始审批实施计划；无基线显示 —
       const { hasBaseline, days } = getNodeDelay(n);
       const delayStr = hasBaseline ? (days > 0 ? '+' + days : String(days)) : '—';
@@ -500,12 +537,8 @@ const DeliveryDetail: React.FC = () => {
 
   const handleExportCost = useCallback(() => {
     if (!project) return;
-    const { warrantyCost, riskCost, commercialCost } = computeDeliveryEstGP3(project.contractAmount, quotationGroups, quotationVersion);
-    const riskAct = actualCosts['_risk'] ?? 0;
-    const commAct = actualCosts['_commercial'] ?? 0;
-    const designAct = actualCosts['_sv_design'] ?? 0;
-    const assyAct = actualCosts['_assy_debug'] ?? 0;
-
+    // ⚠️ 成本分解单一来源 buildCostLines（与 ItemCostTable 共享），消除重复聚合逻辑
+    const lines = buildCostLines(quotationGroups, actualCosts, quotationVersion, laborRates);
     let totalEst = 0, totalAct = 0;
     let rows = '';
     const addRow = (grp: string, code: string, est: number, act: number) => {
@@ -517,66 +550,13 @@ const DeliveryDetail: React.FC = () => {
         '<td class="amount" style="color:' + (varAmt > 0 ? 'red' : 'green') + '">' + (varAmt >= 0 ? '+' : '') + Math.round(varAmt).toLocaleString() + '</td>' +
         '<td class="amount" style="color:' + (varAmt > 0 ? 'red' : 'green') + '">' + (est > 0 ? (varAmt / est * 100).toFixed(1) + '%' : '—') + '</td></tr>';
     };
-
-    // 设备组 / 集成组：物料成本
-    for (const g of quotationGroups) {
-      if (g.groupType === 'EQUIPMENT' || g.groupType === 'INTEGRATION') {
-        for (const item of g.items) {
-          const mat = Math.round(item.unitCost * item.qtyTotal);
-          const act = actualCosts[item.id] ?? 0;
-          addRow(g.name, item.code || item.description || '—', mat, act);
-        }
-      }
+    for (const line of lines) {
+      // 项次：设计/装配保持「编码 名称」格式，其余 code||detail||'—'（保持原导出输出）
+      const code = line.code === 'SV-DESIGN-000000-V1.0' || line.code === 'SV-INSASS-000000-V1.0'
+        ? line.code + ' ' + line.detail
+        : (line.code || line.detail || '—');
+      addRow(line.category, code, line.estimated, line.actual);
     }
-
-    // 设计会签 / 装配调试
-    let designEst = 0;
-    let assyEst = 0;
-    for (const g of quotationGroups) {
-      if (g.groupType === 'EQUIPMENT' || g.groupType === 'INTEGRATION') {
-        for (const item of g.items) {
-          if (item.designHours) {
-            designEst += Math.round(item.designHours * (item.designHourRate || (laborRates?.design ?? DEFAULT_DESIGN_HOURLY_RATE)));
-          }
-          if (item.assemblyHours) {
-            assyEst += Math.round(item.assemblyHours * (item.assemblyHourRate || (laborRates?.assembly ?? DEFAULT_ASSEMBLY_HOURLY_RATE)) * (item.qtyTotal || 1));
-          }
-        }
-      }
-    }
-    // 项目交付组中的设计会签/装配调试服务项
-    const pdGroup = quotationGroups.find(g => g.groupType === 'PROJECT_DELIVERY');
-    if (pdGroup) {
-      for (const item of pdGroup.items) {
-        if (item.code === 'SV-DESIGN-000000-V1.0') { designEst += item.directCost || 0; }
-        if (item.code === 'SV-INSASS-000000-V1.0') { assyEst += item.directCost || 0; }
-      }
-    }
-    if (designEst > 0) addRow('人工成本', 'SV-DESIGN-000000-V1.0 设计会签', designEst, designAct);
-    if (assyEst > 0) addRow('人工成本', 'SV-INSASS-000000-V1.0 装配调试', assyEst, assyAct);
-
-    // 项目交付（除设计/装配外的项次）
-    if (pdGroup) {
-      for (const item of pdGroup.items) {
-        if (item.code === 'SV-DESIGN-000000-V1.0' || item.code === 'SV-INSASS-000000-V1.0') continue;
-        addRow('人工成本', item.code || item.description || '—', item.directCost, actualCosts[item.id] ?? 0);
-      }
-    }
-
-    // 费用组
-    for (const g of quotationGroups) {
-      if (g.groupType === 'PACKAGING_TRANSPORT' || g.groupType === 'IMPLEMENTATION_EXPENSE' || g.groupType === 'OTHER') {
-        for (const item of g.items) {
-          addRow('项目费用', item.code || item.description || '—', item.directCost, actualCosts[item.id] ?? 0);
-        }
-      }
-    }
-
-    // 风险 / 商业 / 质保
-    if (riskCost > 0) addRow('风险费用', 'R-RISKCOST', riskCost, riskAct);
-    addRow('商业费用', 'C-COMMERCIAL', commercialCost, commAct);
-    addRow('质保费用', 'W-WARRANTY', warrantyCost, warrantyCost);
-
     const html = '<h2 style="text-align:center;margin-bottom:16px">成本对比表</h2>' +
       '<table style="width:100%;border-collapse:collapse;margin-bottom:8px">' +
       '<tr><td style="border:none;padding:2px 8px"><b>项目：</b>' + project.projectName + '</td>' +
@@ -814,16 +794,17 @@ const DeliveryDetail: React.FC = () => {
             </span>
           </div>
           <Card size="small" styles={{ body: { padding: 0 } }} style={{ borderRadius: 4, border: 'none', boxShadow: 'none', background: 'transparent' }}>
+            {/* ⚠️ 保存期间锁定：避免保存成功 setProject(flushed) 回退保存期间并发编辑的日期 */}
             <DeliveryNodeTimeline
               nodes={project.nodes}
-              locked={planLocked}
+              locked={planLocked || savingPlan}
               hasChanges={hasChanges}
               saving={savingPlan}
               planStatus={project.planStatus}
               onNodeStatusClick={handleNodeStatusClick}
               onPlannedDateChange={handlePlannedDateChange}
               onCommentsChange={handleNodeCommentsChange}
-              onSavePlan={async () => { if (!project || savingPlan) return; setSavingPlan(true); try { const flushed = flushPendingDateChanges(project); await deliveryService.saveNodes(project.id, flushed.nodes); setProject(flushed); setHasChanges(false); msg.success('实施计划已保存'); } catch { msg.error('保存失败，请重试'); } finally { setSavingPlan(false); } }}
+              onSavePlan={handleSavePlan}
               onSubmitPlan={handleSubmitPlan}
               onExportPlan={handleExportPlan}
             />
@@ -843,12 +824,6 @@ const DeliveryDetail: React.FC = () => {
             <div style={{ padding: '4px 0' }}>
               {ATTACHMENT_TYPES.map(at => {
                 const file = deliveryFiles.find(f => f.fileType === at.key);
-                const typeColors: Record<string, string> = {
-                  rfq: '#4a6fa5', techPlan: '#5b8c5a', techAgreement: '#7b6f9e', contract: '#9e7b5a',
-                };
-                const typeLabels: Record<string, string> = {
-                  rfq: 'RFQ', techPlan: '方案', techAgreement: '协议', contract: '合同',
-                };
                 return (
                   <div key={at.key} style={{
                     display: 'flex', alignItems: 'center', gap: 14,
@@ -862,8 +837,8 @@ const DeliveryDetail: React.FC = () => {
                       width: 32, height: 32, borderRadius: 8, display: 'inline-flex',
                       alignItems: 'center', justifyContent: 'center', flexShrink: 0,
                       fontSize: 11, fontWeight: 700, color: '#fff',
-                      background: typeColors[at.key], letterSpacing: 0.5,
-                    }}>{typeLabels[at.key]}</span>
+                      background: at.color, letterSpacing: 0.5,
+                    }}>{at.short}</span>
                     <span style={{ flex: 1, fontSize: 13, color: COLORS.textDark, fontWeight: 500, letterSpacing: 0.3 }}>{at.label}</span>
                     {!file ? (
                       <span onClick={() => handleUploadClick(at.key)}
