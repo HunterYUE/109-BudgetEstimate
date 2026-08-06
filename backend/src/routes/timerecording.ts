@@ -23,6 +23,19 @@ const fiscalYearLabel = (d: Date = new Date()): string => {
 const fyPrefixOf = (fy?: string): string =>
   (fy && /^FY\d{4}$/.test(fy)) ? 'A' + fy.slice(2) : 'A' + fiscalYearLabel().slice(2);
 
+/**
+ * 工时角色（派生自预算用户 role + permissions）：
+ *   director 总监（全部权限） / manager 方案·交付经理（可分配任务、查看综合分析） / employee 员工（仅本人填报/统计）
+ */
+const trRoleOf = (u: { role?: string; permissions?: string[] } | undefined): 'director' | 'manager' | 'employee' => {
+  if (u?.role === 'director') return 'director';
+  const perms: string[] = u?.permissions || [];
+  if (perms.includes('报价编制') || perms.includes('交付管理')) return 'manager';
+  return 'employee';
+};
+/** 是否能分配任务 / 查看全员数据（总监 + 方案·交付经理） */
+const isManager = (u: { role?: string; permissions?: string[] } | undefined): boolean => trRoleOf(u) !== 'employee';
+
 // ⚠️ M4 修复：工时登录端点同样加限速（此前只有主 /auth/login 限速，此处可被暴力破解）
 const trLoginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -39,7 +52,7 @@ router.post('/auth/login', trLoginLimiter, async (req, res, next) => {
     if (!email || !password) throw new AppError(400, '请输入账号和密码');
 
     const result = await query(
-      `SELECT u.id, u.email, u.display_name, u.password_hash, u.role,
+      `SELECT u.id, u.email, u.display_name, u.password_hash, u.role, u.permissions,
               p.employee_id, p.name, p.role as tr_role
        FROM public.users u
        LEFT JOIN timerecording.profiles p ON p.id = u.id
@@ -75,6 +88,8 @@ router.post('/auth/login', trLoginLimiter, async (req, res, next) => {
         employeeId: user.employee_id || user.email.split('@')[0],
         name: user.name || user.display_name,
         role: user.tr_role || (user.role === 'director' || user.role === 'admin' ? 'admin' : 'employee'),
+        // ⚠️ 工时角色：director(总监)/manager(方案·交付经理)/employee(普通员工)
+        trRole: trRoleOf({ role: user.role, permissions: user.permissions }),
       },
     });
   } catch (err) { next(err); }
@@ -100,6 +115,8 @@ router.get('/auth/me', requireAuth, async (req, res, next) => {
       employeeId: r.employee_id || r.email.split('@')[0],
       name: r.name || r.display_name,
       role: r.role || 'employee',
+      // ⚠️ 工时角色：req.user 含 JWT role 与每请求加载的 permissions
+      trRole: trRoleOf({ role: req.user!.role, permissions: req.user!.permissions }),
     });
   } catch (err) { next(err); }
 });
@@ -183,14 +200,14 @@ router.get('/cost-centers', requireAuth, async (req, res, next) => {
 router.get('/time-records', requireAuth, async (req, res, next) => {
   try {
     const user = req.user!;
-    const admin = isTrAdmin(user);
+    // ⚠️ 总监 + 方案/交付经理可读全员（综合分析需要）；普通员工仅本人
+    const manager = isManager(user);
     const { user_id, date_from, date_to, year, week_number, status, cost_center } = req.query;
     const conditions: string[] = [];
     const params: any[] = [];
     let idx = 1;
 
-    // ⚠️ F6 修复：非管理员强制只看自己的记录（此前可传任意 user_id 读他人数据）
-    if (admin) {
+    if (manager) {
       if (user_id) { conditions.push(`user_id = $${idx++}`); params.push(user_id); }
     } else {
       conditions.push(`user_id = $${idx++}`); params.push(user.userId);
@@ -211,9 +228,7 @@ router.get('/time-records', requireAuth, async (req, res, next) => {
 router.post('/time-records', requireAuth, async (req, res, next) => {
   try {
     const user = req.user!;
-    const admin = isTrAdmin(user);
-    // ⚠️ 总监/管理员不填报工时（仅审批人角色）
-    // ⚠️ 放开：总监/管理员也可填报工时（2026-08-06 需求调整，此前按"总监不填报"做了 403 限制）
+    // ⚠️ 总监/管理员也可填报工时（2026-08-06 需求调整，此前按"总监不填报"做了 403 限制）
     const { user_id, date, week_number, year, start_time, end_time, hours, hour_type, cost_center, cost_center_type, task_description } = req.body;
     // 所有用户只能为自己建记录（此前可传任意 user_id 代建）
     const targetUserId = user.userId;
@@ -392,13 +407,13 @@ router.post('/time-records/review-batch', requireAuth, requireRole('director', '
 router.get('/task-assignments', requireAuth, async (req, res, next) => {
   try {
     const user = req.user!;
-    const admin = isTrAdmin(user);
+    // ⚠️ 总监 + 方案/交付经理可看全员任务（规划甘特）；普通员工仅自己
+    const manager = isManager(user);
     const { user_id, status } = req.query;
     const conditions: string[] = [];
     const params: any[] = [];
     let idx = 1;
-    // ⚠️ F6 修复：非管理员只能看自己的任务
-    if (admin) {
+    if (manager) {
       if (user_id) { conditions.push(`user_id = $${idx++}`); params.push(user_id); }
     } else {
       conditions.push(`user_id = $${idx++}`); params.push(user.userId);
@@ -412,10 +427,10 @@ router.get('/task-assignments', requireAuth, async (req, res, next) => {
 router.post('/task-assignments', requireAuth, async (req, res, next) => {
   try {
     const user = req.user!;
-    const admin = isTrAdmin(user);
+    // ⚠️ 给他人派任务是 总监/方案经理/交付经理 权限；普通员工只能给自己建任务
+    const manager = isManager(user);
     const { user_id, task_name, color, start_datetime, end_datetime, status, note } = req.body;
-    // ⚠️ F6 修复：给他人派任务是管理员操作；非管理员只能给自己建任务
-    const targetUserId = (admin && user_id) ? user_id : user.userId;
+    const targetUserId = (manager && user_id) ? user_id : user.userId;
     const r = (await query(
       `INSERT INTO timerecording.task_assignments (user_id, task_name, color, start_datetime, end_datetime, status, created_by, note)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
@@ -439,14 +454,15 @@ router.post('/task-assignments', requireAuth, async (req, res, next) => {
 router.put('/task-assignments/:id', requireAuth, async (req, res, next) => {
   try {
     const user = req.user!;
-    const admin = isTrAdmin(user);
+    // ⚠️ 总监 + 方案/交付经理可编辑他人任务；普通员工只能改自己的
+    const manager = isManager(user);
     const fields = ['task_name', 'color', 'start_datetime', 'end_datetime', 'status', 'note'];
     // ⚠️ 先取旧状态，用于通知判定（对比状态是否变化）
     const old = (await query(
-      `SELECT * FROM timerecording.task_assignments WHERE id = $1${admin ? '' : ' AND user_id = $2'}`,
-      admin ? [req.params.id] : [req.params.id, user.userId]
+      `SELECT * FROM timerecording.task_assignments WHERE id = $1${manager ? '' : ' AND user_id = $2'}`,
+      manager ? [req.params.id] : [req.params.id, user.userId]
     )).rows[0];
-    if (!old) throw new AppError(404, admin ? '任务不存在' : '任务不存在或无权修改');
+    if (!old) throw new AppError(404, manager ? '任务不存在' : '任务不存在或无权修改');
 
     const updates: string[] = [];
     const values: any[] = [];
@@ -456,12 +472,12 @@ router.put('/task-assignments/:id', requireAuth, async (req, res, next) => {
     }
     if (!updates.length) throw new AppError(400, '没有要更新的字段');
     values.push(req.params.id);
-    if (!admin) values.push(user.userId);
+    if (!manager) values.push(user.userId);
     const r = (await query(
-      `UPDATE timerecording.task_assignments SET ${updates.join(', ')} WHERE id = $${idx}${admin ? '' : ` AND user_id = $${idx + 1}`} RETURNING *`,
+      `UPDATE timerecording.task_assignments SET ${updates.join(', ')} WHERE id = $${idx}${manager ? '' : ` AND user_id = $${idx + 1}`} RETURNING *`,
       values
     )).rows[0];
-    if (!r) throw new AppError(404, admin ? '未找到' : '任务不存在或无权修改');
+    if (!r) throw new AppError(404, manager ? '未找到' : '任务不存在或无权修改');
 
     // ⚠️ 任务工作流通知（完整规划）：
     //  1) 管理员改派/编辑他人任务 → 推送「任务更新」给被分配员工
@@ -496,12 +512,13 @@ router.put('/task-assignments/:id', requireAuth, async (req, res, next) => {
 router.delete('/task-assignments/:id', requireAuth, async (req, res, next) => {
   try {
     const user = req.user!;
-    const admin = isTrAdmin(user);
+    // ⚠️ 总监 + 方案/交付经理可删除他人任务；普通员工只能删自己的
+    const manager = isManager(user);
     const r = (await query(
-      `DELETE FROM timerecording.task_assignments WHERE id = $1${admin ? '' : ' AND user_id = $2'} RETURNING id`,
-      admin ? [req.params.id] : [req.params.id, user.userId]
+      `DELETE FROM timerecording.task_assignments WHERE id = $1${manager ? '' : ' AND user_id = $2'} RETURNING id`,
+      manager ? [req.params.id] : [req.params.id, user.userId]
     )).rows[0];
-    if (!r) throw new AppError(404, admin ? '记录不存在' : '任务不存在或无权删除');
+    if (!r) throw new AppError(404, manager ? '记录不存在' : '任务不存在或无权删除');
     res.json({ success: true });
   } catch (err) { next(err); }
 });
