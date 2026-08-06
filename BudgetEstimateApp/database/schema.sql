@@ -770,7 +770,7 @@ CREATE TABLE IF NOT EXISTS timerecording.notifications (
   is_read    boolean DEFAULT false NOT NULL,
   link_url   text,
   created_at timestamptz DEFAULT now() NOT NULL,
-  CONSTRAINT notifications_type_check CHECK (type = ANY (ARRAY['approval','rejection','submission']))
+  CONSTRAINT notifications_type_check CHECK (type = ANY (ARRAY['approval','rejection','submission','task','task_feedback']))
 );
 
 CREATE TABLE IF NOT EXISTS timerecording.profiles (
@@ -812,8 +812,10 @@ CREATE TABLE IF NOT EXISTS timerecording.time_records (
   hours            numeric(3,1) DEFAULT 0 NOT NULL,
   hour_type        text DEFAULT 'normal' NOT NULL,
   cost_center      text,
+  cost_center_type text,  -- 迁移 030：sales/project/warranty/department/personal
   task_description text,
   status           text DEFAULT 'draft' NOT NULL,
+  prev_status      text,  -- 迁移 030：周锁定前状态（解锁恢复）
   review_notes     text,
   reviewed_by      uuid,
   reviewed_at      timestamptz,
@@ -854,3 +856,4 @@ CREATE INDEX IF NOT EXISTS idx_tr_task_assignments_dates ON timerecording.task_a
 CREATE INDEX IF NOT EXISTS idx_tr_task_assignments_user ON timerecording.task_assignments (user_id);
 CREATE INDEX IF NOT EXISTS idx_tr_time_records_date ON timerecording.time_records (date);
 CREATE INDEX IF NOT EXISTS idx_tr_time_records_review ON timerecording.time_records (status) WHERE status = 'submitted';
+CREATE INDEX IF NOT EXISTS idx_tr_time_records_cost_type ON timerecording.time_records (cost_center_type, cost_center);

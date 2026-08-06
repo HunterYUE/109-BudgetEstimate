@@ -12,6 +12,17 @@ const router = Router();
 /** 是否为工时系统管理员（director/admin，JWT role） */
 const isTrAdmin = (u: { role?: string } | undefined): boolean => !!u && (u.role === 'director' || u.role === 'admin');
 
+/** 财年标识（与预算应用一致：每年7月1日起）。FY2526 → 前缀 'A2526' */
+const fiscalYearLabel = (d: Date = new Date()): string => {
+  const m = d.getMonth();
+  const y1 = m >= 6 ? d.getFullYear() : d.getFullYear() - 1;
+  const y2 = m >= 6 ? d.getFullYear() + 1 : d.getFullYear();
+  return `FY${String(y1 % 100).padStart(2, '0')}${String(y2 % 100).padStart(2, '0')}`;
+};
+/** 财年 → 成本中心前缀（FY2627 → 'A2627'） */
+const fyPrefixOf = (fy?: string): string =>
+  (fy && /^FY\d{4}$/.test(fy)) ? 'A' + fy.slice(2) : 'A' + fiscalYearLabel().slice(2);
+
 // ⚠️ M4 修复：工时登录端点同样加限速（此前只有主 /auth/login 限速，此处可被暴力破解）
 const trLoginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -95,11 +106,13 @@ router.get('/auth/me', requireAuth, async (req, res, next) => {
 
 // ─── 用户档案 ──────────────────────────────────────
 
-// ⚠️ L5 修复：全员档案列表仅管理员可见（此前任意登录用户可读全员邮箱/角色，隐私泄漏）
-//   普通员工如需本人档案走 GET /profiles/:id
-router.get('/profiles', requireAuth, requireRole('director', 'admin'), async (_req, res, next) => {
+// ⚠️ 全员档案列表：管理员看全字段；非管理员仅返回 id/employee_id/name/is_active（供任务规划/我的账户展示，
+//   不泄漏邮箱/角色——平衡隐私与任务规划需要全员名单）
+router.get('/profiles', requireAuth, async (req, res, next) => {
   try {
-    const rows = (await query('SELECT id, employee_id, name, email, role, is_active FROM timerecording.profiles ORDER BY name')).rows;
+    const admin = isTrAdmin(req.user);
+    const select = admin ? 'id, employee_id, name, email, role, is_active' : 'id, employee_id, name, is_active';
+    const rows = (await query(`SELECT ${select} FROM timerecording.profiles ORDER BY name`)).rows;
     res.json(rows);
   } catch (err) { next(err); }
 });
@@ -133,6 +146,34 @@ router.put('/profiles/:id', requireAuth, async (req, res, next) => {
     )).rows[0];
     if (!r) throw new AppError(404, '未找到');
     res.json(r);
+  } catch (err) { next(err); }
+});
+
+// ─── 成本中心 ─────────────────────────────────────
+
+/** 可用成本中心清单（按类型分组）。sales/project/warranty 来自预算库实时数据；department/personal 按财年生成 */
+router.get('/cost-centers', requireAuth, async (req, res, next) => {
+  try {
+    const { fy } = req.query as Record<string, string>;
+    const fyLabel = (fy && /^FY\d{4}$/.test(fy)) ? fy : fiscalYearLabel();
+    const prefix = fyPrefixOf(fyLabel);
+
+    const [salesRows, projectRows, warrantyRows] = await Promise.all([
+      query(`SELECT sales_no, project_name, client_name FROM sales_opportunities WHERE sales_no LIKE 'A%-S' ORDER BY sales_no`),
+      query(`SELECT sales_no, project_name, client_name FROM delivery_projects WHERE sales_no LIKE 'A%-E' ORDER BY sales_no`),
+      query(`SELECT sales_no, project_name, client_name FROM delivery_projects WHERE status = '已完成' AND sales_no LIKE 'A%-E' ORDER BY sales_no`),
+    ]);
+
+    res.json({
+      fy: fyLabel,
+      types: {
+        sales: salesRows.rows.map(r => ({ code: r.sales_no, name: r.project_name, clientName: r.client_name })),
+        project: projectRows.rows.map(r => ({ code: r.sales_no, name: r.project_name, clientName: r.client_name })),
+        warranty: warrantyRows.rows.map(r => ({ code: r.sales_no.replace(/-E$/, '-W'), name: r.project_name, clientName: r.client_name })),
+        department: [{ code: `${prefix}-De-000`, name: '部门成本中心' }],
+        personal: [{ code: `${prefix}-00-000`, name: '个人成本中心' }],
+      },
+    });
   } catch (err) { next(err); }
 });
 
@@ -171,15 +212,16 @@ router.post('/time-records', requireAuth, async (req, res, next) => {
   try {
     const user = req.user!;
     const admin = isTrAdmin(user);
-    const { user_id, date, week_number, year, start_time, end_time, hours, hour_type, cost_center, task_description } = req.body;
-    // ⚠️ F6 修复：非管理员只能为自己建记录（此前可传任意 user_id 代建）
-    const targetUserId = (admin && user_id) ? user_id : user.userId;
+    // ⚠️ 总监/管理员不填报工时（仅审批人角色）
+    if (admin) throw new AppError(403, '总监/管理员不填报工时');
+    const { user_id, date, week_number, year, start_time, end_time, hours, hour_type, cost_center, cost_center_type, task_description } = req.body;
+    const targetUserId = user.userId; // 非管理员只能为自己建记录（此前可传任意 user_id 代建）
     if (!targetUserId || !date || hours == null) throw new AppError(400, '缺少必填字段');
 
     const r = (await query(
-      `INSERT INTO timerecording.time_records (user_id, date, week_number, year, start_time, end_time, hours, hour_type, cost_center, task_description)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
-      [targetUserId, date, week_number, year, start_time, end_time, hours, hour_type || 'normal', cost_center, task_description]
+      `INSERT INTO timerecording.time_records (user_id, date, week_number, year, start_time, end_time, hours, hour_type, cost_center, cost_center_type, task_description)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+      [targetUserId, date, week_number, year, start_time, end_time, hours, hour_type || 'normal', cost_center || null, cost_center_type || null, task_description]
     )).rows[0];
     res.status(201).json(r);
   } catch (err) { next(err); }
@@ -190,7 +232,7 @@ router.put('/time-records/:id', requireAuth, async (req, res, next) => {
     const user = req.user!;
     const admin = isTrAdmin(user);
     // ⚠️ F6 修复：status 不能直接改（须走 /submit 与 /review 审批流程），移除出可更新字段
-    const fields = ['date', 'week_number', 'year', 'start_time', 'end_time', 'hours', 'hour_type', 'cost_center', 'task_description'];
+    const fields = ['date', 'week_number', 'year', 'start_time', 'end_time', 'hours', 'hour_type', 'cost_center', 'cost_center_type', 'task_description'];
     const updates: string[] = [];
     const values: any[] = [];
     let idx = 1;
@@ -198,15 +240,29 @@ router.put('/time-records/:id', requireAuth, async (req, res, next) => {
       if (req.body[f] !== undefined) { updates.push(`${f} = $${idx++}`); values.push(req.body[f]); }
     }
     if (!updates.length) throw new AppError(400, '没有要更新的字段');
+    // ⚠️ 工作流优化：驳回记录允许编辑修正，编辑后自动回到 draft（可重新提交）
+    updates.push(`status = CASE WHEN status = 'rejected' THEN 'draft' ELSE status END`);
     values.push(req.params.id);
     // 归属校验：非管理员只能改自己的记录
     if (!admin) values.push(user.userId);
-    // ⚠️ N2 修复：已审核（approved/rejected）记录不可直改（须走审批流程），防止绕过审核篡改工时
+    // 已审核通过/已锁定记录不可直改（须走审批流程）
     const r = (await query(
-      `UPDATE timerecording.time_records SET ${updates.join(', ')} WHERE id = $${idx}${admin ? '' : ` AND user_id = $${idx + 1}`} AND status NOT IN ('approved', 'rejected') RETURNING *`,
+      `UPDATE timerecording.time_records SET ${updates.join(', ')} WHERE id = $${idx}${admin ? '' : ` AND user_id = $${idx + 1}`} AND status NOT IN ('approved', 'locked') RETURNING *`,
       values
     )).rows[0];
-    if (!r) throw new AppError(400, admin ? '记录不存在或已审核' : '记录不存在、无权修改或已审核');
+    if (!r) throw new AppError(400, admin ? '记录不存在、已通过或已锁定' : '记录不存在、无权修改、已通过或已锁定');
+    res.json(r);
+  } catch (err) { next(err); }
+});
+
+/** 撤回提交（submitted → draft，仅本人；须在审核前撤回） */
+router.put('/time-records/:id/withdraw', requireAuth, async (req, res, next) => {
+  try {
+    const r = (await query(
+      `UPDATE timerecording.time_records SET status = 'draft' WHERE id = $1 AND status = 'submitted' AND user_id = $2 RETURNING *`,
+      [req.params.id, req.user!.userId]
+    )).rows[0];
+    if (!r) throw new AppError(400, '只能撤回自己已提交、尚未审核的记录');
     res.json(r);
   } catch (err) { next(err); }
 });
@@ -249,9 +305,41 @@ router.post('/time-records/submit-batch', requireAuth, async (req, res, next) =>
       `UPDATE timerecording.time_records SET status = 'submitted' WHERE id = ANY($1::uuid[]) AND status = 'draft' AND user_id = $2 RETURNING *`,
       [ids, req.user!.userId]
     )).rows;
+    // ⚠️ 工作流优化：提交成功后自动通知所有管理员（移除前端轮询全员列表找 admin 的依赖）
+    if (rows.length > 0) {
+      try {
+        const admins = (await query(`SELECT id FROM timerecording.profiles WHERE role = 'admin' AND is_active = true`)).rows;
+        if (admins.length > 0) {
+          const weekLabel = `${rows[0].year}W${rows[0].week_number}`;
+          const totalHours = rows.reduce((s: number, r: any) => s + parseFloat(r.hours || 0), 0);
+          const submitter = (await query('SELECT name FROM timerecording.profiles WHERE id = $1', [req.user!.userId])).rows[0]?.name || '员工';
+          for (const a of admins) {
+            await query(
+              `INSERT INTO timerecording.notifications (user_id, title, message, type, link_url)
+               VALUES ($1, $2, $3, 'submission', '/admin/approval')`,
+              [a.id, `${submitter} 提交了工时`, `第 ${weekLabel} 周 · 共 ${totalHours}h`]
+            );
+          }
+        }
+      } catch (_) { /* 通知失败不影响提交主流程 */ }
+    }
     res.json(rows);
   } catch (err) { next(err); }
 });
+
+/** 给被审记录所属员工发一条审核结果通知 */
+async function notifyReview(r: any, action: string, review_notes?: string) {
+  try {
+    const weekLabel = `${r.year}W${r.week_number}`;
+    await query(
+      `INSERT INTO timerecording.notifications (user_id, title, message, type, link_url)
+       VALUES ($1, $2, $3, $4, '/time-record')`,
+      [r.user_id, action === 'approved' ? '工时已通过' : '工时已驳回',
+       `第 ${weekLabel} 周${review_notes ? ' · 备注: ' + review_notes : ''}`,
+       action === 'approved' ? 'approval' : 'rejection']
+    );
+  } catch (_) { /* 通知失败不影响审批主流程 */ }
+}
 
 /** 审批通过/驳回（⚠️ F6 补漏：审批是管理员操作，防止任意用户代审/自审） */
 router.put('/time-records/:id/review', requireAuth, requireRole('director', 'admin'), async (req, res, next) => {
@@ -264,8 +352,38 @@ router.put('/time-records/:id/review', requireAuth, requireRole('director', 'adm
       [action, review_notes || '', reviewer.userId, req.params.id]
     )).rows[0];
     if (!r) throw new AppError(400, '只能审核已提交的记录');
+    await notifyReview(r, action, review_notes);
     res.json(r);
   } catch (err) { next(err); }
+});
+
+/** 批量审批（管理员）：一次审批一组记录（如同一员工同一周），原子完成，只发一条通知 */
+router.post('/time-records/review-batch', requireAuth, requireRole('director', 'admin'), async (req, res, next) => {
+  let client: any;
+  try {
+    const { ids, action, review_notes } = req.body;
+    if (!Array.isArray(ids) || !ids.length) throw new AppError(400, 'ids 必填');
+    if (!['approved', 'rejected'].includes(action)) throw new AppError(400, '操作必须是 approved 或 rejected');
+    const reviewer = req.user!;
+    client = await getClient();
+    await client.query('BEGIN');
+    const rows = (await client.query(
+      `UPDATE timerecording.time_records SET status = $1, review_notes = $2, reviewed_by = $3, reviewed_at = now()
+       WHERE id = ANY($4::uuid[]) AND status = 'submitted' RETURNING *`,
+      [action, review_notes || '', reviewer.userId, ids]
+    )).rows;
+    await client.query('COMMIT');
+    if (rows.length > 0) {
+      const totalHours = rows.reduce((s: number, r: any) => s + parseFloat(r.hours || 0), 0);
+      await notifyReview({ ...rows[0], user_id: rows[0].user_id }, action, `${review_notes || ''}${rows.length > 1 ? `（共 ${rows.length} 条，${totalHours}h）` : ''}`);
+    }
+    res.json(rows);
+  } catch (err) {
+    if (client) await client.query('ROLLBACK').catch(() => {});
+    next(err);
+  } finally {
+    if (client) client.release();
+  }
 });
 
 // ─── 任务分配 ──────────────────────────────────────
@@ -302,6 +420,17 @@ router.post('/task-assignments', requireAuth, async (req, res, next) => {
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
       [targetUserId, task_name, color, start_datetime, end_datetime, status || 'in_progress', user.userId, note || '']
     )).rows[0];
+    // ⚠️ 任务推送：管理员派给他人的任务，自动通知该员工
+    if (r && targetUserId !== user.userId) {
+      try {
+        const assigner = (await query('SELECT name FROM timerecording.profiles WHERE id = $1', [user.userId])).rows[0]?.name || '管理员';
+        await query(
+          `INSERT INTO timerecording.notifications (user_id, title, message, type, link_url)
+           VALUES ($1, $2, $3, 'task', '/task-planning')`,
+          [targetUserId, '您有新任务', `${assigner} 分配了任务「${r.task_name}」`]
+        );
+      } catch (_) { /* 通知失败不影响派任务 */ }
+    }
     res.status(201).json(r);
   } catch (err) { next(err); }
 });
@@ -311,6 +440,13 @@ router.put('/task-assignments/:id', requireAuth, async (req, res, next) => {
     const user = req.user!;
     const admin = isTrAdmin(user);
     const fields = ['task_name', 'color', 'start_datetime', 'end_datetime', 'status', 'note'];
+    // ⚠️ 先取旧状态，用于通知判定（对比状态是否变化）
+    const old = (await query(
+      `SELECT * FROM timerecording.task_assignments WHERE id = $1${admin ? '' : ' AND user_id = $2'}`,
+      admin ? [req.params.id] : [req.params.id, user.userId]
+    )).rows[0];
+    if (!old) throw new AppError(404, admin ? '任务不存在' : '任务不存在或无权修改');
+
     const updates: string[] = [];
     const values: any[] = [];
     let idx = 1;
@@ -325,6 +461,33 @@ router.put('/task-assignments/:id', requireAuth, async (req, res, next) => {
       values
     )).rows[0];
     if (!r) throw new AppError(404, admin ? '未找到' : '任务不存在或无权修改');
+
+    // ⚠️ 任务工作流通知（完整规划）：
+    //  1) 管理员改派/编辑他人任务 → 推送「任务更新」给被分配员工
+    //  2) 状态变更为反馈态（已完成/已取消/已推迟/已延误）→ 反馈给派发人（自身除外）
+    const FEEDBACK_STATES = ['completed', 'cancelled', 'postponed', 'delayed'];
+    const empName = (await query('SELECT name FROM timerecording.profiles WHERE id = $1', [r.user_id])).rows[0]?.name || '员工';
+    if (r.user_id !== user.userId) {
+      try {
+        const assigner = (await query('SELECT name FROM timerecording.profiles WHERE id = $1', [user.userId])).rows[0]?.name || '管理员';
+        await query(
+          `INSERT INTO timerecording.notifications (user_id, title, message, type, link_url)
+           VALUES ($1, $2, $3, 'task', '/task-planning')`,
+          [r.user_id, '任务更新', `${assigner} 更新了任务「${r.task_name}」${req.body.note ? '：' + req.body.note : ''}`]
+        );
+      } catch (_) { /* 通知失败不影响更新 */ }
+    }
+    if (req.body.status && req.body.status !== old.status && FEEDBACK_STATES.includes(req.body.status) && r.created_by !== user.userId) {
+      try {
+        const statusLabel: Record<string, string> = { completed: '已完成', cancelled: '已取消', postponed: '已推迟', delayed: '已延误' };
+        const label = statusLabel[req.body.status as string];
+        await query(
+          `INSERT INTO timerecording.notifications (user_id, title, message, type, link_url)
+           VALUES ($1, $2, $3, 'task_feedback', '/task-planning')`,
+          [r.created_by, `任务${label}`, `${empName} 将「${r.task_name}」标记为${label}${req.body.note ? '：' + req.body.note : ''}`]
+        );
+      } catch (_) { /* 通知失败不影响状态更新 */ }
+    }
     res.json(r);
   } catch (err) { next(err); }
 });
@@ -461,17 +624,25 @@ router.delete('/admin/users/:id', requireAuth, requireRole('director', 'admin'),
   }
 });
 
-/** 管理员锁定/解锁周 */
+/** 管理员锁定/解锁周（⚠️ 工作流优化：lock 保存原状态到 prev_status，unlock 恢复，不丢失 submitted） */
 router.post('/admin/lock-week', requireAuth, requireRole('director', 'admin'), async (req, res, next) => {
   try {
     const { year, week_number, action } = req.body;
-    const newStatus = action === 'lock' ? 'locked' : (action === 'unlock' ? 'draft' : null);
-    if (!newStatus) throw new AppError(400, '操作必须是 lock 或 unlock');
-    await query(
-      `UPDATE timerecording.time_records SET status = $1 WHERE year = $2 AND week_number = $3 AND status IN ('draft', 'submitted', 'locked')`,
-      [newStatus, year, week_number]
-    );
-    logAudit(req, action === 'lock' ? '锁定周' : '解锁周', 'admin', year + 'W周 ' + week_number + ' ' + newStatus);
+    if (!['lock', 'unlock'].includes(action)) throw new AppError(400, '操作必须是 lock 或 unlock');
+    if (action === 'lock') {
+      await query(
+        `UPDATE timerecording.time_records SET prev_status = status, status = 'locked'
+         WHERE year = $1 AND week_number = $2 AND status IN ('draft', 'submitted')`,
+        [year, week_number]
+      );
+    } else {
+      await query(
+        `UPDATE timerecording.time_records SET status = COALESCE(prev_status, 'draft'), prev_status = NULL
+         WHERE year = $1 AND week_number = $2 AND status = 'locked'`,
+        [year, week_number]
+      );
+    }
+    logAudit(req, action === 'lock' ? '锁定周' : '解锁周', 'admin', year + 'W周 ' + week_number);
     res.json({ success: true });
   } catch (err) { next(err); }
 });
