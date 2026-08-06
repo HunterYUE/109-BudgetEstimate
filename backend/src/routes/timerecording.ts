@@ -213,9 +213,10 @@ router.post('/time-records', requireAuth, async (req, res, next) => {
     const user = req.user!;
     const admin = isTrAdmin(user);
     // ⚠️ 总监/管理员不填报工时（仅审批人角色）
-    if (admin) throw new AppError(403, '总监/管理员不填报工时');
+    // ⚠️ 放开：总监/管理员也可填报工时（2026-08-06 需求调整，此前按"总监不填报"做了 403 限制）
     const { user_id, date, week_number, year, start_time, end_time, hours, hour_type, cost_center, cost_center_type, task_description } = req.body;
-    const targetUserId = user.userId; // 非管理员只能为自己建记录（此前可传任意 user_id 代建）
+    // 所有用户只能为自己建记录（此前可传任意 user_id 代建）
+    const targetUserId = user.userId;
     if (!targetUserId || !date || hours == null) throw new AppError(400, '缺少必填字段');
 
     const r = (await query(
