@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { query, getClient } from '../db/index.js';
 import { AppError } from '../middleware/index.js';
+import { requirePermission } from '../middleware/auth.js';
 import { crudRoutes, objKeysToSnake } from './helpers.js';
 
 const fields = [
@@ -14,7 +15,8 @@ const router = crudRoutes('clients', fields, {
   orderBy: 'updated_at DESC',
   extra: (r) => {
     // 含联系人和历史的完整客户信息
-    r.get('/:id/detail', async (req, res, next) => {
+    // ⚠️ H1 修复：detail 含 quotation_history（历史报价折后价），读取需客户相关权限（列表基础信息仍开放）
+    r.get('/:id/detail', requirePermission('客户管理', '报价编制', '销售机会管理', '全部查看权限'), async (req, res, next) => {
       try {
         const { id } = req.params;
         const client = (await query('SELECT * FROM clients WHERE id = $1', [id])).rows[0];
@@ -56,6 +58,10 @@ const router = crudRoutes('clients', fields, {
         const { id } = req.params;
         const body = objKeysToSnake(req.body);
         const { contacts, ...clientData } = body;
+
+        // ⚠️ L2 修复：客户不存在返回 404（此前对不存在客户更新 0 行仍返回 200 空壳）
+        const clientRow = (await tx.query('SELECT id FROM clients WHERE id = $1', [id])).rows[0];
+        if (!clientRow) throw new AppError(404, '客户未找到');
 
         await tx.query('BEGIN');
 

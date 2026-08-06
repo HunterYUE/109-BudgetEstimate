@@ -57,7 +57,7 @@ const isNode15Done = (node: DeliveryNode | undefined): boolean =>
 
 /** 节点初始审批基线结束日（审批通过的实施计划；无审批基线则无参考，不判延期） */
 export const getNodeBaseline = (node: DeliveryNode | undefined): string | undefined =>
-  node?.baselineEndDate || node?.baselinePlannedEndDate;
+  node?.baselinePlannedEndDate;
 
 /* ============================================================
    统一延期判定（全应用共享）

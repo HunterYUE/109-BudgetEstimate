@@ -103,7 +103,7 @@ const ApprovalList: React.FC = () => {
   const [approvalComment, setApprovalComment] = useState('');
 
   /** 打开审批详情（转机会→首页；交付→交付详情；报价→报价编制） */
-  const openDetail = useCallback((item: { approvalType: string; deliveryId?: string; quotationId?: string }) => {
+  const openDetail = useCallback((item: { approvalType: string; deliveryId?: string; quotationId?: string | null }) => {
     if (item.approvalType === 'promote') navigate('/');
     else if (item.deliveryId) navigate('/delivery/' + item.deliveryId, { state: { tab: item.approvalType === 'cost' ? 'cost' : 'plan' } });
     else navigate('/quotations/' + item.quotationId);

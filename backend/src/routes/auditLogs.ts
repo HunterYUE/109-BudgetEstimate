@@ -1,13 +1,11 @@
 import { Router } from 'express';
 import { query } from '../db/index.js';
 import { AppError } from '../middleware/index.js';
-import { crudRoutes } from './helpers.js';
-
-const fields = [
-  'id', 'time', 'user_name', 'action', 'module', 'detail', 'created_at',
-];
 
 const router = Router();
+
+// ⚠️ M6 修复：审计日志为只读资源（仅 GET 列表 / 单条 / 统计），移除 crudRoutes 的 POST/PUT/DELETE，
+//   防止审计记录被伪造、篡改、删除。审计写入只经后端 logAudit() 追加。
 
 // 自定义列表查询：LEFT JOIN users 获取显示名
 router.get('/', async (req, res, next) => {
@@ -28,23 +26,23 @@ router.get('/', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// 标准 CRUD 路由
-const crudRouter = crudRoutes('audit_logs', fields, {
-  searchFields: ['user_name', 'action', 'module', 'detail'],
-  orderBy: 'time DESC',
-  extra: (r) => {
-    // 按模块统计
-    r.get('/stats/module', async (_req, res, next) => {
-      try {
-        const result = await query(
-          'SELECT module, COUNT(*) as cnt FROM audit_logs GROUP BY module ORDER BY cnt DESC'
-        );
-        res.json(result.rows);
-      } catch (err) { next(err); }
-    });
-  },
+// 按模块统计（须在 /:id 之前注册，否则被 :id 捕获）
+router.get('/stats/module', async (_req, res, next) => {
+  try {
+    const result = await query(
+      'SELECT module, COUNT(*) as cnt FROM audit_logs GROUP BY module ORDER BY cnt DESC'
+    );
+    res.json(result.rows);
+  } catch (err) { next(err); }
 });
 
-router.use(crudRouter);
+// 单条审计日志
+router.get('/:id', async (req, res, next) => {
+  try {
+    const result = await query('SELECT * FROM audit_logs WHERE id = $1', [req.params.id]);
+    if (result.rows.length === 0) throw new AppError(404, '日志不存在');
+    res.json(result.rows[0]);
+  } catch (err) { next(err); }
+});
 
 export default router;

@@ -270,11 +270,13 @@ const DeliveryDetail: React.FC = () => {
         } else if (nextStatus === 'completed') {
           updated.actualDate = today;
           updated.actualEndDate = today;
-        } else if (n.status === 'completed') {
+        } else {
+          // 切回「未开始」：清除实际开始/完成日期，与状态保持一致。
+          // ⚠️ 修复：此前从进行中切回保留 actualStartDate，导致误勾的节点即使撤销仍被
+          //   节点分析按「已到达」统计（如 A2026-07-003-E 节点5）。撤销应彻底恢复未开始。
+          updated.actualStartDate = undefined;
           updated.actualDate = undefined;
           updated.actualEndDate = undefined;
-        } else if (n.status === 'in_progress') {
-          // 从进行中切走不清除 actualStartDate（保留历史记录）
         }
         return updated;
       });

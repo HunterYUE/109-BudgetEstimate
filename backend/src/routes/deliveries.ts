@@ -75,6 +75,10 @@ router.get('/', async (req, res, next) => {
 const crudRouter = crudRoutes('delivery_projects', fields, {
   searchFields: ['sales_no', 'client_name', 'project_name'],
   orderBy: 'updated_at DESC',
+  // ⚠️ H3 修复：计划/成本审批状态与审批结果 JSONB 只能经审批流程（POST /approvals/:id/records）流转，
+  //   禁止通用 PUT 直改（此前可直接置 plan_status='approved' 并伪造 plan_approval）。前端无此直写路径。
+  //   注意：显式传 excludeOnUpdate 会覆盖默认的 id/created_at/updated_at，必须一并保留。
+  excludeOnUpdate: ['id', 'created_at', 'updated_at', 'plan_status', 'cost_status', 'plan_approval', 'cost_approval', 'quotation_id', 'opportunity_id'],
   // ⚠️ F15 修复：删除交付项目时清理磁盘上的附件文件（DB 行靠 delivery_files CASCADE 删，物理文件不会随删）
   beforeDelete: async (id) => {
     const files = (await query('SELECT file_path FROM delivery_files WHERE delivery_project_id = $1', [id])).rows as { file_path: string }[];

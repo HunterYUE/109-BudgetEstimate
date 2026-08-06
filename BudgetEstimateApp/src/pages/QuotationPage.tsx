@@ -95,8 +95,9 @@ function buildProjectPayload(p: Project, opts: { withSalesMeta?: boolean } = {})
     deliveryPeriod: p.deliveryPeriod, paymentTerms: p.paymentTerms,
     postfix: p.postfix, note: p.note,
   };
+  // ⚠️ M7 修复：不再发送 versionNo（后端 projects 无该列，此前被静默丢弃），版本信息存于 currentVersion/版本保存
   return opts.withSalesMeta
-    ? { salesNo: p.salesNo, versionNo: p.currentVersion.versionNo, ...base }
+    ? { salesNo: p.salesNo, ...base }
     : base;
 }
 

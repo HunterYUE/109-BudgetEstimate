@@ -9,10 +9,10 @@ export const projectService = {
     api.get<Project & { versions: ProjectVersion[]; groups: Group[] }>(`/projects/${id}/full`, opts),
 
   /** 创建项目 */
-  create: (data: Partial<Project>) => api.post<Project>('/projects', data),
+  create: (data: Partial<Project>) => api.post<Omit<Project, 'currentVersion' | 'groups'>>('/projects', data),
 
   /** 更新项目 */
-  update: (id: string, data: Partial<Project>) => api.put<Project>(`/projects/${id}`, data),
+  update: (id: string, data: Partial<Project>) => api.put<Omit<Project, 'currentVersion' | 'groups'>>(`/projects/${id}`, data),
 
   /** 删除项目 */
   delete: (id: string) => api.delete(`/projects/${id}`),

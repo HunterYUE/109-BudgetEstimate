@@ -47,6 +47,11 @@ customRouter.put('/sync', async (req, res, next) => {
       throw new AppError(400, '缺少必填字段：project_id, version_no');
     }
 
+    // ⚠️ H2 修复：sync 只能写入 draft/pending，禁止直接置 approved/rejected（须走审批状态机）
+    if (status && !['draft', 'pending'].includes(status)) {
+      throw new AppError(400, `报价状态只能为 draft 或 pending，不允许直接设为 ${status}`);
+    }
+
     // ⚠️ F18 修复：待审批（status='pending'）的报价不允许被 sync 覆盖。
     //    此前检查 locked 字段但全库无任何路径置 true（死守卫），改为检查真实信号 status='pending'
     const existing = (await query(
@@ -87,7 +92,11 @@ customRouter.put('/sync', async (req, res, next) => {
 const crudRouter = crudRoutes('quotations', fields, {
   searchFields: ['sales_no', 'client_name', 'project_name'],
   orderBy: 'sales_no DESC, version_no DESC',
-  excludeOnCreate: ['locked'],
+  // 显式传 excludeOnCreate/excludeOnUpdate 会覆盖默认的 id/created_at/updated_at，必须一并保留
+  excludeOnCreate: ['id', 'created_at', 'updated_at', 'locked'],
+  // ⚠️ H2 修复：status 只能经审批流程（POST /approvals/:id/records）流转，禁止通用 PUT 直改绕过审批；
+  //   locked 由审批级联维护，禁止直改。前端无 PUT /:id 直写 status 的合法路径。
+  excludeOnUpdate: ['id', 'created_at', 'updated_at', 'status', 'locked'],
 });
 
 // 合并：自定义路由优先

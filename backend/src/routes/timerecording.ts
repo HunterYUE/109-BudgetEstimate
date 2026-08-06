@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
+import rateLimit from 'express-rate-limit';
 import { query, getClient } from '../db/index.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { signToken } from '../middleware/auth.js';
@@ -11,10 +12,17 @@ const router = Router();
 /** 是否为工时系统管理员（director/admin，JWT role） */
 const isTrAdmin = (u: { role?: string } | undefined): boolean => !!u && (u.role === 'director' || u.role === 'admin');
 
+// ⚠️ M4 修复：工时登录端点同样加限速（此前只有主 /auth/login 限速，此处可被暴力破解）
+const trLoginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  message: '登录尝试过于频繁，请 15 分钟后再试',
+});
+
 // ─── 认证 ────────────────────────────────────────────
 
 /** POST /api/v1/timerecording/auth/login */
-router.post('/auth/login', async (req, res, next) => {
+router.post('/auth/login', trLoginLimiter, async (req, res, next) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) throw new AppError(400, '请输入账号和密码');
@@ -87,7 +95,9 @@ router.get('/auth/me', requireAuth, async (req, res, next) => {
 
 // ─── 用户档案 ──────────────────────────────────────
 
-router.get('/profiles', requireAuth, async (_req, res, next) => {
+// ⚠️ L5 修复：全员档案列表仅管理员可见（此前任意登录用户可读全员邮箱/角色，隐私泄漏）
+//   普通员工如需本人档案走 GET /profiles/:id
+router.get('/profiles', requireAuth, requireRole('director', 'admin'), async (_req, res, next) => {
   try {
     const rows = (await query('SELECT id, employee_id, name, email, role, is_active FROM timerecording.profiles ORDER BY name')).rows;
     res.json(rows);
@@ -206,11 +216,12 @@ router.delete('/time-records/:id', requireAuth, async (req, res, next) => {
     const user = req.user!;
     const admin = isTrAdmin(user);
     // ⚠️ F6 修复：归属校验，非管理员只能删自己的记录
+    // ⚠️ M2 修复：状态守卫——仅 draft 可删；已提交/已审核/已锁定记录禁止删除，防破坏工时审计链
     const r = (await query(
-      `DELETE FROM timerecording.time_records WHERE id = $1${admin ? '' : ' AND user_id = $2'} RETURNING id`,
+      `DELETE FROM timerecording.time_records WHERE id = $1${admin ? '' : ' AND user_id = $2'} AND status = 'draft' RETURNING id`,
       admin ? [req.params.id] : [req.params.id, user.userId]
     )).rows[0];
-    if (!r) throw new AppError(404, admin ? '记录不存在' : '记录不存在或无权删除');
+    if (!r) throw new AppError(404, admin ? '记录不存在或已提交/已审核，不可删除' : '记录不存在、无权删除或已提交/已审核，不可删除');
     res.json({ success: true });
   } catch (err) { next(err); }
 });
@@ -382,6 +393,9 @@ router.post('/admin/users', requireAuth, requireRole('director', 'admin'), async
   try {
     const { email, name, password, employee_id, role = 'employee' } = req.body;
     if (!email || !name || !password) throw new AppError(400, '缺少必填字段');
+    // ⚠️ L4 修复：重复邮箱预检，避免撞唯一约束返回笼统错误（与 users.ts 口径一致）
+    const dup = (await query('SELECT id FROM public.users WHERE email = $1', [email])).rows[0];
+    if (dup) throw new AppError(409, '该邮箱已被注册');
 
     const passwordHash = await bcrypt.hash(password, 10);
     const empId = employee_id || email.split('@')[0];
@@ -414,7 +428,8 @@ router.post('/admin/users/:id/reset-password', requireAuth, requireRole('directo
   try {
     const { id } = req.params;
     const { password } = req.body;
-    if (!password || password.length < 6) throw new AppError(400, '密码至少6个字符');
+    // ⚠️ L7 修复：密码策略与主用户管理统一为至少 8 位（此前此处 6 位、users.ts 8 位，口径不一致）
+    if (!password || password.length < 8) throw new AppError(400, '密码至少8个字符');
     const passwordHash = await bcrypt.hash(password, 10);
     await query('UPDATE public.users SET password_hash = $1 WHERE id = $2', [passwordHash, id]);
     logAudit(req, '重置密码', 'admin', '用户 ' + id.slice(0,8) + ' 密码已重置');
@@ -428,8 +443,11 @@ router.delete('/admin/users/:id', requireAuth, requireRole('director', 'admin'),
   try {
     const { id } = req.params;
     // ⚠️ F14 修复：profiles + users 两步删除放入同一事务，避免中途失败留下"有 profile 无 users"半成品
+    // ⚠️ M5 修复：先清空以该用户为 reviewer/创建者的引用（无 ON DELETE 动作会 FK 阻塞删除），再删 profile
     client = await getClient();
     await client.query('BEGIN');
+    await client.query('UPDATE timerecording.time_records SET reviewed_by = NULL WHERE reviewed_by = $1', [id]);
+    await client.query('UPDATE timerecording.task_assignments SET created_by = NULL WHERE created_by = $1', [id]);
     await client.query('DELETE FROM timerecording.profiles WHERE id = $1', [id]);
     await client.query('DELETE FROM public.users WHERE id = $1', [id]);
     await client.query('COMMIT');

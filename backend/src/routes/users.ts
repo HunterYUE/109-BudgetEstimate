@@ -159,9 +159,23 @@ router.delete('/:id', async (req, res, next) => {
     }
 
     // ⚠️ F13 修复：先删 timerecording.profiles（引用 users.id），再删 users，同一事务避免孤儿/外键冲突
+    // ⚠️ M5 修复：① timerecording schema 可能未部署，用 to_regclass 探测，避免 .catch 吞错导致事务 abort；
+    //            ② 先清空以该用户为 reviewer/created_by 的引用（无 ON DELETE 动作），否则 FK 阻塞删除
     client = await getClient();
     await client.query('BEGIN');
-    await client.query('DELETE FROM timerecording.profiles WHERE id = $1', [id]).catch(() => { /* timerecording schema 可能未部署 */ });
+    const sc = (await client.query(
+      `SELECT to_regclass('timerecording.profiles') AS p,
+              to_regclass('timerecording.time_records') AS tr,
+              to_regclass('timerecording.task_assignments') AS ta`
+    )).rows[0];
+    if (sc?.p) {
+      const hasProfile = (await client.query('SELECT id FROM timerecording.profiles WHERE id = $1', [id])).rows.length > 0;
+      if (hasProfile) {
+        if (sc.tr) await client.query('UPDATE timerecording.time_records SET reviewed_by = NULL WHERE reviewed_by = $1', [id]);
+        if (sc.ta) await client.query('UPDATE timerecording.task_assignments SET created_by = NULL WHERE created_by = $1', [id]);
+        await client.query('DELETE FROM timerecording.profiles WHERE id = $1', [id]);
+      }
+    }
     const result = await client.query('DELETE FROM users WHERE id = $1 RETURNING id, email', [id]);
     if (result.rows.length === 0) throw new AppError(404, '用户不存在');
     await client.query('COMMIT');

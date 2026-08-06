@@ -169,9 +169,13 @@ const DeliveryAnalysis: React.FC = () => {
         } else if (new Date(n.plannedEndDate) < fyRange.start || new Date(n.plannedStartDate) > fyRange.end) {
           continue;
         }
-        // 未开始的 pending 不计入「到达次数」，但若其基线已过（事实延期）仍需计入延期
-        const isFuturePending = n.status === 'pending' && new Date(n.plannedStartDate) > now;
-        if (!isFuturePending) reached[idx]++;
+        // ⚠️ 到达判定：排除「尚未真正开始」的节点（未到执行阶段）——与状态字段解耦：
+        //   只要未完成、无实际开始日、且计划开始日在未来，就不计为「到达」。
+        //   此前仅排除 status==='pending' 的未来节点；in_progress 但计划在未来且无实际开始日
+        //   （如 A2026-07-003-E 节点5，进行中却计划 09-07 尚未启动）会被误计入到达。
+        //   注：基线已过的未来节点仍计入「延期」（下方 delay 判定独立），符合原设计意图。
+        const notStartedYet = n.status !== 'completed' && !n.actualStartDate && new Date(n.plannedStartDate) > now;
+        if (!notStartedYet) reached[idx]++;
 
         // ⚠️ 共享延期判定：基线 = 初始审批实施计划；无审批基线不判延期
         const delay = getNodeDelay(n, now);
@@ -332,7 +336,7 @@ const DeliveryAnalysis: React.FC = () => {
         return new Date(n.plannedEndDate) >= tlStart && new Date(n.plannedStartDate) <= tlEnd;
       }).map(n => {
         let start: Date, end: Date;
-        const baselineEnd = n.baselineEndDate || n.baselinePlannedEndDate;
+        const baselineEnd = n.baselinePlannedEndDate;
         if (n.status === 'completed' && n.actualDate) {
           // 已完成节点：开始=实际开始(优先)或计划开始，结束=实际完成
           start = n.actualStartDate ? new Date(n.actualStartDate) : new Date(n.plannedStartDate);

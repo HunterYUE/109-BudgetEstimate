@@ -67,7 +67,8 @@ router.post('/', async (req, res, next) => {
       }
     }
 
-    const insertCols = fields.filter(f => !['id', 'created_at', 'updated_at'].includes(f) && body[f] !== undefined);
+    // ⚠️ M1 修复：status/submit_time 只能经审批流程（POST /:id/records）流转，创建时禁止直设（此前可创建即 approved）
+    const insertCols = fields.filter(f => !['id', 'created_at', 'updated_at', 'status', 'submit_time'].includes(f) && body[f] !== undefined);
     if (insertCols.length === 0) throw new AppError(400, '没有要插入的字段');
     const result = await client.query(
       `INSERT INTO approval_requests (${insertCols.map(f => `"${f}"`).join(', ')}) VALUES (${insertCols.map((_, i) => `$${i + 1}`).join(', ')}) RETURNING *`,
@@ -127,9 +128,12 @@ router.post('/:id/records', async (req, res, next) => {
   let client;
   try {
     const { id } = req.params;
-    const { reviewer, action, comment } = req.body;
-    if (!reviewer || !action) throw new AppError(400, '缺少必填字段：reviewer, action');
+    const { action, comment } = req.body;
+    if (!action) throw new AppError(400, '缺少必填字段：action');
     if (!['approved', 'rejected'].includes(action)) throw new AppError(400, `无效操作: ${action}`);
+    // ⚠️ M3 修复：reviewer 强制取自登录用户（防伪造审批人），不再接受 body 传入的 reviewer
+    const approver = (await query('SELECT display_name, email FROM users WHERE id = $1', [req.user?.userId])).rows[0];
+    const reviewer = approver?.display_name || req.user?.email || '未知用户';
     const ar = (await query('SELECT * FROM approval_requests WHERE id = $1', [id])).rows[0];
     if (!ar) throw new AppError(404, '审批请求未找到');
     // ⚠️ F11 修复：已终审的审批不允许再次写入记录（防双击重复/状态翻转；驳回后重提会新建审批，不在此流转）

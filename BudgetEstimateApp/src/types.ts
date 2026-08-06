@@ -104,7 +104,6 @@ export interface Project {
   clientCode: string;
   projectScope: string;
   projectName: string;
-  versionNo: string;
   projectStage: string;
   expectedAwardDate: string;
   projectLayout: string;       // 布置图（三维布局截图 PDF/PNG，base64 或文件名）
@@ -195,7 +194,8 @@ export interface ApprovalInfo {
 export interface ApprovalRequest {
   id: string;
   approvalType: 'quotation' | 'plan' | 'cost' | 'promote';
-  quotationId: string;
+  /** 报价审批时关联的报价 ID；plan/cost/promote 类审批可为空 */
+  quotationId?: string | null;
   /** 线索转机会审批时关联的机会 ID */
   opportunityId?: string;
   /** 交付审批时关联的交付项目 ID */
@@ -247,8 +247,7 @@ export interface DeliveryNode {
   actualDate?: string;
   actualStartDate?: string;
   actualEndDate?: string;
-  baselineEndDate?: string;
-  /** 旧数据中可能存在此字段 */
+  /** 初始审批实施计划的基线结束日（后端列 baseline_planned_end_date → baselinePlannedEndDate） */
   baselinePlannedEndDate?: string;
   /** 执行状态三态：未开始/进行中/已完成（延期为派生维度，见 analysisShared.getNodeDelay） */
   status: 'pending' | 'in_progress' | 'completed';
@@ -366,8 +365,9 @@ export interface Client {
   salesman: string;
   creditLevel: CreditLevel;
   grade: ClientGrade;
-  contacts: Contact[];
-  history: ClientHistoryRecord[];
+  /** 仅 /:id/detail 返回；列表接口不含（L9 修复：声明与实际响应一致） */
+  contacts?: Contact[];
+  history?: ClientHistoryRecord[];
   /** 历史报价记录（后端返回） */
   quotationHistory?: ClientQuoteHistory[];
   createdAt: string;

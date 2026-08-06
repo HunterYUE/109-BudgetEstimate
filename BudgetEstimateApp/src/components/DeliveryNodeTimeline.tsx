@@ -182,7 +182,14 @@ const DeliveryNodeTimeline: React.FC<Props> = ({
                         background: '#fff', border: `1px solid ${COLORS.borderInput}`, borderRadius: 4,
                         minWidth: 72, boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
                       }}>
-                        {(node.status === 'pending' ? ['in_progress'] : node.status === 'in_progress' ? ['completed'] : ['in_progress']).map(st => (
+                        {/* ⚠️ 修复：进行中/已完成节点可切回「未开始」（此前只有进行中→已完成，误勾后无法撤销；
+                           pending 保持仅前进；in_progress 可后退到未开始或前进到完成；completed 可后退） */}
+                        {(node.status === 'pending'
+                          ? ['in_progress']
+                          : node.status === 'in_progress'
+                            ? ['pending', 'completed']
+                            : ['in_progress', 'pending']
+                        ).map(st => (
                           <div key={st} onClick={() => { onNodeStatusClick?.(node.id!, st); setStatusDropdown(null); }}
                             style={{
                               padding: '4px 12px', cursor: 'pointer', fontSize: 12,

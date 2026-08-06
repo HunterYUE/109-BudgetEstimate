@@ -28,13 +28,47 @@ export function errorHandler(
     return;
   }
 
-  // 处理 PostgreSQL 错误（不暴露具体错误详情给客户端）
-  const pgErr = err as { code?: string; severity?: string; message?: string; detail?: string };
+  // ⚠️ L8 修复：上传超限等 Multer 错误返回 413/400（此前落入通用 500）
+  if (err && (err as { name?: string }).name === 'MulterError') {
+    const code = (err as { code?: string }).code;
+    if (code === 'LIMIT_FILE_SIZE') {
+      res.status(413).json({ error: '文件超过大小限制' });
+    } else {
+      res.status(400).json({ error: `文件上传失败：${code || '未知错误'}` });
+    }
+    return;
+  }
+
+  // 处理 PostgreSQL 错误（不暴露原始 SQL/表结构，但按错误码给出可定位的提示）
+  const pgErr = err as { code?: string; severity?: string; message?: string; detail?: string; constraint?: string };
   if (pgErr.code && pgErr.severity) {
     console.error(`[DB ERROR] ${requestInfo} — ${pgErr.code}: ${pgErr.message}`, pgErr.detail || '');
-    res.status(400).json({
-      error: '数据操作错误',
-    });
+    // ⚠️ L3 修复：按 PG 错误码细分，避免所有数据库错误都变成笼统的"数据操作错误"（如无效枚举值无法定位字段）
+    const detail = pgErr.detail?.replace(/[()]/g, '') || '';
+    let msg = '数据操作错误';
+    let status = 400;
+    switch (pgErr.code) {
+      case '22P02': // 无效类型/枚举值
+        msg = `字段值无效，请检查枚举或格式${detail ? '：' + detail : ''}`;
+        break;
+      case '23505': // 唯一约束冲突
+        msg = `数据已存在${detail ? '：' + detail : ''}`;
+        status = 409;
+        break;
+      case '23503': // 外键约束
+        msg = `存在关联数据，无法操作${detail ? '：' + detail : ''}`;
+        status = 409;
+        break;
+      case '23514': // CHECK 约束
+        msg = `数据不满足校验规则${detail ? '：' + detail : ''}`;
+        break;
+      case '23502': // 非空约束
+        msg = `缺少必填字段${detail ? '：' + detail : ''}`;
+        break;
+      default:
+        msg = `数据操作错误${detail ? '（' + detail + '）' : ''}`;
+    }
+    res.status(status).json({ error: msg });
     return;
   }
 

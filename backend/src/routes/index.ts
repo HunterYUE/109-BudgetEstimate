@@ -31,20 +31,33 @@ router.use('/timerecording', timerecording);
 
 // 业务路由（需要登录）
 // ── 方案A：后端鉴权改用 permissions 数组（与前端 permissions.ts 职务权限模型对齐）──
-// 读改写分离：GET 读取开放（仪表盘/销售分析等跨页读取共享数据），非 GET 需指定权限
+// 读改写分离：非 GET 需指定权限（F2 修复），敏感资源 GET 也需对应读取权限（H1 修复）
 const writeGuard = (perms: string[]) => (req: Request, res: Response, next: NextFunction) => {
   if (req.method !== 'GET') return requirePermission(...perms)(req, res, next);
   next();
 };
-// ⚠️ F2 修复：核心业务资源写操作需对应权限（此前仅 requireAuth，任意登录用户可改/删核心数据）
-router.use('/components', requireAuth, writeGuard(['物料管理', '新增物料', '全部查看权限']), components);
-router.use('/projects', requireAuth, writeGuard(['报价编制', '全部查看权限']), projects);
-router.use('/opportunities', requireAuth, writeGuard(['销售机会管理', '编辑销售机会', '新建信息/线索/机会', '转线索/转机会', '销售蓝表编辑', '全部查看权限']), opportunities);
-router.use('/quotations', requireAuth, writeGuard(['报价编制', '全部查看权限']), quotations);
-// 审批：创建（各业务模块提交）与处理（审批管理）均需对应权限；列表读取开放
-router.use('/approvals', requireAuth, writeGuard(['审批管理', '报价编制', '交付管理', '成本录入', '转线索/转机会', '全部查看权限']), approvals);
-// 交付写操作需 交付管理 或 销售机会管理（转交付创建/初始化节点）
-router.use('/deliveries', requireAuth, writeGuard(['交付管理', '销售机会管理', '全部查看权限']), deliveries);
+// ⚠️ H1 修复：财务/销售敏感资源的 GET 读取不再全放开。权限集 = 各页面前端路由所需权限 ∪ 跨页读取方
+//   （仪表盘/销售分析/交付分析/审批列表会跨资源读取）+ 万能权限。零权限用户/纯工时用户将 403。
+const readGuard = (perms: string[]) => (req: Request, res: Response, next: NextFunction) => {
+  if (req.method === 'GET') return requirePermission(...perms)(req, res, next);
+  next();
+};
+// 读取方并集：QuotationPage/报价编制 与 DeliveryDetail/交付管理 会跨读机会与报价，必须纳入
+const QUOTE_READ = ['报价列表查看', '报价编制', '交付管理', '销售机会管理', '仪表盘查看', '销售分析', '交付分析', '审批管理', '全部查看权限'];
+const OPP_READ = ['销售机会管理', '编辑销售机会', '报价编制', '仪表盘查看', '销售分析', '全部查看权限'];
+const DELIVERY_READ = ['交付管理', '销售机会管理', '仪表盘查看', '销售分析', '交付分析', '审批管理', '全部查看权限'];
+const APPROVAL_READ = ['审批管理', '全部查看权限'];
+const PROJECT_READ = ['报价编制', '交付管理', '销售机会管理', '全部查看权限'];
+// 组件读取方：物料管理 / 报价编制(ItemTable) / 交付管理(DeliveryDetail 服务项)
+const COMPONENT_READ = ['物料管理', '报价编制', '交付管理', '全部查看权限'];
+router.use('/components', requireAuth, writeGuard(['物料管理', '新增物料', '全部查看权限']), readGuard(COMPONENT_READ), components);
+router.use('/projects', requireAuth, writeGuard(['报价编制', '全部查看权限']), readGuard(PROJECT_READ), projects);
+router.use('/opportunities', requireAuth, writeGuard(['销售机会管理', '编辑销售机会', '新建信息/线索/机会', '转线索/转机会', '销售蓝表编辑', '全部查看权限']), readGuard(OPP_READ), opportunities);
+router.use('/quotations', requireAuth, writeGuard(['报价编制', '全部查看权限']), readGuard(QUOTE_READ), quotations);
+// 审批：创建（各业务模块提交）与处理（审批管理）均需对应权限；列表读取仅审批管理/万能权限
+router.use('/approvals', requireAuth, writeGuard(['审批管理', '报价编制', '交付管理', '成本录入', '转线索/转机会', '全部查看权限']), readGuard(APPROVAL_READ), approvals);
+// 交付写操作需 交付管理 或 销售机会管理（转交付创建/初始化节点）；读取需交付相关权限
+router.use('/deliveries', requireAuth, writeGuard(['交付管理', '销售机会管理', '全部查看权限']), readGuard(DELIVERY_READ), deliveries);
 router.use('/clients', requireAuth, writeGuard(['客户管理', '新建客户', '全部查看权限']), clients);
 // 标签写操作需 新建标签（读取开放给物料打标）
 router.use('/tags', requireAuth, writeGuard(['新建标签', '全部查看权限']), tags);
@@ -203,9 +216,11 @@ router.delete('/project-groups/by-version/:versionId', requireAuth, writeGuard([
   try {
     const { versionId } = req.params;
     // group_items 通过外键 ON DELETE CASCADE 自动删除
+    // ⚠️ L1 修复：检查实际删除行数，删除不存在版本返回 404（此前无行检查恒返 deleted:true）
+    const result = await query('DELETE FROM project_groups WHERE version_id = $1 RETURNING id', [versionId]);
+    if (result.rows.length === 0) throw new AppError(404, '未找到该版本的项目组');
     logAudit(req, '删除组', 'project', '版本 ' + versionId.slice(0,8) + ' 的所有组已删除');
-    await query('DELETE FROM project_groups WHERE version_id = $1', [versionId]);
-    res.json({ deleted: true });
+    res.json({ deleted: true, count: result.rows.length });
   } catch (err) { next(err); }
 });
 
@@ -213,9 +228,11 @@ router.delete('/project-groups/by-version/:versionId', requireAuth, writeGuard([
 router.delete('/project-groups/:id', requireAuth, writeGuard(['报价编制', '全部查看权限']), async (req, res, next) => {
   try {
     const { id } = req.params;
+    // ⚠️ L1 修复：检查实际删除行数，删除不存在的组返回 404
+    const result = await query('DELETE FROM project_groups WHERE id = $1 RETURNING id', [id]);
+    if (result.rows.length === 0) throw new AppError(404, '未找到该项目组');
     logAudit(req, '删除组', 'project', '组ID ' + id.slice(0,8) + ' 已删除');
-    await query('DELETE FROM project_groups WHERE id = $1', [id]);
-    res.json({ deleted: true });
+    res.json({ deleted: true, id });
   } catch (err) { next(err); }
 });
 
