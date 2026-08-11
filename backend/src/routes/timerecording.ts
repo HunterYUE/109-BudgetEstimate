@@ -699,12 +699,14 @@ router.get('/notifications', requireAuth, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-router.put('/notifications/:id/read', requireAuth, async (req, res, next) => {
+// ⚠️ 查看后消除：点击通知即删除（替代旧的「标记已读」——已读通知仍留库会随使用持续累积）。
+//   通知是可消费的指针（审批/任务/提醒的跳转入口），底层业务数据（工时/任务）均独立持久化，删除通知无数据损失。
+router.delete('/notifications/:id', requireAuth, async (req, res, next) => {
   try {
     const user = req.user!;
-    // ⚠️ F6 修复：只能标记自己的通知为已读
+    // F6 约束延续：只能删除自己的通知
     const r = (await query(
-      'UPDATE timerecording.notifications SET is_read = true WHERE id = $1 AND user_id = $2 RETURNING id',
+      'DELETE FROM timerecording.notifications WHERE id = $1 AND user_id = $2 RETURNING id',
       [req.params.id, user.userId]
     )).rows[0];
     if (!r) throw new AppError(404, '通知不存在');
