@@ -6,6 +6,7 @@ import routes from './routes/index.js';
 import { errorHandler } from './middleware/index.js';
 import { pool } from './db/index.js';
 import { startWeeklyReminder } from './jobs/weeklyReminder.js';
+import { startNotificationsCleanup } from './jobs/notificationsCleanup.js';
 import { ensureCostCenters, startCostCenterSync } from './jobs/costCenterSync.js';
 
 const app = express();
@@ -70,6 +71,9 @@ const server = app.listen(PORT, () => {
 
 // 周日晚 20:30 工时提交提醒（北京时间）
 startWeeklyReminder();
+
+// 过期通知清理（每月 1/16 日，删除 90 天前通知，封顶表规模）
+startNotificationsCleanup();
 
 // 成本中心码表：启动时补建 + 每小时同步（质保 -W 随交付节点15完成自动创建）
 ensureCostCenters()

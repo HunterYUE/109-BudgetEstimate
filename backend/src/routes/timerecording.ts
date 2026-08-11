@@ -22,18 +22,22 @@ const fiscalYearLabel = (d: Date = new Date()): string => {
 };
 
 /**
- * 校验任务成本中心必须存在：
+ * 成本中心存在性校验（共享基底，任务与工时记录复用）：
  *   -S(sales)/-E(project) 实时查预算库；-W(warranty)/-DE-(department)/-00-(personal) 查工时码表。
  *   部门/个人中心还须处于可用财年窗口（新财年提前一月生成、老财年延续新财年首月），
  *   防止把早已归档或远未生成的部门/个人中心派给任务。
+ *   opts.allowDE: 工时记录允许部门中心；任务则只允许个人中心（部门中心不用于任务）。
  */
-async function assertCostCenterValid(code: string | null | undefined, label = '成本中心'): Promise<void> {
+async function assertCostCenterValidBase(
+  code: string | null | undefined,
+  label: string,
+  opts: { allowDE: boolean }
+): Promise<void> {
   // ⚠️ 分配任务时成本中心必填，不能为空
   if (!code) throw new AppError(400, '成本中心不能为空');
   const m = /^A(\d{4})-(DE|00)-\d{3}$/.exec(code);
   if (m) {
-    // ⚠️ 任务无「成本出处」（非项目）时只能填个人中心，部门中心不用于任务
-    if (m[2] === 'DE') throw new AppError(400, `${label}不能使用部门成本中心，请选择项目或个人成本中心`);
+    if (!opts.allowDE && m[2] === 'DE') throw new AppError(400, `${label}不能使用部门成本中心，请选择项目或个人成本中心`);
     const fy = 'FY' + m[1];
     const row = await query('SELECT 1 FROM timerecording.cost_centers WHERE code = $1', [code]);
     if (!row.rows.length) throw new AppError(400, `${label}「${code}」不存在`);
@@ -60,6 +64,34 @@ async function assertCostCenterValid(code: string | null | undefined, label = '�
   throw new AppError(400, `${label}「${code}」格式无效`);
 }
 
+/** 任务成本中心（部门中心不允许） */
+function assertCostCenterValid(code: string | null | undefined, label = '成本中心'): Promise<void> {
+  return assertCostCenterValidBase(code, label, { allowDE: false });
+}
+
+/** 工时记录成本中心（允许部门中心；空值放行以兼容历史行为） */
+function assertTimeCostCenterValid(code: string | null | undefined, label = '成本中心'): Promise<void> {
+  if (!code) return Promise.resolve();
+  return assertCostCenterValidBase(code, label, { allowDE: true });
+}
+
+/** 由日期计算 ISO 周号与 ISO 年（周一起，与 PG EXTRACT(WEEK/ISOYEAR) 及前端 dayjs isoWeek 一致） */
+function isoWeekOf(dateStr: string): { year: number; week: number } {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  const dayNum = date.getUTCDay() || 7; // 周日=7（ISO 周一始）
+  date.setUTCDate(date.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+  const week = Math.ceil((((date.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+  return { year: date.getUTCFullYear(), week };
+}
+
+/** uuid 数组校验（submit-batch/review-batch 入参，防 22P02 整批 400） */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function isValidUuidArray(ids: any): ids is string[] {
+  return Array.isArray(ids) && ids.length > 0 && ids.every(v => typeof v === 'string' && UUID_RE.test(v));
+}
+
 /**
  * 工时角色（派生自预算用户 role + permissions）：
  *   director 总监（全部权限） / manager 方案·交付经理（可分配任务、查看综合分析） / employee 员工（仅本人填报/统计）
@@ -79,10 +111,12 @@ const isManager = (u: { role?: string; permissions?: string[] } | undefined): bo
 /** "HH:MM"（或含秒 "HH:MM:SS"）→ 分钟数；格式非法返回 null */
 function toMinutes(t?: string | null): number | null {
   if (!t) return null;
-  const m = /^(\d{1,2}):(\d{2})/.exec(t);
+  // 锚定结尾并允许可选秒段：尾随垃圾（"12:34:56:78"）、越界秒（"12:34:99"）均拒绝
+  const m = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(t);
   if (!m) return null;
-  const h = parseInt(m[1], 10), mi = parseInt(m[2], 10);
-  return h > 23 || mi > 59 ? null : h * 60 + mi;
+  const h = parseInt(m[1], 10), mi = parseInt(m[2], 10), sec = m[3] !== undefined ? parseInt(m[3], 10) : 0;
+  if (h > 23 || mi > 59 || sec > 59) return null;
+  return h * 60 + mi;
 }
 
 /** 净工时：由起止时间换算（纯时长，无餐时扣减；15 分钟步进下为 0.25 的倍数） */
@@ -114,9 +148,12 @@ function serverHourType(date?: string | null, start?: string | null, end?: strin
   return (evening || wd === 0 || wd === 6 || (wd >= 0 && isStatutoryHoliday(new Date(y, m - 1, d)))) ? 'overtime' : 'normal';
 }
 
-/** 校验日期格式 YYYY-MM-DD */
+/** 校验日期为真实历法日期（格式 + 回验，拦截 2026-02-30/2026-13-01 等越界日期） */
 function isValidDateStr(s: unknown): s is string {
-  return typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s);
+  if (typeof s !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const [y, m, d] = s.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  return dt.getFullYear() === y && dt.getMonth() === m - 1 && dt.getDate() === d;
 }
 
 // ⚠️ M4 修复：工时登录端点同样加限速（此前只有主 /auth/login 限速，此处可被暴力破解）
@@ -373,7 +410,7 @@ router.post('/time-records', requireAuth, async (req, res, next) => {
   try {
     const user = req.user!;
     // ⚠️ 总监/管理员也可填报工时（2026-08-06 需求调整，此前按"总监不填报"做了 403 限制）
-    const { date, week_number, year, start_time, end_time, cost_center, cost_center_type, task_description } = req.body;
+    const { date, start_time, end_time, cost_center, cost_center_type, task_description } = req.body;
     // 所有用户只能为自己建记录（此前可传任意 user_id 代建）
     const targetUserId = user.userId;
     if (!targetUserId || !isValidDateStr(date) || toMinutes(start_time) == null || toMinutes(end_time) == null) {
@@ -382,11 +419,20 @@ router.post('/time-records', requireAuth, async (req, res, next) => {
     // ⚠️ S4 修复：hours/hour_type 服务端权威重算，不信任前端传入值
     const hours = serverHours(start_time, end_time);
     const hour_type = serverHourType(date, start_time, end_time);
+    // ⚠️ 同思路：year/week_number 服务端按 date 重算 ISO 周（跨年/跨周边界与前端 dayjs 一致），忽略前端值
+    const iso = isoWeekOf(date);
+    // 成本中心存在性 + 类型枚举 + 文本长度（与任务侧一致；工时侧允许部门中心、空成本中心放行）
+    await assertTimeCostCenterValid(cost_center);
+    if (cost_center_type != null && !['sales', 'project', 'warranty', 'department', 'personal'].includes(cost_center_type)) {
+      throw new AppError(400, 'cost_center_type 无效');
+    }
+    const desc = typeof task_description === 'string' ? task_description : '';
+    if (desc.length > 500) throw new AppError(400, '工作内容不能超过 500 字');
 
     const r = (await query(
       `INSERT INTO timerecording.time_records (user_id, date, week_number, year, start_time, end_time, hours, hour_type, cost_center, cost_center_type, task_description)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
-      [targetUserId, date, week_number, year, start_time, end_time, hours, hour_type, cost_center || null, cost_center_type || null, task_description]
+      [targetUserId, date, iso.week, iso.year, start_time, end_time, hours, hour_type, cost_center || null, cost_center_type || null, desc]
     )).rows[0];
     res.status(201).json(r);
   } catch (err) { next(err); }
@@ -396,14 +442,26 @@ router.put('/time-records/:id', requireAuth, async (req, res, next) => {
   try {
     const user = req.user!;
     const admin = isTrAdmin(user);
-    // ⚠️ F6 修复：status 不能直接改（须走 /submit 与 /review 审批流程），移除出可更新字段
-    const fields = ['date', 'week_number', 'year', 'start_time', 'end_time', 'cost_center', 'cost_center_type', 'task_description'];
+    // ⚠️ F6 修复：status 不能直接改（须走 /submit 与 /review 审批流程），移除出可更新字段；
+    //   week_number/year 也移除：由 date 服务端重算，不信任前端
+    const fields = ['date', 'start_time', 'end_time', 'cost_center', 'cost_center_type', 'task_description'];
     // ⚠️ S4 修复：先取当前行，合并入请求字段后由服务端重算 hours/hour_type（不信任前端）
     const existing = (await query(
-      `SELECT date, start_time, end_time FROM timerecording.time_records WHERE id = $1${admin ? '' : ' AND user_id = $2'}`,
+      `SELECT date, start_time, end_time, hours, hour_type FROM timerecording.time_records WHERE id = $1${admin ? '' : ' AND user_id = $2'}`,
       admin ? [req.params.id] : [req.params.id, user.userId]
     )).rows[0];
     if (!existing) throw new AppError(404, admin ? '记录不存在' : '记录不存在或无权修改');
+    // 合并前校验新字段格式（防 500 与脏数据；与 POST 同口径）
+    if (req.body.date !== undefined && !isValidDateStr(req.body.date)) throw new AppError(400, '日期格式无效');
+    if (req.body.start_time !== undefined && toMinutes(req.body.start_time) == null) throw new AppError(400, '开始时间格式无效');
+    if (req.body.end_time !== undefined && toMinutes(req.body.end_time) == null) throw new AppError(400, '结束时间格式无效');
+    if (req.body.cost_center !== undefined) await assertTimeCostCenterValid(req.body.cost_center);
+    if (req.body.cost_center_type != null && !['sales', 'project', 'warranty', 'department', 'personal'].includes(req.body.cost_center_type)) {
+      throw new AppError(400, 'cost_center_type 无效');
+    }
+    if (typeof req.body.task_description === 'string' && req.body.task_description.length > 500) {
+      throw new AppError(400, '工作内容不能超过 500 字');
+    }
     const updates: string[] = [];
     const values: any[] = [];
     let idx = 1;
@@ -411,10 +469,17 @@ router.put('/time-records/:id', requireAuth, async (req, res, next) => {
       if (req.body[f] !== undefined) { updates.push(`${f} = $${idx++}`); values.push(req.body[f]); }
     }
     if (!updates.length) throw new AppError(400, '没有要更新的字段');
-    // 合并后重算：起止时间或日期任一变化都要保证 hours/hour_type 服务端权威
+    // 合并后重算：起止时间或日期任一变化都要保证 hours/hour_type 服务端权威；
+    // 时间缺失（旧数据）时保留原值，不重算成 0
     const merged = { ...existing, ...req.body };
+    const hasTimes = merged.start_time != null && merged.end_time != null;
     updates.push(`hours = $${idx++}`, `hour_type = $${idx++}`);
-    values.push(serverHours(merged.start_time, merged.end_time), serverHourType(merged.date, merged.start_time, merged.end_time));
+    values.push(hasTimes ? serverHours(merged.start_time, merged.end_time) : existing.hours,
+                 hasTimes ? serverHourType(merged.date, merged.start_time, merged.end_time) : existing.hour_type);
+    // ⚠️ year/week_number 由 date 服务端权威重算（忽略前端值）
+    const iso = isoWeekOf(merged.date);
+    updates.push(`year = $${idx++}`, `week_number = $${idx++}`);
+    values.push(iso.year, iso.week);
     // ⚠️ 工作流优化：驳回记录允许编辑修正，编辑后自动回到 draft（可重新提交）
     updates.push(`status = CASE WHEN status = 'rejected' THEN 'draft' ELSE status END`);
     values.push(req.params.id);
@@ -480,7 +545,7 @@ router.put('/time-records/:id/submit', requireAuth, async (req, res, next) => {
 router.post('/time-records/submit-batch', requireAuth, async (req, res, next) => {
   try {
     const { ids } = req.body;
-    if (!Array.isArray(ids) || !ids.length) throw new AppError(400, 'ids 必填');
+    if (!isValidUuidArray(ids)) throw new AppError(400, 'ids 必填且须为 uuid 数组');
     const rows = (await query(
       `UPDATE timerecording.time_records SET status = 'submitted', submitted_at = now()
        WHERE id = ANY($1::uuid[]) AND status = 'draft' AND user_id = $2 RETURNING *`,
@@ -528,6 +593,7 @@ router.put('/time-records/:id/review', requireAuth, requireRole('director', 'adm
   try {
     const { action, review_notes } = req.body;
     if (!['approved', 'rejected'].includes(action)) throw new AppError(400, '操作必须是 approved 或 rejected');
+    if (review_notes && review_notes.length > 500) throw new AppError(400, '审核备注不能超过 500 字');
     const reviewer = req.user!;
     // ⚠️ 产品决策：总监一般不填报工时，若填报可自审（撤销此前 user_id<>reviewer 自审防护）
     const r = (await query(
@@ -546,8 +612,9 @@ router.post('/time-records/review-batch', requireAuth, requireRole('director', '
   let client: any;
   try {
     const { ids, action, review_notes } = req.body;
-    if (!Array.isArray(ids) || !ids.length) throw new AppError(400, 'ids 必填');
+    if (!isValidUuidArray(ids)) throw new AppError(400, 'ids 必填且须为 uuid 数组');
     if (!['approved', 'rejected'].includes(action)) throw new AppError(400, '操作必须是 approved 或 rejected');
+    if (review_notes && review_notes.length > 500) throw new AppError(400, '审核备注不能超过 500 字');
     const reviewer = req.user!;
     client = await getClient();
     await client.query('BEGIN');
@@ -602,6 +669,9 @@ router.post('/task-assignments', requireAuth, async (req, res, next) => {
     const manager = isManager(user);
     const { user_id, task_name, color, start_datetime, end_datetime, status, note, cost_center } = req.body;
     const targetUserId = (manager && user_id) ? user_id : user.userId;
+    // ⚠️ 输入边界：task_name/note 列均为 text 无 DB 约束，须应用层校验（与前端 maxLength 对齐）
+    if (task_name && task_name.length > 100) throw new AppError(400, '任务名称不能超过 100 字');
+    if (note && note.length > 500) throw new AppError(400, '备注不能超过 500 字');
     // ⚠️ 成本中心必须存在（含部门/个人可用财年窗口校验），否则拒绝派任务
     await assertCostCenterValid(cost_center);
     const r = (await query(
@@ -650,6 +720,9 @@ router.put('/task-assignments/:id', requireAuth, async (req, res, next) => {
       }
     }
     if (!updates.length) throw new AppError(400, '没有要更新的字段');
+    // ⚠️ 输入边界：task_name/note 列均为 text 无 DB 约束，须应用层校验（与前端 maxLength 对齐）
+    if (req.body.task_name !== undefined && req.body.task_name.length > 100) throw new AppError(400, '任务名称不能超过 100 字');
+    if (req.body.note !== undefined && req.body.note.length > 500) throw new AppError(400, '备注不能超过 500 字');
     // ⚠️ 改成本中心时必须存在（含个人中心可用财年窗口）；未改动（与旧值一致）则跳过——
     //    存量任务可能引用已从预算库消失的中心（如已归档销售单），未改动时不应阻止保存其他字段
     if (req.body.cost_center !== undefined && req.body.cost_center !== old.cost_center) {

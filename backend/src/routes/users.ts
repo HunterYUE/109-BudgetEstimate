@@ -175,6 +175,8 @@ router.delete('/:id', async (req, res, next) => {
       const hasProfile = (await client.query('SELECT id FROM timerecording.profiles WHERE id = $1', [id])).rows.length > 0;
       if (hasProfile) {
         if (sc.tr) await client.query('UPDATE timerecording.time_records SET reviewed_by = NULL WHERE reviewed_by = $1', [id]);
+        // ⚠️ created_by 为 NOT NULL：须先执行生产库 ALTER COLUMN ... DROP NOT NULL，
+        //   否则该 UPDATE 命中 23502 令整个删号事务回滚（曾给他人派过任务的管理员将删不掉）
         if (sc.ta) await client.query('UPDATE timerecording.task_assignments SET created_by = NULL WHERE created_by = $1', [id]);
         await client.query('DELETE FROM timerecording.profiles WHERE id = $1', [id]);
       }
