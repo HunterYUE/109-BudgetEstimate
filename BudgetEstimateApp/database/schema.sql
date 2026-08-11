@@ -754,12 +754,28 @@ END $$;
 -- ============================================================
 -- 19. 工时系统（timerecording schema）
 -- ⚠️ 从零建库必需（此前缺失导致工时路由不可用）；profiles.id 与 public.users.id 一一对应（无显式 FK）
--- 结构从生产库提取（2026-08-05），与部署库一致
+-- 结构从生产库提取（2026-08-05；2026-08-11 复核迁移 032-037 与生产库手工补建索引后同步），与生产库一致
 -- ============================================================
 CREATE SCHEMA IF NOT EXISTS timerecording;
 
 CREATE OR REPLACE FUNCTION timerecording.handle_updated_at()
-RETURNS TRIGGER AS $$ BEGIN NEW.updated_at = now(); RETURN NEW; END; $$ LANGUAGE plpgsql;
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TABLE IF NOT EXISTS timerecording.cost_centers (
+  id         uuid DEFAULT gen_random_uuid() NOT NULL PRIMARY KEY,
+  code       text NOT NULL UNIQUE,
+  name       text NOT NULL DEFAULT '',
+  type       text NOT NULL,
+  fy         text,
+  created_at timestamptz DEFAULT now() NOT NULL,
+  updated_at timestamptz DEFAULT now() NOT NULL,
+  CONSTRAINT cost_centers_type_check CHECK (type = ANY (ARRAY['warranty','department','personal']))
+);
 
 CREATE TABLE IF NOT EXISTS timerecording.notifications (
   id         uuid DEFAULT gen_random_uuid() NOT NULL PRIMARY KEY,
@@ -770,7 +786,8 @@ CREATE TABLE IF NOT EXISTS timerecording.notifications (
   is_read    boolean DEFAULT false NOT NULL,
   link_url   text,
   created_at timestamptz DEFAULT now() NOT NULL,
-  CONSTRAINT notifications_type_check CHECK (type = ANY (ARRAY['approval','rejection','submission','task','task_feedback']))
+  task_id    uuid,  -- 迁移 037：软关联被删除任务（无 FK，删除任务时清理通知）
+  CONSTRAINT notifications_type_check CHECK (type = ANY (ARRAY['approval','rejection','submission','task','task_feedback','reminder']))
 );
 
 CREATE TABLE IF NOT EXISTS timerecording.profiles (
@@ -797,8 +814,10 @@ CREATE TABLE IF NOT EXISTS timerecording.task_assignments (
   note           text,
   created_at     timestamptz DEFAULT now() NOT NULL,
   updated_at     timestamptz DEFAULT now() NOT NULL,
-  CONSTRAINT chk_end_after_start CHECK (end_datetime > start_datetime),
-  CONSTRAINT task_assignments_status_check CHECK (status = ANY (ARRAY['in_progress','completed','cancelled','postponed','delayed']))
+  history        jsonb DEFAULT '[]' NOT NULL,  -- 迁移 034：编辑历史快照（旧版本 jsonb 数组）
+  cost_center    text,  -- 迁移 035：任务关联成本中心（搜索/成本归属）
+  CONSTRAINT chk_end_after_start CHECK (end_datetime >= start_datetime),
+  CONSTRAINT task_assignments_status_check CHECK (status = ANY (ARRAY['pending','in_progress','completed','cancelled','postponed','delayed']))
 );
 
 CREATE TABLE IF NOT EXISTS timerecording.time_records (
@@ -809,18 +828,19 @@ CREATE TABLE IF NOT EXISTS timerecording.time_records (
   year             integer NOT NULL,
   start_time       time,
   end_time         time,
-  hours            numeric(3,1) DEFAULT 0 NOT NULL,
+  hours            numeric(4,2) DEFAULT 0 NOT NULL,  -- 迁移 033：15 分钟步进产生 0.25 增量
   hour_type        text DEFAULT 'normal' NOT NULL,
   cost_center      text,
-  cost_center_type text,  -- 迁移 030：sales/project/warranty/department/personal
   task_description text,
   status           text DEFAULT 'draft' NOT NULL,
-  prev_status      text,  -- 迁移 030：周锁定前状态（解锁恢复）
   review_notes     text,
   reviewed_by      uuid,
   reviewed_at      timestamptz,
   created_at       timestamptz DEFAULT now() NOT NULL,
   updated_at       timestamptz DEFAULT now() NOT NULL,
+  cost_center_type text,  -- 迁移 030：sales/project/warranty/department/personal
+  prev_status      text,  -- 迁移 030：周锁定前状态（解锁恢复）
+  submitted_at     timestamptz,  -- 迁移 032：提交时间戳（提交超 1 个月不可撤回判定）
   CONSTRAINT time_records_hour_type_check CHECK (hour_type = ANY (ARRAY['normal','overtime'])),
   CONSTRAINT time_records_status_check CHECK (status = ANY (ARRAY['draft','submitted','approved','rejected','locked']))
 );
@@ -834,17 +854,22 @@ ALTER TABLE timerecording.notifications ADD CONSTRAINT notifications_user_id_fke
 
 -- updated_at 触发器（与生产库一致）
 DO $$ BEGIN
-  CREATE TRIGGER trg_tr_profiles_updated_at BEFORE UPDATE ON timerecording.profiles
+  CREATE TRIGGER trg_profiles_updated_at BEFORE UPDATE ON timerecording.profiles
     FOR EACH ROW EXECUTE FUNCTION timerecording.handle_updated_at();
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 DO $$ BEGIN
-  CREATE TRIGGER trg_tr_task_assignments_updated_at BEFORE UPDATE ON timerecording.task_assignments
+  CREATE TRIGGER trg_task_assignments_updated_at BEFORE UPDATE ON timerecording.task_assignments
     FOR EACH ROW EXECUTE FUNCTION timerecording.handle_updated_at();
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 DO $$ BEGIN
-  CREATE TRIGGER trg_tr_time_records_updated_at BEFORE UPDATE ON timerecording.time_records
+  CREATE TRIGGER trg_time_records_updated_at BEFORE UPDATE ON timerecording.time_records
+    FOR EACH ROW EXECUTE FUNCTION timerecording.handle_updated_at();
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  CREATE TRIGGER trg_tr_cost_centers_updated_at BEFORE UPDATE ON timerecording.cost_centers
     FOR EACH ROW EXECUTE FUNCTION timerecording.handle_updated_at();
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
@@ -854,6 +879,10 @@ CREATE INDEX IF NOT EXISTS idx_tr_notifications_unread ON timerecording.notifica
 CREATE INDEX IF NOT EXISTS idx_tr_notifications_user ON timerecording.notifications (user_id);
 CREATE INDEX IF NOT EXISTS idx_tr_task_assignments_dates ON timerecording.task_assignments (start_datetime, end_datetime);
 CREATE INDEX IF NOT EXISTS idx_tr_task_assignments_user ON timerecording.task_assignments (user_id);
+CREATE INDEX IF NOT EXISTS idx_tr_cost_centers_type_fy ON timerecording.cost_centers (type, fy);
 CREATE INDEX IF NOT EXISTS idx_tr_time_records_date ON timerecording.time_records (date);
 CREATE INDEX IF NOT EXISTS idx_tr_time_records_review ON timerecording.time_records (status) WHERE status = 'submitted';
 CREATE INDEX IF NOT EXISTS idx_tr_time_records_cost_type ON timerecording.time_records (cost_center_type, cost_center);
+CREATE INDEX IF NOT EXISTS idx_tr_time_records_status ON timerecording.time_records (status);
+CREATE INDEX IF NOT EXISTS idx_tr_time_records_user_id ON timerecording.time_records (user_id);
+CREATE INDEX IF NOT EXISTS idx_tr_time_records_week ON timerecording.time_records (year, week_number);
