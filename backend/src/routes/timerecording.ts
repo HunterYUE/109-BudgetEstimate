@@ -333,7 +333,7 @@ router.get('/time-records', requireAuth, async (req, res, next) => {
     const user = req.user!;
     // ⚠️ 总监 + 方案/交付经理可读全员（综合分析需要）；普通员工仅本人
     const manager = isManager(user);
-    const { user_id, date_from, date_to, year, week_number, status, cost_center } = req.query;
+    const { user_id, date_from, date_to, year, week_number, status, status_in, cost_center } = req.query;
     const conditions: string[] = [];
     const params: any[] = [];
     let idx = 1;
@@ -356,6 +356,11 @@ router.get('/time-records', requireAuth, async (req, res, next) => {
       conditions.push(`week_number = $${idx++}`); params.push(w);
     }
     if (status) { conditions.push(`status = $${idx++}`); params.push(status); }
+    if (status_in) {
+      // 一次查多个状态（如已审核历史需 approved + rejected），逗号分隔
+      const list = String(status_in).split(',').map(s => s.trim()).filter(Boolean);
+      if (list.length) { conditions.push(`status = ANY($${idx++})`); params.push(list); }
+    }
     if (cost_center) { conditions.push(`cost_center = $${idx++}`); params.push(cost_center); }
 
     const sql = `SELECT * FROM timerecording.time_records${conditions.length ? ' WHERE ' + conditions.join(' AND ') : ''} ORDER BY date DESC, created_at DESC`;
@@ -524,9 +529,10 @@ router.put('/time-records/:id/review', requireAuth, requireRole('director', 'adm
     const { action, review_notes } = req.body;
     if (!['approved', 'rejected'].includes(action)) throw new AppError(400, '操作必须是 approved 或 rejected');
     const reviewer = req.user!;
+    // ⚠️ 产品决策：总监一般不填报工时，若填报可自审（撤销此前 user_id<>reviewer 自审防护）
     const r = (await query(
       `UPDATE timerecording.time_records SET status = $1, review_notes = $2, reviewed_by = $3, reviewed_at = now()
-       WHERE id = $4 AND status = 'submitted' AND user_id <> $3 RETURNING *`,
+       WHERE id = $4 AND status = 'submitted' RETURNING *`,
       [action, review_notes || '', reviewer.userId, req.params.id]
     )).rows[0];
     if (!r) throw new AppError(400, '只能审核已提交的记录');
@@ -547,7 +553,7 @@ router.post('/time-records/review-batch', requireAuth, requireRole('director', '
     await client.query('BEGIN');
     const rows = (await client.query(
       `UPDATE timerecording.time_records SET status = $1, review_notes = $2, reviewed_by = $3, reviewed_at = now()
-       WHERE id = ANY($4::uuid[]) AND status = 'submitted' AND user_id <> $3 RETURNING *`,
+       WHERE id = ANY($4::uuid[]) AND status = 'submitted' RETURNING *`,
       [action, review_notes || '', reviewer.userId, ids]
     )).rows;
     await client.query('COMMIT');
