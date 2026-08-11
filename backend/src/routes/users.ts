@@ -117,6 +117,9 @@ router.put('/:id/role', async (req, res, next) => {
     const { id } = req.params;
     const { role, title, permissions } = objKeysToSnake({ ...req.body });
 
+    // ⚠️ 自保护：不能修改自己的角色/权限（防持有"用户管理"权限者自提权为 admin/director）
+    if (id === req.user!.userId) throw new AppError(400, '不能修改自己的角色/权限');
+
     const validRoles = ['admin', 'director', 'manager', 'user'];
     if (role && !validRoles.includes(role)) {
       throw new AppError(400, `无效角色，允许值：${validRoles.join(', ')}`);

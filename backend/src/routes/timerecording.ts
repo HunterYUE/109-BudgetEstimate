@@ -123,7 +123,7 @@ function isValidDateStr(s: unknown): s is string {
 const trLoginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 20,
-  message: '登录尝试过于频繁，请 15 分钟后再试',
+  message: { error: '登录尝试过于频繁，请 15 分钟后再试' }, // 与主登录限速一致返回 { error }，前端统一解析
 });
 
 // ─── 认证 ────────────────────────────────────────────
@@ -139,7 +139,7 @@ router.post('/auth/login', trLoginLimiter, async (req, res, next) => {
               p.employee_id, p.name, p.role as tr_role
        FROM public.users u
        LEFT JOIN timerecording.profiles p ON p.id = u.id
-       WHERE u.email = $1 AND u.is_active = true`,
+       WHERE u.email = $1 AND u.is_active = true AND (p.is_active IS NOT FALSE)`,
       [email]
     );
 
@@ -237,6 +237,10 @@ router.get('/profiles', requireAuth, async (req, res, next) => {
 
 router.get('/profiles/:id', requireAuth, async (req, res, next) => {
   try {
+    // ⚠️ 归属校验：只能看自己的档案（email/role 属隐私）；管理员可看任意档案
+    const user = req.user!;
+    const admin = isTrAdmin(user);
+    if (req.params.id !== user.userId && !admin) throw new AppError(403, '无权查看他人档案');
     const rows = (await query('SELECT id, employee_id, name, email, role, is_active, created_at FROM timerecording.profiles WHERE id = $1', [req.params.id])).rows;
     if (!rows[0]) throw new AppError(404, '档案未找到');
     res.json(rows[0]);
@@ -281,8 +285,11 @@ router.get('/cost-centers', requireAuth, async (req, res, next) => {
 
     // 可用财年窗口：6 月提前生成下一年、7 月老财年可用 → 该集合内的部门/个人中心才返回
     const available = availableCostCenterFys();
-    // 幂等补建码表（可用财年 + 当前请求财年 + 近三年兜底）
-    await ensureCostCenters(Array.from(new Set([fyLabel, ...available, ...recentFiscalYears(3)])));
+    // 仅当请求财年不在可用窗口（如查看已归档/未生成财年）才补建码表；
+    // 可用窗口内的码表由启动 + 每小时同步保证存在，纯读请求不触发写库
+    if (!available.includes(fyLabel)) {
+      await ensureCostCenters(Array.from(new Set([fyLabel, ...available, ...recentFiscalYears(3)])));
+    }
 
     // 部门/个人仅在「请求财年 ∈ 可用窗口」时返回，否则为空数组（已归档/未生成不可用）
     const deptQuery = available.includes(fyLabel)
@@ -338,8 +345,16 @@ router.get('/time-records', requireAuth, async (req, res, next) => {
     }
     if (date_from) { conditions.push(`date >= $${idx++}`); params.push(date_from); }
     if (date_to) { conditions.push(`date <= $${idx++}`); params.push(date_to); }
-    if (year) { conditions.push(`year = $${idx++}`); params.push(parseInt(year as string)); }
-    if (week_number) { conditions.push(`week_number = $${idx++}`); params.push(parseInt(week_number as string)); }
+    if (year) {
+      const y = parseInt(year as string, 10);
+      if (!Number.isInteger(y)) throw new AppError(400, 'year 格式无效');
+      conditions.push(`year = $${idx++}`); params.push(y);
+    }
+    if (week_number) {
+      const w = parseInt(week_number as string, 10);
+      if (!Number.isInteger(w)) throw new AppError(400, 'week_number 格式无效');
+      conditions.push(`week_number = $${idx++}`); params.push(w);
+    }
     if (status) { conditions.push(`status = $${idx++}`); params.push(status); }
     if (cost_center) { conditions.push(`cost_center = $${idx++}`); params.push(cost_center); }
 
@@ -474,13 +489,14 @@ router.post('/time-records/submit-batch', requireAuth, async (req, res, next) =>
           const weekLabel = `${rows[0].year}W${rows[0].week_number}`;
           const totalHours = rows.reduce((s: number, r: any) => s + parseFloat(r.hours || 0), 0);
           const submitter = (await query('SELECT name FROM timerecording.profiles WHERE id = $1', [req.user!.userId])).rows[0]?.name || '员工';
-          for (const a of admins) {
-            await query(
-              `INSERT INTO timerecording.notifications (user_id, title, message, type, link_url)
-               VALUES ($1, $2, $3, 'submission', '/admin/approval')`,
-              [a.id, `${submitter} 提交了工时`, `第 ${weekLabel} 周 · 共 ${totalHours}h`]
-            );
-          }
+          // 单条 INSERT 覆盖全部管理员（替代 for 循环 N 次往返）
+          await query(
+            `INSERT INTO timerecording.notifications (user_id, title, message, type, link_url)
+             SELECT a.id, $1, $2, 'submission', '/admin/approval'
+             FROM timerecording.profiles a
+             WHERE a.id = ANY($3::uuid[]) AND a.is_active = true`,
+            [`${submitter} 提交了工时`, `第 ${weekLabel} 周 · 共 ${totalHours}h`, admins.map(a => a.id)]
+          );
         }
       } catch (_) { /* 通知失败不影响提交主流程 */ }
     }
@@ -509,7 +525,8 @@ router.put('/time-records/:id/review', requireAuth, requireRole('director', 'adm
     if (!['approved', 'rejected'].includes(action)) throw new AppError(400, '操作必须是 approved 或 rejected');
     const reviewer = req.user!;
     const r = (await query(
-      `UPDATE timerecording.time_records SET status = $1, review_notes = $2, reviewed_by = $3, reviewed_at = now() WHERE id = $4 AND status = 'submitted' RETURNING *`,
+      `UPDATE timerecording.time_records SET status = $1, review_notes = $2, reviewed_by = $3, reviewed_at = now()
+       WHERE id = $4 AND status = 'submitted' AND user_id <> $3 RETURNING *`,
       [action, review_notes || '', reviewer.userId, req.params.id]
     )).rows[0];
     if (!r) throw new AppError(400, '只能审核已提交的记录');
@@ -530,7 +547,7 @@ router.post('/time-records/review-batch', requireAuth, requireRole('director', '
     await client.query('BEGIN');
     const rows = (await client.query(
       `UPDATE timerecording.time_records SET status = $1, review_notes = $2, reviewed_by = $3, reviewed_at = now()
-       WHERE id = ANY($4::uuid[]) AND status = 'submitted' RETURNING *`,
+       WHERE id = ANY($4::uuid[]) AND status = 'submitted' AND user_id <> $3 RETURNING *`,
       [action, review_notes || '', reviewer.userId, ids]
     )).rows;
     await client.query('COMMIT');
@@ -644,7 +661,6 @@ router.put('/task-assignments/:id', requireAuth, async (req, res, next) => {
     //  1) 管理员改派/编辑他人任务 → 推送「任务更新」给被分配员工
     //  2) 状态变更为反馈态（已完成/被取消/被推迟/已延误）→ 反馈给派发人（自身除外）
     const FEEDBACK_STATES = ['completed', 'cancelled', 'postponed', 'delayed'];
-    const empName = (await query('SELECT name FROM timerecording.profiles WHERE id = $1', [r.user_id])).rows[0]?.name || '员工';
     if (r.user_id !== user.userId) {
       try {
         const assigner = (await query('SELECT name FROM timerecording.profiles WHERE id = $1', [user.userId])).rows[0]?.name || '管理员';
@@ -657,6 +673,8 @@ router.put('/task-assignments/:id', requireAuth, async (req, res, next) => {
     }
     if (req.body.status && req.body.status !== old.status && FEEDBACK_STATES.includes(req.body.status) && r.created_by !== user.userId) {
       try {
+        // 仅在需要发反馈通知时才查被分配员工姓名（此前无条件查询，纯读请求也多做一次往返）
+        const empName = (await query('SELECT name FROM timerecording.profiles WHERE id = $1', [r.user_id])).rows[0]?.name || '员工';
         const statusLabel: Record<string, string> = { completed: '已完成', cancelled: '被取消', postponed: '被推迟', delayed: '已延误' };
         const label = statusLabel[req.body.status as string];
         await query(
@@ -739,6 +757,7 @@ router.post('/admin/users', requireAuth, requireRole('director', 'admin'), async
   try {
     const { email, name, password, employee_id, role = 'employee' } = req.body;
     if (!email || !name || !password) throw new AppError(400, '缺少必填字段');
+    if (password.length < 8) throw new AppError(400, '密码至少8个字符'); // 与主用户管理/reset-password 口径统一
     // ⚠️ L4 修复：重复邮箱预检，避免撞唯一约束返回笼统错误（与 users.ts 口径一致）
     const dup = (await query('SELECT id FROM public.users WHERE email = $1', [email])).rows[0];
     if (dup) throw new AppError(409, '该邮箱已被注册');
@@ -788,6 +807,8 @@ router.delete('/admin/users/:id', requireAuth, requireRole('director', 'admin'),
   let client: any;
   try {
     const { id } = req.params;
+    // ⚠️ 自删保护：防止误删当前登录账号导致全员锁死（唯一管理员被删后无人可再管理）
+    if (id === req.user!.userId) throw new AppError(400, '不能删除自己的账号');
     // ⚠️ F14 修复：profiles + users 两步删除放入同一事务，避免中途失败留下"有 profile 无 users"半成品
     // ⚠️ M5 修复：先清空以该用户为 reviewer/创建者的引用（无 ON DELETE 动作会 FK 阻塞删除），再删 profile
     client = await getClient();

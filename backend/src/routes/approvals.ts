@@ -79,7 +79,9 @@ router.post('/', async (req, res, next) => {
   } catch (err) {
     if (client) await client.query('ROLLBACK').catch(() => {});
     if (err instanceof AppError) return next(err);
-    return next(new AppError(500, `创建审批失败: ${(err as Error).message}`));
+    // 不向客户端泄漏内部错误详情（此前拼接 err.message 暴露 SQL/表结构）
+    console.error('[Approvals] 创建审批失败:', (err as Error).message);
+    return next(new AppError(500, '创建审批失败'));
   } finally {
     if (client) client.release();
   }
@@ -131,6 +133,8 @@ router.post('/:id/records', async (req, res, next) => {
     const { action, comment } = req.body;
     if (!action) throw new AppError(400, '缺少必填字段：action');
     if (!['approved', 'rejected'].includes(action)) throw new AppError(400, `无效操作: ${action}`);
+    // ⚠️ 权限检查前置：先鉴权再读数据（此前先 SELECT 审批再鉴权，未授权也能探测审批详情）
+    if (!hasPermission(req.user?.permissions, '审批管理', '全部查看权限')) throw new AppError(403, '无审批权限');
     // ⚠️ M3 修复：reviewer 强制取自登录用户（防伪造审批人），不再接受 body 传入的 reviewer
     const approver = (await query('SELECT display_name, email FROM users WHERE id = $1', [req.user?.userId])).rows[0];
     const reviewer = approver?.display_name || req.user?.email || '未知用户';
@@ -140,7 +144,6 @@ router.post('/:id/records', async (req, res, next) => {
     if (ar.status === 'approved' || ar.status === 'rejected') {
       throw new AppError(409, '该审批已处理完毕，不可重复审批');
     }
-    if (!hasPermission(req.user?.permissions, '审批管理', '全部查看权限')) throw new AppError(403, '无审批权限');
     client = await getClient();
     await client.query('BEGIN');
     const record = (await client.query('INSERT INTO approval_records (approval_request_id, reviewer, action, comment) VALUES ($1,$2,$3,$4) RETURNING *', [id, reviewer, action, comment || ''])).rows[0];

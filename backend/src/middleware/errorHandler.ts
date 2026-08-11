@@ -16,6 +16,9 @@ export function errorHandler(
   res: Response,
   _next: NextFunction,
 ): void {
+  // 响应已发出（如路由中途写回后抛错）时不能再写，避免 "Cannot set headers after they are sent"
+  if (res.headersSent) return;
+
   const requestInfo = `${req.method} ${req.path}`;
 
   if (err instanceof AppError) {

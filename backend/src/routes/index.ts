@@ -58,7 +58,8 @@ router.use('/quotations', requireAuth, writeGuard(['报价编制', '全部查看
 router.use('/approvals', requireAuth, writeGuard(['审批管理', '报价编制', '交付管理', '成本录入', '转线索/转机会', '全部查看权限']), readGuard(APPROVAL_READ), approvals);
 // 交付写操作需 交付管理 或 销售机会管理（转交付创建/初始化节点）；读取需交付相关权限
 router.use('/deliveries', requireAuth, writeGuard(['交付管理', '销售机会管理', '全部查看权限']), readGuard(DELIVERY_READ), deliveries);
-router.use('/clients', requireAuth, writeGuard(['客户管理', '新建客户', '全部查看权限']), clients);
+// ⚠️ H1 修复：/clients 列表读取与 /clients/:id/detail 同权限集（此前列表 GET 未加 readGuard，任意登录用户可读全部客户）
+router.use('/clients', requireAuth, writeGuard(['客户管理', '新建客户', '全部查看权限']), readGuard(['客户管理', '报价编制', '销售机会管理', '全部查看权限']), clients);
 // 标签写操作需 新建标签（读取开放给物料打标）
 router.use('/tags', requireAuth, writeGuard(['新建标签', '全部查看权限']), tags);
 // 审计日志：与前端 /settings 同口径（用户管理/系统配置）
@@ -128,6 +129,7 @@ router.post('/project-versions', requireAuth, writeGuard(['报价编制', '全�
 // ── 项目组和明细保存（事务保护，报价编制写操作）──
 router.post('/project-groups', requireAuth, writeGuard(['报价编制', '全部查看权限']), async (req, res, next) => {
   let client: PoolClient | undefined;
+  let committed = false;
   try {
     client = await getClient();
     const body = objKeysToSnake(req.body);
@@ -142,13 +144,13 @@ router.post('/project-groups', requireAuth, writeGuard(['报价编制', '全部�
 
     const groupId = req.body.id || undefined;
     const existing = groupId
-      ? (await client.query('SELECT id FROM project_groups WHERE id = $1', [groupId])).rows[0]
+      ? (await client.query('SELECT id, version_id FROM project_groups WHERE id = $1', [groupId])).rows[0]
       : null;
 
     let groupResult;
     if (existing) {
-      // 检查版本号：版本不同则 INSERT 新记录（版本隔离），同版本则 UPDATE
-      const currentVerId = (await client.query('SELECT version_id FROM project_groups WHERE id = $1', [groupId])).rows[0]?.version_id;
+      // 检查版本号：版本不同则 INSERT 新记录（版本隔离），同版本则 UPDATE（version_id 已在上面一次查询取回）
+      const currentVerId = existing.version_id;
       if (currentVerId && currentVerId !== version_id) {
         // 版本迭代，创建新组
         groupResult = (await client.query(
@@ -193,6 +195,7 @@ router.post('/project-groups', requireAuth, writeGuard(['报价编制', '全部�
     }
 
     await client.query('COMMIT');
+    committed = true; // 事务已提交：后续查询失败时 catch 不得再 ROLLBACK（对已提交事务误回滚）
     logAudit(req, '保存项目组', 'project', '项目组 ' + name + ' 已保存');
 
     // 返回完整组（含明细）
@@ -204,7 +207,7 @@ router.post('/project-groups', requireAuth, writeGuard(['报价编制', '全部�
 
     res.status(201).json(savedGroup);
   } catch (err) {
-    await client?.query('ROLLBACK').catch(() => {});
+    if (!committed) await client?.query('ROLLBACK').catch(() => {});
     next(err);
   } finally {
     client?.release();

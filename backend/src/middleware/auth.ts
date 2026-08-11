@@ -37,19 +37,34 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     res.status(401).json({ error: '未登录，请先登录' });
     return;
   }
+  let decoded: JwtPayload;
   try {
-    const decoded = jwt.verify(token, JWT_SECRET!, { algorithms: ['HS256'] }) as JwtPayload;
-    // 校验用户是否仍为活跃状态（管理员停用后立即失效）
-    const userRow = await pool.query('SELECT is_active, permissions FROM users WHERE id = $1', [decoded.userId]);
-    if (!userRow.rows[0]?.is_active) {
+    decoded = jwt.verify(token, JWT_SECRET!, { algorithms: ['HS256'] }) as JwtPayload;
+  } catch {
+    res.status(401).json({ error: '登录已过期，请重新登录' });
+    return;
+  }
+  // 每次请求从库取最新角色/权限（管理员调整即时生效，无需重新登录）
+  // DB 故障返回 500 而非误判为凭证失效（此前 catch 兜底会吞掉查询错误）
+  try {
+    const userRow = await pool.query(
+      `SELECT u.is_active, u.permissions, u.role,
+              EXISTS(SELECT 1 FROM timerecording.profiles p WHERE p.id = u.id AND NOT p.is_active) AS tr_disabled
+       FROM users u WHERE u.id = $1`,
+      [decoded.userId],
+    );
+    const row = userRow.rows[0];
+    // 停用判定：users.is_active=false（预算应用），或存在且为 false 的工时档案（timerecording.profiles.is_active=false）。
+    // 预算应用用户无工时档案 → EXISTS=false，不受影响。
+    if (!row?.is_active || row.tr_disabled) {
       res.status(401).json({ error: '账户已被停用' });
       return;
     }
-    // ⚠️ JWT 仅含身份（userId/email/role），权限每次从库取最新值（管理员调整权限即时生效，无需重新登录）
-    req.user = { ...decoded, permissions: userRow.rows[0].permissions || [] };
+    // 角色同样从库刷新（JWT 中的 role 可能已过期），保证 role 变更即时生效
+    req.user = { ...decoded, role: row.role, permissions: row.permissions || [] };
     next();
   } catch {
-    res.status(401).json({ error: '登录已过期，请重新登录' });
+    res.status(500).json({ error: '服务器内部错误' });
   }
 }
 
