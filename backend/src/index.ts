@@ -5,6 +5,8 @@ import rateLimit from 'express-rate-limit';
 import routes from './routes/index.js';
 import { errorHandler } from './middleware/index.js';
 import { pool } from './db/index.js';
+import { startWeeklyReminder } from './jobs/weeklyReminder.js';
+import { ensureCostCenters, startCostCenterSync } from './jobs/costCenterSync.js';
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '3001', 10);
@@ -65,6 +67,15 @@ const server = app.listen(PORT, () => {
   console.log(`[API] Health: http://localhost:${PORT}/api/health`);
   console.log(`[API] Docs: http://localhost:${PORT}/api/v1/*`);
 });
+
+// 周日晚 20:30 工时提交提醒（北京时间）
+startWeeklyReminder();
+
+// 成本中心码表：启动时补建 + 每小时同步（质保 -W 随交付节点15完成自动创建）
+ensureCostCenters()
+  .then(() => console.log('[CostCenter] 启动时成本中心码表已同步'))
+  .catch(err => console.error('[CostCenter] 启动同步失败:', err));
+startCostCenterSync();
 
 // 优雅关闭
 async function gracefulShutdown(signal: string) {

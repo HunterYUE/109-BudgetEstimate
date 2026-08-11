@@ -13,7 +13,7 @@ const path = require('path');
 
 const ROOT = path.resolve(__dirname, '../src');
 const EXCLUDE_DIRS = new Set(['node_modules', 'dist']);
-const EXCLUDE_FILES = new Set(['mockData.ts']);
+const EXCLUDE_FILES = new Set([]);
 
 // API body 字段——这些字段必须蛇形（发往后端），不作为违规
 const API_BODY_FIELDS = new Set([

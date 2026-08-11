@@ -16,10 +16,10 @@ ALTER TABLE timerecording.time_records
 
 -- 回填存量数据：按 cost_center 编号格式推断类型
 --   销售 A2026-07-003-S / 项目 A2026-07-003-E / 质保 A2026-07-003-W
---   部门 A2627-De-000 / 个人 A2627-00-000
+--   部门 A2627-DE-000 / 个人 A2627-00-000
 UPDATE timerecording.time_records
 SET cost_center_type = CASE
-  WHEN cost_center LIKE 'A%-De-%' THEN 'department'
+  WHEN cost_center LIKE 'A%-DE-%' THEN 'department'
   WHEN cost_center LIKE 'A%-00-%' THEN 'personal'
   WHEN cost_center LIKE 'A%-S' THEN 'sales'
   WHEN cost_center LIKE 'A%-E' THEN 'project'

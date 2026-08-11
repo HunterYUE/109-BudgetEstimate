@@ -9,109 +9,11 @@ import { tagService } from '../services/tagService';
 import { tabItemStyle } from '../utils/tableUtils';
 
 // ── 组件 ──
-
-const INLINE_TAG_TREE: TagNode[] = [
-  {
-    id: 't1', name: '上下料系统',
-    children: [
-      { id: 't1-1', name: '桁架上下料', children: [
-        { id: 't1-1-1', name: '桁架机械手' },
-        { id: 't1-1-2', name: '吸盘架' },
-      ]},
-    ],
-  },
-  {
-    id: 't2', name: '输送系统',
-    children: [
-      { id: 't2-1', name: '辊道输送' },
-      { id: 't2-2', name: '皮带输送' },
-      { id: 't2-3', name: 'RGV小车' },
-      { id: 't2-4', name: 'AGV搬运' },
-    ],
-  },
-  {
-    id: 't3', name: '加工设备',
-    children: [
-      { id: 't3-1', name: '激光切割' },
-      { id: 't3-2', name: '冲压' },
-      { id: 't3-3', name: '折弯' },
-    ],
-  },
-  {
-    id: 't4', name: '机器人系统',
-    children: [
-      { id: 't4-1', name: '机器人上下料', children: [
-        { id: 't4-1-1', name: '机器人抓手' },
-        { id: 't4-1-2', name: '分拣机构' },
-        { id: 't4-1-3', name: '机器人地轨' },
-      ]},
-      { id: 't4-2', name: '六轴机器人' },
-      { id: 't4-3', name: '协作机器人' },
-      { id: 't4-4', name: '焊接工作站' },
-      { id: 't4-5', name: '机器人控制系统' },
-    ],
-  },
-  {
-    id: 't5', name: '仓储设备',
-    children: [
-      { id: 't5-1', name: '堆垛机' },
-      { id: 't5-2', name: '料塔' },
-      { id: 't5-3', name: '提升机' },
-      { id: 't5-4', name: '托盘' },
-      { id: 't5-5', name: '拆包台' },
-      { id: 't5-6', name: '倒托设备' },
-    ],
-  },
-  {
-    id: 't6', name: '控制系统',
-    children: [
-      { id: 't6-1', name: 'PLC控制柜' },
-      { id: 't6-2', name: '配电柜' },
-      { id: 't6-3', name: '操作终端' },
-      { id: 't6-4', name: '工业PC' },
-      { id: 't6-5', name: '网络布线' },
-      { id: 't6-6', name: '服务器' },
-    ],
-  },
-  {
-    id: 't7', name: '检测/视觉',
-    children: [
-      { id: 't7-1', name: '视觉检测' },
-      { id: 't7-2', name: '传感检测' },
-      { id: 't7-3', name: '测量系统' },
-    ],
-  },
-  { id: 't8', name: '安全防护' },
-  { id: 't9', name: '包装运输' },
-  { id: 't10', name: '工程服务', children: [
-    { id: 't10-1', name: '设计工费' },
-    { id: 't10-2', name: '装配工费' },
-    { id: 't10-3', name: '安装工费' },
-    { id: 't10-4', name: '调试工费' },
-    { id: 't10-5', name: '培训工费' },
-    { id: 't10-6', name: '陪产工费' },
-    { id: 't10-7', name: '项目管理工费' },
-  ] },
-  { id: 't11', name: '软件系统' },
-];
+// ⚠️ 标签树种子数据已迁移到数据库（backend/migrations/031-seed-tags.sql），此处不再使用 mock
 
 /** 层级颜色/背景（模块级常量，避免每次渲染重建） */
 const LEVEL_COLORS = [COLORS.labelDark, COLORS.primary, COLORS.purple, '#008080', COLORS.amber];
 const LEVEL_BG = ['#e8ecf0', '#e0ecfa', '#ede6f5', '#dceeea', '#f5ede4'];
-
-/** 递归将 mock 标签树种子数据写入数据库（仅挂载时空库初始化用） */
-async function seedTags(nodes: TagNode[], parentId?: string): Promise<void> {
-  for (const node of nodes) {
-    const row = await tagService.create({
-      name: node.name,
-      parentId: parentId || null,
-      description: node.description || '',
-    });
-    if (node.children && node.children.length > 0) {
-      await seedTags(node.children, row.id);
-    }
-  }
-}
 
 /** 向树中插入节点（根或指定父级下）；返回新树（t 已 clone，可变） */
 function insertNode(t: TagNode[], parentId: string | null, node: { id: string; name: string }): TagNode[] {
@@ -127,7 +29,7 @@ function insertNode(t: TagNode[], parentId: string | null, node: { id: string; n
 }
 
 const TagManagement: React.FC = () => {
-  const [tree, setTree] = useState<TagNode[]>(() => cloneTree(INLINE_TAG_TREE));
+  const [tree, setTree] = useState<TagNode[]>([]);
   const [msg, ctx] = antMsg.useMessage();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
@@ -143,21 +45,14 @@ const TagManagement: React.FC = () => {
 
   const [loading, setLoading] = useState(true);
 
-  // 挂载时从 API 加载标签树，失败则回退到 mock 数据（seedTags 为模块级稳定函数）
+  // 挂载时从 API 加载标签树（种子数据已入库：backend/migrations/031-seed-tags.sql）
   useEffect(() => {
     (async () => {
       try {
         const data = await tagService.getTree();
-        if (data && data.length > 0) {
-          setTree(data);
-        } else {
-          // 数据库标签表为空，写入 mock 种子数据
-          await seedTags(INLINE_TAG_TREE);
-          const seeded = await tagService.getTree();
-          if (seeded && seeded.length > 0) setTree(seeded);
-        }
+        if (data && data.length > 0) setTree(data);
       } catch {
-        msg.warning('标签数据加载失败，使用本地数据');
+        msg.warning('标签数据加载失败');
       } finally {
         setLoading(false);
       }

@@ -6,6 +6,12 @@ pg.types.setTypeParser(1700, (val: string) => parseFloat(val));
 pg.types.setTypeParser(701, (val: string) => parseFloat(val));
 pg.types.setTypeParser(700, (val: string) => parseFloat(val));
 
+// date 类型（OID 1082）默认会被 node-postgres 转成 JS Date → res.json() 序列化为 UTC ISO
+// 字符串（如 "2026-07-30T16:00:00.000Z"，中国时区下比库内日期少一天），前端无法还原为
+// "YYYY-MM-DD"。本项目唯一 date 列是 timerecording.time_records.date，前端一律按字符串使用，
+// 因此直接返回原始 "YYYY-MM-DD"，消除日偏移。
+pg.types.setTypeParser(1082, (val: string) => val);
+
 const {
   DB_HOST = '127.0.0.1',
   DB_PORT = '5432',
