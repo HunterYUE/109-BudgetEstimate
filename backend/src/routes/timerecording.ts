@@ -593,7 +593,7 @@ router.put('/time-records/:id/review', requireAuth, requireRole('director', 'adm
   try {
     const { action, review_notes } = req.body;
     if (!['approved', 'rejected'].includes(action)) throw new AppError(400, '操作必须是 approved 或 rejected');
-    if (review_notes && review_notes.length > 500) throw new AppError(400, '审核备注不能超过 500 字');
+    if (typeof review_notes === 'string' && review_notes.length > 500) throw new AppError(400, '审核备注不能超过 500 字');
     const reviewer = req.user!;
     // ⚠️ 产品决策：总监一般不填报工时，若填报可自审（撤销此前 user_id<>reviewer 自审防护）
     const r = (await query(
@@ -614,7 +614,7 @@ router.post('/time-records/review-batch', requireAuth, requireRole('director', '
     const { ids, action, review_notes } = req.body;
     if (!isValidUuidArray(ids)) throw new AppError(400, 'ids 必填且须为 uuid 数组');
     if (!['approved', 'rejected'].includes(action)) throw new AppError(400, '操作必须是 approved 或 rejected');
-    if (review_notes && review_notes.length > 500) throw new AppError(400, '审核备注不能超过 500 字');
+    if (typeof review_notes === 'string' && review_notes.length > 500) throw new AppError(400, '审核备注不能超过 500 字');
     const reviewer = req.user!;
     client = await getClient();
     await client.query('BEGIN');
@@ -670,8 +670,8 @@ router.post('/task-assignments', requireAuth, async (req, res, next) => {
     const { user_id, task_name, color, start_datetime, end_datetime, status, note, cost_center } = req.body;
     const targetUserId = (manager && user_id) ? user_id : user.userId;
     // ⚠️ 输入边界：task_name/note 列均为 text 无 DB 约束，须应用层校验（与前端 maxLength 对齐）
-    if (task_name && task_name.length > 100) throw new AppError(400, '任务名称不能超过 100 字');
-    if (note && note.length > 500) throw new AppError(400, '备注不能超过 500 字');
+    if (typeof task_name === 'string' && task_name.length > 100) throw new AppError(400, '任务名称不能超过 100 字');
+    if (typeof note === 'string' && note.length > 500) throw new AppError(400, '备注不能超过 500 字');
     // ⚠️ 成本中心必须存在（含部门/个人可用财年窗口校验），否则拒绝派任务
     await assertCostCenterValid(cost_center);
     const r = (await query(
@@ -721,8 +721,9 @@ router.put('/task-assignments/:id', requireAuth, async (req, res, next) => {
     }
     if (!updates.length) throw new AppError(400, '没有要更新的字段');
     // ⚠️ 输入边界：task_name/note 列均为 text 无 DB 约束，须应用层校验（与前端 maxLength 对齐）
-    if (req.body.task_name !== undefined && req.body.task_name.length > 100) throw new AppError(400, '任务名称不能超过 100 字');
-    if (req.body.note !== undefined && req.body.note.length > 500) throw new AppError(400, '备注不能超过 500 字');
+    //   typeof 判字符串：null/数字等非字符串一律不触长度检查，避免 null.length 抛 500
+    if (typeof req.body.task_name === 'string' && req.body.task_name.length > 100) throw new AppError(400, '任务名称不能超过 100 字');
+    if (typeof req.body.note === 'string' && req.body.note.length > 500) throw new AppError(400, '备注不能超过 500 字');
     // ⚠️ 改成本中心时必须存在（含个人中心可用财年窗口）；未改动（与旧值一致）则跳过——
     //    存量任务可能引用已从预算库消失的中心（如已归档销售单），未改动时不应阻止保存其他字段
     if (req.body.cost_center !== undefined && req.body.cost_center !== old.cost_center) {
