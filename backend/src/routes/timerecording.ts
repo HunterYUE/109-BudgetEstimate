@@ -383,11 +383,11 @@ router.get('/cost-centers', requireAuth, async (req, res, next) => {
     const [salesRows, projectRows, warrantyRows, deptRows, personalRows, leaveRows] = await Promise.all([
       query(`SELECT sales_no, project_name, client_name FROM sales_opportunities WHERE sales_no LIKE 'A%-S' ORDER BY sales_no`),
       query(`SELECT sales_no, project_name, client_name FROM delivery_projects WHERE sales_no LIKE 'A%-E' ORDER BY sales_no`),
+      // ⚠️ 关联子查询 → LEFT JOIN：delivery_projects.sales_no 唯一且有索引，单次连接替代每行一次子查询
       query(`
-        SELECT cc.code, cc.name,
-               (SELECT dp.client_name FROM delivery_projects dp
-                 WHERE dp.sales_no = regexp_replace(cc.code, '-W$', '-E') LIMIT 1) AS client_name
+        SELECT cc.code, cc.name, dp.client_name
         FROM timerecording.cost_centers cc
+        LEFT JOIN delivery_projects dp ON dp.sales_no = regexp_replace(cc.code, '-W$', '-E')
         WHERE cc.type = 'warranty' ORDER BY cc.code`),
       typeRows('department'),
       typeRows('personal'),
@@ -665,7 +665,7 @@ router.post('/time-records/submit-batch', requireAuth, async (req, res, next) =>
             [`${submitter} 提交了工时`, `第 ${weekLabel} 周 · 共 ${totalHours}h`, admins.map(a => a.id)]
           );
         }
-      } catch (_) { /* 通知失败不影响提交主流程 */ }
+      } catch (err) { console.warn('[Notify] 提交通知发送失败:', (err as Error).message); /* 通知失败不影响提交主流程 */ }
     }
     res.json(rows);
   } catch (err) { next(err); }
@@ -682,7 +682,7 @@ async function notifyReview(r: any, action: string, review_notes?: string) {
        `第 ${weekLabel} 周${review_notes ? ' · 备注: ' + review_notes : ''}`,
        action === 'approved' ? 'approval' : 'rejection']
     );
-  } catch (_) { /* 通知失败不影响审批主流程 */ }
+  } catch (err) { console.warn('[Notify] 审核结果通知发送失败:', (err as Error).message); /* 通知失败不影响审批主流程 */ }
 }
 
 /** 审批通过/驳回（⚠️ F6 补漏：审批是管理员操作，防止任意用户代审/自审） */
@@ -797,7 +797,7 @@ router.post('/task-assignments', requireAuth, async (req, res, next) => {
            VALUES ($1, $2, $3, 'task', '/task-planning', $4)`,
           [targetUserId, '您有新任务', `${assigner} 分配了任务「${r.task_name}」`, r.id]
         );
-      } catch (_) { /* 通知失败不影响派任务 */ }
+      } catch (err) { console.warn('[Notify] 派任务通知发送失败:', (err as Error).message); /* 通知失败不影响派任务 */ }
     }
     res.status(201).json(r);
   } catch (err) { next(err); }
@@ -858,7 +858,7 @@ router.put('/task-assignments/:id', requireAuth, async (req, res, next) => {
            VALUES ($1, $2, $3, 'task', '/task-planning', $4)`,
           [r.user_id, '任务更新', `${assigner} 更新了任务「${r.task_name}」${req.body.note ? '：' + req.body.note : ''}`, r.id]
         );
-      } catch (_) { /* 通知失败不影响更新 */ }
+      } catch (err) { console.warn('[Notify] 任务更新通知发送失败:', (err as Error).message); /* 通知失败不影响更新 */ }
     }
     if (req.body.status && req.body.status !== old.status && FEEDBACK_STATES.includes(req.body.status) && r.created_by !== user.userId) {
       try {
@@ -871,7 +871,7 @@ router.put('/task-assignments/:id', requireAuth, async (req, res, next) => {
            VALUES ($1, $2, $3, 'task_feedback', '/task-planning', $4)`,
           [r.created_by, `任务${label}`, `${empName} 将「${r.task_name}」标记为${label}${req.body.note ? '：' + req.body.note : ''}`, r.id]
         );
-      } catch (_) { /* 通知失败不影响状态更新 */ }
+      } catch (err) { console.warn('[Notify] 任务反馈通知发送失败:', (err as Error).message); /* 通知失败不影响状态更新 */ }
     }
     res.json(r);
   } catch (err) { next(err); }
@@ -991,7 +991,8 @@ router.post('/admin/users/:id/reset-password', requireAuth, requireRole('directo
     // ⚠️ L7 修复：密码策略与主用户管理统一为至少 8 位（此前此处 6 位、users.ts 8 位，口径不一致）
     if (!password || password.length < 8) throw new AppError(400, '密码至少8个字符');
     const passwordHash = await bcrypt.hash(password, 10);
-    await query('UPDATE public.users SET password_hash = $1 WHERE id = $2', [passwordHash, id]);
+    const updated = (await query('UPDATE public.users SET password_hash = $1 WHERE id = $2 RETURNING id', [passwordHash, id])).rows[0];
+    if (!updated) throw new AppError(404, '用户不存在');
     logAudit(req, '重置密码', 'admin', '用户 ' + id.slice(0,8) + ' 密码已重置');
     res.json({ success: true });
   } catch (err) { next(err); }

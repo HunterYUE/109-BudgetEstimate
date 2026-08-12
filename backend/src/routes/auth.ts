@@ -41,12 +41,12 @@ router.post('/login', async (req, res, next) => {
       role: user.role,
     });
 
-    // 审计日志：登录
-    await query(
+    // 审计日志：登录（非阻塞 fire-and-forget——审计表/DB 异常不应让用户登录失败；失败仅记录日志）
+    query(
       `INSERT INTO audit_logs (time, user_name, action, module, detail)
        VALUES (now(), $1, '登录', 'auth', $2)`,
       [email, `用户 ${user.display_name || email} 登录系统，角色: ${user.role}`]
-    );
+    ).catch(err => console.error('[Audit] 登录审计写入失败:', (err as Error).message));
 
     res.json({
       token,

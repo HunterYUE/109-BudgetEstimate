@@ -10,6 +10,9 @@ import { startNotificationsCleanup } from './jobs/notificationsCleanup.js';
 import { ensureCostCenters, startCostCenterSync } from './jobs/costCenterSync.js';
 
 const app = express();
+// ⚠️ 部署在 nginx 反代之后（nginx 已转发 X-Forwarded-For）：trust proxy 让 express-rate-limit
+//   以真实客户端 IP 限速，否则所有请求都被视为 127.0.0.1，登录限速形同虚设
+app.set('trust proxy', 1);
 const PORT = parseInt(process.env.PORT || '3001', 10);
 if (isNaN(PORT) || PORT < 1 || PORT > 65535) {
   console.error('[FATAL] 无效的 PORT 配置:', process.env.PORT);
@@ -98,3 +101,8 @@ async function gracefulShutdown(signal: string) {
 }
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+// 未捕获的 Promise 拒绝兜底：记录日志而非让进程默认退出（有 logAudit 等未 await 的调用，防未来遗漏）
+process.on('unhandledRejection', (reason) => {
+  console.error('[FATAL] Unhandled Rejection:', reason);
+});
