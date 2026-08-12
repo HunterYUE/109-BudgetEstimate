@@ -10,6 +10,15 @@ function asyncHandler(fn: AsyncHandler) {
   };
 }
 
+// ── 数值精度纪律 ──
+// ⚠️ NUMERIC 经 pg 解析为 float64：聚合/比较边界必须 round，否则 4.1+3.9=8.000000000000002 之类误差
+//   会污染通知文本、误判边界比较。规则：金额/工时聚合后一律 round2 再展示或比较；相等比较勿用裸浮点。
+
+/** 保留 2 位小数（工时/金额展示与边界比较统一口径；对齐 DB NUMERIC 存储精度） */
+export function round2(v: number): number {
+  return Math.round(v * 100) / 100;
+}
+
 // ── 审计日志 ──
 
 export async function logAudit(req: Request, action: string, module: string, detail: string = '') {

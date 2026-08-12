@@ -2,10 +2,9 @@ import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import rateLimit from 'express-rate-limit';
 import { query, getClient } from '../db/index.js';
-import { requireAuth, requireRole } from '../middleware/auth.js';
-import { signToken } from '../middleware/auth.js';
+import { requireAuth, requireRole, signToken, setAuthCookie, clearAuthCookie, COOKIE_NAME_TR } from '../middleware/auth.js';
 import { AppError } from '../middleware/index.js';
-import { logAudit } from './helpers.js';
+import { logAudit, round2 } from './helpers.js';
 import { ensureCostCenters, recentFiscalYears, availableCostCenterFys, fiscalYearLabel } from '../jobs/costCenterSync.js';
 
 const router = Router();
@@ -108,7 +107,9 @@ async function assertLeaveValid(opts: {
      WHERE user_id = $1 AND date = $2${opts.excludeId ? ' AND id <> $3' : ''} AND (cost_center_type = 'leave' OR cost_center LIKE 'A%-LE-%')`,
     params
   )).rows[0].total;
-  if (Number(dayTotal) + opts.hours > 8) throw new AppError(400, '请休假每天最多 8 小时');
+  // ⚠️ 浮点纪律：dayTotal 是 SUM 累加值、opts.hours 是 2 位小数，4.1+3.9 在 float64 下=8.000000000000002
+  //   会误拒合法输入；先 round2 再与上限比较（对齐 DB NUMERIC 2 位精度）
+  if (round2(Number(dayTotal) + opts.hours) > 8) throw new AppError(400, '请休假每天最多 8 小时');
 }
 
 /** 由日期计算 ISO 周号与 ISO 年（周一起，与 PG EXTRACT(WEEK/ISOYEAR) 及前端 dayjs isoWeek 一致） */
@@ -253,9 +254,10 @@ router.post('/auth/login', trLoginLimiter, async (req, res, next) => {
     }
 
     const token = signToken({ userId: user.id, email: user.email, role: user.role });
+    // ⚠️ L6 修复：token 只写 HttpOnly cookie（JS 读不到），不再回传 body
+    setAuthCookie(res, COOKIE_NAME_TR, token);
 
     res.json({
-      token,
       user: {
         id: user.id,
         email: user.email,
@@ -300,6 +302,12 @@ router.get('/auth/me', requireAuth, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+/** POST /api/v1/timerecording/auth/logout - 清除认证 cookie（幂等；无需鉴权，HttpOnly cookie 只有服务端能清） */
+router.post('/auth/logout', (_req, res) => {
+  clearAuthCookie(res, COOKIE_NAME_TR);
+  res.json({ ok: true });
+});
+
 // ─── 用户档案 ──────────────────────────────────────
 
 // ⚠️ 全员档案列表：管理员看全字段；非管理员仅返回 id/employee_id/name/is_active/created_at（供任务规划/我的账户展示，
@@ -341,6 +349,8 @@ router.put('/profiles/:id', requireAuth, async (req, res, next) => {
     // ⚠️ F6 修复：只能改自己的档案；role/is_active 等管理字段仅管理员可改（此前任意用户可改任意档案含角色）
     if (req.params.id !== user.userId && !admin) throw new AppError(403, '无权修改他人档案');
     if (['role', 'is_active'].some(f => f in req.body) && !admin) throw new AppError(403, '仅管理员可修改角色/启用状态');
+    // ⚠️ 审计修复：profiles.role 撞 profiles_role_check 约束（仅 admin/employee）会返回 500，此处显式预校验给 400
+    if (req.body.role !== undefined && !['admin', 'employee'].includes(req.body.role)) throw new AppError(400, '角色不合法，仅支持 admin/employee');
     const fields: string[] = [];
     const values: any[] = [];
     let idx = 1;
@@ -588,11 +598,13 @@ router.put('/time-records/:id/withdraw', requireAuth, async (req, res, next) => 
     if (before.status === 'approved' && before.reviewed_by) {
       try {
         const name = (await query('SELECT name FROM timerecording.profiles WHERE id = $1', [uid])).rows[0]?.name || '员工';
-        await query(
-          `INSERT INTO timerecording.notifications (user_id, title, message, type, link_url)
-           VALUES ($1, $2, $3, 'withdraw', '/admin/approval')`,
-          [before.reviewed_by, '工时已撤回', `${name} 撤回了第 ${before.year}W${before.week_number} 周已通过的工时，将修改后重新提交审核`]
-        );
+        await notify({
+          userId: before.reviewed_by,
+          title: '工时已撤回',
+          message: `${name} 撤回了第 ${before.year}W${before.week_number} 周已通过的工时，将修改后重新提交审核`,
+          type: 'withdraw',
+          linkUrl: '/admin/approval',
+        });
       } catch (err) { console.error('撤回已通过记录的审核人通知失败:', err); }
     }
     res.json(r);
@@ -659,8 +671,8 @@ router.post('/time-records/submit-batch', requireAuth, async (req, res, next) =>
         if (admins.length > 0) {
           const weekLabel = `${rows[0].year}W${rows[0].week_number}`;
           // ⚠️ 请休假是存储记录不是工时：通知「共 Xh」按工作工时口径，排除请休假记录（type/code 任一命中 LE 即排除）
-          const totalHours = rows.filter((r: any) => !isLeaveCostCenter(r.cost_center, r.cost_center_type))
-            .reduce((s: number, r: any) => s + parseFloat(r.hours || 0), 0);
+          const totalHours = round2(rows.filter((r: any) => !isLeaveCostCenter(r.cost_center, r.cost_center_type))
+            .reduce((s: number, r: any) => s + parseFloat(r.hours || 0), 0));
           const submitter = (await query('SELECT name FROM timerecording.profiles WHERE id = $1', [req.user!.userId])).rows[0]?.name || '员工';
           // 单条 INSERT 覆盖全部管理员（替代 for 循环 N 次往返）
           await query(
@@ -677,17 +689,28 @@ router.post('/time-records/submit-batch', requireAuth, async (req, res, next) =>
   } catch (err) { next(err); }
 });
 
+/** 写一条通知（6 处单行通知推送共用，消除重复 INSERT；linkUrl/taskId 缺省 → NULL，与逐列省略语义一致）。
+ *  调用方负责 try/catch 降级（通知失败不影响主流程）；返回插入行（POST /notifications 需返回） */
+async function notify(opts: { userId: string; title: string; message: string; type: string; linkUrl?: string; taskId?: string | null }) {
+  const r = await query(
+    `INSERT INTO timerecording.notifications (user_id, title, message, type, link_url, task_id)
+     VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+    [opts.userId, opts.title, opts.message, opts.type, opts.linkUrl ?? null, opts.taskId ?? null]
+  );
+  return r.rows[0];
+}
+
 /** 给被审记录所属员工发一条审核结果通知 */
 async function notifyReview(r: any, action: string, review_notes?: string) {
   try {
     const weekLabel = `${r.year}W${r.week_number}`;
-    await query(
-      `INSERT INTO timerecording.notifications (user_id, title, message, type, link_url)
-       VALUES ($1, $2, $3, $4, '/time-record')`,
-      [r.user_id, action === 'approved' ? '工时已通过' : '工时已驳回',
-       `第 ${weekLabel} 周${review_notes ? ' · 备注: ' + review_notes : ''}`,
-       action === 'approved' ? 'approval' : 'rejection']
-    );
+    await notify({
+      userId: r.user_id,
+      title: action === 'approved' ? '工时已通过' : '工时已驳回',
+      message: `第 ${weekLabel} 周${review_notes ? ' · 备注: ' + review_notes : ''}`,
+      type: action === 'approved' ? 'approval' : 'rejection',
+      linkUrl: '/time-record',
+    });
   } catch (err) { console.warn('[Notify] 审核结果通知发送失败:', (err as Error).message); /* 通知失败不影响审批主流程 */ }
 }
 
@@ -741,8 +764,8 @@ router.post('/time-records/review-batch', requireAuth, requireRole('director', '
     await client.query('COMMIT');
     if (rows.length > 0) {
       // ⚠️ 请休假是存储记录不是工时：通知「共 Xh」按工作工时口径，排除请休假记录（type/code 任一命中 LE 即排除）
-      const totalHours = rows.filter((r: any) => !isLeaveCostCenter(r.cost_center, r.cost_center_type))
-        .reduce((s: number, r: any) => s + parseFloat(r.hours || 0), 0);
+      const totalHours = round2(rows.filter((r: any) => !isLeaveCostCenter(r.cost_center, r.cost_center_type))
+        .reduce((s: number, r: any) => s + parseFloat(r.hours || 0), 0));
       await notifyReview({ ...rows[0], user_id: rows[0].user_id }, action, `${review_notes || ''}${rows.length > 1 ? `（共 ${rows.length} 条，${totalHours}h）` : ''}`);
     }
     res.json(rows);
@@ -813,11 +836,14 @@ router.post('/task-assignments', requireAuth, async (req, res, next) => {
     if (r && targetUserId !== user.userId) {
       try {
         const assigner = (await query('SELECT name FROM timerecording.profiles WHERE id = $1', [user.userId])).rows[0]?.name || '管理员';
-        await query(
-          `INSERT INTO timerecording.notifications (user_id, title, message, type, link_url, task_id)
-           VALUES ($1, $2, $3, 'task', '/task-planning', $4)`,
-          [targetUserId, '您有新任务', `${assigner} 分配了任务「${r.task_name}」`, r.id]
-        );
+        await notify({
+          userId: targetUserId,
+          title: '您有新任务',
+          message: `${assigner} 分配了任务「${r.task_name}」`,
+          type: 'task',
+          linkUrl: '/task-planning',
+          taskId: r.id,
+        });
       } catch (err) { console.warn('[Notify] 派任务通知发送失败:', (err as Error).message); /* 通知失败不影响派任务 */ }
     }
     res.status(201).json(r);
@@ -888,11 +914,14 @@ router.put('/task-assignments/:id', requireAuth, async (req, res, next) => {
     if (r.user_id !== user.userId) {
       try {
         const assigner = (await query('SELECT name FROM timerecording.profiles WHERE id = $1', [user.userId])).rows[0]?.name || '管理员';
-        await query(
-          `INSERT INTO timerecording.notifications (user_id, title, message, type, link_url, task_id)
-           VALUES ($1, $2, $3, 'task', '/task-planning', $4)`,
-          [r.user_id, '任务更新', `${assigner} 更新了任务「${r.task_name}」${req.body.note ? '：' + req.body.note : ''}`, r.id]
-        );
+        await notify({
+          userId: r.user_id,
+          title: '任务更新',
+          message: `${assigner} 更新了任务「${r.task_name}」${req.body.note ? '：' + req.body.note : ''}`,
+          type: 'task',
+          linkUrl: '/task-planning',
+          taskId: r.id,
+        });
       } catch (err) { console.warn('[Notify] 任务更新通知发送失败:', (err as Error).message); /* 通知失败不影响更新 */ }
     }
     if (req.body.status && req.body.status !== old.status && FEEDBACK_STATES.includes(req.body.status) && r.created_by !== user.userId) {
@@ -901,11 +930,14 @@ router.put('/task-assignments/:id', requireAuth, async (req, res, next) => {
         const empName = (await query('SELECT name FROM timerecording.profiles WHERE id = $1', [r.user_id])).rows[0]?.name || '员工';
         const statusLabel: Record<string, string> = { completed: '已完成', cancelled: '被取消', postponed: '被推迟', delayed: '已延误' };
         const label = statusLabel[req.body.status as string];
-        await query(
-          `INSERT INTO timerecording.notifications (user_id, title, message, type, link_url, task_id)
-           VALUES ($1, $2, $3, 'task_feedback', '/task-planning', $4)`,
-          [r.created_by, `任务${label}`, `${empName} 将「${r.task_name}」标记为${label}${req.body.note ? '：' + req.body.note : ''}`, r.id]
-        );
+        await notify({
+          userId: r.created_by,
+          title: `任务${label}`,
+          message: `${empName} 将「${r.task_name}」标记为${label}${req.body.note ? '：' + req.body.note : ''}`,
+          type: 'task_feedback',
+          linkUrl: '/task-planning',
+          taskId: r.id,
+        });
       } catch (err) { console.warn('[Notify] 任务反馈通知发送失败:', (err as Error).message); /* 通知失败不影响状态更新 */ }
     }
     res.json(r);
@@ -930,11 +962,16 @@ router.delete('/task-assignments/:id', requireAuth, async (req, res, next) => {
 
 // ─── 通知 ──────────────────────────────────────────
 
+// 角标统计通知条数（前端 unreadCount = 列表长度）。上限 200：submit-batch 会向所有启用管理员扇出 submission 通知，
+//   活跃总监 90 天窗口内可累积数百条；200 ≈ 一个多月未读缓冲。点击即删使列表窗口随删除滑动，超出部分仍可逐批消化。
+//   同时约束单次拉取 payload 与弹窗 DOM 规模（上限再提高需改分页/虚拟列表）。
+const NOTIFICATION_LIST_LIMIT = 200;
+
 router.get('/notifications', requireAuth, async (req, res, next) => {
   try {
     const user = req.user!;
     const rows = (await query(
-      'SELECT * FROM timerecording.notifications WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50',
+      `SELECT * FROM timerecording.notifications WHERE user_id = $1 ORDER BY created_at DESC LIMIT ${NOTIFICATION_LIST_LIMIT}`,
       [user.userId]
     )).rows;
     res.json(rows);
@@ -971,10 +1008,13 @@ router.post('/notifications', requireAuth, async (req, res, next) => {
     if (!NOTIFICATION_TYPES.includes(resolvedType)) throw new AppError(400, 'type 无效');
     if (typeof title !== 'string' || !title.trim() || title.length > 100) throw new AppError(400, '标题不能为空且不超过 100 字');
     if (typeof msg === 'string' && msg.length > 1000) throw new AppError(400, '消息内容不能超过 1000 字');
-    const r = (await query(
-      `INSERT INTO timerecording.notifications (user_id, title, message, type, link_url) VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-      [targetUserId, title, msg || '', type || 'submission', link_url]
-    )).rows[0];
+    const r = await notify({
+      userId: targetUserId,
+      title,
+      message: msg || '',
+      type: type || 'submission',
+      linkUrl: link_url, // 未传 → notify 落 NULL，与逐列省略一致
+    });
     res.status(201).json(r);
   } catch (err) { next(err); }
 });
@@ -988,6 +1028,8 @@ router.post('/admin/users', requireAuth, requireRole('director', 'admin'), async
     const { email, name, password, employee_id, role = 'employee' } = req.body;
     if (!email || !name || !password) throw new AppError(400, '缺少必填字段');
     if (password.length < 8) throw new AppError(400, '密码至少8个字符'); // 与主用户管理/reset-password 口径统一
+    // ⚠️ 审计修复：profiles.role 撞 profiles_role_check 约束（仅 admin/employee）会返回 500，此处显式预校验给 400
+    if (!['admin', 'employee'].includes(role)) throw new AppError(400, '角色不合法，仅支持 admin/employee');
     // ⚠️ L4 修复：重复邮箱预检，避免撞唯一约束返回笼统错误（与 users.ts 口径一致）
     const dup = (await query('SELECT id FROM public.users WHERE email = $1', [email])).rows[0];
     if (dup) throw new AppError(409, '该邮箱已被注册');
@@ -998,8 +1040,8 @@ router.post('/admin/users', requireAuth, requireRole('director', 'admin'), async
     client = await getClient();
     await client.query('BEGIN');
     const user = (await client.query(
-      `INSERT INTO public.users (email, display_name, password_hash, role)
-       VALUES ($1, $2, $3, $4) RETURNING id`,
+      `INSERT INTO public.users (email, display_name, password_hash, role, password_changed_at)
+       VALUES ($1, $2, $3, $4, now()) RETURNING id`,
       [email, name, passwordHash, 'user']
     )).rows[0];
     await client.query(
@@ -1026,7 +1068,8 @@ router.post('/admin/users/:id/reset-password', requireAuth, requireRole('directo
     // ⚠️ L7 修复：密码策略与主用户管理统一为至少 8 位（此前此处 6 位、users.ts 8 位，口径不一致）
     if (!password || password.length < 8) throw new AppError(400, '密码至少8个字符');
     const passwordHash = await bcrypt.hash(password, 10);
-    const updated = (await query('UPDATE public.users SET password_hash = $1 WHERE id = $2 RETURNING id', [passwordHash, id])).rows[0];
+    // ⚠️ L3：改密同步记录 password_changed_at = now()，使该用户已签发的旧 JWT 立即失效（requireAuth 比对 iat）
+    const updated = (await query('UPDATE public.users SET password_hash = $1, password_changed_at = now() WHERE id = $2 RETURNING id', [passwordHash, id])).rows[0];
     if (!updated) throw new AppError(404, '用户不存在');
     logAudit(req, '重置密码', 'admin', '用户 ' + id.slice(0,8) + ' 密码已重置');
     res.json({ success: true });

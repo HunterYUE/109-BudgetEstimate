@@ -9,6 +9,12 @@ import { startWeeklyReminder } from './jobs/weeklyReminder.js';
 import { startNotificationsCleanup } from './jobs/notificationsCleanup.js';
 import { ensureCostCenters, startCostCenterSync } from './jobs/costCenterSync.js';
 
+// ⚠️ 业务时刻依赖服务器时区（北京时间）：提交闸门 assertWeekSubmittable（周日 20:30）、财年窗口
+//   availableCostCenterFys / fiscalYearLabel（6/7 月切换）都用本地 Date 判定。显式固定为北京时间，
+//   防止主机时区漂移（如迁移到 UTC 机器）让这些时刻/窗口静默偏移 8 小时。须在首次 Date 调用前设置，
+//   各模块仅在运行时调用 Date（无 import 期调用），置于文件体顶部即可。
+process.env.TZ = 'Asia/Shanghai';
+
 const app = express();
 // ⚠️ 部署在 nginx 反代之后（nginx 已转发 X-Forwarded-For）：trust proxy 让 express-rate-limit
 //   以真实客户端 IP 限速，否则所有请求都被视为 127.0.0.1，登录限速形同虚设

@@ -13,6 +13,31 @@ router.use(requirePermission('用户管理', '系统配置', '全部查看权限
 
 const USER_FIELDS = 'id, email, display_name, title, phone, role, is_active, created_at, permissions';
 
+// ── 用户管理安全常量与越级保护 ──
+const VALID_ROLES = ['admin', 'director', 'manager', 'user'];
+/** 角色等级（数字越大权限越高）——用户管理越级保护依据 */
+const ROLE_RANK: Record<string, number> = { user: 0, manager: 1, director: 2, admin: 3 };
+/** 服务端权限白名单（与 BudgetEstimateApp/src/pages/SystemManagement.tsx 的 ALL_PERMISSIONS 同源）：
+ *  禁止写入白名单外的任意字符串，防"任意赋权/万能权限漂移" */
+const ALL_PERMISSIONS = [
+  '仪表盘查看', '销售分析', '销售机会管理', '新建信息/线索/机会', '编辑销售机会', '转线索/转机会',
+  '销售蓝表编辑', '报价列表查看', '报价编制', '审批管理', '交付管理', '交付分析',
+  '成本录入', '物料管理', '新增物料', '新建标签', '客户管理', '新建客户',
+  '用户管理', '系统配置', '全部查看权限',
+];
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** 越级保护（H1 提权链核心防线）：仅 admin/director 可创建/修改/重置密码/删除 admin·director 账号；
+ *  其它角色（manager/user，即使持「用户管理」权限）不得动更高信任层级——
+ *  防铸 admin 号、把现存 admin/director 降级/改密/停用/删除 */
+function assertCanManage(actorRole: string, targetRank: number): void {
+  const actorIsSuper = actorRole === 'admin' || actorRole === 'director';
+  const targetIsSuper = targetRank >= ROLE_RANK.director; // director(2) 及以上
+  if (targetIsSuper && !actorIsSuper) {
+    throw new AppError(403, '无权创建/修改同级或更高权限的账号');
+  }
+}
+
 /** GET /api/users - 获取用户列表 */
 router.get('/', async (_req, res, next) => {
   try {
@@ -29,22 +54,36 @@ router.post('/', async (req, res, next) => {
     if (!email || !display_name || !password) {
       throw new AppError(400, '缺少必填字段：email, displayName, password');
     }
+    // 类型校验（防对象/数组入参触发 PG 类型错误 500）
+    if (typeof email !== 'string' || typeof display_name !== 'string' || typeof password !== 'string') {
+      throw new AppError(400, '邮箱/姓名/密码必须为字符串');
+    }
+    if (!VALID_ROLES.includes(role)) {
+      throw new AppError(400, `无效角色，允许值：${VALID_ROLES.join(', ')}`);
+    }
+    // ⚠️ 越级保护：非 admin/director 不得创建 admin/director 账号（防「用户管理」持有者铸 admin 号）
+    assertCanManage(req.user!.role, ROLE_RANK[role] ?? 0);
+    // 与重置路径（≥8）统一：创建时也校验弱口令
+    if (password.length < 8) {
+      throw new AppError(400, '密码至少8位');
+    }
+    // 邮箱归一化：trim + 小写（防 ' A@x ' 注册近似重复账号；重复检测/存储均用归一化值）
+    const emailNorm = email.trim().toLowerCase();
+    if (!EMAIL_RE.test(emailNorm)) {
+      throw new AppError(400, '邮箱格式无效');
+    }
 
-    const existing = await query('SELECT id FROM users WHERE email = $1', [email]);
+    const existing = await query('SELECT id FROM users WHERE LOWER(email) = $1', [emailNorm]);
     if (existing.rows.length > 0) {
       throw new AppError(409, '该邮箱已被注册');
     }
 
-    const validRoles = ['admin', 'director', 'manager', 'user'];
-    if (!validRoles.includes(role)) {
-      throw new AppError(400, `无效角色，允许值：${validRoles.join(', ')}`);
-    }
-
     const passwordHash = await bcrypt.hash(password, 10);
+    // ⚠️ L3：password_changed_at = now() 建号即记录改密基准，后续重置据此吊销旧 JWT（requireAuth 比对 iat）
     const result = await query(
-      `INSERT INTO users (email, display_name, title, phone, password_hash, role)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING ${USER_FIELDS}`,
-      [email, display_name, title, phone, passwordHash, role]
+      `INSERT INTO users (email, display_name, title, phone, password_hash, role, password_changed_at)
+       VALUES ($1, $2, $3, $4, $5, $6, now()) RETURNING ${USER_FIELDS}`,
+      [emailNorm, display_name, title, phone, passwordHash, role]
     );
 
     logAudit(req, '创建用户', 'user', `创建用户 ${email} (${display_name}) 角色:${role}`);
@@ -59,11 +98,24 @@ router.put('/:id', async (req, res, next) => {
     const { id } = req.params;
     const { display_name, email, title, phone, is_active } = objKeysToSnake({ ...req.body });
 
-    const existing = await query('SELECT id FROM users WHERE id = $1', [id]);
+    const existing = await query('SELECT role FROM users WHERE id = $1', [id]);
     if (existing.rows.length === 0) throw new AppError(404, '用户不存在');
+    // ⚠️ 越级保护：非 admin 不得修改同级/更高角色账号（防停用/改资料 admin·director）
+    assertCanManage(req.user!.role, ROLE_RANK[existing.rows[0].role] ?? 0);
 
-    if (email) {
-      const conflict = await query('SELECT id FROM users WHERE email = $1 AND id != $2', [email, id]);
+    // 类型校验（防非法值触发 PG 类型错误 500）
+    if (display_name !== undefined && typeof display_name !== 'string') throw new AppError(400, '姓名必须为字符串');
+    if (title !== undefined && typeof title !== 'string') throw new AppError(400, '职务必须为字符串');
+    if (phone !== undefined && typeof phone !== 'string') throw new AppError(400, '电话必须为字符串');
+    if (is_active !== undefined && typeof is_active !== 'boolean') throw new AppError(400, 'is_active 必须为布尔值');
+
+    // 邮箱归一化 + 格式校验（防近似重复与注入）
+    let emailNorm: string | undefined;
+    if (email !== undefined) {
+      if (typeof email !== 'string') throw new AppError(400, '邮箱必须为字符串');
+      emailNorm = email.trim().toLowerCase();
+      if (!EMAIL_RE.test(emailNorm)) throw new AppError(400, '邮箱格式无效');
+      const conflict = await query('SELECT id FROM users WHERE LOWER(email) = $1 AND id != $2', [emailNorm, id]);
       if (conflict.rows.length > 0) throw new AppError(409, '该邮箱已被其他用户使用');
     }
 
@@ -72,7 +124,7 @@ router.put('/:id', async (req, res, next) => {
     let idx = 1;
 
     if (display_name !== undefined) { fields.push(`display_name = $${idx++}`); values.push(display_name); }
-    if (email !== undefined) { fields.push(`email = $${idx++}`); values.push(email); }
+    if (emailNorm !== undefined) { fields.push(`email = $${idx++}`); values.push(emailNorm); }
     if (title !== undefined) { fields.push(`title = $${idx++}`); values.push(title); }
     if (phone !== undefined) { fields.push(`phone = $${idx++}`); values.push(phone); }
     if (is_active !== undefined) { fields.push(`is_active = $${idx++}`); values.push(is_active); }
@@ -95,15 +147,18 @@ router.put('/:id/password', async (req, res, next) => {
     const { id } = req.params;
     const { password } = req.body;
 
-    if (!password || password.length < 8) {
+    if (typeof password !== 'string' || !password || password.length < 8) {
       throw new AppError(400, '密码至少8位');
     }
 
-    const existing = await query('SELECT id, email, display_name FROM users WHERE id = $1', [id]);
+    const existing = await query('SELECT role, email, display_name FROM users WHERE id = $1', [id]);
     if (existing.rows.length === 0) throw new AppError(404, '用户不存在');
+    // ⚠️ 越级保护：非 admin 不得重置同级/更高角色账号密码（防改密接管 admin·director）
+    assertCanManage(req.user!.role, ROLE_RANK[existing.rows[0].role] ?? 0);
 
     const passwordHash = await bcrypt.hash(password, 10);
-    await query('UPDATE users SET password_hash = $1 WHERE id = $2', [passwordHash, id]);
+    // ⚠️ L3：改密同步记录 password_changed_at = now()，使该用户已签发的旧 JWT 立即失效（requireAuth 比对 iat）
+    await query('UPDATE users SET password_hash = $1, password_changed_at = now() WHERE id = $2', [passwordHash, id]);
 
     logAudit(req, '重置密码', 'user', `用户 ${existing.rows[0].display_name || existing.rows[0].email} 密码已重置`);
 
@@ -120,13 +175,29 @@ router.put('/:id/role', async (req, res, next) => {
     // ⚠️ 自保护：不能修改自己的角色/权限（防持有"用户管理"权限者自提权为 admin/director）
     if (id === req.user!.userId) throw new AppError(400, '不能修改自己的角色/权限');
 
-    const validRoles = ['admin', 'director', 'manager', 'user'];
-    if (role && !validRoles.includes(role)) {
-      throw new AppError(400, `无效角色，允许值：${validRoles.join(', ')}`);
+    if (role && !VALID_ROLES.includes(role)) {
+      throw new AppError(400, `无效角色，允许值：${VALID_ROLES.join(', ')}`);
     }
 
-    const userRow = (await query('SELECT email, display_name FROM users WHERE id = $1', [id])).rows[0];
+    const userRow = (await query('SELECT role, email, display_name FROM users WHERE id = $1', [id])).rows[0];
     if (!userRow) throw new AppError(404, '用户不存在');
+    // ⚠️ 越级保护：① 目标当前角色 ≥ 操作者 → 不可改（防降级/改权 admin·director）；
+    //            ② 新角色等级 ≥ 操作者 → 不可提（防制造同级/更高账号）
+    assertCanManage(req.user!.role, ROLE_RANK[userRow.role] ?? 0);
+    if (role) assertCanManage(req.user!.role, ROLE_RANK[role] ?? 0);
+
+    // ⚠️ permissions 白名单 + 委托限制：仅允许写白名单内权限，且只能授予操作者自己已持有的权限
+    //   （防"用户管理"持有者给傀儡账号赋「全部查看权限」）
+    if (permissions !== undefined) {
+      if (!Array.isArray(permissions) || !permissions.every(p => typeof p === 'string' && ALL_PERMISSIONS.includes(p))) {
+        throw new AppError(400, '权限包含无效值（白名单外或非字符串）');
+      }
+      const actorPerms = req.user!.permissions || [];
+      const denied = permissions.filter(p => !actorPerms.includes(p));
+      if (denied.length > 0) {
+        throw new AppError(403, `无权授予以下权限：${denied.join('、')}`);
+      }
+    }
 
     const fields: string[] = [];
     const values: any[] = [];
@@ -160,6 +231,11 @@ router.delete('/:id', async (req, res, next) => {
     if (currentUser.userId === id) {
       throw new AppError(400, '不能删除自己的账号');
     }
+
+    // ⚠️ 越级保护：非 admin 不得删除同级/更高角色账号（防删 admin·director 造成系统无人可管）
+    const targetRow = (await query('SELECT role FROM users WHERE id = $1', [id])).rows[0];
+    if (!targetRow) throw new AppError(404, '用户不存在');
+    assertCanManage(currentUser.role, ROLE_RANK[targetRow.role] ?? 0);
 
     // ⚠️ F13 修复：先删 timerecording.profiles（引用 users.id），再删 users，同一事务避免孤儿/外键冲突
     // ⚠️ M5 修复：① timerecording schema 可能未部署，用 to_regclass 探测，避免 .catch 吞错导致事务 abort；

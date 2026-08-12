@@ -25,9 +25,16 @@ if (!DB_PASSWORD) {
   process.exit(1);
 }
 
+// ⚠️ L5 修复：DB_PORT 显式校验（此前直接 parseInt 传给 pg，非法值静默回退默认端口，难排查）
+const dbPort = Number(DB_PORT);
+if (!Number.isInteger(dbPort) || dbPort < 1 || dbPort > 65535) {
+  console.error('[DB] FATAL: 无效的 DB_PORT 配置:', DB_PORT);
+  process.exit(1);
+}
+
 const pool = new pg.Pool({
   host: DB_HOST,
-  port: parseInt(DB_PORT),
+  port: dbPort,
   database: DB_NAME,
   user: DB_USER,
   password: DB_PASSWORD,

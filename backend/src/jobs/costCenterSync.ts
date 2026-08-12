@@ -53,14 +53,8 @@ export function availableCostCenterFys(refDate: Date = new Date()): string[] {
   return Array.from(set);
 }
 
-/**
- * 幂等同步成本中心码表。
- * @param fys 需确保存在的部门/个人财年集合（含请求财年，避免跨财年远周为空）
- */
-export async function ensureCostCenters(
-  fys: string[] = Array.from(new Set([...availableCostCenterFys(), ...recentFiscalYears(3)]))
-): Promise<void> {
-  // 质保：节点15完成的 -E 交付项目 → -W（每次探测预算库，覆盖新完成项目）
+/** 质保成本中心同步：探测预算库节点15已完成的 -E 交付项目 → -W 码表（每次探测预算库，覆盖新完成项目） */
+export async function syncWarrantyCostCenters(): Promise<void> {
   await query(`
     INSERT INTO timerecording.cost_centers (code, name, type, fy)
     SELECT regexp_replace(dp.sales_no, '-E$', '-W'), dp.project_name, 'warranty', NULL
@@ -71,8 +65,10 @@ export async function ensureCostCenters(
         WHERE dn.delivery_project_id = dp.id
           AND dn.node_no = 15 AND dn.status = 'completed')
     ON CONFLICT (code) DO NOTHING`);
+}
 
-  // 部门/个人/请休假：按财年补建
+/** 部门/个人/请休假码表按财年补建（仅财年边界 / 手工删除恢复需要，低频） */
+export async function ensureFiscalYearCostCenters(fys: string[]): Promise<void> {
   for (const fy of fys) {
     const prefix = 'A' + fy.slice(2);
     await query(
@@ -85,15 +81,40 @@ export async function ensureCostCenters(
   }
 }
 
-/** 服务启动挂载：每小时同步一次（幂等保险，覆盖预算库节点完成的异步性） */
+/**
+ * 幂等同步成本中心码表（质保 + 部门/个人/请休假全量）。
+ * @param fys 需确保存在的部门/个人财年集合（含请求财年，避免跨财年远周为空）
+ */
+export async function ensureCostCenters(
+  fys: string[] = Array.from(new Set([...availableCostCenterFys(), ...recentFiscalYears(3)]))
+): Promise<void> {
+  await syncWarrantyCostCenters();
+  await ensureFiscalYearCostCenters(fys);
+}
+
+/**
+ * 服务启动挂载：
+ * - 质保码表每小时探测（幂等；覆盖预算库节点完成的异步性，需要新鲜度）；
+ * - 部门/个人/请休假财年码表每日 03:10 低频补建（L4：此前每小时全量重跑 5 财年×3 码，财年集合一年只变一两次，
+ *   高频重跑纯属浪费；新财年 6/7 月窗口由 availableCostCenterFys 在 GET /cost-centers 侧按需覆盖，删除恢复由每日补建兜底）。
+ */
 export function startCostCenterSync(): void {
   cron.schedule('0 * * * *', async () => {
     try {
-      await ensureCostCenters();
-      console.log('[CostCenter] 成本中心码表已同步');
+      await syncWarrantyCostCenters();
+      console.log('[CostCenter] 质保成本中心已同步');
     } catch (err) {
-      console.error('[CostCenter] 成本中心同步失败:', err);
+      console.error('[CostCenter] 质保成本中心同步失败:', err);
     }
   }, { timezone: BEIJING });
-  console.log(`[CostCenter] 成本中心码表每小时同步任务已启动（${BEIJING}）`);
+  cron.schedule('10 3 * * *', async () => {
+    try {
+      // ⚠️ 用与 ensureCostCenters 默认相同的财年集合：6 月需含「下一财年」提前预建（recentFiscalYears(3) 不含下一年）
+      await ensureFiscalYearCostCenters(Array.from(new Set([...availableCostCenterFys(), ...recentFiscalYears(3)])));
+      console.log('[CostCenter] 部门/个人/请休假财年码表已同步');
+    } catch (err) {
+      console.error('[CostCenter] 财年码表同步失败:', err);
+    }
+  }, { timezone: BEIJING });
+  console.log(`[CostCenter] 成本中心码表同步任务已启动（质保每小时 / 财年每日，${BEIJING}）`);
 }

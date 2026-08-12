@@ -754,7 +754,8 @@ END $$;
 -- ============================================================
 -- 19. 工时系统（timerecording schema）
 -- ⚠️ 从零建库必需（此前缺失导致工时路由不可用）；profiles.id 与 public.users.id 一一对应（无显式 FK）
--- 结构从生产库提取（2026-08-05；2026-08-11 复核迁移 032-037 与生产库手工补建索引后同步），与生产库一致
+-- 结构从生产库提取（2026-08-05；2026-08-12 复核迁移 032-040 与生产库手工 DDL（删 is_read/prev_status、
+-- created_by 置空、补 task_id/user_created 索引）后同步），与生产库一致
 -- ============================================================
 CREATE SCHEMA IF NOT EXISTS timerecording;
 
@@ -774,7 +775,7 @@ CREATE TABLE IF NOT EXISTS timerecording.cost_centers (
   fy         text,
   created_at timestamptz DEFAULT now() NOT NULL,
   updated_at timestamptz DEFAULT now() NOT NULL,
-  CONSTRAINT cost_centers_type_check CHECK (type = ANY (ARRAY['warranty','department','personal']))
+  CONSTRAINT cost_centers_type_check CHECK (type = ANY (ARRAY['warranty','department','personal','leave']))
 );
 
 CREATE TABLE IF NOT EXISTS timerecording.notifications (
@@ -783,11 +784,10 @@ CREATE TABLE IF NOT EXISTS timerecording.notifications (
   title      text NOT NULL,
   message    text,
   type       text NOT NULL,
-  is_read    boolean DEFAULT false NOT NULL,
   link_url   text,
   created_at timestamptz DEFAULT now() NOT NULL,
   task_id    uuid,  -- 迁移 037：软关联被删除任务（无 FK，删除任务时清理通知）
-  CONSTRAINT notifications_type_check CHECK (type = ANY (ARRAY['approval','rejection','submission','task','task_feedback','reminder']))
+  CONSTRAINT notifications_type_check CHECK (type = ANY (ARRAY['approval','rejection','submission','task','task_feedback','reminder','withdraw']))
 );
 
 CREATE TABLE IF NOT EXISTS timerecording.profiles (
@@ -810,7 +810,7 @@ CREATE TABLE IF NOT EXISTS timerecording.task_assignments (
   start_datetime timestamptz NOT NULL,
   end_datetime   timestamptz NOT NULL,
   status         text DEFAULT 'in_progress' NOT NULL,
-  created_by     uuid NOT NULL,
+  created_by     uuid,  -- 生产库已 DROP NOT NULL：删号路由先置 NULL 再删 profile，必须可空
   note           text,
   created_at     timestamptz DEFAULT now() NOT NULL,
   updated_at     timestamptz DEFAULT now() NOT NULL,
@@ -838,8 +838,7 @@ CREATE TABLE IF NOT EXISTS timerecording.time_records (
   reviewed_at      timestamptz,
   created_at       timestamptz DEFAULT now() NOT NULL,
   updated_at       timestamptz DEFAULT now() NOT NULL,
-  cost_center_type text,  -- 迁移 030：sales/project/warranty/department/personal
-  prev_status      text,  -- 迁移 030：周锁定前状态（解锁恢复）
+  cost_center_type text,  -- 迁移 030：sales/project/warranty/department/personal/leave
   submitted_at     timestamptz,  -- 迁移 032：提交时间戳（提交超 1 个月不可撤回判定）
   CONSTRAINT time_records_hour_type_check CHECK (hour_type = ANY (ARRAY['normal','overtime'])),
   CONSTRAINT time_records_status_check CHECK (status = ANY (ARRAY['draft','submitted','approved','rejected','locked']))
@@ -875,8 +874,9 @@ EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
 -- 索引
-CREATE INDEX IF NOT EXISTS idx_tr_notifications_unread ON timerecording.notifications (user_id, is_read);
 CREATE INDEX IF NOT EXISTS idx_tr_notifications_user ON timerecording.notifications (user_id);
+CREATE INDEX IF NOT EXISTS idx_tr_notifications_user_created ON timerecording.notifications (user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_tr_notifications_task_id ON timerecording.notifications (task_id);
 CREATE INDEX IF NOT EXISTS idx_tr_task_assignments_dates ON timerecording.task_assignments (start_datetime, end_datetime);
 CREATE INDEX IF NOT EXISTS idx_tr_task_assignments_user ON timerecording.task_assignments (user_id);
 CREATE INDEX IF NOT EXISTS idx_tr_cost_centers_type_fy ON timerecording.cost_centers (type, fy);

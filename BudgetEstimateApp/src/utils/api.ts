@@ -67,11 +67,6 @@ export class ApiError extends Error {
   }
 }
 
-/** 从 localStorage 获取 JWT token */
-function getToken(): string | null {
-  try { return localStorage.getItem('budget_token'); } catch { return null; }
-}
-
 async function request<T>(path: string, options?: RequestInit, noCache?: boolean): Promise<T> {
   const url = `${API_BASE}${path}`;
   const cacheKey = path;
@@ -83,9 +78,8 @@ async function request<T>(path: string, options?: RequestInit, noCache?: boolean
     if (cached !== undefined) return cached as T;
   }
 
+  // ⚠️ L6：token 在 HttpOnly cookie（后端 login Set-Cookie），fetch 同源自动携带（默认 credentials=same-origin），无需 Authorization header
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  const token = getToken();
-  if (token) headers['Authorization'] = `Bearer ${token}`;
 
   let res: Response;
   try {
@@ -98,9 +92,9 @@ async function request<T>(path: string, options?: RequestInit, noCache?: boolean
     throw new ApiError(0, '网络请求失败：' + (err instanceof Error ? err.message : '未知错误'));
   }
 
-  // 401 token 过期 → 清除登录状态并跳转
+  // ⚠️ L6：401 = cookie 无效/过期（token 在 HttpOnly cookie，前端读不到也清不掉）——best-effort 调 logout 清服务端 cookie，再跳登录
   if (res.status === 401) {
-    localStorage.removeItem('budget_token');
+    fetch(API_BASE + '/auth/logout', { method: 'POST' }).catch(() => {});
     window.location.href = import.meta.env.BASE_URL + 'login';
     throw new ApiError(401, '登录已过期，请重新登录');
   }

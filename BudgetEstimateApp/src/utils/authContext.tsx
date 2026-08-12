@@ -12,7 +12,6 @@ export interface UserInfo {
 
 interface AuthState {
   user: UserInfo | null;
-  token: string | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
@@ -21,46 +20,25 @@ interface AuthState {
 
 const AuthContext = createContext<AuthState | null>(null);
 
-const TOKEN_KEY = 'budget_token';
-/** 登录时间戳，用于判断 token 是否即将过期（后端 JWT 有效期 24h） */
-const TOKEN_TIME_KEY = 'budget_token_login_time';
-const PROACTIVE_REFRESH_MS = 12 * 60 * 60 * 1000; // 超过 12h 主动刷新
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<UserInfo | null>(null);
-  const [token, setToken] = useState<string | null>(() => localStorage.getItem(TOKEN_KEY));
   const [loading, setLoading] = useState(true);
 
-  /** 从 token 恢复用户信息 */
-  const fetchMe = useCallback(async (jwt: string) => {
-    const res = await fetch((import.meta.env.VITE_API_BASE || '/api/v1') + '/auth/me', {
-      headers: { Authorization: `Bearer ${jwt}` },
-    });
-    if (!res.ok) throw new Error('Token expired');
+  /** ⚠️ L6 修复：token 已迁移到 HttpOnly cookie（后端 login Set-Cookie），前端不再持有/发送 Bearer——
+   *    /me 由浏览器自动携带 cookie 认证 */
+  const fetchMe = useCallback(async (): Promise<UserInfo> => {
+    const res = await fetch((import.meta.env.VITE_API_BASE || '/api/v1') + '/auth/me');
+    if (!res.ok) throw new Error('Session expired');
     return res.json() as Promise<UserInfo>;
   }, []);
 
   const refresh = useCallback(async () => {
-    const saved = localStorage.getItem(TOKEN_KEY);
-    if (!saved) { setLoading(false); return; }
-    // 检查 token 是否已过半生命周期：过半则清除，让用户重新登录（避免操作中途 401）
-    const loginTime = parseInt(localStorage.getItem(TOKEN_TIME_KEY) || '0', 10);
-    if (loginTime > 0 && Date.now() - loginTime > PROACTIVE_REFRESH_MS) {
-      localStorage.removeItem(TOKEN_KEY);
-      localStorage.removeItem(TOKEN_TIME_KEY);
-      setToken(null);
-      setUser(null);
-      setLoading(false);
-      return;
-    }
+    // ⚠️ L6：无 cookie → /me 返回 401 → 登出态。无需 localStorage 预检与 12h 主动刷新
+    //   （cookie 随 JWT 24h 过期，过期后请求 401 → api.ts 跳登录，自愈）
     try {
-      const userData = await fetchMe(saved);
+      const userData = await fetchMe();
       setUser(userData);
-      setToken(saved);
     } catch {
-      localStorage.removeItem(TOKEN_KEY);
-      localStorage.removeItem(TOKEN_TIME_KEY);
-      setToken(null);
       setUser(null);
     } finally {
       setLoading(false);
@@ -80,22 +58,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       throw new Error(err.error || '登录失败');
     }
     const data = await res.json();
-    localStorage.setItem(TOKEN_KEY, data.token);
-    localStorage.setItem(TOKEN_TIME_KEY, String(Date.now()));
-    setToken(data.token);
+    // ⚠️ L6：token 由后端 Set-Cookie（HttpOnly），login 响应体不再含 token，只用 user
     setUser(data.user);
   }, []);
 
   const logout = useCallback(() => {
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(TOKEN_TIME_KEY);
-    setToken(null);
+    // ⚠️ L6：HttpOnly cookie 只有服务端能清——先调后端 logout（best-effort），再清本地状态
+    fetch((import.meta.env.VITE_API_BASE || '/api/v1') + '/auth/logout', { method: 'POST' }).catch(() => {});
     setUser(null);
     clearCache();
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, logout, refresh }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, refresh }}>
       {children}
     </AuthContext.Provider>
   );
