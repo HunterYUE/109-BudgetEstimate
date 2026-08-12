@@ -177,6 +177,20 @@ function serverHourType(date?: string | null, start?: string | null, end?: strin
   return (evening || wd === 0 || wd === 6 || (wd >= 0 && isStatutoryHoliday(new Date(y, m - 1, d)))) ? 'overtime' : 'normal';
 }
 
+/**
+ * 周提交开放校验（⚠️ 一周只提交一次，禁半周/未来周提交）：
+ *   目标周在「周日 20:30」之后才允许提交（服务端本地时区=北京，对齐周日 20:30 提交提醒=该周推送提交信息的时刻）；
+ *   此前提交该周或未来周记录一律拒绝。
+ * @param dateStr 记录日期 YYYY-MM-DD
+ */
+function assertWeekSubmittable(dateStr: string): void {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  if (!(Number.isFinite(y) && Number.isFinite(m) && Number.isFinite(d))) return; // 非法日期由日期校验兜底
+  const dayNum = new Date(y, m - 1, d).getDay() || 7; // ISO 周一=1…周日=7
+  const opensAt = new Date(y, m - 1, d + (7 - dayNum), 20, 30, 0, 0); // 该周周日 20:30（本地时区）
+  if (new Date() < opensAt) throw new AppError(400, '该周还未到提交时间：周工时须等周日 20:30 提交提醒后整周一次提交');
+}
+
 /** 校验日期为真实历法日期（格式 + 回验，拦截 2026-02-30/2026-13-01 等越界日期） */
 function isValidDateStr(s: unknown): s is string {
   if (typeof s !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
@@ -524,27 +538,51 @@ router.put('/time-records/:id', requireAuth, async (req, res, next) => {
     values.push(req.params.id);
     // 归属校验：非管理员只能改自己的记录
     if (!admin) values.push(user.userId);
-    // 已审核通过/已锁定记录不可直改（须走审批流程）
+    // 已提交/已审核通过/已锁定记录不可直改（submitted 须先撤回、approved 须通过撤回通道回草稿后修改）
     const r = (await query(
-      `UPDATE timerecording.time_records SET ${updates.join(', ')} WHERE id = $${idx}${admin ? '' : ` AND user_id = $${idx + 1}`} AND status NOT IN ('approved', 'locked') RETURNING *`,
+      `UPDATE timerecording.time_records SET ${updates.join(', ')} WHERE id = $${idx}${admin ? '' : ` AND user_id = $${idx + 1}`} AND status NOT IN ('submitted', 'approved', 'locked') RETURNING *`,
       values
     )).rows[0];
-    if (!r) throw new AppError(400, admin ? '记录不存在、已通过或已锁定' : '记录不存在、无权修改、已通过或已锁定');
+    if (!r) throw new AppError(400, admin ? '记录不存在、已提交/已通过或已锁定' : '记录不存在、无权修改、已提交/已通过或已锁定');
     res.json(r);
   } catch (err) { next(err); }
 });
 
-/** 撤回提交（submitted → draft，仅本人；须在审核前撤回，且提交不超过 30 天）
+/** 撤回提交（→ draft，仅本人）
+ *  ⚠️ 规则（与用户约定一致）：① 提交后 30 天内未审核可撤回；② 审批通过后 30 天内也可撤回（改后重新提交审核）。
+ *  撤回已通过记录时清空审核链（reviewed_by/reviewed_at/review_notes/submitted_at，draft 语义=未提交）
+ *  并通知原审核人（其审批被撤回，须知情）。
  *  ⚠️ S3 修复：前端按 `30 * 24h` 判定可撤回，此前后端用 interval '1 month'（漂移 1~3 天），统一为 30 天 */
 router.put('/time-records/:id/withdraw', requireAuth, async (req, res, next) => {
   try {
-    const r = (await query(
-      `UPDATE timerecording.time_records SET status = 'draft'
-       WHERE id = $1 AND status = 'submitted' AND user_id = $2
-         AND submitted_at >= now() - interval '30 days' RETURNING *`,
-      [req.params.id, req.user!.userId]
+    const uid = req.user!.userId;
+    // 先取当前态，确定是否需通知原审核人（UPDATE 后再查会因状态已变而无法区分 submitted/approved 来源）
+    const before = (await query(
+      `SELECT status, reviewed_by, year, week_number FROM timerecording.time_records WHERE id = $1 AND user_id = $2`,
+      [req.params.id, uid]
     )).rows[0];
-    if (!r) throw new AppError(400, '只能撤回自己已提交、30 天内、尚未审核的记录');
+    if (!before) throw new AppError(404, '记录不存在或无权撤回');
+    const r = (await query(
+      `UPDATE timerecording.time_records
+         SET status = 'draft', submitted_at = NULL, reviewed_by = NULL, reviewed_at = NULL, review_notes = NULL
+       WHERE id = $1 AND user_id = $2 AND (
+         (status = 'submitted' AND submitted_at >= now() - interval '30 days')
+         OR (status = 'approved' AND reviewed_at >= now() - interval '30 days'))
+       RETURNING *`,
+      [req.params.id, uid]
+    )).rows[0];
+    if (!r) throw new AppError(400, '只能撤回自己提交后 30 天内未审核、或审批通过后 30 天内的记录');
+    // 撤回已通过记录 → 通知原审核人（其已做出的审批被撤回）
+    if (before.status === 'approved' && before.reviewed_by) {
+      try {
+        const name = (await query('SELECT name FROM timerecording.profiles WHERE id = $1', [uid])).rows[0]?.name || '员工';
+        await query(
+          `INSERT INTO timerecording.notifications (user_id, title, message, type, link_url)
+           VALUES ($1, $2, $3, 'withdraw', '/admin/approval')`,
+          [before.reviewed_by, '工时已撤回', `${name} 撤回了第 ${before.year}W${before.week_number} 周已通过的工时，将修改后重新提交审核`]
+        );
+      } catch (err) { console.error('撤回已通过记录的审核人通知失败:', err); }
+    }
     res.json(r);
   } catch (err) { next(err); }
 });
@@ -567,9 +605,15 @@ router.delete('/time-records/:id', requireAuth, async (req, res, next) => {
 
 // ─── 审批 ──────────────────────────────────────────
 
-/** 提交审核（⚠️ F6 补漏：只能提交自己的草稿记录；submitted_at 供「超过 1 个月不可撤回」判定） */
+/** 提交审核（⚠️ F6 补漏：只能提交自己的草稿记录；submitted_at 供「30 天内可撤回」判定）
+ *  ⚠️ 周推送规则：目标周周日 20:30 前不可提交（禁半周/未来周提交）——先取记录日期校验，避免先改后拒 */
 router.put('/time-records/:id/submit', requireAuth, async (req, res, next) => {
   try {
+    const rec = (await query(
+      `SELECT date FROM timerecording.time_records WHERE id = $1 AND status = 'draft' AND user_id = $2`,
+      [req.params.id, req.user!.userId]
+    )).rows[0];
+    if (rec) assertWeekSubmittable(String(rec.date).slice(0, 10));
     const r = (await query(
       `UPDATE timerecording.time_records SET status = 'submitted', submitted_at = now()
        WHERE id = $1 AND status = 'draft' AND user_id = $2 RETURNING *`,
@@ -585,6 +629,12 @@ router.post('/time-records/submit-batch', requireAuth, async (req, res, next) =>
   try {
     const { ids } = req.body;
     if (!isValidUuidArray(ids)) throw new AppError(400, 'ids 必填且须为 uuid 数组');
+    // ⚠️ 周推送规则：目标周周日 20:30 前不可提交——先校验所有草稿记录所在周，再变更（防半途拒绝留下半提交态）
+    const weeks = (await query(
+      `SELECT DISTINCT date FROM timerecording.time_records WHERE id = ANY($1::uuid[]) AND status = 'draft' AND user_id = $2`,
+      [ids, req.user!.userId]
+    )).rows;
+    weeks.forEach((w: any) => assertWeekSubmittable(String(w.date).slice(0, 10)));
     const rows = (await query(
       `UPDATE timerecording.time_records SET status = 'submitted', submitted_at = now()
        WHERE id = ANY($1::uuid[]) AND status = 'draft' AND user_id = $2 RETURNING *`,
