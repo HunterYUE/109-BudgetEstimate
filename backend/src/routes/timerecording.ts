@@ -74,6 +74,10 @@ const TIME_COST_CENTER_TYPES = ['sales', 'project', 'warranty', 'department', 'p
 /** 通知类型枚举（对齐 DB CHECK notifications_type_check，POST /notifications 校验共用） */
 const NOTIFICATION_TYPES = ['approval', 'rejection', 'submission', 'task', 'task_feedback', 'reminder', 'withdraw'] as const;
 
+/** 任务状态枚举（对齐 DB task_assignments_status_check；与前端 TASK_STATUS_META 键一致）。
+ *  POST/PUT 应用层预校验，垃圾状态返回明确 400，避免撞 DB CHECK 变 500 */
+const TASK_STATUSES = ['pending', 'in_progress', 'completed', 'cancelled', 'postponed', 'delayed'];
+
 /** 请休假成本中心编码 A####-LE-###（isLeaveCostCenter 与回填/查询共用） */
 const LE_CODE_RE = /^A\d{4}-LE-\d{3}$/;
 
@@ -782,6 +786,13 @@ router.post('/task-assignments', requireAuth, async (req, res, next) => {
     const manager = isManager(user);
     const { user_id, task_name, color, start_datetime, end_datetime, status, note, cost_center } = req.body;
     const targetUserId = (manager && user_id) ? user_id : user.userId;
+    // ⚠️ 输入边界：status/起止时间/color 列有 DB NOT NULL/CHECK 约束，先应用层校验返回明确 400（避免撞约束变 500）
+    if (status != null && !TASK_STATUSES.includes(status as string)) throw new AppError(400, '任务状态不合法');
+    const sDate = new Date(start_datetime), eDate = new Date(end_datetime);
+    if (!start_datetime || !end_datetime || isNaN(sDate.getTime()) || isNaN(eDate.getTime())) throw new AppError(400, '开始/结束时间无效');
+    if (eDate < sDate) throw new AppError(400, '结束时间不能早于开始时间');
+    // ⚠️ color 列 NOT NULL 无默认：客户端缺失时兜底主色（前端不读该列、按状态取色）
+    const finalColor = color || '#00509e';
     // ⚠️ 输入边界：task_name/note 列均为 text 无 DB 约束，须应用层校验（与前端 maxLength 对齐）
     if (typeof task_name === 'string' && task_name.length > 100) throw new AppError(400, '任务名称不能超过 100 字');
     if (typeof note === 'string' && note.length > 500) throw new AppError(400, '备注不能超过 500 字');
@@ -790,7 +801,7 @@ router.post('/task-assignments', requireAuth, async (req, res, next) => {
     const r = (await query(
       `INSERT INTO timerecording.task_assignments (user_id, task_name, color, start_datetime, end_datetime, status, created_by, note, cost_center)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
-      [targetUserId, task_name, color, start_datetime, end_datetime, status || 'in_progress', user.userId, note || '', cost_center || null]
+      [targetUserId, task_name, finalColor, start_datetime, end_datetime, status || 'in_progress', user.userId, note || '', cost_center || null]
     )).rows[0];
     // ⚠️ 任务推送：管理员派给他人的任务，自动通知该员工
     if (r && targetUserId !== user.userId) {
@@ -837,6 +848,13 @@ router.put('/task-assignments/:id', requireAuth, async (req, res, next) => {
     //   typeof 判字符串：null/数字等非字符串一律不触长度检查，避免 null.length 抛 500
     if (typeof req.body.task_name === 'string' && req.body.task_name.length > 100) throw new AppError(400, '任务名称不能超过 100 字');
     if (typeof req.body.note === 'string' && req.body.note.length > 500) throw new AppError(400, '备注不能超过 500 字');
+    // ⚠️ 输入边界：status 必须在枚举内（撞 DB CHECK 会返回 500）；起止时间改任一字段时按旧值补齐校验顺序
+    if (req.body.status !== undefined && !TASK_STATUSES.includes(req.body.status as string)) throw new AppError(400, '任务状态不合法');
+    if (req.body.start_datetime !== undefined || req.body.end_datetime !== undefined) {
+      const ns = new Date(req.body.start_datetime ?? old.start_datetime), ne = new Date(req.body.end_datetime ?? old.end_datetime);
+      if (isNaN(ns.getTime()) || isNaN(ne.getTime())) throw new AppError(400, '开始/结束时间无效');
+      if (ne < ns) throw new AppError(400, '结束时间不能早于开始时间');
+    }
     // ⚠️ 改成本中心时必须存在（含个人中心可用财年窗口）；未改动（与旧值一致）则跳过——
     //    存量任务可能引用已从预算库消失的中心（如已归档销售单），未改动时不应阻止保存其他字段
     if (req.body.cost_center !== undefined && req.body.cost_center !== old.cost_center) {
