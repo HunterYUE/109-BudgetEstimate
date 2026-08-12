@@ -654,7 +654,9 @@ router.post('/time-records/submit-batch', requireAuth, async (req, res, next) =>
         const admins = (await query(`SELECT id FROM timerecording.profiles WHERE role = 'admin' AND is_active = true`)).rows;
         if (admins.length > 0) {
           const weekLabel = `${rows[0].year}W${rows[0].week_number}`;
-          const totalHours = rows.reduce((s: number, r: any) => s + parseFloat(r.hours || 0), 0);
+          // ⚠️ 请休假是存储记录不是工时：通知「共 Xh」按工作工时口径，排除请休假记录（type/code 任一命中 LE 即排除）
+          const totalHours = rows.filter((r: any) => !isLeaveCostCenter(r.cost_center, r.cost_center_type))
+            .reduce((s: number, r: any) => s + parseFloat(r.hours || 0), 0);
           const submitter = (await query('SELECT name FROM timerecording.profiles WHERE id = $1', [req.user!.userId])).rows[0]?.name || '员工';
           // 单条 INSERT 覆盖全部管理员（替代 for 循环 N 次往返）
           await query(
@@ -734,7 +736,9 @@ router.post('/time-records/review-batch', requireAuth, requireRole('director', '
     )).rows;
     await client.query('COMMIT');
     if (rows.length > 0) {
-      const totalHours = rows.reduce((s: number, r: any) => s + parseFloat(r.hours || 0), 0);
+      // ⚠️ 请休假是存储记录不是工时：通知「共 Xh」按工作工时口径，排除请休假记录（type/code 任一命中 LE 即排除）
+      const totalHours = rows.filter((r: any) => !isLeaveCostCenter(r.cost_center, r.cost_center_type))
+        .reduce((s: number, r: any) => s + parseFloat(r.hours || 0), 0);
       await notifyReview({ ...rows[0], user_id: rows[0].user_id }, action, `${review_notes || ''}${rows.length > 1 ? `（共 ${rows.length} 条，${totalHours}h）` : ''}`);
     }
     res.json(rows);
