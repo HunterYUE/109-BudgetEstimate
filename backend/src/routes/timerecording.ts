@@ -71,6 +71,9 @@ function assertTimeCostCenterValid(code: string | null | undefined, label = '成
 /** 工时记录成本中心类型枚举（服务端权威，POST/PUT 校验共用；防前端伪造类型） */
 const TIME_COST_CENTER_TYPES = ['sales', 'project', 'warranty', 'department', 'personal', 'leave'] as const;
 
+/** 通知类型枚举（对齐 DB CHECK notifications_type_check，POST /notifications 校验共用） */
+const NOTIFICATION_TYPES = ['approval', 'rejection', 'submission', 'task', 'task_feedback', 'reminder', 'withdraw'] as const;
+
 /** 请休假成本中心编码 A####-LE-###（isLeaveCostCenter 与回填/查询共用） */
 const LE_CODE_RE = /^A\d{4}-LE-\d{3}$/;
 
@@ -534,7 +537,12 @@ router.put('/time-records/:id', requireAuth, async (req, res, next) => {
     updates.push(`year = $${idx++}`, `week_number = $${idx++}`);
     values.push(iso.year, iso.week);
     // ⚠️ 工作流优化：驳回记录允许编辑修正，编辑后自动回到 draft（可重新提交）
-    updates.push(`status = CASE WHEN status = 'rejected' THEN 'draft' ELSE status END`);
+    // ⚠️ 审计修复：驳回记录编辑回草稿时必须同步清空 submitted_at（draft 语义=未提交，
+    //   否则残留"草稿带提交时间"的数据异常，撤回判定/历史口径会失真）
+    updates.push(
+      `status = CASE WHEN status = 'rejected' THEN 'draft' ELSE status END`,
+      `submitted_at = CASE WHEN status = 'rejected' THEN NULL ELSE submitted_at END`
+    );
     values.push(req.params.id);
     // 归属校验：非管理员只能改自己的记录
     if (!admin) values.push(user.userId);
@@ -707,6 +715,18 @@ router.post('/time-records/review-batch', requireAuth, requireRole('director', '
     const reviewer = req.user!;
     client = await getClient();
     await client.query('BEGIN');
+    // ⚠️ 审计修复：批审须保证 周原子性 —— 所有记录同一员工同一周、且全部处于 submitted。
+    //   此前 UPDATE 静默跳过非 submitted 的 id，可能造成"部分审批"，跨员工/跨周混批还会让
+    //   单条通知口径失真。前端按 user+week 分组调用，正常不会触发；此处作为纵深防御显式 400。
+    const before = (await client.query(
+      `SELECT user_id, year, week_number, status FROM timerecording.time_records WHERE id = ANY($1::uuid[])`,
+      [ids]
+    )).rows;
+    if (before.length !== ids.length) throw new AppError(400, '部分记录不存在');
+    if (before.some((b: any) => b.status !== 'submitted')) throw new AppError(400, '批审记录须全部处于待审核状态');
+    const batchUsers = new Set(before.map((b: any) => b.user_id));
+    const batchWeeks = new Set(before.map((b: any) => `${b.year}-${b.week_number}`));
+    if (batchUsers.size !== 1 || batchWeeks.size !== 1) throw new AppError(400, '批审记录须属于同一员工同一周');
     const rows = (await client.query(
       `UPDATE timerecording.time_records SET status = $1, review_notes = $2, reviewed_by = $3, reviewed_at = now()
        WHERE id = ANY($4::uuid[]) AND status = 'submitted' RETURNING *`,
@@ -910,6 +930,12 @@ router.post('/notifications', requireAuth, async (req, res, next) => {
     const { user_id, title, message: msg, type, link_url } = req.body;
     // ⚠️ F6 修复：给他人发通知是管理/系统操作；非管理员只能给自己建
     const targetUserId = (admin && user_id) ? user_id : user.userId;
+    // ⚠️ 审计修复：type 对齐 DB CHECK 枚举（不符会撞约束返回 500）+ 标题/消息长度边界（title 为 NOT NULL，
+    //   undefined/超长会让数据库抛错而非给出可读 400）
+    const resolvedType = type || 'submission';
+    if (!NOTIFICATION_TYPES.includes(resolvedType)) throw new AppError(400, 'type 无效');
+    if (typeof title !== 'string' || !title.trim() || title.length > 100) throw new AppError(400, '标题不能为空且不超过 100 字');
+    if (typeof msg === 'string' && msg.length > 1000) throw new AppError(400, '消息内容不能超过 1000 字');
     const r = (await query(
       `INSERT INTO timerecording.notifications (user_id, title, message, type, link_url) VALUES ($1,$2,$3,$4,$5) RETURNING *`,
       [targetUserId, title, msg || '', type || 'submission', link_url]
