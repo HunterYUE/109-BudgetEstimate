@@ -6,20 +6,12 @@ import { requireAuth, requireRole } from '../middleware/auth.js';
 import { signToken } from '../middleware/auth.js';
 import { AppError } from '../middleware/index.js';
 import { logAudit } from './helpers.js';
-import { ensureCostCenters, recentFiscalYears, availableCostCenterFys } from '../jobs/costCenterSync.js';
+import { ensureCostCenters, recentFiscalYears, availableCostCenterFys, fiscalYearLabel } from '../jobs/costCenterSync.js';
 
 const router = Router();
 
 /** 是否为工时系统管理员（director/admin，JWT role） */
 const isTrAdmin = (u: { role?: string } | undefined): boolean => !!u && (u.role === 'director' || u.role === 'admin');
-
-/** 财年标识（与预算应用一致：每年7月1日起）。FY2526 → 前缀 'A2526' */
-const fiscalYearLabel = (d: Date = new Date()): string => {
-  const m = d.getMonth();
-  const y1 = m >= 6 ? d.getFullYear() : d.getFullYear() - 1;
-  const y2 = m >= 6 ? d.getFullYear() + 1 : d.getFullYear();
-  return `FY${String(y1 % 100).padStart(2, '0')}${String(y2 % 100).padStart(2, '0')}`;
-};
 
 /**
  * 成本中心存在性校验（共享基底，任务与工时记录复用）：
@@ -35,14 +27,15 @@ async function assertCostCenterValidBase(
 ): Promise<void> {
   // ⚠️ 分配任务时成本中心必填，不能为空
   if (!code) throw new AppError(400, '成本中心不能为空');
-  const m = /^A(\d{4})-(DE|00)-\d{3}$/.exec(code);
+  const m = /^A(\d{4})-(DE|00|LE)-\d{3}$/.exec(code);
   if (m) {
-    if (!opts.allowDE && m[2] === 'DE') throw new AppError(400, `${label}不能使用部门成本中心，请选择项目或个人成本中心`);
+    // ⚠️ 任务不允许部门中心，也不允许请休假中心（请休假只用于工时记录，不用于任务）
+    if (!opts.allowDE && (m[2] === 'DE' || m[2] === 'LE')) throw new AppError(400, `${label}不能使用部门或请休假成本中心，请选择项目或个人成本中心`);
     const fy = 'FY' + m[1];
     const row = await query('SELECT 1 FROM timerecording.cost_centers WHERE code = $1', [code]);
     if (!row.rows.length) throw new AppError(400, `${label}「${code}」不存在`);
     if (!availableCostCenterFys().includes(fy)) {
-      throw new AppError(400, `${label}「${code}」当前不可用（个人中心仅新财年提前一月生成、老财年延续至新财年首月）`);
+      throw new AppError(400, `${label}「${code}」当前不可用（成本中心仅新财年提前一月生成、老财年延续至新财年首月）`);
     }
     return;
   }
@@ -73,6 +66,42 @@ function assertCostCenterValid(code: string | null | undefined, label = '成本�
 function assertTimeCostCenterValid(code: string | null | undefined, label = '成本中心'): Promise<void> {
   if (!code) return Promise.resolve();
   return assertCostCenterValidBase(code, label, { allowDE: true });
+}
+
+/** 工时记录成本中心类型枚举（服务端权威，POST/PUT 校验共用；防前端伪造类型） */
+const TIME_COST_CENTER_TYPES = ['sales', 'project', 'warranty', 'department', 'personal', 'leave'] as const;
+
+/** 请休假成本中心编码 A####-LE-###（isLeaveCostCenter 与回填/查询共用） */
+const LE_CODE_RE = /^A\d{4}-LE-\d{3}$/;
+
+/** 是否请休假成本中心（编码 A####-LE-### 或类型标记 leave）：请休假硬性规则共用判断，
+ *  防客户端把 LE 码标成其他类型（type 与 code 任一命中即按请休假校验） */
+function isLeaveCostCenter(code: string | null | undefined, type?: string | null): boolean {
+  return type === 'leave' || LE_CODE_RE.test(code || '');
+}
+
+/** 请休假硬性校验（POST/PUT 共用）：
+ *   - 晚班/周末/节假日（hour_type 服务端派生 overtime）拒绝；
+ *   - 单日请休假合计 ≤ 8 小时（含本行工时；PUT 传 excludeId 排除本条自身）。
+ *   code/type 任一命中请休假（isLeaveCostCenter 口径）即触发校验 */
+async function assertLeaveValid(opts: {
+  userId: string;
+  date: string;
+  hours: number;
+  hourType: 'normal' | 'overtime';
+  code: string | null | undefined;
+  type?: string | null;
+  excludeId?: string;
+}): Promise<void> {
+  if (!isLeaveCostCenter(opts.code, opts.type)) return;
+  if (opts.hourType === 'overtime') throw new AppError(400, '请休假不能用于晚班/周末/节假日时段');
+  const params = opts.excludeId ? [opts.userId, opts.date, opts.excludeId] : [opts.userId, opts.date];
+  const dayTotal = (await query(
+    `SELECT COALESCE(SUM(hours), 0) AS total FROM timerecording.time_records
+     WHERE user_id = $1 AND date = $2${opts.excludeId ? ' AND id <> $3' : ''} AND (cost_center_type = 'leave' OR cost_center LIKE 'A%-LE-%')`,
+    params
+  )).rows[0].total;
+  if (Number(dayTotal) + opts.hours > 8) throw new AppError(400, '请休假每天最多 8 小时');
 }
 
 /** 由日期计算 ISO 周号与 ISO 年（周一起，与 PG EXTRACT(WEEK/ISOYEAR) 及前端 dayjs isoWeek 一致） */
@@ -328,15 +357,13 @@ router.get('/cost-centers', requireAuth, async (req, res, next) => {
       await ensureCostCenters(Array.from(new Set([fyLabel, ...available, ...recentFiscalYears(3)])));
     }
 
-    // 部门/个人仅在「请求财年 ∈ 可用窗口」时返回，否则为空数组（已归档/未生成不可用）
-    const deptQuery = available.includes(fyLabel)
-      ? query(`SELECT code, name FROM timerecording.cost_centers WHERE type = 'department' AND fy = $1 ORDER BY code`, [fyLabel])
-      : Promise.resolve({ rows: [] });
-    const personalQuery = available.includes(fyLabel)
-      ? query(`SELECT code, name FROM timerecording.cost_centers WHERE type = 'personal' AND fy = $1 ORDER BY code`, [fyLabel])
+    // 部门/个人/请休假仅在「请求财年 ∈ 可用窗口」时返回，否则为空数组（已归档/未生成不可用）；
+    // typeRows 统一三类码表查询（type 恒为代码内固定字面量，参数化无注入面）
+    const typeRows = (type: 'department' | 'personal' | 'leave') => available.includes(fyLabel)
+      ? query(`SELECT code, name FROM timerecording.cost_centers WHERE type = $1 AND fy = $2 ORDER BY code`, [type, fyLabel])
       : Promise.resolve({ rows: [] });
 
-    const [salesRows, projectRows, warrantyRows, deptRows, personalRows] = await Promise.all([
+    const [salesRows, projectRows, warrantyRows, deptRows, personalRows, leaveRows] = await Promise.all([
       query(`SELECT sales_no, project_name, client_name FROM sales_opportunities WHERE sales_no LIKE 'A%-S' ORDER BY sales_no`),
       query(`SELECT sales_no, project_name, client_name FROM delivery_projects WHERE sales_no LIKE 'A%-E' ORDER BY sales_no`),
       query(`
@@ -345,8 +372,9 @@ router.get('/cost-centers', requireAuth, async (req, res, next) => {
                  WHERE dp.sales_no = regexp_replace(cc.code, '-W$', '-E') LIMIT 1) AS client_name
         FROM timerecording.cost_centers cc
         WHERE cc.type = 'warranty' ORDER BY cc.code`),
-      deptQuery,
-      personalQuery,
+      typeRows('department'),
+      typeRows('personal'),
+      typeRows('leave'),
     ]);
 
     res.json({
@@ -357,6 +385,7 @@ router.get('/cost-centers', requireAuth, async (req, res, next) => {
         warranty: warrantyRows.rows.map(r => ({ code: r.code, name: r.name, clientName: r.client_name })),
         department: deptRows.rows.map(r => ({ code: r.code, name: r.name })),
         personal: personalRows.rows.map(r => ({ code: r.code, name: r.name })),
+        leave: leaveRows.rows.map(r => ({ code: r.code, name: r.name })),
       },
     });
   } catch (err) { next(err); }
@@ -423,9 +452,11 @@ router.post('/time-records', requireAuth, async (req, res, next) => {
     const iso = isoWeekOf(date);
     // 成本中心存在性 + 类型枚举 + 文本长度（与任务侧一致；工时侧允许部门中心、空成本中心放行）
     await assertTimeCostCenterValid(cost_center);
-    if (cost_center_type != null && !['sales', 'project', 'warranty', 'department', 'personal'].includes(cost_center_type)) {
+    if (cost_center_type != null && !TIME_COST_CENTER_TYPES.includes(cost_center_type)) {
       throw new AppError(400, 'cost_center_type 无效');
     }
+    // 请休假硬性校验（POST/PUT 共用 assertLeaveValid）：晚班/周末/节假日拒绝；单日合计 ≤ 8 小时
+    await assertLeaveValid({ userId: targetUserId, date, hours, hourType: hour_type, code: cost_center, type: cost_center_type });
     const desc = typeof task_description === 'string' ? task_description : '';
     if (desc.length > 500) throw new AppError(400, '工作内容不能超过 500 字');
 
@@ -445,9 +476,10 @@ router.put('/time-records/:id', requireAuth, async (req, res, next) => {
     // ⚠️ F6 修复：status 不能直接改（须走 /submit 与 /review 审批流程），移除出可更新字段；
     //   week_number/year 也移除：由 date 服务端重算，不信任前端
     const fields = ['date', 'start_time', 'end_time', 'cost_center', 'cost_center_type', 'task_description'];
-    // ⚠️ S4 修复：先取当前行，合并入请求字段后由服务端重算 hours/hour_type（不信任前端）
+    // ⚠️ S4 修复：先取当前行，合并入请求字段后由服务端重算 hours/hour_type（不信任前端）；
+    //   带 user_id/cost_center/cost_center_type 供请休假校验判断记录归属与类型（合并后口径）
     const existing = (await query(
-      `SELECT date, start_time, end_time, hours, hour_type FROM timerecording.time_records WHERE id = $1${admin ? '' : ' AND user_id = $2'}`,
+      `SELECT user_id, date, start_time, end_time, hours, hour_type, cost_center, cost_center_type FROM timerecording.time_records WHERE id = $1${admin ? '' : ' AND user_id = $2'}`,
       admin ? [req.params.id] : [req.params.id, user.userId]
     )).rows[0];
     if (!existing) throw new AppError(404, admin ? '记录不存在' : '记录不存在或无权修改');
@@ -456,7 +488,7 @@ router.put('/time-records/:id', requireAuth, async (req, res, next) => {
     if (req.body.start_time !== undefined && toMinutes(req.body.start_time) == null) throw new AppError(400, '开始时间格式无效');
     if (req.body.end_time !== undefined && toMinutes(req.body.end_time) == null) throw new AppError(400, '结束时间格式无效');
     if (req.body.cost_center !== undefined) await assertTimeCostCenterValid(req.body.cost_center);
-    if (req.body.cost_center_type != null && !['sales', 'project', 'warranty', 'department', 'personal'].includes(req.body.cost_center_type)) {
+    if (req.body.cost_center_type != null && !TIME_COST_CENTER_TYPES.includes(req.body.cost_center_type)) {
       throw new AppError(400, 'cost_center_type 无效');
     }
     if (typeof req.body.task_description === 'string' && req.body.task_description.length > 500) {
@@ -473,9 +505,16 @@ router.put('/time-records/:id', requireAuth, async (req, res, next) => {
     // 时间缺失（旧数据）时保留原值，不重算成 0
     const merged = { ...existing, ...req.body };
     const hasTimes = merged.start_time != null && merged.end_time != null;
+    const recomputedHours = hasTimes ? serverHours(merged.start_time, merged.end_time) : existing.hours;
+    const recomputedHourType = hasTimes ? serverHourType(merged.date, merged.start_time, merged.end_time) : existing.hour_type;
+    // 请休假硬性校验（合并后口径，用记录真实类型/编码判断；排除本行）：晚班/周末/节假日拒绝；单日合计 ≤ 8 小时
+    await assertLeaveValid({
+      userId: existing.user_id, date: merged.date, hours: recomputedHours,
+      hourType: recomputedHourType, code: merged.cost_center, type: merged.cost_center_type,
+      excludeId: req.params.id,
+    });
     updates.push(`hours = $${idx++}`, `hour_type = $${idx++}`);
-    values.push(hasTimes ? serverHours(merged.start_time, merged.end_time) : existing.hours,
-                 hasTimes ? serverHourType(merged.date, merged.start_time, merged.end_time) : existing.hour_type);
+    values.push(recomputedHours, recomputedHourType);
     // ⚠️ year/week_number 由 date 服务端权威重算（忽略前端值）
     const iso = isoWeekOf(merged.date);
     updates.push(`year = $${idx++}`, `week_number = $${idx++}`);

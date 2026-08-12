@@ -7,15 +7,15 @@ import { query } from '../db/index.js';
  * 规则：
  * - warranty（质保）：预算库 delivery_projects 中「节点15完成」（delivery_nodes node_no=15 AND status='completed'）
  *   的项目，自动以其 sales_no 去 -E 加 -W 生成质保成本中心 —— 工时应用在自己的数据库里创建。
- * - department / personal：每个财年自动补建（A{前缀}-DE-000 / A{前缀}-00-000，不存在则插）。
+ * - department / personal / leave：每个财年自动补建（A{前缀}-DE-000 / A{前缀}-00-000 / A{前缀}-LE-000，不存在则插）。
  * - sales / project 不落码表：由 GET /cost-centers 实时查询预算库（sales_opportunities / delivery_projects）。
  * 全部幂等（INSERT ... ON CONFLICT DO NOTHING），可任意频次重复调用。
  */
 
 const BEIJING = 'Asia/Shanghai';
 
-/** 财年标签（FY2627 式，7/1 起算；中国无夏令时） */
-function fiscalYearLabel(d: Date = new Date()): string {
+/** 财年标签（FY2627 式，7/1 起算；中国无夏令时）。timerecording.ts 等共用，避免多处重复实现 */
+export function fiscalYearLabel(d: Date = new Date()): string {
   const m = d.getMonth();
   const y1 = m >= 6 ? d.getFullYear() : d.getFullYear() - 1;
   const y2 = m >= 6 ? d.getFullYear() + 1 : d.getFullYear();
@@ -72,15 +72,16 @@ export async function ensureCostCenters(
           AND dn.node_no = 15 AND dn.status = 'completed')
     ON CONFLICT (code) DO NOTHING`);
 
-  // 部门/个人：按财年补建
+  // 部门/个人/请休假：按财年补建
   for (const fy of fys) {
     const prefix = 'A' + fy.slice(2);
     await query(
       `INSERT INTO timerecording.cost_centers (code, name, type, fy)
-       VALUES ($1, '部门成本中心', 'department', $3),
-              ($2, '个人成本中心', 'personal', $3)
+       VALUES ($1, '部门成本中心', 'department', $4),
+              ($2, '个人成本中心', 'personal', $4),
+              ($3, '请休假成本中心', 'leave', $4)
        ON CONFLICT (code) DO NOTHING`,
-      [`${prefix}-DE-000`, `${prefix}-00-000`, fy]);
+      [`${prefix}-DE-000`, `${prefix}-00-000`, `${prefix}-LE-000`, fy]);
   }
 }
 
