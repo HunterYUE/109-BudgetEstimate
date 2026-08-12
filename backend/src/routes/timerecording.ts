@@ -786,6 +786,12 @@ router.post('/task-assignments', requireAuth, async (req, res, next) => {
     const manager = isManager(user);
     const { user_id, task_name, color, start_datetime, end_datetime, status, note, cost_center } = req.body;
     const targetUserId = (manager && user_id) ? user_id : user.userId;
+    // ⚠️ 输入边界：user_id 无 FK（孤儿任务风险）——仅管理员可指定他人，须存在于在职档案：
+    //   防把任务派给不存在/已停用的员工（孤儿任务在甘特永不显示、还白发通知）
+    if (manager) {
+      const target = (await query('SELECT 1 FROM timerecording.profiles WHERE id = $1 AND is_active', [targetUserId])).rows[0];
+      if (!target) throw new AppError(400, '目标员工不存在或已停用');
+    }
     // ⚠️ 输入边界：status/起止时间/color 列有 DB NOT NULL/CHECK 约束，先应用层校验返回明确 400（避免撞约束变 500）
     if (status != null && !TASK_STATUSES.includes(status as string)) throw new AppError(400, '任务状态不合法');
     const sDate = new Date(start_datetime), eDate = new Date(end_datetime);
@@ -854,6 +860,13 @@ router.put('/task-assignments/:id', requireAuth, async (req, res, next) => {
       const ns = new Date(req.body.start_datetime ?? old.start_datetime), ne = new Date(req.body.end_datetime ?? old.end_datetime);
       if (isNaN(ns.getTime()) || isNaN(ne.getTime())) throw new AppError(400, '开始/结束时间无效');
       if (ne < ns) throw new AppError(400, '结束时间不能早于开始时间');
+    }
+    // ⚠️ 输入边界：history 是 jsonb 数组列（NOT NULL，无 DB 约束）——必须是数组且条数有界：
+    //   防 API 直传超大数组撑大行、传 null 撞 NOT NULL 返 500、传非数组字符串（如 "garbage"）破坏前端 [...history] 展开
+    if (req.body.history !== undefined) {
+      if (!Array.isArray(req.body.history) || req.body.history.length > 200) {
+        throw new AppError(400, '历史快照必须是数组且不超过 200 条');
+      }
     }
     // ⚠️ 改成本中心时必须存在（含个人中心可用财年窗口）；未改动（与旧值一致）则跳过——
     //    存量任务可能引用已从预算库消失的中心（如已归档销售单），未改动时不应阻止保存其他字段
