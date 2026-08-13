@@ -2,6 +2,7 @@ import React, { useMemo, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card } from 'antd';
 import { RightOutlined } from '@ant-design/icons';
+import { FiBarChart2, FiAward, FiPlusCircle, FiTruck, FiTool } from 'react-icons/fi';
 import { parseFY, fiscalYearLabel } from '../utils/fiscalYear';
 import { formatBeijing } from '../utils/timeFormat';
 import { fmtK, chartLabel, oppEffectiveEnd, isRealWin, monthEndOf, exAmount, stageAsOf, getNodeDelay, getProjectDelay, isProjectDelivered, getProjectDoneDate, projectMonthlySales, FY_MONTH_LABELS, buildQuoteInfoMap, deliveryExTax } from '../utils/analysisShared';
@@ -494,38 +495,35 @@ const Dashboard: React.FC = () => {
         仪表盘
       </div>
 
-      {/* ── KPI 卡片行（共享 OverviewCards；iconSize=26 + flexWrap + marginBottom=10 保持原视觉） ── */}
+      {/* ── KPI 卡片行（共享 OverviewCards，样式对齐工时应用仪表盘） ── */}
       <OverviewCards
         items={[
-          { label: '上月活跃', value: fmtMonthly(monthlyKpi[0].amt, monthlyKpi[0].cnt), color: COLORS.primary, icon: '📊',
+          { label: '上月活跃', value: fmtMonthly(monthlyKpi[0].amt, monthlyKpi[0].cnt), color: COLORS.primary, icon: <FiBarChart2 size={18} />,
             prevValues: [
               { value: fmtMonthly(monthlyKpi[1].amt, monthlyKpi[1].cnt), color: COLORS.primary },
               { value: fmtMonthly(monthlyKpi[2].amt, monthlyKpi[2].cnt), color: COLORS.primary },
             ] },
-          { label: '上月赢单', value: fmtMonthly(monthlyKpi[0].winAmt, monthlyKpi[0].winCnt), color: COLORS.success, icon: '🏆',
+          { label: '上月赢单', value: fmtMonthly(monthlyKpi[0].winAmt, monthlyKpi[0].winCnt), color: COLORS.success, icon: <FiAward size={18} />,
             prevValues: [
               { value: fmtMonthly(monthlyKpi[1].winAmt, monthlyKpi[1].winCnt), color: COLORS.success },
               { value: fmtMonthly(monthlyKpi[2].winAmt, monthlyKpi[2].winCnt), color: COLORS.success },
             ] },
-          { label: '上月新增', value: fmtMonthly(monthlyKpi[0].newAmt, monthlyKpi[0].newCnt), color: COLORS.amber, icon: '✨',
+          { label: '上月新增', value: fmtMonthly(monthlyKpi[0].newAmt, monthlyKpi[0].newCnt), color: COLORS.amber, icon: <FiPlusCircle size={18} />,
             prevValues: [
               { value: fmtMonthly(monthlyKpi[1].newAmt, monthlyKpi[1].newCnt), color: COLORS.amber },
               { value: fmtMonthly(monthlyKpi[2].newAmt, monthlyKpi[2].newCnt), color: COLORS.amber },
             ] },
-          { label: '上月交付', value: fmtMonthly(monthlyKpi[0].deliveredAmt, monthlyKpi[0].deliveredCnt), color: COLORS.success, icon: '🚚',
+          { label: '上月交付', value: fmtMonthly(monthlyKpi[0].deliveredAmt, monthlyKpi[0].deliveredCnt), color: COLORS.success, icon: <FiTruck size={18} />,
             prevValues: [
               { value: fmtMonthly(monthlyKpi[1].deliveredAmt, monthlyKpi[1].deliveredCnt), color: COLORS.success },
               { value: fmtMonthly(monthlyKpi[2].deliveredAmt, monthlyKpi[2].deliveredCnt), color: COLORS.success },
             ] },
-          { label: '交付中', value: fmtMonthly(monthlyKpi[0].delAmt, monthlyKpi[0].delCnt), color: COLORS.purple, icon: '🚧',
+          { label: '交付中', value: fmtMonthly(monthlyKpi[0].delAmt, monthlyKpi[0].delCnt), color: COLORS.purple, icon: <FiTool size={18} />,
             prevValues: [
               { value: fmtMonthly(monthlyKpi[1].delAmt, monthlyKpi[1].delCnt), color: COLORS.purple },
               { value: fmtMonthly(monthlyKpi[2].delAmt, monthlyKpi[2].delCnt), color: COLORS.purple },
             ] },
         ]}
-        iconSize={26}
-        marginBottom={10}
-        flexWrap
       />
 
       {/* ── 交付状态 ── */}

@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { Card, Spin, message } from 'antd';
+import { FiLayers, FiDollarSign, FiPercent, FiClock, FiTarget } from 'react-icons/fi';
 import type { SalesOpportunity, QuotationSummary, DeliveryProject } from '../types';
 import { parseReasons, REASON_TAXONOMY } from '../reasonTaxonomy';
 import { SalesFunnel, VerticalBarChart, type BarItem } from '../components/charts/SalesCharts';
@@ -550,31 +551,31 @@ const SalesAnalysis: React.FC = () => {
   // 概览卡片（按月数据）
   const overviewItems = [
     { label: '加权管道',
-      ...kpiCell(monthlyKpi[0].valid, monthlyKpi[0].weightedPipeline, v => `¥${fmtK(v)}`, COLORS.primary), icon: '📊',
+      ...kpiCell(monthlyKpi[0].valid, monthlyKpi[0].weightedPipeline, v => `¥${fmtK(v)}`, COLORS.primary), icon: <FiLayers size={18} />,
       prevValues: [
         kpiCell(monthlyKpi[1].valid, monthlyKpi[1].weightedPipeline, v => `¥${fmtK(v)}`, COLORS.primary),
         kpiCell(monthlyKpi[2].valid, monthlyKpi[2].weightedPipeline, v => `¥${fmtK(v)}`, COLORS.primary),
       ] },
     { label: '加权利润',
-      ...kpiCell(monthlyKpi[0].valid, monthlyKpi[0].weightedProfit, v => `¥${fmtK(v)}`, COLORS.purple), icon: '💰',
+      ...kpiCell(monthlyKpi[0].valid, monthlyKpi[0].weightedProfit, v => `¥${fmtK(v)}`, COLORS.purple), icon: <FiDollarSign size={18} />,
       prevValues: [
         kpiCell(monthlyKpi[1].valid, monthlyKpi[1].weightedProfit, v => `¥${fmtK(v)}`, COLORS.purple),
         kpiCell(monthlyKpi[2].valid, monthlyKpi[2].weightedProfit, v => `¥${fmtK(v)}`, COLORS.purple),
       ] },
     { label: '加权利润率',
-      ...kpiCell(monthlyKpi[0].valid, monthlyKpi[0].weightedProfitRate, v => `${v.toFixed(1)}%`, monthlyKpi[0].weightedProfitRate >= 15 ? COLORS.success : COLORS.warning), icon: '📈',
+      ...kpiCell(monthlyKpi[0].valid, monthlyKpi[0].weightedProfitRate, v => `${v.toFixed(1)}%`, monthlyKpi[0].weightedProfitRate >= 15 ? COLORS.success : COLORS.warning), icon: <FiPercent size={18} />,
       prevValues: [
         kpiCell(monthlyKpi[1].valid, monthlyKpi[1].weightedProfitRate, v => `${v.toFixed(1)}%`, monthlyKpi[1].weightedProfitRate >= 15 ? COLORS.success : COLORS.warning),
         kpiCell(monthlyKpi[2].valid, monthlyKpi[2].weightedProfitRate, v => `${v.toFixed(1)}%`, monthlyKpi[2].weightedProfitRate >= 15 ? COLORS.success : COLORS.warning),
       ] },
     { label: '销售周期',
-      ...kpiCell(rolling12mKpi[0].salesCycle > 0, rolling12mKpi[0].salesCycle, v => `${v} 天`, rolling12mKpi[0].salesCycle <= 120 ? COLORS.success : COLORS.warning), icon: '⏱️',
+      ...kpiCell(rolling12mKpi[0].salesCycle > 0, rolling12mKpi[0].salesCycle, v => `${v} 天`, rolling12mKpi[0].salesCycle <= 120 ? COLORS.success : COLORS.warning), icon: <FiClock size={18} />,
       prevValues: [
         kpiCell(rolling12mKpi[1].salesCycle > 0, rolling12mKpi[1].salesCycle, v => `${v} 天`, rolling12mKpi[1].salesCycle <= 120 ? COLORS.success : COLORS.warning),
         kpiCell(rolling12mKpi[2].salesCycle > 0, rolling12mKpi[2].salesCycle, v => `${v} 天`, rolling12mKpi[2].salesCycle <= 120 ? COLORS.success : COLORS.warning),
       ] },
     { label: '赢单转化率',
-      ...kpiCell(rolling12mKpi[0].wonDecided > 0, rolling12mKpi[0].decidedWinRate, v => `${v.toFixed(1)}%`, rolling12mKpi[0].decidedWinRate >= 20 ? COLORS.success : COLORS.warning), icon: '🎯',
+      ...kpiCell(rolling12mKpi[0].wonDecided > 0, rolling12mKpi[0].decidedWinRate, v => `${v.toFixed(1)}%`, rolling12mKpi[0].decidedWinRate >= 20 ? COLORS.success : COLORS.warning), icon: <FiTarget size={18} />,
       prevValues: [
         kpiCell(rolling12mKpi[1].wonDecided > 0, rolling12mKpi[1].decidedWinRate, v => `${v.toFixed(1)}%`, rolling12mKpi[1].decidedWinRate >= 20 ? COLORS.success : COLORS.warning),
         kpiCell(rolling12mKpi[2].wonDecided > 0, rolling12mKpi[2].decidedWinRate, v => `${v.toFixed(1)}%`, rolling12mKpi[2].decidedWinRate >= 20 ? COLORS.success : COLORS.warning),

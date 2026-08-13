@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { FiBox, FiTool, FiCheckCircle, FiAlertOctagon, FiCalendar, FiTarget, FiDollarSign } from 'react-icons/fi';
 import { deliveryService } from '../services/deliveryService';
 import { quotationService } from '../services/quotationService';
 import type { DeliveryProject } from '../types';
@@ -11,7 +12,7 @@ import type { ProfitItem, BubbleDataItem } from '../components/charts/DeliveryCh
 import { OverviewCards, type KpiCardItem } from '../components/shared/OverviewCards';
 
 /* ============================================================
-   概览卡片（共享组件 OverviewCards，valueFontSize=26 保持交付分析视觉）
+   概览卡片（共享组件 OverviewCards，样式对齐工时应用仪表盘 KPI 卡）
    ============================================================ */
 
 /** 某财年截止到某月月底的累计 KPI 口径；hasData=false 表示该月早于财年起点、无完整月数据 */
@@ -298,13 +299,13 @@ const DeliveryAnalysis: React.FC = () => {
   const overviewItems = useMemo((): KpiCardItem[] => {
     const main = monthlyCumKpi[0]; // 截止到最近完整月（已完结财年=Jun；当前财年无完整月时 hasData=false）
     return [
-      { label: '项目总数', value: cumVal(main, 0), color: COLORS.primary, icon: '📊' },
-      { label: '进行中项目', value: cumVal(main, 1), color: COLORS.primary, icon: '🚧' },
-      { label: '已完成项目', value: cumVal(main, 2), color: COLORS.success, icon: '✅' },
-      { label: '延期项目', value: cumVal(main, 3), color: main.hasData && main.delayed > 0 ? COLORS.danger : COLORS.success, icon: '🚨' },
-      { label: '平均延期天数', value: cumVal(main, 4), color: main.hasData && main.avgDelay > 0 ? COLORS.danger : COLORS.success, icon: '📅' },
-      { label: '节点按时率', value: cumVal(main, 5), color: main.hasData && main.onTimeRate >= 0 ? (main.onTimeRate >= 80 ? COLORS.success : main.onTimeRate >= 50 ? COLORS.warning : COLORS.danger) : COLORS.textLight, icon: '🎯' },
-      { label: '成本偏差率', value: cumVal(main, 6), color: main.hasData && main.costDev <= 0 ? COLORS.success : COLORS.danger, icon: '💰' },
+      { label: '项目总数', value: cumVal(main, 0), color: COLORS.primary, icon: <FiBox size={18} /> },
+      { label: '进行中项目', value: cumVal(main, 1), color: COLORS.primary, icon: <FiTool size={18} /> },
+      { label: '已完成项目', value: cumVal(main, 2), color: COLORS.success, icon: <FiCheckCircle size={18} /> },
+      { label: '延期项目', value: cumVal(main, 3), color: main.hasData && main.delayed > 0 ? COLORS.danger : COLORS.success, icon: <FiAlertOctagon size={18} /> },
+      { label: '平均延期天数', value: cumVal(main, 4), color: main.hasData && main.avgDelay > 0 ? COLORS.danger : COLORS.success, icon: <FiCalendar size={18} /> },
+      { label: '节点按时率', value: cumVal(main, 5), color: main.hasData && main.onTimeRate >= 0 ? (main.onTimeRate >= 80 ? COLORS.success : main.onTimeRate >= 50 ? COLORS.warning : COLORS.danger) : COLORS.textLight, icon: <FiTarget size={18} /> },
+      { label: '成本偏差率', value: cumVal(main, 6), color: main.hasData && main.costDev <= 0 ? COLORS.success : COLORS.danger, icon: <FiDollarSign size={18} /> },
     ];
   }, [monthlyCumKpi]);
 
@@ -455,7 +456,7 @@ const DeliveryAnalysis: React.FC = () => {
               { value: cumVal(monthlyCumKpi[1], i), color: item.color },
               { value: cumVal(monthlyCumKpi[2], i), color: item.color },
             ],
-          }))} valueFontSize={26} />
+          }))} />
 
           <div style={{ display: 'flex', gap: 16, marginTop: 16, alignItems: 'stretch' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16, flex: '0 0 calc(3 / 7 * (100% - 96px) + 32px)' }}>
