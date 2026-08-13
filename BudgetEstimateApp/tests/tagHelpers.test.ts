@@ -70,3 +70,11 @@ describe('findPath / getNodeByPath', () => {
     expect(getNodeByPath(tree, [9])).toBeNull();
   });
 });
+
+describe('findPath / getNodeByPath 补充', () => {
+  it('根级节点路径 [1]；空路径 → null', () => {
+    expect(findPath(tree, 'b')).toEqual([1]);
+    expect(getNodeByPath(tree, [1])?.id).toBe('b');
+    expect(getNodeByPath(tree, [])).toBeNull();
+  });
+});

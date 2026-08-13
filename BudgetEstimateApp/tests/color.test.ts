@@ -16,3 +16,10 @@ describe('withAlpha 十六进制 → rgba', () => {
     expect(withAlpha('#ggg', 0.2)).toBe('rgba(128,128,128,0.2)');
   });
 });
+
+describe('withAlpha 补充', () => {
+  it('无 # 前缀裸 hex 解析；alpha=0 透传', () => {
+    expect(withAlpha('1677ff', 0)).toBe('rgba(22, 119, 255, 0)');
+    expect(withAlpha('1677ff', 0.5)).toBe('rgba(22, 119, 255, 0.5)');
+  });
+});
