@@ -565,7 +565,7 @@ const Dashboard: React.FC = () => {
           styles={{ body: { padding: '16px 0 16px 18px' } }}>
           <SectionTitle title="管道节点" />
           <div style={{ marginTop: 50, marginLeft: -20 }}>
-            <VerticalBars items={stageDist} height={230} groupGaps={[2, 5, 8, 11]} barWidth={26.5} />
+            <VerticalBars items={stageDist} height={200} groupGaps={[2, 5, 8, 11]} barWidth={26.5} />
           </div>
         </Card>
 
@@ -578,7 +578,7 @@ const Dashboard: React.FC = () => {
           ) : (
             <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: -20 }}>
               <div style={{ flex: 1, display: 'flex', justifyContent: 'center', overflow: 'visible' }}>
-                <PieChart items={industryDist} pieSize={220} />
+                <PieChart items={industryDist} pieSize={190} />
               </div>
               <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {industryDist.map(i => (
@@ -600,7 +600,7 @@ const Dashboard: React.FC = () => {
             <div style={{ padding: 24, textAlign: 'center', color: COLORS.textLight, fontSize: 13 }}>当前财年暂无新增</div>
           ) : (
             <div style={{ marginTop: 50 }}>
-              <VerticalBars items={fyTrend} height={230} unit="K" />
+              <VerticalBars items={fyTrend} height={200} unit="K" />
             </div>
           )}
         </Card>
