@@ -4,7 +4,7 @@ import rateLimit from 'express-rate-limit';
 import { query } from '../db/index.js';
 import { requireAuth, requireRole, signToken, setAuthCookie, clearAuthCookie, COOKIE_NAME_TR } from '../middleware/auth.js';
 import { AppError } from '../middleware/index.js';
-import { logAudit, round2, normalizeEmail, resetUserPassword, withTransaction, assertCanManage, ROLE_RANK, DUMMY_PASSWORD_HASH } from './helpers.js';
+import { logAudit, round2, normalizeEmail, resetUserPassword, withTransaction, assertCanManage, ROLE_RANK, DUMMY_PASSWORD_HASH, parsePagination } from './helpers.js';
 import { PAGE_LIMIT } from '../constants.js';
 import { ensureCostCenters, recentFiscalYears, availableCostCenterFys, fiscalYearLabel } from '../jobs/costCenterSync.js';
 
@@ -338,6 +338,9 @@ router.post('/auth/logout', (_req, res) => {
 router.get('/profiles', ...trAuth, async (req, res, next) => {
   try {
     const admin = isTrAdmin(req.user);
+    // ⚠️ C101：显式支持 limit 查询参数（钳制 [1, PAGE_LIMIT]，缺省 1000 保持全量读取口径），
+    //   供调用方显式声明所需条数，防数据量上涨后静默截断
+    const { limit } = parsePagination(req.query, PAGE_LIMIT);
     const select = admin ? 'p.id, p.employee_id, p.name, p.email, p.role, p.is_active, p.created_at' : 'p.id, p.employee_id, p.name, p.is_active, p.created_at';
     const rows = (await query(
       `SELECT ${select}, EXISTS (
@@ -346,7 +349,7 @@ router.get('/profiles', ...trAuth, async (req, res, next) => {
               ) AS is_director
          FROM timerecording.profiles p
         ORDER BY p.name
-        LIMIT ${PAGE_LIMIT}`
+        LIMIT ${limit}`
     )).rows;
     res.json(rows);
   } catch (err) { next(err); }
@@ -482,8 +485,10 @@ router.get('/time-records', ...trAuth, async (req, res, next) => {
     }
     if (cost_center) { conditions.push(`cost_center = $${idx++}`); params.push(cost_center); }
 
+    // ⚠️ C101：显式支持 limit 查询参数（缺省 1000 保持全量口径；聚合/全量拉取由前端显式传 limit）
+    const { limit } = parsePagination(req.query, PAGE_LIMIT);
     const sql = `SELECT * FROM timerecording.time_records${conditions.length ? ' WHERE ' + conditions.join(' AND ') : ''} ORDER BY date DESC, created_at DESC LIMIT $${idx}`;
-    params.push(PAGE_LIMIT);
+    params.push(limit);
     const rows = (await query(sql, params)).rows;
     res.json(rows);
   } catch (err) { next(err); }
@@ -822,8 +827,10 @@ router.get('/task-assignments', ...trAuth, async (req, res, next) => {
     // ⚠️ 窗口过滤：只返回与 [start, end] 有交集的任务（甘特按 14 周窗口拉取，避免全量返回 + 窗口外任务条撑高行高）
     if (start) { conditions.push(`end_datetime >= $${idx++}`); params.push(start); }
     if (end) { conditions.push(`start_datetime <= $${idx++}`); params.push(end); }
+    // ⚠️ C101：显式支持 limit 查询参数（缺省 1000 保持全量口径）
+    const { limit } = parsePagination(req.query, PAGE_LIMIT);
     const sql = `SELECT * FROM timerecording.task_assignments${conditions.length ? ' WHERE ' + conditions.join(' AND ') : ''} ORDER BY start_datetime LIMIT $${idx}`;
-    params.push(PAGE_LIMIT);
+    params.push(limit);
     res.json((await query(sql, params)).rows);
   } catch (err) { next(err); }
 });
