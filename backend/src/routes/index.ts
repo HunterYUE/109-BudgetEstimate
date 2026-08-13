@@ -16,6 +16,8 @@ import settings from './settings.js';
 import { query } from '../db/index.js';
 import { AppError } from '../middleware/index.js';
 import { logAudit, objKeysToSnake, withTransaction } from './helpers.js';
+import { WRITE_GUARD, READ_GUARD, APPROVAL_WRITE, APPROVAL_WRITE_FALLBACK,
+  DELIVERY_CREATE_WRITE, DELIVERY_OTHER_WRITE } from '../permissions.js';
 import { DEFAULT_EUR_RATE, DEFAULT_TAX_RATE, DEFAULT_WARRANTY_RATE, DEFAULT_RISK_RATE } from '../constants.js';
 
 const router = Router();
@@ -42,20 +44,14 @@ const readGuard = (perms: string[]) => (req: Request, res: Response, next: NextF
   if (req.method === 'GET') return requirePermission(...perms)(req, res, next);
   next();
 };
-// 读取方并集：QuotationPage/报价编制 与 DeliveryDetail/交付管理 会跨读机会与报价，必须纳入
-const QUOTE_READ = ['报价列表查看', '报价编制', '交付管理', '销售机会管理', '仪表盘查看', '销售分析', '交付分析', '审批管理', '全部查看权限'];
-const OPP_READ = ['销售机会管理', '编辑销售机会', '报价编制', '仪表盘查看', '销售分析', '全部查看权限'];
-const DELIVERY_READ = ['交付管理', '销售机会管理', '仪表盘查看', '销售分析', '交付分析', '审批管理', '全部查看权限'];
-const APPROVAL_READ = ['审批管理', '全部查看权限'];
-const PROJECT_READ = ['报价编制', '交付管理', '销售机会管理', '全部查看权限'];
-// 组件读取方：物料管理 / 报价编制(ItemTable) / 交付管理(DeliveryDetail 服务项)
-const COMPONENT_READ = ['物料管理', '报价编制', '交付管理', '全部查看权限'];
+// 读取/写入守卫权限集已收敛至 ../permissions.js（WRITE_GUARD/READ_GUARD/APPROVAL_WRITE/DELIVERY_*），
+// 单测 tests/permissions.test.ts 锁定 A1 类配置漂移。
 // ⚠️ A1 修复：writeGuard 列表只含「写动作」权限——剔除纯只读页面权限（物料管理/销售机会管理/客户管理），
 //   否则 hasPermission 的任一命中（OR）会让仅持页面查看权的用户也能增删改（越权写）。读权限集 readGuard 不变。
-router.use('/components', requireAuth, writeGuard(['新增物料', '全部查看权限']), readGuard(COMPONENT_READ), components);
-router.use('/projects', requireAuth, writeGuard(['报价编制', '全部查看权限']), readGuard(PROJECT_READ), projects);
-router.use('/opportunities', requireAuth, writeGuard(['编辑销售机会', '新建信息/线索/机会', '转线索/转机会', '销售蓝表编辑', '全部查看权限']), readGuard(OPP_READ), opportunities);
-router.use('/quotations', requireAuth, writeGuard(['报价编制', '全部查看权限']), readGuard(QUOTE_READ), quotations);
+router.use('/components', requireAuth, writeGuard(WRITE_GUARD.components), readGuard(READ_GUARD.components), components);
+router.use('/projects', requireAuth, writeGuard(WRITE_GUARD.projects), readGuard(READ_GUARD.projects), projects);
+router.use('/opportunities', requireAuth, writeGuard(WRITE_GUARD.opportunities), readGuard(READ_GUARD.opportunities), opportunities);
+router.use('/quotations', requireAuth, writeGuard(WRITE_GUARD.quotations), readGuard(READ_GUARD.quotations), quotations);
 // 审批：创建（各业务模块提交）与处理（审批管理）均需对应权限；列表读取仅审批管理/万能权限
 // ⚠️ 审计修复：审批写守卫按 approval_type 拆分——此前 blanket writeGuard OR-set 让仅持单一模块权限者
 //   （如仅"报价编制"）也能创建 plan/cost/promote 审批、仅持"交付管理"者也能创建 quotation 审批。
@@ -65,17 +61,11 @@ router.use('/approvals', requireAuth,
   (req: Request, res: Response, next: NextFunction) => {
     if (req.method === 'GET') return next(); // 交给 readGuard
     const type = (req.body?.approval_type as string | undefined) || (req.body?.approvalType as string | undefined);
-    const permsForType: Record<string, string[]> = {
-      quotation: ['报价编制', '全部查看权限'],
-      plan: ['交付管理', '全部查看权限'],
-      cost: ['交付管理', '成本录入', '全部查看权限'],
-      promote: ['转线索/转机会', '全部查看权限'],
-    };
-    const perms = type ? permsForType[type] : undefined;
+    const perms = type ? APPROVAL_WRITE[type] : undefined;
     if (perms) return requirePermission(...perms)(req, res, next);
-    return requirePermission('审批管理', '全部查看权限')(req, res, next);
+    return requirePermission(...APPROVAL_WRITE_FALLBACK)(req, res, next);
   },
-  readGuard(APPROVAL_READ), approvals);
+  readGuard(READ_GUARD.approvals), approvals);
 // ⚠️ A101 修复：交付写权限按方法拆分——「销售机会管理」仅限转交付创建/初始化节点（POST /deliveries、PUT /:id/nodes），
 //   修改实际成本/删除交付/附件管理等其余写操作须「交付管理」。此前 blanket writeGuard OR 让仅持
 //   「销售机会管理」的用户可对任意交付改 total_actual_cost、DELETE 整条交付（还会清磁盘附件）。
@@ -85,24 +75,24 @@ router.use('/deliveries', requireAuth,
     if (req.method === 'GET') return next(); // 交给 readGuard
     // 转交付链路：创建 + 节点保存（销售机会管理 合法写路径）
     if (req.method === 'POST' || (req.method === 'PUT' && req.path.endsWith('/nodes'))) {
-      return requirePermission('交付管理', '销售机会管理', '全部查看权限')(req, res, next);
+      return requirePermission(...DELIVERY_CREATE_WRITE)(req, res, next);
     }
     // 其余写操作（改成本/删交付/附件管理/改状态等）需交付管理
-    return requirePermission('交付管理', '全部查看权限')(req, res, next);
+    return requirePermission(...DELIVERY_OTHER_WRITE)(req, res, next);
   },
-  readGuard(DELIVERY_READ), deliveries);
+  readGuard(READ_GUARD.deliveries), deliveries);
 // ⚠️ H1 修复：/clients 列表读取与 /clients/:id/detail 同权限集（此前列表 GET 未加 readGuard，任意登录用户可读全部客户）
-router.use('/clients', requireAuth, writeGuard(['新建客户', '全部查看权限']), readGuard(['客户管理', '报价编制', '销售机会管理', '全部查看权限']), clients);
+router.use('/clients', requireAuth, writeGuard(WRITE_GUARD.clients), readGuard(READ_GUARD.clients), clients);
 // 标签写操作需 新建标签（读取开放给物料打标）
-router.use('/tags', requireAuth, writeGuard(['新建标签', '全部查看权限']), tags);
+router.use('/tags', requireAuth, writeGuard(WRITE_GUARD.tags), tags);
 // 审计日志：与前端 /settings 同口径（用户管理/系统配置）
-router.use('/audit-logs', requireAuth, requirePermission('用户管理', '系统配置', '全部查看权限'), auditLogs);
+router.use('/audit-logs', requireAuth, requirePermission(...READ_GUARD['audit-logs']), auditLogs);
 
 // 用户设置
 router.use('/settings', requireAuth, settings);
 
 // ── 项目版本保存（报价编制写操作）──
-router.post('/project-versions', requireAuth, writeGuard(['报价编制', '全部查看权限']), async (req, res, next) => {
+router.post('/project-versions', requireAuth, writeGuard(WRITE_GUARD['project-versions']), async (req, res, next) => {
   try {
     const snakeBody = objKeysToSnake(req.body);
     const { project_id, version_no, eur_rate = DEFAULT_EUR_RATE, tax_rate = DEFAULT_TAX_RATE,
@@ -187,7 +177,7 @@ router.post('/project-versions', requireAuth, writeGuard(['报价编制', '全�
 });
 
 // ── 项目组和明细保存（事务保护，报价编制写操作）──
-router.post('/project-groups', requireAuth, writeGuard(['报价编制', '全部查看权限']), async (req, res, next) => {
+router.post('/project-groups', requireAuth, writeGuard(WRITE_GUARD['project-groups']), async (req, res, next) => {
   try {
     const body = objKeysToSnake(req.body);
     const { project_id, version_id, group_no, group_type, name,
@@ -274,7 +264,7 @@ router.post('/project-groups', requireAuth, writeGuard(['报价编制', '全部�
 });
 
 // 删除指定版本的所有组和明细（必须在 /:id 之前注册，否则 by-version 被 :id 捕获）
-router.delete('/project-groups/by-version/:versionId', requireAuth, writeGuard(['报价编制', '全部查看权限']), async (req, res, next) => {
+router.delete('/project-groups/by-version/:versionId', requireAuth, writeGuard(WRITE_GUARD['project-groups']), async (req, res, next) => {
   try {
     const { versionId } = req.params;
     // group_items 通过外键 ON DELETE CASCADE 自动删除
@@ -287,7 +277,7 @@ router.delete('/project-groups/by-version/:versionId', requireAuth, writeGuard([
 });
 
 // 删除单个项目组
-router.delete('/project-groups/:id', requireAuth, writeGuard(['报价编制', '全部查看权限']), async (req, res, next) => {
+router.delete('/project-groups/:id', requireAuth, writeGuard(WRITE_GUARD['project-groups']), async (req, res, next) => {
   try {
     const { id } = req.params;
     // ⚠️ L1 修复：检查实际删除行数，删除不存在的组返回 404

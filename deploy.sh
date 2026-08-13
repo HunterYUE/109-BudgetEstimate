@@ -1,10 +1,15 @@
 #!/bin/bash
-# 前端部署脚本 — 确保从 dist/ 目录打包
+# 部署脚本 — Budget 前端 + 共享后端：先跑后端门禁（tsc + vitest），再构建部署前端，最后发后端 src
 set -e
 cd "$(dirname "$0")"
 
+echo "=== 后端门禁（tsc + vitest）==="
+cd backend
+npm run build
+echo "后端门禁通过"
+
 echo "=== 构建前端 ==="
-cd BudgetEstimateApp
+cd ../BudgetEstimateApp
 npm run build
 
 echo "=== 部署前端 ==="

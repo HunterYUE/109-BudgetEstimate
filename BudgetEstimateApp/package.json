@@ -12,6 +12,7 @@
     "lint:naming": "node scripts/lint-naming.cjs",
     "lint:all": "eslint . && node scripts/lint-naming.cjs",
     "test": "vitest run",
+    "bench": "vitest run --config vitest.bench.config.ts",
     "preview": "vite preview"
   },
   "dependencies": {
