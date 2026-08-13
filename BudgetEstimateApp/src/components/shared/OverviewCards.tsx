@@ -55,7 +55,7 @@ export const OverviewCards: React.FC<{
             }}>{item.icon}</div>
             <div style={{ minWidth: 0 }}>
               {/* 数值过长（如千位分隔）时省略号截断，不把卡片撑破 */}
-              <div style={{ fontSize: 22, fontWeight: 700, color: COLORS.textDark, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              <div style={{ fontSize: 20, fontWeight: 700, color: COLORS.textDark, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {item.value}
               </div>
               <div style={{ fontSize: 9, color: COLORS.textLight, marginTop: 3, letterSpacing: 0.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>

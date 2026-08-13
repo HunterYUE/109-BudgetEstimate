@@ -535,22 +535,22 @@ const Dashboard: React.FC = () => {
           <div style={{ display: 'flex', gap: 8, alignItems: 'stretch', minHeight: 150, marginTop: -18 }}>
             <div style={{ flex: 4.0625, display: 'flex', flexDirection: 'column', marginLeft: -20 }}>
               <div style={{ fontSize: 10, color: COLORS.textLight, fontWeight: 500, textAlign: 'right', marginBottom: 2, paddingRight: 2 }}>项目状态</div>
-              <VerticalBars items={deliveryStats.projectStatus} height={210} groupGaps={[2, 5]} gapSize={4} />
+              <VerticalBars items={deliveryStats.projectStatus} height={210} groupGaps={[2, 5]} gapSize={4} barWidth={22.5} />
             </div>
             <div style={{ width: 1, background: COLORS.borderLight, flexShrink: 0 }} />
             <div style={{ flex: 4.0625, display: 'flex', flexDirection: 'column', marginLeft: -10 }}>
               <div style={{ fontSize: 10, color: COLORS.textLight, fontWeight: 500, textAlign: 'right', marginBottom: 2, paddingRight: 2 }}>节点执行</div>
-              <VerticalBars items={deliveryStats.nodeStatus} height={210} groupGaps={[2, 5]} gapSize={5} />
+              <VerticalBars items={deliveryStats.nodeStatus} height={210} groupGaps={[2, 5]} gapSize={5} barWidth={22.5} />
             </div>
             <div style={{ width: 1, background: COLORS.borderLight, flexShrink: 0 }} />
             <div style={{ flex: 8.0625, display: 'flex', flexDirection: 'column' }}>
               <div style={{ fontSize: 10, color: COLORS.textLight, fontWeight: 500, textAlign: 'right', marginBottom: 2, paddingRight: 2 }}>节点准时率</div>
-              <VerticalBars items={deliveryStats.onTimeRate} height={210} unit="%" maxSlots={18} />
+              <VerticalBars items={deliveryStats.onTimeRate} height={210} unit="%" maxSlots={18} barWidth={22.5} />
             </div>
             <div style={{ width: 1, background: COLORS.borderLight, flexShrink: 0 }} />
             <div style={{ flex: 2.8125, display: 'flex', flexDirection: 'column' }}>
               <div style={{ fontSize: 10, color: COLORS.textLight, fontWeight: 500, textAlign: 'right', marginBottom: 2, paddingRight: 2 }}>利润概览</div>
-              <VerticalBars items={deliveryStats.profitOverview} height={210} unit="K" groupGaps={[2]} />
+              <VerticalBars items={deliveryStats.profitOverview} height={210} unit="K" groupGaps={[2]} barWidth={22.5} />
             </div>
           </div>
         </Card>
@@ -563,7 +563,7 @@ const Dashboard: React.FC = () => {
           styles={{ body: { padding: '16px 18px' } }}>
           <SectionTitle title="管道节点" />
           <div style={{ marginTop: 50, marginLeft: -20 }}>
-            <VerticalBars items={stageDist} height={250} groupGaps={[2, 5, 8, 11]} />
+            <VerticalBars items={stageDist} height={250} groupGaps={[2, 5, 8, 11]} barWidth={22.5} />
           </div>
         </Card>
 

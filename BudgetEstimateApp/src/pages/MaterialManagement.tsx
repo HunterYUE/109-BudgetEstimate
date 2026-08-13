@@ -401,8 +401,8 @@ const MaterialManagement: React.FC = () => {
 
   const columns: ColumnsType<Component> = useMemo(() => [
     {
-      title: '编码', dataIndex: 'code', width: 165,
-      onCell: onCellLock(150),
+      title: '编码', dataIndex: 'code', width: 185,
+      onCell: onCellLock(185),
       render: (v: string, rec: Component) => {
         return (
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -420,7 +420,7 @@ const MaterialManagement: React.FC = () => {
         );
       },
     },
-    { title: '名称', dataIndex: 'nameCn', width: 195, onCell: onCellLock(195),
+    { title: '名称', dataIndex: 'nameCn', width: 175, onCell: onCellLock(175),
       render: (v: string) => <span style={{ fontSize: 12, color: '#555' }}>{v}</span>,
     },
     {
