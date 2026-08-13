@@ -3,12 +3,9 @@ import bcrypt from 'bcryptjs';
 import { query } from '../db/index.js';
 import { signToken, requireAuth, setAuthCookie, clearAuthCookie, COOKIE_NAME_BUDGET } from '../middleware/auth.js';
 import { AppError } from '../middleware/index.js';
-import { logAudit, normalizeEmail } from './helpers.js';
+import { logAudit, normalizeEmail, DUMMY_PASSWORD_HASH } from './helpers.js';
 
 const router = Router();
-
-// 用户不存在时也执行一次 bcrypt.compare（假比较抹平时耗，防批量探测已注册邮箱；启动时生成一次）
-const DUMMY_PASSWORD_HASH = bcrypt.hashSync('timing-equalizer-dummy', 10);
 
 /** POST /api/auth/login */
 router.post('/login', async (req, res, next) => {

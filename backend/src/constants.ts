@@ -5,10 +5,6 @@ export const PAGE_LIMIT = 1000;
 /** 分页默认页大小（未传 limit 时的默认值） */
 export const DEFAULT_PAGE_SIZE = 100;
 
-/** 文本长度上限（detail/note 等字段） */
-export const TEXT_MAX_500 = 500;
-export const TEXT_MAX_100 = 100;
-
 /** 密码最小长度（用户管理/工时重置统一口径） */
 export const PASSWORD_MIN = 8;
 

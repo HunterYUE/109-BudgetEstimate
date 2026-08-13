@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import { query } from '../db/index.js';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { AppError } from '../middleware/index.js';
-import { logAudit, objKeysToSnake, normalizeEmail, resetUserPassword, withTransaction } from './helpers.js';
+import { logAudit, objKeysToSnake, normalizeEmail, resetUserPassword, withTransaction, assertCanManage, ROLE_RANK } from './helpers.js';
 import { PAGE_LIMIT } from '../constants.js';
 
 const router = Router();
@@ -16,8 +16,7 @@ const USER_FIELDS = 'id, email, display_name, title, phone, role, is_active, cre
 
 // ── 用户管理安全常量与越级保护 ──
 const VALID_ROLES = ['admin', 'director', 'manager', 'user'];
-/** 角色等级（数字越大权限越高）——用户管理越级保护依据 */
-const ROLE_RANK: Record<string, number> = { user: 0, manager: 1, director: 2, admin: 3 };
+// ROLE_RANK + assertCanManage 已收敛至 helpers.ts（A6 复核：users.ts 与 timerecording.ts 管理员路径共用，防双份漂移）
 /** 服务端权限白名单（与 BudgetEstimateApp/src/pages/SystemManagement.tsx 的 ALL_PERMISSIONS 同源）：
  *  禁止写入白名单外的任意字符串，防"任意赋权/万能权限漂移" */
 const ALL_PERMISSIONS = [
@@ -27,16 +26,6 @@ const ALL_PERMISSIONS = [
   '用户管理', '系统配置', '全部查看权限',
 ];
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-/** 越级保护（H1/A6 提权链核心防线）：操作者只能管理「等级 ≤ 自己」的账号——
- *  纯 ROLE_RANK 等级比较（此前把 director 也算 super，导致 director(2) 能管理 admin(3)，
- *  与 ROLE_RANK 自相矛盾）；防铸 admin 号、把现存更高等级降级/改密/停用/删除 */
-function assertCanManage(actorRole: string, targetRank: number): void {
-  const actorRank = ROLE_RANK[actorRole] ?? 0; // 未知角色按最低等级处理（无越级能力）
-  if (targetRank > actorRank) {
-    throw new AppError(403, '无权创建/修改同级或更高权限的账号');
-  }
-}
 
 /** GET /api/users - 获取用户列表 */
 router.get('/', async (_req, res, next) => {

@@ -15,7 +15,7 @@ import timerecording from './timerecording.js';
 import settings from './settings.js';
 import { query } from '../db/index.js';
 import { AppError } from '../middleware/index.js';
-import { logAudit, objKeysToSnake, buildSearchWhere, parsePagination, withTransaction } from './helpers.js';
+import { logAudit, objKeysToSnake, withTransaction } from './helpers.js';
 import { DEFAULT_EUR_RATE, DEFAULT_TAX_RATE, DEFAULT_WARRANTY_RATE, DEFAULT_RISK_RATE } from '../constants.js';
 
 const router = Router();

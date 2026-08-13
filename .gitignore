@@ -12,6 +12,7 @@ node_modules/
 dist/
 BudgetEstimateApp/dist/
 backend/dist/
+backend/tsconfig.tsbuildinfo
 
 # Environment
 .env

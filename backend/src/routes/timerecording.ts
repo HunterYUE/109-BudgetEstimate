@@ -4,7 +4,7 @@ import rateLimit from 'express-rate-limit';
 import { query } from '../db/index.js';
 import { requireAuth, requireRole, signToken, setAuthCookie, clearAuthCookie, COOKIE_NAME_TR } from '../middleware/auth.js';
 import { AppError } from '../middleware/index.js';
-import { logAudit, round2, normalizeEmail, resetUserPassword, withTransaction } from './helpers.js';
+import { logAudit, round2, normalizeEmail, resetUserPassword, withTransaction, assertCanManage, ROLE_RANK, DUMMY_PASSWORD_HASH } from './helpers.js';
 import { PAGE_LIMIT } from '../constants.js';
 import { ensureCostCenters, recentFiscalYears, availableCostCenterFys, fiscalYearLabel } from '../jobs/costCenterSync.js';
 
@@ -214,9 +214,6 @@ const trLoginLimiter = rateLimit({
   max: 20,
   message: { error: '登录尝试过于频繁，请 15 分钟后再试' }, // 与主登录限速一致返回 { error }，前端统一解析
 });
-
-// ⚠️ A5 修复：用户不存在也执行一次 bcrypt.compare（假比较抹平时耗，防批量探测已注册邮箱；与 auth.ts 同款）
-const DUMMY_PASSWORD_HASH = bcrypt.hashSync('tr-timing-equalizer-dummy', 10);
 
 // ─── 认证 ────────────────────────────────────────────
 
@@ -1068,6 +1065,11 @@ router.post('/admin/users/:id/reset-password', requireAuth, requireRole('directo
   try {
     const { id } = req.params;
     const { password } = req.body;
+    // ⚠️ A6 复核越级保护：此前仅 requireRole('director','admin')，无目标等级比较——director(2) 可重置 admin(3) 密码越级接管。
+    //   与 users.ts 的 assertCanManage 语义对齐（纯 ROLE_RANK 等级比较），director 只能管理 manager 及以下账号。
+    const target = (await query('SELECT role FROM public.users WHERE id = $1', [id])).rows[0];
+    if (!target) throw new AppError(404, '用户不存在');
+    assertCanManage(req.user!.role, ROLE_RANK[target.role] ?? 0);
     // ⚠️ A18：密码长度校验/哈希/改密吊销（password_changed_at）共用 resetUserPassword（与主用户管理 users.ts 同源）
     await resetUserPassword(id, password);
     logAudit(req, '重置密码', 'admin', '用户 ' + id.slice(0,8) + ' 密码已重置');
@@ -1081,6 +1083,11 @@ router.delete('/admin/users/:id', requireAuth, requireRole('director', 'admin'),
     const { id } = req.params;
     // ⚠️ 自删保护：防止误删当前登录账号导致全员锁死（唯一管理员被删后无人可再管理）
     if (id === req.user!.userId) throw new AppError(400, '不能删除自己的账号');
+    // ⚠️ A6 复核越级保护：director 不得删除 admin 账号（等级比较，防删更高级账号令系统无人可管）；
+    //   顺带补 404（此前 DELETE 对不存在用户静默返回 success:true）
+    const target = (await query('SELECT role FROM public.users WHERE id = $1', [id])).rows[0];
+    if (!target) throw new AppError(404, '用户不存在');
+    assertCanManage(req.user!.role, ROLE_RANK[target.role] ?? 0);
     // ⚠️ F14 修复：profiles + users 两步删除放入同一事务，避免中途失败留下"有 profile 无 users"半成品
     // ⚠️ M5 修复：先清空以该用户为 reviewer/创建者的引用（无 ON DELETE 动作会 FK 阻塞删除），再删 profile
     // ⚠️ A15：事务样板收敛为 withTransaction

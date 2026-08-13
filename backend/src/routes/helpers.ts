@@ -100,6 +100,25 @@ export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
+// ── 角色等级与越级保护（A6 复核：users.ts 与 timerecording.ts 管理员路径共用，全后端唯一来源）──
+
+/** 角色等级（数字越大权限越高）——用户/工时管理越级保护依据 */
+export const ROLE_RANK: Record<string, number> = { user: 0, manager: 1, director: 2, admin: 3 };
+
+/** 越级保护（H1/A6 提权链核心防线）：操作者只能管理「等级 ≤ 自己」的账号——
+ *  纯 ROLE_RANK 等级比较（此前把 director 也算 super，导致 director(2) 能管理 admin(3)，
+ *  与 ROLE_RANK 自相矛盾）；防铸 admin 号、把现存更高等级降级/改密/停用/删除 */
+export function assertCanManage(actorRole: string, targetRank: number): void {
+  const actorRank = ROLE_RANK[actorRole] ?? 0; // 未知角色按最低等级处理（无越级能力）
+  if (targetRank > actorRank) {
+    throw new AppError(403, '无权创建/修改同级或更高权限的账号');
+  }
+}
+
+/** 假密码哈希（A5：用户不存在时也执行一次 bcrypt.compare，抹平时耗防批量探测已注册邮箱；
+ *  routes/auth.ts 与 timerecording.ts 共用，避免双份同义常量） */
+export const DUMMY_PASSWORD_HASH = bcrypt.hashSync('timing-equalizer-dummy', 10);
+
 /** 重置用户密码（含长度校验 + password_changed_at 吊销旧 JWT）。调用方自行完成鉴权/越级保护。
  *   users.ts 与 timerecording.ts 管理员重置路径共用 */
 export async function resetUserPassword(userId: string, password: string): Promise<void> {

@@ -74,8 +74,10 @@ const crudRouter = crudRoutes('delivery_projects', fields, {
   skipList: true,
   // ⚠️ A3/H3 修复：计划/成本审批状态与审批结果 JSONB 只能经审批流程（POST /approvals/:id/records）流转，
   //   创建与更新均禁直设（此前无 excludeOnCreate，POST /deliveries 可直接置 plan_status='approved' 并伪造 plan_approval）。
-  //   quotation_id/opportunity_id 由转交付流程派生，同样禁直写。注意：显式传会覆盖默认，id/created_at/updated_at 必须一并保留。
-  excludeOnCreate: ['id', 'created_at', 'updated_at', 'plan_status', 'cost_status', 'plan_approval', 'cost_approval', 'quotation_id', 'opportunity_id'],
+  //   ⚠️ A3 复核回归修复：quotation_id/opportunity_id 为 UUID NOT NULL 无默认值，必须由转交付流程在前端创建时传入，
+  //   故创建不禁直写、更新禁改（转交付后交付与机会/报价的链路归属不可变更）。
+  //   注意：显式传会覆盖默认，id/created_at/updated_at 必须一并保留。
+  excludeOnCreate: ['id', 'created_at', 'updated_at', 'plan_status', 'cost_status', 'plan_approval', 'cost_approval'],
   excludeOnUpdate: ['id', 'created_at', 'updated_at', 'plan_status', 'cost_status', 'plan_approval', 'cost_approval', 'quotation_id', 'opportunity_id'],
   // ⚠️ F15 修复：删除交付项目时清理磁盘上的附件文件（DB 行靠 delivery_files CASCADE 删，物理文件不会随删）
   beforeDelete: async (id) => {
