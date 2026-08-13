@@ -58,8 +58,21 @@ router.use('/opportunities', requireAuth, writeGuard(['编辑销售机会', '新
 router.use('/quotations', requireAuth, writeGuard(['报价编制', '全部查看权限']), readGuard(QUOTE_READ), quotations);
 // 审批：创建（各业务模块提交）与处理（审批管理）均需对应权限；列表读取仅审批管理/万能权限
 router.use('/approvals', requireAuth, writeGuard(['审批管理', '报价编制', '交付管理', '成本录入', '转线索/转机会', '全部查看权限']), readGuard(APPROVAL_READ), approvals);
-// 交付写操作需 交付管理 或 销售机会管理（转交付创建/初始化节点）；读取需交付相关权限
-router.use('/deliveries', requireAuth, writeGuard(['交付管理', '销售机会管理', '全部查看权限']), readGuard(DELIVERY_READ), deliveries);
+// ⚠️ A101 修复：交付写权限按方法拆分——「销售机会管理」仅限转交付创建/初始化节点（POST /deliveries、PUT /:id/nodes），
+//   修改实际成本/删除交付/附件管理等其余写操作须「交付管理」。此前 blanket writeGuard OR 让仅持
+//   「销售机会管理」的用户可对任意交付改 total_actual_cost、DELETE 整条交付（还会清磁盘附件）。
+//   读取权限 readGuard(DELIVERY_READ) 不变。
+router.use('/deliveries', requireAuth,
+  (req: Request, res: Response, next: NextFunction) => {
+    if (req.method === 'GET') return next(); // 交给 readGuard
+    // 转交付链路：创建 + 节点保存（销售机会管理 合法写路径）
+    if (req.method === 'POST' || (req.method === 'PUT' && req.path.endsWith('/nodes'))) {
+      return requirePermission('交付管理', '销售机会管理', '全部查看权限')(req, res, next);
+    }
+    // 其余写操作（改成本/删交付/附件管理/改状态等）需交付管理
+    return requirePermission('交付管理', '全部查看权限')(req, res, next);
+  },
+  readGuard(DELIVERY_READ), deliveries);
 // ⚠️ H1 修复：/clients 列表读取与 /clients/:id/detail 同权限集（此前列表 GET 未加 readGuard，任意登录用户可读全部客户）
 router.use('/clients', requireAuth, writeGuard(['新建客户', '全部查看权限']), readGuard(['客户管理', '报价编制', '销售机会管理', '全部查看权限']), clients);
 // 标签写操作需 新建标签（读取开放给物料打标）
@@ -85,9 +98,17 @@ router.post('/project-versions', requireAuth, writeGuard(['报价编制', '全�
     if (!project_id || !version_no) {
       throw new AppError(400, '缺少必填字段：project_id, version_no');
     }
-    // ⚠️ A4 修复：review_status 应用层枚举校验（此前直写 DB CHECK 撞 500；且防客户端直设 approved/rejected 绕过审批状态机）
+    // ⚠️ A4/A113 复核：review_status 应用层枚举校验（此前直写 DB CHECK 撞 500）。白名单放开
+    //   approved/rejected 是为「已有版本」保存时回显真实审核状态（审批流写库）；但**全新版本**不得以
+    //   approved/rejected 落库——那等于绕过审批状态机直造已审核版本。补存在性校验：新版本仅允许 draft/pending。
     if (!['draft', 'pending', 'approved', 'rejected'].includes(review_status)) {
       throw new AppError(400, `无效审核状态: ${review_status}`);
+    }
+    const existingVer = (await query(
+      'SELECT 1 FROM project_versions WHERE project_id = $1 AND version_no = $2', [project_id, version_no]
+    )).rows[0];
+    if (!existingVer && ['approved', 'rejected'].includes(review_status)) {
+      throw new AppError(400, '新版本须从草稿开始，审核状态由审批流程流转');
     }
 
     const result = await query(

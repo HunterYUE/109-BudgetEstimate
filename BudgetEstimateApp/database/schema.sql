@@ -252,7 +252,7 @@ CREATE TABLE IF NOT EXISTS group_items (
   group_id           UUID NOT NULL REFERENCES project_groups(id) ON DELETE CASCADE,
   item_no            INTEGER NOT NULL,
   item_type          item_type NOT NULL,
-  component_id       UUID REFERENCES components(id),
+  component_id       UUID,
   code               VARCHAR(200) NOT NULL,
   description        TEXT NOT NULL DEFAULT '',
   qty_total          INTEGER NOT NULL DEFAULT 1,
@@ -369,7 +369,7 @@ CREATE TABLE IF NOT EXISTS quotations (
   amount          NUMERIC(12,2) NOT NULL DEFAULT 0,
   total_cost      NUMERIC(12,2) NOT NULL DEFAULT 0,
   profit_rate     NUMERIC(6,4) NOT NULL DEFAULT 0,
-  opportunity_id  UUID REFERENCES sales_opportunities(id),
+  opportunity_id  UUID,
   locked          BOOLEAN NOT NULL DEFAULT false,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -709,7 +709,8 @@ ALTER TABLE project_versions ADD COLUMN IF NOT EXISTS gp3_amount NUMERIC(12,2) N
 -- ============================================================
 ALTER TABLE sales_opportunities ADD CONSTRAINT fk_sales_opps_quotation FOREIGN KEY (quotation_id) REFERENCES quotations(id) ON DELETE SET NULL;
 ALTER TABLE delivery_projects ADD CONSTRAINT fk_delivery_opportunity FOREIGN KEY (opportunity_id) REFERENCES sales_opportunities(id) NOT VALID;
-ALTER TABLE delivery_projects ADD CONSTRAINT fk_delivery_quotation FOREIGN KEY (quotation_id) REFERENCES quotations(id) ON DELETE SET NULL;
+-- ⚠️ A112：delivery_projects.quotation_id 为 NOT NULL，删报价时 SET NULL 撞 23502（非空），改 NO ACTION 报清晰的 23503
+ALTER TABLE delivery_projects ADD CONSTRAINT fk_delivery_quotation FOREIGN KEY (quotation_id) REFERENCES quotations(id);
 ALTER TABLE approval_requests ADD CONSTRAINT fk_approval_quotation FOREIGN KEY (quotation_id) REFERENCES quotations(id) ON DELETE SET NULL;
 ALTER TABLE approval_requests ADD CONSTRAINT fk_approval_opportunity FOREIGN KEY (opportunity_id) REFERENCES sales_opportunities(id) ON DELETE SET NULL;
 ALTER TABLE approval_requests ADD CONSTRAINT fk_approval_delivery FOREIGN KEY (delivery_id) REFERENCES delivery_projects(id) ON DELETE SET NULL;

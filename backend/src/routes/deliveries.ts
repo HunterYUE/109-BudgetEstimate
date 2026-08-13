@@ -79,6 +79,19 @@ const crudRouter = crudRoutes('delivery_projects', fields, {
   //   注意：显式传会覆盖默认，id/created_at/updated_at 必须一并保留。
   excludeOnCreate: ['id', 'created_at', 'updated_at', 'plan_status', 'cost_status', 'plan_approval', 'cost_approval'],
   excludeOnUpdate: ['id', 'created_at', 'updated_at', 'plan_status', 'cost_status', 'plan_approval', 'cost_approval', 'quotation_id', 'opportunity_id'],
+  // ⚠️ A104 修复：转交付创建校验——机会与报价必须真实存在且归属一致（防伪造关联、防把交付挂到他人报价）；
+  //   防重复转交付（uq_delivery_opportunity 唯一约束存在，此处给出明确 409 而非撞约束的通用报错）
+  beforeCreate: async (snakeBody) => {
+    const { opportunity_id, quotation_id } = snakeBody;
+    if (!opportunity_id || !quotation_id) throw new AppError(400, '创建交付项目必须提供机会与报价');
+    const opp = (await query('SELECT 1 FROM sales_opportunities WHERE id = $1', [opportunity_id])).rows[0];
+    if (!opp) throw new AppError(400, '关联的销售机会不存在');
+    const quote = (await query('SELECT opportunity_id FROM quotations WHERE id = $1', [quotation_id])).rows[0];
+    if (!quote) throw new AppError(400, '关联的报价不存在');
+    if (quote.opportunity_id !== opportunity_id) throw new AppError(400, '报价不属于该销售机会，无法转交付');
+    const existing = (await query('SELECT 1 FROM delivery_projects WHERE opportunity_id = $1', [opportunity_id])).rows[0];
+    if (existing) throw new AppError(409, '该机会已转交付，请勿重复创建交付项目');
+  },
   // ⚠️ F15 修复：删除交付项目时清理磁盘上的附件文件（DB 行靠 delivery_files CASCADE 删，物理文件不会随删）
   beforeDelete: async (id) => {
     const files = (await query('SELECT file_path FROM delivery_files WHERE delivery_project_id = $1', [id])).rows as { file_path: string }[];

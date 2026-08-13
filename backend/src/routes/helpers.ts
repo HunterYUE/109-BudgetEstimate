@@ -148,6 +148,10 @@ export function crudRoutes(table: string, fields: string[], options?: {
   extra?: (router: Router) => void;
   /** 删除前钩子：抛错则阻止删除（用于业务引用检查，如删除含报价/交付的项目） */
   beforeDelete?: (id: string) => Promise<void>;
+  /** 创建前钩子：抛错则阻止创建（用于业务不变量校验，如转交付校验机会状态/报价归属） */
+  beforeCreate?: (snakeBody: Record<string, any>) => Promise<void>;
+  /** 更新前钩子：抛错则阻止更新（用于状态机守卫，如报价审批中禁改财务字段） */
+  beforeUpdate?: (id: string, snakeBody: Record<string, any>) => Promise<void>;
   /** TEXT[] 列名（空数组须序列化为 '{}' 而非 '[]'，后者对 PG 数组字面量非法） */
   textArrayCols?: string[];
   /** 跳过默认 GET / 列表（当顶层已注册自定义列表，避免遮蔽死代码） */
@@ -214,6 +218,10 @@ export function crudRoutes(table: string, fields: string[], options?: {
   router.post('/', asyncHandler(async (req, res) => {
     // 自动转换请求体字段名（支持驼峰或蛇形）
     const snakeBody = objKeysToSnake({ ...req.body });
+    // ⚠️ A104：创建前业务不变量校验（转交付校验机会状态/报价归属等，抛错则拒绝创建）
+    if (options?.beforeCreate) {
+      await options.beforeCreate(snakeBody);
+    }
     // 过滤掉 undefined 字段（数据库有默认值或可空），只插入有值的列
     const activeCols = quotedCols.filter(c => snakeBody[c] !== undefined);
     if (activeCols.length === 0) {
@@ -232,6 +240,10 @@ export function crudRoutes(table: string, fields: string[], options?: {
   // UPDATE（skipUpdate：顶层已注册自定义更新时跳过，防遮蔽死代码）
   if (!skipUpdate) router.put('/:id', asyncHandler(async (req, res) => {
     const snakeBody = objKeysToSnake({ ...req.body });
+    // ⚠️ A103：更新前状态机守卫（如报价审批中禁改财务字段）
+    if (options?.beforeUpdate) {
+      await options.beforeUpdate(req.params.id, snakeBody);
+    }
     const updateCols = fields.filter(f => !excludeOnUpdate.includes(f) && snakeBody[f] !== undefined);
     if (updateCols.length === 0) {
       throw new AppError(400, '没有要更新的字段');

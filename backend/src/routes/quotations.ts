@@ -90,6 +90,16 @@ const crudRouter = crudRoutes('quotations', fields, {
   //   （此前 excludeOnCreate 漏 status，POST /quotations 可传 status:'approved' 绕过审批状态机）
   excludeOnCreate: ['id', 'created_at', 'updated_at', 'status', 'locked'],
   excludeOnUpdate: ['id', 'created_at', 'updated_at', 'status', 'locked'],
+  // ⚠️ A103 修复：报价审批中（status='pending'）禁改财务字段——审批人基于提交时快照做决策，
+  //   期间被改金额会让审批与机会回写口径失真（sync 端点有 409 守卫，通用 PUT 此前无）。
+  beforeUpdate: async (id, snakeBody) => {
+    const FINANCIAL = ['amount', 'total_cost', 'profit_rate', 'sales_no'];
+    if (!FINANCIAL.some(f => snakeBody[f] !== undefined)) return;
+    const existing = (await query('SELECT status FROM quotations WHERE id = $1', [id])).rows[0];
+    if (existing?.status === 'pending') {
+      throw new AppError(409, '该报价待审批中，审批完成前不可修改金额/成本/毛利率/编号');
+    }
+  },
 });
 
 // 合并：自定义路由优先

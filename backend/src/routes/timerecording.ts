@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, type RequestHandler } from 'express';
 import bcrypt from 'bcryptjs';
 import rateLimit from 'express-rate-limit';
 import { query } from '../db/index.js';
@@ -143,6 +143,23 @@ const trRoleOf = (u: { role?: string; permissions?: string[] } | undefined): 'di
 /** 是否能分配任务 / 查看全员数据（总监 + 方案·交付经理） */
 const isManager = (u: { role?: string; permissions?: string[] } | undefined): boolean => trRoleOf(u) !== 'employee';
 
+/**
+ * ⚠️ A106 修复：跨应用登录权限纵深防御——销售经理（title='销售经理' 且非 director/admin）禁止调用任何工时 API。
+ *   此前仅登录端点与 /auth/me 拦截，但 requireAuth 认 tr_token/budget_token 任一 cookie，
+ *   销售经理登录预算应用后可直接用预算 cookie 绕过登录直调工时接口（提报工时/查全员数据）。
+ *   requireAuth 每请求加载 title（auth.ts A106）后，此处对全部受保护路由统一拦截。
+ */
+const trAppGuard: RequestHandler = (req, res, next) => {
+  const u = req.user;
+  if (u?.title === '销售经理' && u.role !== 'admin' && u.role !== 'director') {
+    res.status(403).json({ error: '该账号仅限登录销售和交付管理应用，无权使用任务规划和报工应用' });
+    return;
+  }
+  next();
+};
+/** 工时受保护路由鉴权组合：requireAuth 加载用户 → trAppGuard 拦截销售经理（替代裸 requireAuth） */
+const trAuth: RequestHandler[] = [requireAuth, trAppGuard];
+
 // ─── 服务端权威计算（S4 修复）─────────────────────────────
 // hours/hour_type 一律由后端按起止时间与日期重算，不信任前端传入值（防伪造、防前后端口径漂移）。
 
@@ -277,7 +294,7 @@ router.post('/auth/login', trLoginLimiter, async (req, res, next) => {
 });
 
 /** GET /api/v1/timerecording/auth/me */
-router.get('/auth/me', requireAuth, async (req, res, next) => {
+router.get('/auth/me', ...trAuth, async (req, res, next) => {
   try {
     const u = req.user!;
     const result = await query(
@@ -318,7 +335,7 @@ router.post('/auth/logout', (_req, res) => {
 //   不泄漏邮箱/角色——平衡隐私与任务规划需要全员名单；created_at=系统注册日，个人统计开工率应出勤起点需要）
 //   is_director（派生，所有角色可见）：EXISTS 查预算 users 按 email 判定 role='director'，供仪表盘开工率分母剔除部门总监应出工工时；
 //   恒为布尔（未匹配到 users 也返回 false，不产生 NULL）；仅暴露「是否总监」布尔，不额外暴露 role/email。
-router.get('/profiles', requireAuth, async (req, res, next) => {
+router.get('/profiles', ...trAuth, async (req, res, next) => {
   try {
     const admin = isTrAdmin(req.user);
     const select = admin ? 'p.id, p.employee_id, p.name, p.email, p.role, p.is_active, p.created_at' : 'p.id, p.employee_id, p.name, p.is_active, p.created_at';
@@ -335,7 +352,7 @@ router.get('/profiles', requireAuth, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-router.get('/profiles/:id', requireAuth, async (req, res, next) => {
+router.get('/profiles/:id', ...trAuth, async (req, res, next) => {
   try {
     // ⚠️ 归属校验：只能看自己的档案（email/role 属隐私）；管理员可看任意档案
     const user = req.user!;
@@ -347,7 +364,7 @@ router.get('/profiles/:id', requireAuth, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-router.put('/profiles/:id', requireAuth, async (req, res, next) => {
+router.put('/profiles/:id', ...trAuth, async (req, res, next) => {
   try {
     const user = req.user!;
     const admin = isTrAdmin(user);
@@ -380,7 +397,7 @@ router.put('/profiles/:id', requireAuth, async (req, res, next) => {
  *   sales / project —— 预算库实时数据（sales_opportunities -S、delivery_projects -E）
  *   warranty / department / personal —— 工时应用码表 timerecording.cost_centers（自动补建）
  */
-router.get('/cost-centers', requireAuth, async (req, res, next) => {
+router.get('/cost-centers', ...trAuth, async (req, res, next) => {
   try {
     const { fy } = req.query as Record<string, string>;
     const fyLabel = (fy && /^FY\d{4}$/.test(fy)) ? fy : fiscalYearLabel();
@@ -430,7 +447,7 @@ router.get('/cost-centers', requireAuth, async (req, res, next) => {
 // ─── 工时记录 ──────────────────────────────────────
 
 /** 列表（支持按用户/日期/周筛选） */
-router.get('/time-records', requireAuth, async (req, res, next) => {
+router.get('/time-records', ...trAuth, async (req, res, next) => {
   try {
     const user = req.user!;
     // ⚠️ 总监 + 方案/交付经理可读全员（综合分析需要）；普通员工仅本人
@@ -472,7 +489,7 @@ router.get('/time-records', requireAuth, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-router.post('/time-records', requireAuth, async (req, res, next) => {
+router.post('/time-records', ...trAuth, async (req, res, next) => {
   try {
     const user = req.user!;
     // ⚠️ 总监/管理员也可填报工时（2026-08-06 需求调整，此前按"总监不填报"做了 403 限制）
@@ -506,7 +523,7 @@ router.post('/time-records', requireAuth, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-router.put('/time-records/:id', requireAuth, async (req, res, next) => {
+router.put('/time-records/:id', ...trAuth, async (req, res, next) => {
   try {
     const user = req.user!;
     const admin = isTrAdmin(user);
@@ -581,7 +598,7 @@ router.put('/time-records/:id', requireAuth, async (req, res, next) => {
  *  撤回已通过记录时清空审核链（reviewed_by/reviewed_at/review_notes/submitted_at，draft 语义=未提交）
  *  并通知原审核人（其审批被撤回，须知情）。
  *  ⚠️ S3 修复：前端按 `30 * 24h` 判定可撤回，此前后端用 interval '1 month'（漂移 1~3 天），统一为 30 天 */
-router.put('/time-records/:id/withdraw', requireAuth, async (req, res, next) => {
+router.put('/time-records/:id/withdraw', ...trAuth, async (req, res, next) => {
   try {
     const uid = req.user!.userId;
     // 先取当前态，确定是否需通知原审核人（UPDATE 后再查会因状态已变而无法区分 submitted/approved 来源）
@@ -617,7 +634,7 @@ router.put('/time-records/:id/withdraw', requireAuth, async (req, res, next) => 
   } catch (err) { next(err); }
 });
 
-router.delete('/time-records/:id', requireAuth, async (req, res, next) => {
+router.delete('/time-records/:id', ...trAuth, async (req, res, next) => {
   try {
     const user = req.user!;
     const admin = isTrAdmin(user);
@@ -637,7 +654,7 @@ router.delete('/time-records/:id', requireAuth, async (req, res, next) => {
 
 /** 提交审核（⚠️ F6 补漏：只能提交自己的草稿记录；submitted_at 供「30 天内可撤回」判定）
  *  ⚠️ 周推送规则：目标周周日 20:30 前不可提交（禁半周/未来周提交）——先取记录日期校验，避免先改后拒 */
-router.put('/time-records/:id/submit', requireAuth, async (req, res, next) => {
+router.put('/time-records/:id/submit', ...trAuth, async (req, res, next) => {
   try {
     const rec = (await query(
       `SELECT date FROM timerecording.time_records WHERE id = $1 AND status = 'draft' AND user_id = $2`,
@@ -655,16 +672,22 @@ router.put('/time-records/:id/submit', requireAuth, async (req, res, next) => {
 });
 
 /** 批量提交（⚠️ F6 补漏：只能提交自己的草稿记录） */
-router.post('/time-records/submit-batch', requireAuth, async (req, res, next) => {
+router.post('/time-records/submit-batch', ...trAuth, async (req, res, next) => {
   try {
     const { ids } = req.body;
     if (!isValidUuidArray(ids)) throw new AppError(400, 'ids 必填且须为 uuid 数组');
     // ⚠️ 周推送规则：目标周周日 20:30 前不可提交——先校验所有草稿记录所在周，再变更（防半途拒绝留下半提交态）
-    const weeks = (await query(
-      `SELECT DISTINCT date FROM timerecording.time_records WHERE id = ANY($1::uuid[]) AND status = 'draft' AND user_id = $2`,
+    // ⚠️ A111 修复：批量提交须全部为本人草稿且属于同一周（与 review-batch 周原子性同口径）——此前部分 id
+    //   非草稿会被 UPDATE 静默跳过（半提交态）、跨周混批会让单条提交通知的周标签失真（rows[0] 代表全部）
+    const drafts = (await query(
+      `SELECT date, year, week_number FROM timerecording.time_records
+       WHERE id = ANY($1::uuid[]) AND status = 'draft' AND user_id = $2`,
       [ids, req.user!.userId]
     )).rows;
-    weeks.forEach((w: any) => assertWeekSubmittable(String(w.date).slice(0, 10)));
+    if (drafts.length !== ids.length) throw new AppError(400, '批量提交的记录须全部为本人草稿');
+    const weekKeys = new Set(drafts.map((d: any) => `${d.year}-${d.week_number}`));
+    if (weekKeys.size > 1) throw new AppError(400, '批量提交的记录须属于同一周');
+    for (const d of drafts) assertWeekSubmittable(String(d.date).slice(0, 10));
     const rows = (await query(
       `UPDATE timerecording.time_records SET status = 'submitted', submitted_at = now()
        WHERE id = ANY($1::uuid[]) AND status = 'draft' AND user_id = $2 RETURNING *`,
@@ -721,7 +744,7 @@ async function notifyReview(r: any, action: string, review_notes?: string) {
 }
 
 /** 审批通过/驳回（⚠️ F6 补漏：审批是管理员操作，防止任意用户代审/自审） */
-router.put('/time-records/:id/review', requireAuth, requireRole('director', 'admin'), async (req, res, next) => {
+router.put('/time-records/:id/review', ...trAuth, requireRole('director', 'admin'), async (req, res, next) => {
   try {
     const { action, review_notes } = req.body;
     if (!['approved', 'rejected'].includes(action)) throw new AppError(400, '操作必须是 approved 或 rejected');
@@ -740,7 +763,7 @@ router.put('/time-records/:id/review', requireAuth, requireRole('director', 'adm
 });
 
 /** 批量审批（管理员）：一次审批一组记录（如同一员工同一周），原子完成，只发一条通知 */
-router.post('/time-records/review-batch', requireAuth, requireRole('director', 'admin'), async (req, res, next) => {
+router.post('/time-records/review-batch', ...trAuth, requireRole('director', 'admin'), async (req, res, next) => {
   try {
     const { ids, action, review_notes } = req.body;
     if (!isValidUuidArray(ids)) throw new AppError(400, 'ids 必填且须为 uuid 数组');
@@ -781,7 +804,7 @@ router.post('/time-records/review-batch', requireAuth, requireRole('director', '
 
 // ─── 任务分配 ──────────────────────────────────────
 
-router.get('/task-assignments', requireAuth, async (req, res, next) => {
+router.get('/task-assignments', ...trAuth, async (req, res, next) => {
   try {
     const user = req.user!;
     // ⚠️ 总监 + 方案/交付经理可看全员任务（规划甘特）；普通员工仅自己
@@ -805,7 +828,7 @@ router.get('/task-assignments', requireAuth, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-router.post('/task-assignments', requireAuth, async (req, res, next) => {
+router.post('/task-assignments', ...trAuth, async (req, res, next) => {
   try {
     const user = req.user!;
     // ⚠️ 给他人派任务是 总监/方案经理/交付经理 权限；普通员工只能给自己建任务
@@ -853,7 +876,7 @@ router.post('/task-assignments', requireAuth, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-router.put('/task-assignments/:id', requireAuth, async (req, res, next) => {
+router.put('/task-assignments/:id', ...trAuth, async (req, res, next) => {
   try {
     const user = req.user!;
     // ⚠️ 总监 + 方案/交付经理可编辑他人任务；普通员工只能改自己的
@@ -947,7 +970,7 @@ router.put('/task-assignments/:id', requireAuth, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-router.delete('/task-assignments/:id', requireAuth, async (req, res, next) => {
+router.delete('/task-assignments/:id', ...trAuth, async (req, res, next) => {
   try {
     const user = req.user!;
     // ⚠️ 总监 + 方案/交付经理可删除他人任务；普通员工只能删自己的
@@ -970,7 +993,7 @@ router.delete('/task-assignments/:id', requireAuth, async (req, res, next) => {
 //   同时约束单次拉取 payload 与弹窗 DOM 规模（上限再提高需改分页/虚拟列表）。
 const NOTIFICATION_LIST_LIMIT = 200;
 
-router.get('/notifications', requireAuth, async (req, res, next) => {
+router.get('/notifications', ...trAuth, async (req, res, next) => {
   try {
     const user = req.user!;
     const rows = (await query(
@@ -983,7 +1006,7 @@ router.get('/notifications', requireAuth, async (req, res, next) => {
 
 // ⚠️ 查看后消除：点击通知即删除（替代旧的「标记已读」——已读通知仍留库会随使用持续累积）。
 //   通知是可消费的指针（审批/任务/提醒的跳转入口），底层业务数据（工时/任务）均独立持久化，删除通知无数据损失。
-router.delete('/notifications/:id', requireAuth, async (req, res, next) => {
+router.delete('/notifications/:id', ...trAuth, async (req, res, next) => {
   try {
     const user = req.user!;
     // F6 约束延续：只能删除自己的通知
@@ -998,7 +1021,7 @@ router.delete('/notifications/:id', requireAuth, async (req, res, next) => {
 
 // ─── 通知写入（替代 RPC） ──────────────────────────
 
-router.post('/notifications', requireAuth, async (req, res, next) => {
+router.post('/notifications', ...trAuth, async (req, res, next) => {
   try {
     const user = req.user!;
     const admin = isTrAdmin(user);
@@ -1025,7 +1048,7 @@ router.post('/notifications', requireAuth, async (req, res, next) => {
 // ─── 管理员功能 ──────────────────────────────────
 
 /** 管理员创建用户（补 profile + users 表） */
-router.post('/admin/users', requireAuth, requireRole('director', 'admin'), async (req, res, next) => {
+router.post('/admin/users', ...trAuth, requireRole('director', 'admin'), async (req, res, next) => {
   try {
     const { email, name, password, employee_id, role = 'employee' } = req.body;
     if (!email || !name || !password) throw new AppError(400, '缺少必填字段');
@@ -1061,7 +1084,7 @@ router.post('/admin/users', requireAuth, requireRole('director', 'admin'), async
 });
 
 /** 管理员重置密码 */
-router.post('/admin/users/:id/reset-password', requireAuth, requireRole('director', 'admin'), async (req, res, next) => {
+router.post('/admin/users/:id/reset-password', ...trAuth, requireRole('director', 'admin'), async (req, res, next) => {
   try {
     const { id } = req.params;
     const { password } = req.body;
@@ -1078,7 +1101,7 @@ router.post('/admin/users/:id/reset-password', requireAuth, requireRole('directo
 });
 
 /** 管理员删除用户 */
-router.delete('/admin/users/:id', requireAuth, requireRole('director', 'admin'), async (req, res, next) => {
+router.delete('/admin/users/:id', ...trAuth, requireRole('director', 'admin'), async (req, res, next) => {
   try {
     const { id } = req.params;
     // ⚠️ 自删保护：防止误删当前登录账号导致全员锁死（唯一管理员被删后无人可再管理）

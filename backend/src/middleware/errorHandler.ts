@@ -46,30 +46,30 @@ export function errorHandler(
   const pgErr = err as { code?: string; severity?: string; message?: string; detail?: string; constraint?: string };
   if (pgErr.code && pgErr.severity) {
     console.error(`[DB ERROR] ${requestInfo} — ${pgErr.code}: ${pgErr.message}`, pgErr.detail || '');
-    // ⚠️ L3 修复：按 PG 错误码细分，避免所有数据库错误都变成笼统的"数据操作错误"（如无效枚举值无法定位字段）
-    const detail = pgErr.detail?.replace(/[()]/g, '') || '';
+    // ⚠️ A110 修复：detail 含表/列名等内部结构（如 `Key (email)=(...) already exists`、`enum quotations_status`），
+    //   此前透传给前端泄漏数据库结构；服务端 console.error 已保留完整 detail，排障不受影响
     let msg = '数据操作错误';
     let status = 400;
     switch (pgErr.code) {
       case '22P02': // 无效类型/枚举值
-        msg = `字段值无效，请检查枚举或格式${detail ? '：' + detail : ''}`;
+        msg = '字段值无效，请检查枚举或格式';
         break;
       case '23505': // 唯一约束冲突
-        msg = `数据已存在${detail ? '：' + detail : ''}`;
+        msg = '数据已存在';
         status = 409;
         break;
       case '23503': // 外键约束
-        msg = `存在关联数据，无法操作${detail ? '：' + detail : ''}`;
+        msg = '存在关联数据，无法操作';
         status = 409;
         break;
       case '23514': // CHECK 约束
-        msg = `数据不满足校验规则${detail ? '：' + detail : ''}`;
+        msg = '数据不满足校验规则';
         break;
       case '23502': // 非空约束
-        msg = `缺少必填字段${detail ? '：' + detail : ''}`;
+        msg = '缺少必填字段';
         break;
       default:
-        msg = `数据操作错误${detail ? '（' + detail + '）' : ''}`;
+        msg = '数据操作错误';
     }
     res.status(status).json({ error: msg });
     return;

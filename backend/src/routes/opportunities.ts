@@ -20,6 +20,9 @@ const crudRouter = crudRoutes('sales_opportunities', fields, {
   //   skipList/skipUpdate 跳过 crudRoutes 中会被遮蔽的死处理器，避免两套逻辑并存
   skipList: true,
   skipUpdate: true,
+  // ⚠️ A108 修复：创建禁直设生命周期字段——won_at/lost_at 由 PUT 状态机采集、promote_locked 需特权（PUT 有
+  //   全部查看权限 校验、POST 此前无）、terminated 仅转交付流程置位。POST 直设可伪造赢单时间/绕过转交付标记。
+  excludeOnCreate: ['id', 'created_at', 'updated_at', 'won_at', 'lost_at', 'promote_locked', 'terminated'],
   // ⚠️ F3 修复：机会已转交付时删除会撞 NO ACTION 外键（delivery_projects.opportunity_id），明确提示
   beforeDelete: async (id) => {
     const delivery = (await query('SELECT id FROM delivery_projects WHERE opportunity_id = $1', [id])).rows[0];
@@ -72,13 +75,16 @@ router.get('/', async (req, res, next) => {
           )
         ELSE NULL END as blue_table,
         -- ⚠️ has_quote 检查任何报价（不限 status='approved'），删除此条件会导致 draft 状态的报价不被视为"有报价"
+        --   （保留 EXISTS：口径是"机会名下任一报价"，与下方 JOIN 的"关联报价"语义不同；opportunity_id 有索引，逐行开销可接受）
         EXISTS(SELECT 1 FROM quotations WHERE opportunity_id = so.id) as has_quote,
-        -- ⚠️ quotation_amount 取机会关联的报价金额（已含税），不可用最新报价（否则机会切换报价后金额错误）
-        (SELECT q.amount FROM quotations q WHERE q.id = so.quotation_id) as quotation_amount,
-        -- 报价编制表对应的税率，用于 Dashboard 等页面含税→未税转换
-        (SELECT pv.tax_rate FROM quotations q JOIN project_versions pv ON pv.project_id = q.project_id AND pv.version_no = q.version_no WHERE q.id = so.quotation_id LIMIT 1) as tax_rate
+        -- ⚠️ A109 修复：quotation_amount/tax_rate 由逐行标量子查询改为 LEFT JOIN 链（q.id = so.quotation_id
+        --   精确匹配关联报价，pv 按 project+version 取税率；无关联报价时两列 NULL，与原子查询结果一致）
+        q.amount AS quotation_amount,
+        pv.tax_rate AS tax_rate
        FROM sales_opportunities so
        LEFT JOIN blue_tables bt ON bt.opportunity_id = so.id
+       LEFT JOIN quotations q ON q.id = so.quotation_id
+       LEFT JOIN project_versions pv ON pv.project_id = q.project_id AND pv.version_no = q.version_no
        ${where}
        -- ⚠️ 按销售编号升序固定排列，不可改回 updated_at DESC（否则列表随编辑刷新不停跳动）
        ORDER BY so.sales_no ASC
@@ -230,6 +236,10 @@ router.put('/:id', async (req, res, next) => {
     }
     // 转交付 = 赢单的终极确认：转交付时强制置为"赢/中标"并记录 won_at（转交付时间）
     if (body.terminated) {
+      // ⚠️ A105 修复：转交付须真实存在交付项目——防仅持写权限者伪造 terminated 直接把机会标成赢单
+      //   （无交付的"赢"是假赢单，会污染赢率/财年归集口径）
+      const delivery = (await query('SELECT 1 FROM delivery_projects WHERE opportunity_id = $1', [id])).rows[0];
+      if (!delivery) throw new AppError(400, '转交付须先创建交付项目');
       const cur = (await query('SELECT status FROM sales_opportunities WHERE id = $1', [id])).rows[0];
       if (cur?.status === '赢') {
         setClause += `, won_at = COALESCE(won_at, now())`;
@@ -257,12 +267,18 @@ router.get('/next-sales-no', async (req, res, next) => {
     const y = d.getFullYear();
     const m = String(d.getMonth() + 1).padStart(2, '0');
     const prefix = `A${y}-${m}-`;
-    const result = await query(
-      `SELECT COALESCE(MAX(SUBSTRING(sales_no FROM 'A\\d+-\\d+-(\\d+)')::int), 0) + 1 AS next_seq
-       FROM sales_opportunities WHERE sales_no LIKE $1`,
-      [prefix + '%']
-    );
-    const seq = String(result.rows[0].next_seq).padStart(3, '0');
+    // ⚠️ A107 修复：MAX+1 取号并发竞态——两用户同时点「新增」会拿到同一序号，后建者撞唯一约束。
+    //   pg_advisory_xact_lock 在事务内串行化取号（同名 key 的并发调用排队），消除同刻取重号
+    const nextSeq = await withTransaction(async (client) => {
+      await client.query(`SELECT pg_advisory_xact_lock(hashtext('opportunity_sales_no_gen'))`);
+      const r = (await client.query(
+        `SELECT COALESCE(MAX(SUBSTRING(sales_no FROM 'A\\d+-\\d+-(\\d+)')::int), 0) + 1 AS next_seq
+         FROM sales_opportunities WHERE sales_no LIKE $1`,
+        [prefix + '%']
+      )).rows[0];
+      return r.next_seq;
+    });
+    const seq = String(nextSeq).padStart(3, '0');
     res.json({ sales_no: `${prefix}${seq}-S` });
   } catch (err) { next(err); }
 });
