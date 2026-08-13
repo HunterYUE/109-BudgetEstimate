@@ -5,6 +5,7 @@ import {
   monthEndOf, exAmount, stageAsOf, getNodeBaseline, getNodeDelay,
   isProjectDelivered, getProjectDoneDate, quoteProfitExTax, deliverySalesProfit,
   buildQuoteInfoMap, deliveryExTax, projectMonthlySales, fyMonthWindows, getProjectDelay,
+  FY_MONTH_LABELS,
 } from '../src/utils/analysisShared';
 
 describe('fmtK / fmtKBase（含负值）', () => {
@@ -202,5 +203,15 @@ describe('getProjectDelay 统一项目延期判定（节点15为准）', () => {
       nodes: [{ nodeNo: 15, status: 'completed', actualDate: '2026-07-05', baselinePlannedEndDate: '2026-06-30' }],
     } as any;
     expect(getProjectDelay(p, new Date(2026, 6, 20))).toEqual({ hasBaseline: true, delayed: true, days: 5 });
+  });
+});
+
+describe('FY_MONTH_LABELS 财年 12 月标签（index0=7月 → 11=6月）', () => {
+  it('顺序 Jul→Jun 共 12 个', () => {
+    expect(FY_MONTH_LABELS).toHaveLength(12);
+    expect(FY_MONTH_LABELS[0]).toBe('Jul');
+    expect(FY_MONTH_LABELS[5]).toBe('Dec');
+    expect(FY_MONTH_LABELS[6]).toBe('Jan');
+    expect(FY_MONTH_LABELS[11]).toBe('Jun');
   });
 });

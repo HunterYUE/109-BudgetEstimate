@@ -85,6 +85,10 @@ describe('calcBlueTableWinRate 赢率', () => {
     // baseSupportScore = 100；midRate = 100 × 0.85 × 1.0 = 85；85 -15 -5 -5 = 60
     expect(r.finalRate).toBe(60);
   });
+  it('全角色权重 0/NaN → finalRate 0（畸形数据防御：totalWeight 不 >0 兜底）', () => {
+    expect(calcBlueTableWinRate(table({ roles: [role({ influenceWeight: 0, support: 5 })] })).finalRate).toBe(0);
+    expect(calcBlueTableWinRate(table({ roles: [role({ influenceWeight: NaN, support: 5 })] })).finalRate).toBe(0);
+  });
   it('最终赢率钳制在 [0, 90]', () => {
     const r = calcBlueTableWinRate(table({ roles: [role({ roleType: 'EB', influence: 'high', influenceWeight: 5, support: 5 }), role({ roleType: 'COACH', influence: 'high', influenceWeight: 5, support: 5 })] }));
     expect(r.finalRate).toBeLessThanOrEqual(90);

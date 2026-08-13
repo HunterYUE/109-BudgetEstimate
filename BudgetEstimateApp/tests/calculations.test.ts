@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { Group } from '../src/types';
 import {
   calcDirectCost, calcItemPrices, calcGroupSummary, computeCostComponents,
-  calcProjectSummary, computeDeliveryEstGP3,
+  calcProjectSummary, computeDeliveryEstGP3, formatMoney,
 } from '../src/utils/calculations';
 
 // ── 构造最小 Group/GroupItem 夹具（GroupItem 其余字段测试不涉及时给零值）──
@@ -133,5 +133,19 @@ describe('computeDeliveryEstGP3 交付概算（不含实际成本）', () => {
     expect(r.warrantyCost).toBe(0);
     expect(r.riskCost).toBe(0);
     expect(r.commercialCost).toBe(0);
+  });
+});
+
+describe('formatMoney 金额格式化（取整到个位 + 千分位）', () => {
+  it('千分位 + 四舍五入', () => {
+    expect(formatMoney(1234)).toBe('1,234');
+    expect(formatMoney(1234.5)).toBe('1,235');
+    expect(formatMoney(1234567)).toBe('1,234,567');
+    expect(formatMoney(-1234)).toBe('-1,234');
+  });
+  it('null/undefined → 0；数字 0 → "0"', () => {
+    expect(formatMoney(null)).toBe('0');
+    expect(formatMoney(undefined)).toBe('0');
+    expect(formatMoney(0)).toBe('0');
   });
 });
