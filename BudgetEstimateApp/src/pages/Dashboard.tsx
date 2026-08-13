@@ -554,7 +554,7 @@ const Dashboard: React.FC = () => {
             <div style={{ width: 1, background: COLORS.borderLight, flexShrink: 0 }} />
             <div style={{ flex: 2.8125, display: 'flex', flexDirection: 'column' }}>
               <div style={{ fontSize: 10, color: COLORS.textLight, fontWeight: 500, textAlign: 'right', marginBottom: 2, paddingRight: 2 }}>利润概览</div>
-              <VerticalBars items={deliveryStats.profitOverview} height={210} unit="K" groupGaps={[2]} barWidth={22.5} valueFontSize={8} />
+              <VerticalBars items={deliveryStats.profitOverview} height={210} unit="K" groupGaps={[2]} barWidth={22.5} valueFontSize={7} />
             </div>
           </div>
         </Card>
@@ -602,7 +602,7 @@ const Dashboard: React.FC = () => {
             <div style={{ padding: 24, textAlign: 'center', color: COLORS.textLight, fontSize: 13 }}>当前财年暂无新增</div>
           ) : (
             <div style={{ marginTop: 50 }}>
-              <VerticalBars items={fyTrend} height={200} unit="K" valueFontSize={8} />
+              <VerticalBars items={fyTrend} height={200} unit="K" valueFontSize={7} />
             </div>
           )}
         </Card>
