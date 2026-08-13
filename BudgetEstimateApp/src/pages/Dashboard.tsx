@@ -153,7 +153,7 @@ const PieChart: React.FC<{
     y: cy + radius * Math.sin((angle - 90) * Math.PI / 180),
   });
   return (
-    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ display: 'block', overflow: 'visible' }}>
+    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet" style={{ width: '100%', maxWidth: W, height: 'auto', display: 'block', overflow: 'visible' }}>
       {slices.length === 1 ? (
         <circle cx={cx} cy={cy} r={r} fill={slices[0].color} opacity={0.85} />
       ) : slices.map(s => {

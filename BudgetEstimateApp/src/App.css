@@ -11,7 +11,6 @@
   --color-border: #e8e8e8;
   --color-bg-light: #fafafa;
   --color-bg-selected: #f0f6ff;
-  --sidebar-width: 81px;
 }
 
 body {
@@ -33,20 +32,13 @@ table.proj-header { min-width: 900px; }
 .app-content svg { max-width: 100%; height: auto; }
 .app-content > div { max-width: 100%; }
 .app-content .ant-card { max-width: 100%; }
-.kpi-row { flex-wrap: wrap; }
-
-@media (max-width: 1200px) {
-  .ant-table-wrapper { overflow-x: auto; }
-  table.proj-header { min-width: 900px !important; }
-}
 
 @media (max-width: 1100px) {
   .app-content { overflow-x: auto; }
 }
 
 @media (max-width: 768px) {
-  .dashboard-container { padding: 0; }
-  .app-content { padding: 12px !important; }
+    .app-content { padding: 12px !important; }
   .ant-card { margin-bottom: 8px; }
 }
 
@@ -150,18 +142,6 @@ table.proj-header { min-width: 900px; }
 }
 
 /* ── Ant Design table overrides ── */
-.ant-table-thead > tr > th {
-  background: #fafafa !important;
-  font-weight: 600;
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-.ant-table-tbody > tr > td {
-  font-size: 13px;
-  padding: 6px 8px !important;
-}
-
 /* 移除所有单元格内输入控件的边框 */
 .ant-table-tbody .ant-select-selector,
 .ant-table-tbody .ant-input-number-input,
@@ -248,4 +228,51 @@ td .code-input .ant-select-selection-search-input {
 .ant-table-tbody .ant-checkbox-wrapper .ant-checkbox-checked .ant-checkbox-inner {
   background-color: #00509e !important;
   border-color: #00509e !important;
+}
+
+/* ── 物料管理表格（.mat-table 专属，自 MaterialManagement 内联注入迁移） ── */
+.mat-table .ant-table-tbody > tr:hover > td { background: var(--color-bg-selected) !important; }
+.mat-table .ant-table-tbody > tr > td { padding: 7px 8px !important; }
+
+/* ── 蓝表（.bt- 专属，自 BlueTableModal 内联注入迁移） ── */
+.bt-row-alt { background: #f7f8fa !important; }
+.bt-tooltip .ant-tooltip-inner {
+  font-size: 12px; border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  color: var(--color-text-dark) !important; padding: 6px 12px;
+}
+
+/* ── 登录页（.login- 专属，原 Login.tsx 内联样式迁移；.login-card 类为死代码已删） ── */
+.login-root {
+  min-height: 100vh; display: flex;
+  background: linear-gradient(135deg, #0c1445 0%, #1a237e 30%, #283593 60%, #3949ab 100%);
+  position: relative; overflow: hidden;
+}
+.login-bg-circle {
+  position: absolute; border-radius: 50%;
+  pointer-events: none;
+}
+.login-bg1 { top: -20%; right: -10%; width: min(600px, 50vw); height: min(600px, 50vw); background: radial-gradient(circle, rgba(99,179,237,0.08) 0%, transparent 70%); }
+.login-bg2 { bottom: -15%; left: -5%; width: min(500px, 40vw); height: min(500px, 40vw); background: radial-gradient(circle, rgba(255,152,0,0.06) 0%, transparent 70%); }
+.login-bg3 { top: 40%; left: 15%; width: min(300px, 25vw); height: min(300px, 25vw); background: radial-gradient(circle, rgba(156,39,176,0.05) 0%, transparent 70%); }
+
+.login-brand-panel {
+  flex: 1; display: flex; flex-direction: column;
+  justify-content: center; padding: 40px 80px;
+  position: relative; z-index: 1;
+}
+.login-form-panel {
+  width: 460px; display: flex; align-items: center;
+  justify-content: center; padding: 40px 40px;
+  position: relative; z-index: 1; flex-shrink: 0;
+}
+
+@media (max-width: 960px) {
+  .login-root { flex-direction: column; align-items: center; }
+  .login-brand-panel { flex: none; padding: 32px 20px 0; width: 100%; align-items: center; }
+  .login-form-panel { width: 100%; max-width: 440px; padding: 20px 16px 40px; }
+}
+@media (max-width: 480px) {
+  .login-brand-panel { padding: 24px 12px 0; }
+  .login-form-panel { padding: 16px 12px 32px; }
 }

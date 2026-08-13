@@ -885,6 +885,7 @@ const SalesOpportunityList: React.FC = () => {
         rowKey="id"
         pagination={false}
         size="small"
+        scroll={{ x: 1436 }}
         bordered
         locale={{ emptyText: '暂无匹配的销售机会' }}
         style={{ background: '#fff', borderRadius: 8 }}

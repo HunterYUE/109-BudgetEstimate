@@ -542,22 +542,6 @@ const MaterialManagement: React.FC = () => {
   }, [materials]);
 
   // ── Render ──
-  // Inject material-table-specific styles
-  useEffect(() => {
-    const css = `
-.mat-table .ant-table-tbody > tr:hover > td { background: #f0f6ff !important; }
-.mat-table .ant-table-tbody > tr > td { padding: 7px 8px !important; }
-.mat-table .ant-table-filter-trigger { color: #8892a4 !important; }
-.mat-table .ant-table-filter-trigger:hover { color: var(--color-primary) !important; }
-.mat-table .ant-table-filter-trigger.active,
-.mat-table .ant-table-filter-trigger.ant-table-filter-trigger.active { color: var(--color-primary) !important; }
-`;
-    const s = document.createElement('style');
-    s.textContent = css;
-    document.head.appendChild(s);
-    return () => s.remove();
-  }, []);
-
 
   return (
     <div>
@@ -626,7 +610,6 @@ const MaterialManagement: React.FC = () => {
       </div>
 
       {/* 表格 */}
-      {/* Style injected via useEffect */}
       <div style={{
         borderRadius: 10, border: `1px solid ${COLORS.borderLight}`,
         boxShadow: '0 2px 8px rgba(0,0,0,0.04)', overflow: 'hidden',

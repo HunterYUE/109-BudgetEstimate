@@ -598,10 +598,10 @@ const SalesAnalysis: React.FC = () => {
       <OverviewCards items={overviewItems} />
 
       {/* Row 2: 漏斗 | 赢单原因 | 输单原因 */}
-      <div style={{ display: 'flex', gap: 16, marginBottom: 16 }}>
+      <div style={{ display: 'flex', gap: 16, marginBottom: 16, flexWrap: 'wrap' }}>
         <Card size="small"
           title={<span style={{ fontSize: 14, fontWeight: 600 }}>月度订单</span>}
-          style={{ flex: 1, borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
+          style={{ flex: '1 1 340px', borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
           styles={{ body: { padding: '8px 12px' } }}
         >
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginBottom: 1, minHeight: 14 }}>
@@ -667,7 +667,7 @@ const SalesAnalysis: React.FC = () => {
 
         <Card size="small"
           title={<span style={{ fontSize: 14, fontWeight: 600 }}>销售漏斗</span>}
-          style={{ flex: 1, borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
+          style={{ flex: '1 1 340px', borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
           styles={{ body: { padding: '8px 12px' } }}
         >
           <SalesFunnel
@@ -679,7 +679,7 @@ const SalesAnalysis: React.FC = () => {
 
         <Card size="small"
           title={<span style={{ fontSize: 14, fontWeight: 600 }}>月度销售</span>}
-          style={{ flex: 1, borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
+          style={{ flex: '1 1 340px', borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
           styles={{ body: { padding: '8px 12px' } }}
         >
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginBottom: 1, minHeight: 14 }}>
@@ -751,7 +751,7 @@ const SalesAnalysis: React.FC = () => {
           <div style={{ flex: '0 0 calc(25% - 12px)' }}><VerticalBarChart title="取消" data={dimCancelReasons} format="num" height={220} topN={4} barWidthRatio={0.6} maxBarWidth={26} hideAvgLine contentOffset={30} padBottom={28} /></div>
           <div style={{ flex: '0 0 calc(25% - 12px)' }}><VerticalBarChart title="放弃" data={dimAbandonReasons} format="num" height={220} topN={6} barWidthRatio={0.6} maxBarWidth={26} hideAvgLine contentOffset={30} padBottom={28} /></div>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 16, marginTop: 15, gridAutoRows: 268 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, marginTop: 15, gridAutoRows: 268 }}>
           {/* ⚠️ 修复：卡片内容高 = contentOffset(30) + SVG(220) = 250，此前行高仅 250 + overflow:hidden 裁掉底部姓名；行高增至 268 留出姓名完整显示空间 */}
           <div style={{ overflow: 'hidden' }}><VerticalBarChart title="订单金额" data={dimOrderAmount} format="K" contentOffset={30} /></div>
           <div style={{ overflow: 'hidden' }}><VerticalBarChart title="订单利润" data={dimProfit} format="K" contentOffset={30} /></div>

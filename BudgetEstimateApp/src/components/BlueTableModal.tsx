@@ -793,20 +793,6 @@ const BlueTableModal: React.FC<BlueTableModalProps> = ({ open, opportunity, onSa
           </div>
         </div>
 
-      {/* 行交替色注入 */}
-      <style>{`
-        .bt-row-alt { background: #f7f8fa !important; }
-        .ant-table-tbody input[type=number]::-webkit-inner-spin-button,
-        .ant-table-tbody input[type=number]::-webkit-outer-spin-button {
-          -webkit-appearance: none !important;
-          margin: 0 !important;
-        }
-        .bt-tooltip .ant-tooltip-inner {
-          font-size: 12px; border-radius: 6px;
-          box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-          color: #0d1b2a !important; padding: 6px 12px;
-        }
-      `}</style>
     </Modal>
   );
 };

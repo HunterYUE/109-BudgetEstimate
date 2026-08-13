@@ -133,8 +133,8 @@ const DeliveryNodeTimeline: React.FC<Props> = ({
   };
 
   return (
-    <div>
-      <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+    <div style={{ overflowX: 'auto' }}>
+      <table style={{ width: '100%', minWidth: 1024, borderCollapse: 'collapse', tableLayout: 'fixed' }}>
         <colgroup>
           <col style={{ width: 72 }} />
           <col style={{ width: 184 }} />

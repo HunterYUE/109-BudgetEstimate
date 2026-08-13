@@ -2,49 +2,6 @@ import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../utils/authContext';
 
-/** Login 页面专用响应式样式 */
-const LOGIN_RESPONSIVE_CSS = `
-.login-root {
-  min-height: 100vh; display: flex;
-  background: linear-gradient(135deg, #0c1445 0%, #1a237e 30%, #283593 60%, #3949ab 100%);
-  position: relative; overflow: hidden;
-}
-.login-bg-circle {
-  position: absolute; border-radius: 50%;
-  pointer-events: none;
-}
-.login-bg1 { top: -20%; right: -10%; width: min(600px, 50vw); height: min(600px, 50vw); background: radial-gradient(circle, rgba(99,179,237,0.08) 0%, transparent 70%); }
-.login-bg2 { bottom: -15%; left: -5%; width: min(500px, 40vw); height: min(500px, 40vw); background: radial-gradient(circle, rgba(255,152,0,0.06) 0%, transparent 70%); }
-.login-bg3 { top: 40%; left: 15%; width: min(300px, 25vw); height: min(300px, 25vw); background: radial-gradient(circle, rgba(156,39,176,0.05) 0%, transparent 70%); }
-
-.login-brand-panel {
-  flex: 1; display: flex; flex-direction: column;
-  justify-content: center; padding: 40px 80px;
-  position: relative; z-index: 1;
-}
-.login-form-panel {
-  width: 460px; display: flex; align-items: center;
-  justify-content: center; padding: 40px 40px;
-  position: relative; z-index: 1; flex-shrink: 0;
-}
-.login-card {
-  width: 100%; background: rgba(255,255,255,0.95);
-  border-radius: 16; padding: 48px 40px 40px;
-  box-shadow: 0 20px 60px rgba(0,0,0,0.2), 0 8px 24px rgba(0,0,0,0.1);
-  backdrop-filter: blur(20px);
-}
-
-@media (max-width: 960px) {
-  .login-root { flex-direction: column; align-items: center; }
-  .login-brand-panel { flex: none; padding: 32px 20px 0; width: 100%; align-items: center; }
-  .login-form-panel { width: 100%; max-width: 440px; padding: 20px 16px 40px; }
-}
-@media (max-width: 480px) {
-  .login-brand-panel { padding: 24px 12px 0; }
-  .login-form-panel { padding: 16px 12px 32px; }
-  .login-card { border-radius: 12px; }
-}
-`;
 
 const Login: React.FC = () => {
   const { login } = useAuth();
@@ -74,7 +31,6 @@ const Login: React.FC = () => {
 
   return (
     <>
-      <style>{LOGIN_RESPONSIVE_CSS}</style>
       <div className="login-root">
         {/* 装饰性背景元素 */}
         <div className="login-bg-circle login-bg1" />

@@ -425,6 +425,7 @@ const ClientManagement: React.FC = () => {
         rowKey="id"
         pagination={false}
         size="small"
+        scroll={{ x: 1030 }}
         bordered
         loading={loading}
         style={{ background: '#fff', borderRadius: 8 }}

@@ -389,27 +389,6 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
     ...colDelete,
   ];
 
-  useEffect(() => {
-    const style = document.createElement('style');
-    style.textContent = `
-      .ant-table-tbody .ant-tag {
-        font-size: 13px !important;
-      }
-      .ant-table-tbody input[type=number]::-webkit-inner-spin-button,
-      .ant-table-tbody input[type=number]::-webkit-outer-spin-button {
-        -webkit-appearance: none !important;
-        margin: 0 !important;
-      }
-      .ant-table-tbody input,
-      .ant-table-tbody .ant-input-number-input {
-        font-family: inherit !important;
-        font-size: 13px !important;
-      }
-    `;
-    document.head.appendChild(style);
-    return () => { document.head.removeChild(style); };
-  }, []);
-
   return (
     <>
       <Table
@@ -419,7 +398,7 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
       pagination={false}
       size="small"
       bordered
-      scroll={{ x: 900 }}
+      scroll={{ x: 1248 }}
     />
     </>
   );

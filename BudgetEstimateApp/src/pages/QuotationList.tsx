@@ -155,6 +155,7 @@ const QuotationList: React.FC = () => {
         rowKey="id"
         loading={loading}
         pagination={false}
+        scroll={{ x: 1190 }}
         size="small"
         bordered
         locale={{ emptyText: <Empty description="暂无符合条件的报价" /> }}

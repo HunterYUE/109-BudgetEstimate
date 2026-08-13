@@ -422,6 +422,7 @@ const SystemManagement: React.FC = () => {
             size="small"
             bordered
             loading={loading}
+            scroll={{ x: 830 }}
             style={{ fontSize: 13, background: '#fff', borderRadius: 8 }}
           />
           </div>
@@ -650,6 +651,7 @@ const SystemManagement: React.FC = () => {
             loading={logLoading}
             pagination={false}
             size="small"
+            scroll={{ x: 436 }}
             style={{ fontSize: 13, background: '#fff', borderRadius: 8 }}
           />
           </div>

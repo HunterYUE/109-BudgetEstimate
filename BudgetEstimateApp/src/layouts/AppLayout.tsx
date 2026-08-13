@@ -179,10 +179,10 @@ const AppLayout: React.FC = () => {
             padding: '0 24px',
           }}
         >
-          <span style={{ fontSize: 17, fontWeight: 700, color: '#0d1b2a', letterSpacing: 1 }}>
+          <span style={{ flex: 1, minWidth: 0, fontSize: 17, fontWeight: 700, color: '#0d1b2a', letterSpacing: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             销售和交付管理系统
           </span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
             <MdOutlineNotificationsNone size={20} style={{ color: '#666', cursor: 'pointer' }} />
             <HeaderUserMenu />
           </div>

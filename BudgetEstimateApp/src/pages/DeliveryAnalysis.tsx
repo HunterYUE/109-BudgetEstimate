@@ -10,6 +10,7 @@ import { fmtK, compressNo, chartLabel, monthEndOf, getNodeBaseline, getNodeDelay
 import { VerticalBarChart, ProfitChart, ProjectGantt, BubbleChart } from '../components/charts/DeliveryCharts';
 import type { ProfitItem, BubbleDataItem } from '../components/charts/DeliveryCharts';
 import { OverviewCards, type KpiCardItem } from '../components/shared/OverviewCards';
+import useMediaQuery from '../utils/useMediaQuery';
 
 /* ============================================================
    概览卡片（共享组件 OverviewCards，样式对齐工时应用仪表盘 KPI 卡）
@@ -94,6 +95,8 @@ const BUBBLE_CANVAS_H = LEFT_COL_H - 2 - 10 - 22 - 30 + 25; // 764
    ============================================================ */
 const DeliveryAnalysis: React.FC = () => {
   const [fySelect, setFySelect] = useState(defaultFy);
+  // 窄屏（<1280 内容区）左右列改上下堆叠，图表保持固有尺寸而非等比缩到不可读
+  const isNarrow = useMediaQuery('(max-width: 1279px)');
   const [deliveryProjects, setDeliveryProjects] = useState<DeliveryProject[]>([]);
   // 报价编制表持久化数据（税率/折后报价/概算利润含税），经交付 quotationId 关联
   const [quoteMap, setQuoteMap] = useState<Record<string, { taxRate?: number; discountedPrice?: number; gp3Amount?: number }>>({});
@@ -458,8 +461,8 @@ const DeliveryAnalysis: React.FC = () => {
             ],
           }))} />
 
-          <div style={{ display: 'flex', gap: 16, marginTop: 16, alignItems: 'stretch' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 16, flex: '0 0 calc(3 / 7 * (100% - 96px) + 32px)' }}>
+          <div style={{ display: 'flex', gap: 16, marginTop: 16, alignItems: 'stretch', flexDirection: isNarrow ? 'column' : 'row' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16, flex: isNarrow ? '1 1 auto' : '0 0 calc(3 / 7 * (100% - 96px) + 32px)' }}>
               <ProfitChart data={profitChartData.items}
                 height={CARD_H} chartWidth={702} contentOffset={40} />
               <VerticalBarChart title="延期天数" data={projectDelayDays}
