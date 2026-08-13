@@ -200,7 +200,8 @@ router.get('/:deliveryId/files', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-router.post('/:deliveryId/files', fileUpload.single('file'), async (req, res, next) => {
+// ⚠️ K1 修复：附件上传须「交付管理」——「销售机会管理」仅限转交付创建/初始化节点，不能对任意交付上传附件
+router.post('/:deliveryId/files', requirePermission('交付管理', '全部查看权限'), fileUpload.single('file'), async (req, res, next) => {
   try {
     const { deliveryId } = req.params;
     const { file_type } = req.body;

@@ -201,9 +201,13 @@ router.post('/project-groups', requireAuth, writeGuard(['报价编制', '全部�
     const group = await withTransaction(async (client) => {
       const groupId = req.body.id || undefined;
       const existing = groupId
-        ? (await client.query('SELECT id, version_id FROM project_groups WHERE id = $1', [groupId])).rows[0]
+        ? (await client.query('SELECT id, version_id, project_id FROM project_groups WHERE id = $1', [groupId])).rows[0]
         : null;
 
+      // ⚠️ K5 修复：组归属校验——只允许操作自己项目名下的组（此前 UPDATE 无 project_id 校验，可覆写他人项目组）
+      if (existing && existing.project_id !== project_id) {
+        throw new AppError(400, '无权修改该项目组');
+      }
       let groupResult;
       if (existing) {
         // 检查版本号：版本不同则 INSERT 新记录（版本隔离），同版本则 UPDATE（version_id 已在上面一次查询取回）
@@ -218,8 +222,8 @@ router.post('/project-groups', requireAuth, writeGuard(['报价编制', '全部�
         } else {
           groupResult = (await client.query(
             `UPDATE project_groups SET group_no=$1, group_type=$2, name=$3, is_fixed=$4, updated_at=now()
-             WHERE id=$5 RETURNING *`,
-            [group_no, group_type, name, is_fixed, groupId]
+             WHERE id=$5 AND project_id=$6 RETURNING *`,
+            [group_no, group_type, name, is_fixed, groupId, project_id]
           )).rows[0];
           await client.query('DELETE FROM group_items WHERE group_id = $1', [groupId]);
         }

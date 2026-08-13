@@ -378,19 +378,38 @@ router.put('/profiles/:id', ...trAuth, async (req, res, next) => {
     if (['role', 'is_active'].some(f => f in req.body) && !admin) throw new AppError(403, '仅管理员可修改角色/启用状态');
     // ⚠️ 审计修复：profiles.role 撞 profiles_role_check 约束（仅 admin/employee）会返回 500，此处显式预校验给 400
     if (req.body.role !== undefined && !['admin', 'employee'].includes(req.body.role)) throw new AppError(400, '角色不合法，仅支持 admin/employee');
+    // ⚠️ K3 修复：改 email 须归一化 + 查重（users.email 是登录键，TR 侧改邮箱须同步回写预算 users，
+    //   否则预算登录失效、is_director（lower(u.email)=lower(p.email)）判定失真）——与预算 users.ts 改邮箱回写 profiles 对称
+    const emailChanging = req.body.email !== undefined;
+    let emailNorm: string | undefined;
+    if (emailChanging) {
+      emailNorm = normalizeEmail(String(req.body.email));
+      const clash = (await query(
+        'SELECT id FROM users WHERE LOWER(email) = $1 AND id != $2',
+        [emailNorm, req.params.id]
+      )).rows[0];
+      if (clash) throw new AppError(409, '该邮箱已被其他账号使用');
+    }
     const fields: string[] = [];
     const values: any[] = [];
     let idx = 1;
     for (const f of ['name', 'email', 'role', 'is_active']) {
-      if (req.body[f] !== undefined) { fields.push(`${f} = $${idx++}`); values.push(req.body[f]); }
+      if (req.body[f] !== undefined) { fields.push(`${f} = $${idx++}`); values.push(f === 'email' ? emailNorm : req.body[f]); }
     }
     if (!fields.length) throw new AppError(400, '没有要更新的字段');
     values.push(req.params.id);
-    const r = (await query(
-      `UPDATE timerecording.profiles SET ${fields.join(', ')} WHERE id = $${idx} RETURNING id, employee_id, name, email, role, is_active`,
-      values
-    )).rows[0];
-    if (!r) throw new AppError(404, '未找到');
+    // ⚠️ K3 修复：档案更新与 users.email 回写置于同一事务，任一失败整体回滚（防档案与登录邮箱半同步）
+    const r = await withTransaction(async (client) => {
+      const upd = (await client.query(
+        `UPDATE timerecording.profiles SET ${fields.join(', ')} WHERE id = $${idx} RETURNING id, employee_id, name, email, role, is_active`,
+        values
+      )).rows[0];
+      if (!upd) throw new AppError(404, '未找到');
+      if (emailChanging) {
+        await client.query('UPDATE users SET email = $1 WHERE id = $2', [emailNorm, req.params.id]);
+      }
+      return upd;
+    });
     res.json(r);
   } catch (err) { next(err); }
 });

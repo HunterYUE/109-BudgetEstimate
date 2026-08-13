@@ -113,7 +113,7 @@ export const ROLE_RANK: Record<string, number> = { user: 0, manager: 1, director
 export function assertCanManage(actorRole: string, targetRank: number): void {
   const actorRank = ROLE_RANK[actorRole] ?? 0; // 未知角色按最低等级处理（无越级能力）
   if (targetRank > actorRank) {
-    throw new AppError(403, '无权创建/修改同级或更高权限的账号');
+    throw new AppError(403, '无权创建/修改更高权限的账号');
   }
 }
 

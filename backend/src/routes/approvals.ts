@@ -42,6 +42,18 @@ router.post('/', async (req, res, next) => {
 
     // ⚠️ A15：事务样板收敛为 withTransaction
     const record = await withTransaction(async (client) => {
+      // ⚠️ K4 修复：同一实体同一审批类型不得存在多条 pending（防直调 API 重复提交产生重复待审/级联重复）
+      const dupCol = approval_type === 'quotation' ? 'quotation_id'
+        : approval_type === 'promote' ? 'opportunity_id'
+        : 'delivery_id';
+      const dupVal = (body as Record<string, any>)[dupCol];
+      if (dupVal) {
+        const dup = (await client.query(
+          `SELECT 1 FROM approval_requests WHERE approval_type = $1 AND ${dupCol} = $2 AND status = 'pending'`,
+          [approval_type, dupVal]
+        )).rows[0];
+        if (dup) throw new AppError(409, `该${approval_type === 'quotation' ? '报价' : approval_type === 'promote' ? '机会' : approval_type === 'plan' ? '交付计划' : '交付成本'}已有待审批请求，请勿重复提交`);
+      }
       if (approval_type === 'plan' && delivery_id) {
         await client.query('UPDATE delivery_projects SET plan_status = $1, updated_at = now() WHERE id = $2', ['pending', delivery_id]);
       }
