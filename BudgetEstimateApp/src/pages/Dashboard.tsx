@@ -561,16 +561,16 @@ const Dashboard: React.FC = () => {
       {/* ── 底栏：管道节点 | 行业分布 | 新增机会 ── */}
       <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
         <Card size="small"
-          style={{ flex: 1, borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
-          styles={{ body: { padding: '16px 18px' } }}>
+          style={{ flex: '1 1 calc((100% - 40px) / 3 + 20px)', borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
+          styles={{ body: { padding: '16px 0 16px 18px' } }}>
           <SectionTitle title="管道节点" />
           <div style={{ marginTop: 50, marginLeft: -20 }}>
-            <VerticalBars items={stageDist} height={250} groupGaps={[2, 5, 8, 11]} barWidth={24.5} />
+            <VerticalBars items={stageDist} height={230} groupGaps={[2, 5, 8, 11]} barWidth={26.5} />
           </div>
         </Card>
 
         <Card size="small"
-          style={{ flex: 1, borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
+          style={{ flex: '1 1 calc((100% - 40px) / 3 - 20px)', borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
           styles={{ body: { padding: '16px 18px' } }}>
           <SectionTitle title="行业分布" count={industryDist.reduce((s, i) => s + i.value, 0)} />
           {industryDist.length === 0 ? (
@@ -578,7 +578,7 @@ const Dashboard: React.FC = () => {
           ) : (
             <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: -20 }}>
               <div style={{ flex: 1, display: 'flex', justifyContent: 'center', overflow: 'visible' }}>
-                <PieChart items={industryDist} pieSize={240} />
+                <PieChart items={industryDist} pieSize={220} />
               </div>
               <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {industryDist.map(i => (
@@ -593,14 +593,14 @@ const Dashboard: React.FC = () => {
         </Card>
 
         <Card size="small"
-          style={{ flex: 1, borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
+          style={{ flex: '1 1 calc((100% - 40px) / 3)', borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
           styles={{ body: { padding: '16px 18px' } }}>
           <SectionTitle title="新增机会" count={fyTrend.reduce((s, m) => s + m.value, 0)} />
           {fyTrend.every(m => m.count === 0) ? (
             <div style={{ padding: 24, textAlign: 'center', color: COLORS.textLight, fontSize: 13 }}>当前财年暂无新增</div>
           ) : (
             <div style={{ marginTop: 50 }}>
-              <VerticalBars items={fyTrend} height={250} unit="K" />
+              <VerticalBars items={fyTrend} height={230} unit="K" />
             </div>
           )}
         </Card>
@@ -609,7 +609,7 @@ const Dashboard: React.FC = () => {
       {/* ── 动态：近期赢单 | 近期输单 | 近期交付 ── */}
       <div style={{ display: 'flex', gap: 20, marginTop: 10, flexWrap: 'wrap' }}>
         <Card size="small"
-          style={{ flex: 1, borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
+          style={{ flex: '1 1 calc((100% - 40px) / 3 + 20px)', borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
           styles={{ body: { padding: '4px 16px' } }}>
           <SectionTitle title="近期赢单" count={recentWins.length} />
           {recentWins.length === 0 ? (
@@ -638,7 +638,7 @@ const Dashboard: React.FC = () => {
         </Card>
 
         <Card size="small"
-          style={{ flex: 1, borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
+          style={{ flex: '1 1 calc((100% - 40px) / 3 - 20px)', borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
           styles={{ body: { padding: '4px 16px' } }}>
           <SectionTitle title="近期输单" count={recentLosses.length} />
           {recentLosses.length === 0 ? (
@@ -666,7 +666,7 @@ const Dashboard: React.FC = () => {
         </Card>
 
         <Card size="small"
-          style={{ flex: 1, borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
+          style={{ flex: '1 1 calc((100% - 40px) / 3)', borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
           styles={{ body: { padding: '4px 16px' } }}>
           <SectionTitle title="近期交付" count={recentDeliveries.length} />
           {recentDeliveries.length === 0 ? (
