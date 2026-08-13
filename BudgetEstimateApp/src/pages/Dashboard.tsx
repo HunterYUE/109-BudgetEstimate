@@ -94,7 +94,9 @@ const VerticalBars: React.FC<{
                   {/* 0 值（含负值）不渲染柱条，仅保留数值标签，避免 4% 兜底产生误导性 stub */}
                   {item.value > 0 && (
                     <div style={{
-                      width: barWidth,
+                      // ⚠️ 柱宽随槽位自适应：min(barWidth, 80% 槽宽)——大屏高 DPI 下有效视口变窄、槽位随之变窄时
+                      //    柱体按槽宽比例自动收缩，杜绝相邻柱体重合（19寸正常、25寸重叠即源于固定柱宽 vs 弹性槽位）
+                      width: `min(${barWidth}px, 80%)`,
                       height: `${Math.max((item.value / max) * 100, 4)}%`, minHeight: 4,
                       border: `3px solid ${item.color}`,
                       background: 'transparent',

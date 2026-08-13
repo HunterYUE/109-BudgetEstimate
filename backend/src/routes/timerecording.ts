@@ -237,9 +237,9 @@ router.post('/auth/login', trLoginLimiter, async (req, res, next) => {
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) throw new AppError(401, '账号或密码错误');
 
-    // ⚠️ 跨应用登录权限：销售经理仅限报价·交付应用，禁止登录工时系统
+    // ⚠️ 跨应用登录权限：销售经理仅限销售·交付应用，禁止登录任务规划和报工应用
     if (user.title === '销售经理' && user.role !== 'admin' && user.role !== 'director') {
-      throw new AppError(403, '该账号仅限登录报价和交付管理应用，无权使用工时系统');
+      throw new AppError(403, '该账号仅限登录销售和交付管理应用，无权使用任务规划和报工应用');
     }
 
     // 如果没有 profile 则创建
@@ -288,7 +288,7 @@ router.get('/auth/me', requireAuth, async (req, res, next) => {
     const r = result.rows[0];
     // ⚠️ 跨应用登录权限：销售经理仅限报价·交付应用（已持有旧 token 也在此拦截并登出）
     if (r.title === '销售经理' && req.user!.role !== 'admin' && req.user!.role !== 'director') {
-      throw new AppError(403, '该账号仅限登录报价和交付管理应用，无权使用工时系统');
+      throw new AppError(403, '该账号仅限登录销售和交付管理应用，无权使用任务规划和报工应用');
     }
     res.json({
       id: r.id, email: r.email,

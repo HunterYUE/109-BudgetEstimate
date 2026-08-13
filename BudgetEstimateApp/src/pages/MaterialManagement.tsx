@@ -420,7 +420,7 @@ const MaterialManagement: React.FC = () => {
         );
       },
     },
-    { title: '名称', dataIndex: 'nameCn', width: 175, onCell: onCellLock(175),
+    { title: '名称', dataIndex: 'nameCn', width: 145, onCell: onCellLock(145),
       render: (v: string) => <span style={{ fontSize: 12, color: '#555' }}>{v}</span>,
     },
     {
@@ -457,7 +457,7 @@ const MaterialManagement: React.FC = () => {
       onFilter: (value: unknown, record: Component) => value === '__all__' || record.unit === value,
       render: (v: string) => <span style={{ fontSize: 12, color: '#555' }}>{v || '—'}</span>,
     },
-    { title: '规格', dataIndex: 'specification', width: 220, onCell: onCellLock(220),
+    { title: '规格', dataIndex: 'specification', width: 160, onCell: onCellLock(160),
       render: (v: string) => <span style={{ fontSize: 12, color: COLORS.textSecondary }}>{v || '—'}</span>,
     },
     {
@@ -492,7 +492,7 @@ const MaterialManagement: React.FC = () => {
         return <span style={{ fontSize: 12, color: '#888' }}>{labels.join('; ')}</span>;
       },
     },
-    { title: '单位成本', dataIndex: 'unitCost', width: 90, align: 'right' as const, onCell: onCellLock(90),
+    { title: '单位成本', dataIndex: 'unitCost', width: 85, align: 'right' as const, onCell: onCellLock(85),
       render: (v: number) => <span style={{ fontWeight: 600 }}>&yen;{formatMoney(v)}</span>,
     },
     {
@@ -640,7 +640,7 @@ const MaterialManagement: React.FC = () => {
         pagination={false}
         size="small"
         bordered
-        scroll={{ x: 1400 }}
+        scroll={{ x: 1320 }}
         locale={{ emptyText: <Empty description="暂无匹配的物料" /> }}
         style={{ background: '#fff', borderRadius: 8 }}
       />

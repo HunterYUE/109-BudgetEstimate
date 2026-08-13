@@ -43,9 +43,9 @@ router.post('/login', async (req, res, next) => {
       throw new AppError(401, '邮箱或密码错误');
     }
 
-    // ⚠️ 跨应用登录权限：普通员工仅限工时填报和统计应用，禁止登录报价·交付应用
+    // ⚠️ 跨应用登录权限：普通员工仅限任务规划和报工应用，禁止登录销售·交付应用
     if (user.title === '普通员工' && user.role !== 'admin' && user.role !== 'director') {
-      throw new AppError(403, '该账号仅限登录工时填报和统计应用，无权使用报价和交付管理');
+      throw new AppError(403, '该账号仅限登录任务规划和报工应用，无权使用销售和交付管理');
     }
 
     const token = signToken({
@@ -88,9 +88,9 @@ router.get('/me', requireAuth, async (req, res, next) => {
       throw new AppError(404, '用户不存在');
     }
     const u = result.rows[0];
-    // ⚠️ 跨应用登录权限：普通员工仅限工时填报和统计应用（已持有旧 token 也在此拦截并登出）
+    // ⚠️ 跨应用登录权限：普通员工仅限任务规划和报工应用（已持有旧 token 也在此拦截并登出）
     if (u.title === '普通员工' && u.role !== 'admin' && u.role !== 'director') {
-      throw new AppError(403, '该账号仅限登录工时填报和统计应用，无权使用报价和交付管理');
+      throw new AppError(403, '该账号仅限登录任务规划和报工应用，无权使用销售和交付管理');
     }
     res.json({
       id: u.id,
