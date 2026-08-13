@@ -537,8 +537,8 @@ const Dashboard: React.FC = () => {
           styles={{ body: { padding: '18px 20px' } }}>
           <SectionTitle title="交付状态" />
           {/* 四列宽度：flex-basis % = 原 grow 比例 ÷ 19（4.0625→21.382%、8.0625→42.434%、2.8125→14.803%）。
-              准时率 −18px 转给利润概览：px 项承载平移（±18 相抵，四列基值和仍 100%），flex-shrink 按基值比例
-              吸收间隙/分隔线占用（6×8px + 3×1px = 51px），故项目状态/节点执行像素不变、准时率精确 −18、利润概览 +18 */}
+              准时率 −38px 转给利润概览（先 −18 再 −20）：px 项承载平移（±38 相抵，四列基值和仍 100%），flex-shrink 按基值比例
+              吸收间隙/分隔线占用（6×8px + 3×1px = 51px），故项目状态/节点执行像素不变、准时率精确 −38、利润概览 +38 */}
           <div style={{ display: 'flex', gap: 8, alignItems: 'stretch', minHeight: 150, marginTop: -18 }}>
             <div style={{ flex: '0 1 21.382%', display: 'flex', flexDirection: 'column', marginLeft: -20 }}>
               <div style={{ fontSize: 10, color: COLORS.textLight, fontWeight: 500, textAlign: 'right', marginBottom: 2, paddingRight: 2 }}>项目状态</div>
@@ -550,12 +550,12 @@ const Dashboard: React.FC = () => {
               <VerticalBars items={deliveryStats.nodeStatus} height={210} groupGaps={[2, 5]} gapSize={5} barWidth={22.5} />
             </div>
             <div style={{ width: 1, background: COLORS.borderLight, flexShrink: 0 }} />
-            <div style={{ flex: '0 1 calc(42.434% - 18px)', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ flex: '0 1 calc(42.434% - 38px)', display: 'flex', flexDirection: 'column' }}>
               <div style={{ fontSize: 10, color: COLORS.textLight, fontWeight: 500, textAlign: 'right', marginBottom: 2, paddingRight: 2 }}>节点准时率</div>
               <VerticalBars items={deliveryStats.onTimeRate} height={210} unit="%" maxSlots={18} barWidth={22.5} />
             </div>
             <div style={{ width: 1, background: COLORS.borderLight, flexShrink: 0 }} />
-            <div style={{ flex: '0 1 calc(14.803% + 18px)', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ flex: '0 1 calc(14.803% + 38px)', display: 'flex', flexDirection: 'column' }}>
               <div style={{ fontSize: 10, color: COLORS.textLight, fontWeight: 500, textAlign: 'right', marginBottom: 2, paddingRight: 2 }}>利润概览</div>
               <VerticalBars items={deliveryStats.profitOverview} height={210} unit="K" groupGaps={[2]} barWidth={22.5} valueFontSize={7} />
             </div>
