@@ -18,7 +18,9 @@ import { clearCache } from '../utils/api';
 import { projectService } from '../services/projectService';
 import IconButton from '../components/IconButton';
 import { COLORS } from '../styles/colors';
-import { exportHtmlTable } from '../utils/exportToExcel';
+import { uuid } from '../utils/uuid';
+import { todayBeijing } from '../utils/timeFormat';
+import { exportHtmlTable, escapeHtml } from '../utils/exportToExcel';
 import { DEFAULT_DESIGN_HOURLY_RATE, DEFAULT_ASSEMBLY_HOURLY_RATE, TAX_RATE } from '../utils/constants';
 import { STATUS_CONFIG } from '../components/material/materialConstants';
 
@@ -130,7 +132,7 @@ function ConfirmDeleteModal({ title, description, open, onCancel, onConfirm }: {
 /** Return default fixed groups with default items (from A2026-07-002-S) */
 function getFixedGroups(): Group[] {
   const fi = (o: Partial<GroupItem>): GroupItem => ({
-    id: crypto.randomUUID(), itemNo: 0, itemType: 'SERVICE', componentId: '',
+    id: uuid(), itemNo: 0, itemType: 'SERVICE', componentId: '',
     code: '', description: '', qtyTotal: 1, unit: '项',
     sourcingType: 'PURCHASED', unitCost: 0, designHours: 0, assemblyHours: 0,
     designHourRate: 175, assemblyHourRate: 85, directCost: 0, marginRate: 0.15,
@@ -177,7 +179,7 @@ function getFixedGroups(): Group[] {
 const initProject = (): Project => {
   const salesNo = generateSalesNo();
   const base = {
-    id: 'proj-' + crypto.randomUUID().slice(0, 6),
+    id: 'proj-' + uuid().slice(0, 6),
     salesNo: salesNo,
     clientName: '新项目',
     clientCode: '',
@@ -193,7 +195,7 @@ const initProject = (): Project => {
     note: '',
   };
   const blankVersion = {
-    id: 'v-' + crypto.randomUUID().slice(0, 6),
+    id: 'v-' + uuid().slice(0, 6),
     versionNo: 'V1.0',
     eurRate: 7.8, taxRate: TAX_RATE, roundingDigits: 0,
     warrantyRate: 0.01, riskRate: 0.03, commercialCost: 0,
@@ -206,8 +208,8 @@ const initProject = (): Project => {
     ...base,
     currentVersion: blankVersion,
     groups: [
-      { id: 'grp-eqp-' + crypto.randomUUID().slice(0, 6), groupNo: 1, groupType: 'EQUIPMENT', name: '设备组 #1', isFixed: false, items: [] },
-      ...getFixedGroups().map((g, i) => ({ ...g, id: g.id + '-' + crypto.randomUUID().slice(0, 6), groupNo: i + 2 })),
+      { id: 'grp-eqp-' + uuid().slice(0, 6), groupNo: 1, groupType: 'EQUIPMENT', name: '设备组 #1', isFixed: false, items: [] },
+      ...getFixedGroups().map((g, i) => ({ ...g, id: g.id + '-' + uuid().slice(0, 6), groupNo: i + 2 })),
     ],
   };
 };
@@ -242,6 +244,9 @@ const QuotationPage: React.FC = () => {
   const oppIdRef = useRef<string | null>(null);
   /** 当前 state 中 groups 所属的版本 id：版本切换保存时按版本清理目标版本旧组再重建，避免回切/切换产生重复组 */
   const groupsVersionRef = useRef<string>('');
+  // ⚠️ B62 修复：记录「数据库中确有组数据」的版本集合——deleteGroupsByVersion 仅对既有版本执行
+  //   （版本回切需清旧组防重复），新建版本本就无组，跳过无谓 DELETE；集合由加载/保存/删除三处维护
+  const versionsWithGroupsRef = useRef<Set<string>>(new Set());
 
   /** 物料编码→组件 索引：用 Map 替代 componentDB.find/some 全表扫描（填充 effect/编码校验/添加条目） */
   const componentMap = useMemo(
@@ -292,6 +297,12 @@ const QuotationPage: React.FC = () => {
               }
             }
             groupsVersionRef.current = lv?.id || '';
+            // ⚠️ B62：从全量组（含各版本）建立「有组版本」集合，供保存时判断目标版本是否既有
+            versionsWithGroupsRef.current = new Set(
+              (data.groups || [])
+                .map((g: Group) => String((g as unknown as Record<string, unknown>).versionId || ''))
+                .filter(Boolean),
+            );
             setProject({ ...data, currentVersion: lv || { ...FALLBACK_VERSION }, groups: versionGroups });
           }
         } else {
@@ -398,7 +409,7 @@ const QuotationPage: React.FC = () => {
         if (g.id !== groupId) return g;
         const maxNo = g.items.reduce((max, item) => Math.max(max, item.itemNo), 0);
         const newItem: GroupItem = {
-          id: crypto.randomUUID(),
+          id: uuid(),
           itemNo: maxNo + 1,
           itemType: 'COMPLETE_SET',
           componentId: '',
@@ -470,7 +481,7 @@ const QuotationPage: React.FC = () => {
       if (!prev) return prev;
       const equipGroups = prev.groups.filter(g => g.groupType === 'EQUIPMENT');
       const newNo = equipGroups.length + 1;
-      const newId = crypto.randomUUID();
+      const newId = uuid();
       const newGroup: Group = {
         id: newId,
         groupNo: newNo,
@@ -585,7 +596,9 @@ const QuotationPage: React.FC = () => {
     const curVer = project.currentVersion;
     // 始终使用当前版本号保存（不迭代版本，版本编辑由用户手动输入）
     const versionForSave = curVer.versionNo;
-    const statusForSave = curVer.reviewStatus;
+    // ⚠️ B61 修复：已通过/已驳回的报价被再次编辑保存时状态重置为草稿——否则内容已修改却仍保持 approved/rejected，
+    //    绕过审批状态机（改过数据不经重审即显示"已通过"）。pending 保持不动（单据仍在审批中），draft 亦不动
+    const statusForSave = curVer.reviewStatus === 'approved' || curVer.reviewStatus === 'rejected' ? 'draft' : curVer.reviewStatus;
     try {
       savingRef.current = true;
       setIsSaving(true); // ⚠️ 防止重复点击
@@ -597,11 +610,14 @@ const QuotationPage: React.FC = () => {
         const newVerSummary = calcProjectSummary(project.groups || [], curVer, newVerUntaxed);
         const sv = await projectService.saveVersion(newId, buildVersionPayload(curVer, newVerSummary, { versionNo: versionForSave, reviewStatus: statusForSave }));
         const svId = sv.id;
-        // ⚠️ 版本切换时按版本清理目标版本旧组再重建（新项目 ref 为空跳过，避免重复组/回切重复）
-        if (groupsVersionRef.current && groupsVersionRef.current !== svId) {
+        // ⚠️ 版本切换时按版本清理目标版本旧组再重建（新项目 ref 为空跳过，避免重复组/回切重复；
+        //   B62：仅对确有旧组的既有版本删除，新建版本跳过）
+        if (groupsVersionRef.current && groupsVersionRef.current !== svId && versionsWithGroupsRef.current.has(svId)) {
           await projectService.deleteGroupsByVersion(svId);
+          versionsWithGroupsRef.current.delete(svId);
         }
         const idMap = await saveGroups(newId, svId, project.groups);
+        versionsWithGroupsRef.current.add(svId);
         groupsVersionRef.current = svId;
         const syncResult = await syncQuotation(versionForSave, statusForSave, newId);
         const qid = syncResult?.id || '';
@@ -628,10 +644,12 @@ const QuotationPage: React.FC = () => {
         // ⚠️ 版本隔离/回切防护：
         //   - 版本号变更 → 后端对旧组 id 会 INSERT 新组（新 id），必须把新 id 同步回 state，否则下次保存再 INSERT → 重复组
         //   - 若目标版本已存在旧组（版本回切 V1→V2→V1），需先按版本清理再重建，否则旧组+新副本并存 → 重复组
-        if (groupsVersionRef.current && groupsVersionRef.current !== savedVersionId) {
+        if (groupsVersionRef.current && groupsVersionRef.current !== savedVersionId && versionsWithGroupsRef.current.has(savedVersionId)) {
           await projectService.deleteGroupsByVersion(savedVersionId);
+          versionsWithGroupsRef.current.delete(savedVersionId);
         }
         const idMap = await saveGroups(project.id, savedVersionId, project.groups);
+        versionsWithGroupsRef.current.add(savedVersionId);
         groupsVersionRef.current = savedVersionId;
         const syncResult = await syncQuotation(versionForSave, statusForSave);
         const newQid = syncResult?.id || "";
@@ -680,10 +698,12 @@ const QuotationPage: React.FC = () => {
       const savedVerId = savedVer.id;
       // 保存组数据（与 handleSave 逻辑一致），确保审批时组数据是最新的
       // ⚠️ 版本隔离/回切防护：同步新组 id 回 state；版本切换时先按版本清理目标版本旧组再重建，防止重复组
-      if (groupsVersionRef.current && groupsVersionRef.current !== savedVerId) {
+      if (groupsVersionRef.current && groupsVersionRef.current !== savedVerId && versionsWithGroupsRef.current.has(savedVerId)) {
         await projectService.deleteGroupsByVersion(savedVerId);
+        versionsWithGroupsRef.current.delete(savedVerId);
       }
       const idMap = await saveGroups(project.id, savedVerId, project.groups);
+      versionsWithGroupsRef.current.add(savedVerId);
       groupsVersionRef.current = savedVerId;
       const synced = await quotationService.sync({
         projectId: project.id, versionNo: curVer.versionNo,
@@ -752,7 +772,7 @@ const QuotationPage: React.FC = () => {
       }
       groupsHtml += '<tr style="font-weight:700;background:#f5f7fa">' +
         '<td style="text-align:center">' + g.groupNo + '</td>' +
-        '<td>' + g.name + '</td>' +
+        '<td>' + escapeHtml(g.name) + '</td>' +
         '<td style="text-align:center">1</td>' +
         '<td class="amount"></td>' +
         '<td class="amount">¥' + Math.round(groupTotal).toLocaleString() + '</td></tr>';
@@ -760,7 +780,7 @@ const QuotationPage: React.FC = () => {
         const item = g.items[ii];
         if (item.accountingPrice <= 0) continue;
         groupsHtml += '<tr><td style="text-align:center">' + g.groupNo + '.' + item.itemNo + '</td>' +
-          '<td>' + (item.code || item.description || '—') + '</td>' +
+          '<td>' + escapeHtml(item.code || item.description || '—') + '</td>' +
           '<td style="text-align:center">' + item.qtyTotal + '</td>' +
           '<td class="amount">¥' + Math.round(item.accountingPrice / (item.qtyTotal || 1)).toLocaleString() + '</td>' +
           '<td class="amount">¥' + Math.round(item.accountingPrice).toLocaleString() + '</td></tr>';
@@ -769,10 +789,10 @@ const QuotationPage: React.FC = () => {
 
     let html = '<h2 style="text-align:center;margin-bottom:16px">报价表</h2>';
     html += '<table style="width:100%;border-collapse:collapse;margin-bottom:16px">';
-    html += '<tr><td style="border:none;padding:2px 8px;font-size:12px"><b>客户：</b>' + project.clientName + '</td>';
-    html += '<td style="border:none;padding:2px 8px;font-size:12px"><b>报价编号：</b>' + project.salesNo + '</td></tr>';
-    html += '<tr><td style="border:none;padding:2px 8px;font-size:12px"><b>版本：</b>' + project.currentVersion.versionNo + '</td>';
-    html += '<td style="border:none;padding:2px 8px;font-size:12px"><b>日期：</b>' + new Date().toISOString().slice(0, 10) + '</td></tr></table>';
+    html += '<tr><td style="border:none;padding:2px 8px;font-size:12px"><b>客户：</b>' + escapeHtml(project.clientName) + '</td>';
+    html += '<td style="border:none;padding:2px 8px;font-size:12px"><b>报价编号：</b>' + escapeHtml(project.salesNo) + '</td></tr>';
+    html += '<tr><td style="border:none;padding:2px 8px;font-size:12px"><b>版本：</b>' + escapeHtml(project.currentVersion.versionNo) + '</td>';
+    html += '<td style="border:none;padding:2px 8px;font-size:12px"><b>日期：</b>' + todayBeijing() + '</td></tr></table>';
     html += '<table style="width:100%;border-collapse:collapse"><thead><tr><th style="width:44px">序号</th><th>项目</th><th style="width:52px">数量</th><th style="width:120px">单价(未税)</th><th style="width:130px">总价(未税)</th></tr></thead><tbody>' + groupsHtml + '</tbody></table>';
     html += '<table style="width:100%;border-collapse:collapse;margin-top:12px">';
     html += '<tr><td style="border:none;text-align:right;padding:4px 10px;font-size:13px"><b>预期总价（含税）：</b>¥' + Math.round(summary.totalAccountingPrice).toLocaleString() + '</td></tr>';

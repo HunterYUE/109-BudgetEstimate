@@ -1,5 +1,19 @@
 /** 导出 HTML 表格为 .xls 文件（Excel 可打开） */
 
+/**
+ * ⚠️ B36 修复：HTML 转义用户可控文本——客户/项目/物料名/备注等含 `& < > " '` 会破坏导出表格结构
+ *   或注入多余标记；未转义即拼接还会被恶意文本利用。所有注入 HTML 的字符串必须经此函数。
+ */
+export function escapeHtml(s: string | number | null | undefined): string {
+  if (s == null) return '';
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 export function exportHtmlTable(filename: string, htmlContent: string) {
   const fullHtml = `<!DOCTYPE html>
 <html xmlns:o="urn:schemas-microsoft-com:office:office"
@@ -17,11 +31,14 @@ export function exportHtmlTable(filename: string, htmlContent: string) {
 </style>
 </head><body>${htmlContent}</body></html>`;
 
+  // ⚠️ B36 修复：文件名清洗非法字符（Windows 不允许 \ / : * ? " < > |），客户端名/项目名含之则下载失败
+  const safeFilename = filename.replace(/[\\/:*?"<>|]/g, '_');
+
   const blob = new Blob([fullHtml], { type: 'application/vnd.ms-excel;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `${filename}.xls`;
+  a.download = `${safeFilename}.xls`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

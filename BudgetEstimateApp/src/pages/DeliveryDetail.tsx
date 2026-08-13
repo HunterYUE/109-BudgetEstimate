@@ -17,8 +17,9 @@ import { STATUS_CONFIG } from '../components/material/materialConstants';
 import { getNodeDelay, getProjectDelay } from '../utils/analysisShared';
 import { buildCostLines } from '../utils/costBreakdown';
 import { DEFAULT_DESIGN_HOURLY_RATE, DEFAULT_ASSEMBLY_HOURLY_RATE, TAX_RATE } from '../utils/constants';
-import { exportHtmlTable } from '../utils/exportToExcel';
+import { exportHtmlTable, escapeHtml } from '../utils/exportToExcel';
 import { deliveryFileService, type DeliveryFile } from '../services/deliveryFileService';
+import { uuid } from '../utils/uuid';
 import { todayBeijing, formatBeijing } from '../utils/timeFormat';
 import { useAuth } from '../utils/authContext';
 import { tabItemStyle } from '../utils/tableUtils';
@@ -51,7 +52,7 @@ function buildChangeEntry(
   // ⚠️ B17 修复：北京日期/时间戳复用 utils/timeFormat（todayBeijing/formatBeijing），弃手动 +8h 与 toLocaleDateString 双实现
   const beijingDate = todayBeijing();
   const beijingTs = formatBeijing(now);
-  return { id: crypto.randomUUID(), field: 'plannedDate', oldValue: oldDesc, newValue: newDesc, changedAt: beijingDate, modifier, changedAtFull: beijingTs };
+  return { id: uuid(), field: 'plannedDate', oldValue: oldDesc, newValue: newDesc, changedAt: beijingDate, modifier, changedAtFull: beijingTs };
 }
 
 const DeliveryDetail: React.FC = () => {
@@ -99,6 +100,11 @@ const DeliveryDetail: React.FC = () => {
   useEffect(() => {
     if (!id) return;
     let cancelled = false;
+    // ⚠️ B33 修复：切换交付项目（id 变更）时重置成本缓存——initialCostsLoaded 原本防的是「同项目内保存/刷新
+    //   不覆盖在编成本」，但路由复用组件换 id 后 ref 仍为 true，新项目 actualCosts 永不载入；同时 actualCosts
+    //   残留上一项目数据造成串项目显示
+    initialCostsLoaded.current = false;
+    setActualCosts({});
     setLoading(true);
     deliveryService.getFull(id).then(data => {
       if (cancelled) return;
@@ -114,7 +120,10 @@ const DeliveryDetail: React.FC = () => {
           const qvn = quote.versionNo || '';
           if (!pid) return;
           projectService.getFull(pid as string).then(proj => {
-            const ver = (proj.versions || []).find((v: ProjectVersion) => v.versionNo === qvn) || proj.versions?.[0];
+            // ⚠️ B63 修复：严格按报价版本号匹配版本，不再回退 versions[0]——交付成本对比必须对齐报价审批时
+            //   的那个版本（组/金额）；versions[0] 可能是其它版本，错配版本会让成本对比得出错误结论。
+            //   无匹配时 ver 为 undefined → 走下方 legacy 全量组回退（旧数据组无 versionId 的场景）
+            const ver = (proj.versions || []).find((v: ProjectVersion) => v.versionNo === qvn);
             const vid = ver?.id || '';
             const filtered = (proj.groups || []).filter((g: Group) => (g as unknown as Record<string, unknown>).versionId === vid);
             if (!cancelled) setQuotationProject({ ...proj, groups: filtered.length > 0 ? filtered : proj.groups });
@@ -205,6 +214,10 @@ const DeliveryDetail: React.FC = () => {
     try {
       const url = await deliveryFileService.download(id, fileId);
       if (win) win.location.href = url; else window.open(url, '_blank');
+      // ⚠️ B37 修复：导航后延迟回收 Blob URL——此前每次预览都新建一个 Blob URL 且永不 revoke，
+      //    重复预览持续泄漏内存（Blob 含整份 PDF 内容）。60s 足够新窗口完成加载展示；仅回收 URL，
+      //    已渲染内容不受影响（新窗口内刷新此地址才会失效，可接受的权衡）
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch {
       win?.close();
       msg.error('文件加载失败');
@@ -529,8 +542,8 @@ const DeliveryDetail: React.FC = () => {
       const delayStr = hasBaseline ? (days > 0 ? '+' + days : String(days)) : '—';
       rows += '<tr>' +
         '<td style="text-align:center">' + n.nodeNo + '</td>' +
-        '<td>' + n.name + '</td>' +
-        '<td style="text-align:center">' + (statusMap[n.status] || n.status) + '</td>' +
+        '<td>' + escapeHtml(n.name) + '</td>' +
+        '<td style="text-align:center">' + escapeHtml(statusMap[n.status] || n.status) + '</td>' +
         '<td style="text-align:center">' + n.plannedStartDate + '</td>' +
         '<td style="text-align:center">' + n.plannedEndDate + '</td>' +
         '<td style="text-align:center">' + (n.actualDate || '—') + '</td>' +
@@ -538,8 +551,8 @@ const DeliveryDetail: React.FC = () => {
     }
     const html = '<h2 style="text-align:center;margin-bottom:16px">实施计划</h2>' +
       '<table style="width:100%;border-collapse:collapse;margin-bottom:8px">' +
-      '<tr><td style="border:none;padding:2px 8px"><b>项目：</b>' + project.projectName + '</td>' +
-      '<td style="border:none;padding:2px 8px"><b>客户：</b>' + project.clientName + '</td></tr></table>' +
+      '<tr><td style="border:none;padding:2px 8px"><b>项目：</b>' + escapeHtml(project.projectName) + '</td>' +
+      '<td style="border:none;padding:2px 8px"><b>客户：</b>' + escapeHtml(project.clientName) + '</td></tr></table>' +
       '<table style="width:100%;border-collapse:collapse"><thead><tr><th>节点</th><th>名称</th><th>状态</th><th>计划开始</th><th>计划结束</th><th>实际日期</th><th>延期</th></tr></thead><tbody>' + rows + '</tbody></table>';
     exportHtmlTable('实施计划_' + project.clientName, html);
   }, [project]);
@@ -553,7 +566,7 @@ const DeliveryDetail: React.FC = () => {
     const addRow = (grp: string, code: string, est: number, act: number) => {
       totalEst += est; totalAct += act;
       const varAmt = act - est;
-      rows += '<tr><td>' + grp + '</td><td>' + code + '</td>' +
+      rows += '<tr><td>' + escapeHtml(grp) + '</td><td>' + escapeHtml(code) + '</td>' +
         '<td class="amount">' + Math.round(est).toLocaleString() + '</td>' +
         '<td class="amount">' + Math.round(act).toLocaleString() + '</td>' +
         '<td class="amount" style="color:' + (varAmt > 0 ? 'red' : 'green') + '">' + (varAmt >= 0 ? '+' : '') + Math.round(varAmt).toLocaleString() + '</td>' +
@@ -568,8 +581,8 @@ const DeliveryDetail: React.FC = () => {
     }
     const html = '<h2 style="text-align:center;margin-bottom:16px">成本对比表</h2>' +
       '<table style="width:100%;border-collapse:collapse;margin-bottom:8px">' +
-      '<tr><td style="border:none;padding:2px 8px"><b>项目：</b>' + project.projectName + '</td>' +
-      '<td style="border:none;padding:2px 8px"><b>客户：</b>' + project.clientName + '</td></tr></table>' +
+      '<tr><td style="border:none;padding:2px 8px"><b>项目：</b>' + escapeHtml(project.projectName) + '</td>' +
+      '<td style="border:none;padding:2px 8px"><b>客户：</b>' + escapeHtml(project.clientName) + '</td></tr></table>' +
       '<table style="width:100%;border-collapse:collapse"><thead><tr><th>组</th><th>项次</th><th>概算</th><th>实际</th><th>偏差</th><th>偏差率</th></tr></thead><tbody>' + rows + '</tbody></table>' +
       '<table style="width:100%;border-collapse:collapse;margin-top:8px">' +
       '<tr><td style="border:none;text-align:right;font-size:13px"><b>概算总成本：</b>¥' + Math.round(totalEst).toLocaleString() + '</td></tr>' +

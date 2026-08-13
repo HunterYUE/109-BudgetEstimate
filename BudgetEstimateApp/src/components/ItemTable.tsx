@@ -8,6 +8,7 @@ import { parseVersionFromCode } from '../utils/codeVersion';
 import { calcDirectCost, calcItemPrices } from '../utils/calculations';
 import { COLORS } from '../styles/colors';
 import { lockCellWidth, BARE_INPUT_STYLE } from '../utils/tableUtils';
+import { CATEGORY_OPTIONS } from './material/materialConstants';
 
 interface Props {
   items: GroupItem[];
@@ -30,11 +31,6 @@ function getColumnConfig(groupType: GroupType) {
     hideQty: isImplExp,
   };
 }
-
-const typeColors: Record<string, string> = {
-  COMPLETE_SET: COLORS.primary, COMPONENT: '#008080', SOFTWARE: COLORS.purple, SERVICE: COLORS.success, PART: "#8B4513",
-};
-
 
 /**
  * 数值输入框：受控显示 + 本地编辑态
@@ -196,14 +192,14 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
       if (!editing) {
         return <span style={{
           fontSize,
-          color: typeColors[v] || COLORS.chartGray, textAlign: 'center', display: 'block'
+          color: (CATEGORY_OPTIONS as Record<string, { color?: string }>)[v]?.color || COLORS.chartGray, textAlign: 'center', display: 'block'
         }}>{typeLabel}</span>;
       }
       return (
         <span onClick={() => updateItem(idx, { itemType: nextType() })}
           style={{
             fontSize, cursor: 'pointer', display: 'block', textAlign: 'center',
-            color: typeColors[v] || COLORS.chartGray, userSelect: 'none'
+            color: (CATEGORY_OPTIONS as Record<string, { color?: string }>)[v]?.color || COLORS.chartGray, userSelect: 'none'
           }}
           title={'点击切换类型'}
         >{typeLabel}</span>

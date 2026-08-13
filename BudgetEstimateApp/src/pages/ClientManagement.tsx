@@ -13,6 +13,7 @@ import {
 } from '../components/client/clientConstants';
 import { ClientEditModal, ClientSubModal } from '../components/client/ClientModals';
 import ClientDrawer from '../components/client/ClientDrawer';
+import { todayBeijing } from '../utils/timeFormat';
 import { BARE_INPUT_STYLE } from '../utils/tableUtils';
 import { useAuth } from '../utils/authContext';
 import { hasPermission } from '../utils/permissions';
@@ -176,7 +177,7 @@ const ClientManagement: React.FC = () => {
       salesman: '',  // 销售员从客户管理维护，不硬编码
       creditLevel: 'B',
       grade: 'B',
-      createdAt: new Date().toISOString().slice(0, 10),
+      createdAt: todayBeijing(),
     });
     setEditContacts([]);
     setEditOpen(true);
@@ -267,7 +268,7 @@ const ClientManagement: React.FC = () => {
         grade: subForm.grade as ClientGrade,
         contacts: [],
         history: [],
-        createdAt: new Date().toISOString().slice(0, 10),
+        createdAt: todayBeijing(),
       });
       setSubOpen(false);
       messageApi.success('子公司添加成功');

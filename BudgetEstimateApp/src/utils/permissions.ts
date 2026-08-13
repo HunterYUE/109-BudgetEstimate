@@ -40,6 +40,26 @@ export function canAccessRoute(permissions: string[] | undefined, path: string):
   return true;
 }
 
+/** 路由访问顺序（第一个可访问的路由作为无权限重定向目标——优先级越靠前越先进入） */
+const ROUTE_ORDER = [
+  '/', '/opportunities', '/quotations', '/delivery', '/approval', '/analysis',
+  '/delivery-analysis', '/clients', '/materials', '/tags', '/settings',
+];
+
+/**
+ * ⚠️ B30 修复：返回用户权限下第一个可访问的路由（无权限重定向目标）。
+ *   此前 RoleGuard 对无权限路径统一重定向到 '/'，而 '/' 要求「仪表盘查看」——无该权限的用户
+ *   陷入「guard 失败→重定向到 /→guard 再失败」死循环（React Maximum update depth exceeded）。
+ *   全部路由都无权时返回 null，调用方应展示无权限提示而非继续重定向。
+ */
+export function firstAccessiblePath(permissions: string[] | undefined): string | null {
+  if (!permissions || permissions.length === 0) return null;
+  for (const p of ROUTE_ORDER) {
+    if (canAccessRoute(permissions, p)) return p;
+  }
+  return null;
+}
+
 /**
  * 检查用户是否有权限查看侧边栏菜单项
  */

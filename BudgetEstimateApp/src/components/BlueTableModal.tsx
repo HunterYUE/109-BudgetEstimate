@@ -6,6 +6,7 @@ import type { BlueTable, BlueTableRole, VetoBudgetOption, TimelineOption, Influe
 import { PRICING_ADJUSTMENTS, PRICING_LABELS, POSITIONING_LABELS, POSITIONING_EXPLANATIONS, REACTION_LABELS, REACTION_EXPLANATIONS, calcBlueTableWinRate, getDefaultWeight } from '../utils/blueTableCalculation';
 import { COLORS } from '../styles/colors';
 import { lockCellWidth, BARE_INPUT_STYLE } from '../utils/tableUtils';
+import { todayBeijing } from '../utils/timeFormat';
 import { uid } from '../utils/tagHelpers';
 
 interface BlueTableModalProps {
@@ -62,7 +63,7 @@ function createEmptyBlueTable(): BlueTable {
     reactionMode: 'EK',
     strategy: '',
     targets: [],
-    updatedAt: new Date().toISOString().slice(0, 10),
+    updatedAt: todayBeijing(),
   };
 }
 
@@ -216,7 +217,7 @@ const BlueTableModal: React.FC<BlueTableModalProps> = ({ open, opportunity, onSa
   // ── 保存 ──
   const handleSave = useCallback(() => {
     if (!validateBeforeSave()) return;
-    if (onSave) onSave({ ...bt, updatedAt: new Date().toISOString().slice(0, 10) });
+    if (onSave) onSave({ ...bt, updatedAt: todayBeijing() });
   }, [bt, onSave, validateBeforeSave]);
 
   // ── 清空 ──

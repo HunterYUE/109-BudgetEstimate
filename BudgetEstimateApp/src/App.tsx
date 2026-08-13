@@ -1,7 +1,7 @@
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { lazy, Suspense } from 'react';
 import { AuthProvider, useAuth } from './utils/authContext';
-import { canAccessRoute } from './utils/permissions';
+import { canAccessRoute, firstAccessiblePath } from './utils/permissions';
 import { pageLoaders } from './utils/pageLoaders';
 import AppLayout from './layouts/AppLayout';
 
@@ -51,8 +51,19 @@ function RoleGuard({ path, children }: { path: string; children: React.ReactNode
   const location = useLocation();
 
   if (!user || !canAccessRoute(user.permissions, path)) {
-    // 无权限时重定向到仪表盘
-    return <Navigate to="/" state={{ from: location.pathname }} replace />;
+    // ⚠️ B30 修复：无权限时重定向到用户可访问的首个路由（此前统一重定向到 '/'，而 '/' 要求「仪表盘查看」
+    //   权限——无该权限的用户陷入「guard 失败→重定向到 /→guard 再失败」死循环，触发 React Maximum update depth exceeded）
+    const fallback = firstAccessiblePath(user?.permissions);
+    if (!fallback) {
+      // 用户没有任何可访问模块：给出明确提示而非继续重定向
+      return (
+        <div style={{ padding: 60, textAlign: 'center' }}>
+          <div style={{ fontSize: 40, marginBottom: 12 }}>🚫</div>
+          <p style={{ color: '#666', fontSize: 15 }}>您当前没有可访问的模块，请联系管理员分配权限。</p>
+        </div>
+      );
+    }
+    return <Navigate to={fallback} state={{ from: location.pathname }} replace />;
   }
 
   return <>{children}</>;

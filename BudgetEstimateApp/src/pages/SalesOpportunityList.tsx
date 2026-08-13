@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 
 import { useNavigate } from 'react-router-dom';
 
@@ -189,15 +189,24 @@ const SalesOpportunityList: React.FC = () => {
   });
 
 
+  // ⚠️ B31 修复：locked/terminated 状态存入 ref，touch 不再依赖 opportunities 数组——
+  //   此前 touch deps=[msg, opportunities]，任何 setOpportunities（如编辑单元格失焦）都会重建 touch
+  //   → columns useMemo 重建 → 整表重渲染（数百行 × 宽 scroll.x 开销大）。锁定状态经 effect 同步，恒为最新
+  const lockedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    lockedRef.current = new Set(
+      opportunities.filter(o => o.promoteLocked || o.terminated).map(o => o.id)
+    );
+  }, [opportunities]);
+
   const touch = useCallback((id: string, updates: Partial<SalesOpportunity>) => {
-    const opp = opportunities.find(o => o.id === id);
-    if (opp?.promoteLocked || opp?.terminated) return;
+    if (lockedRef.current.has(id)) return;
     setOpportunities(prev => prev.map(o => o.id === id ? { ...o, ...updates, updatedAt: nowISO() } : o));
     opportunityService.update(id, { ...updates, updatedAt: nowISO() }).catch(e => {
       console.warn('[Touch] 保存失败', e);
       msg.warning('部分修改保存失败，请刷新后检查');
     });
-  }, [msg, opportunities]);
+  }, [msg]);
 
 
 
@@ -362,21 +371,30 @@ const SalesOpportunityList: React.FC = () => {
     });
 
     try {
-      // 1. 创建交付项目
-      const newDel = await deliveryService.create({
-        opportunityId: opp.id,
-        salesNo: opp.salesNo.replace(/-S$/, "-E"),
-        clientName: opp.clientName,
-        projectName: opp.projectName,
-        contractAmount: opp.amount,
-        quotationId: bestQuoteId,
-        status: '进行中',
-        planStatus: 'draft',
-        costStatus: 'draft',
-      });
-      // 2. 保存交付节点
+      // ⚠️ B64 修复：转交付三步（创建→存节点→标 terminated）非原子，任一步失败后重试会重复创建
+      //   交付项目（后端 A104 现对重复转交付返回 409）。此处先按 -E 销售编号查询既有交付，命中则复用
+      //   继续补节点与终止标记，实现幂等重试；后端 409 场景（罕见竞态）也走 catch 复用而非报错。
+      const newSalesNo = opp.salesNo.replace(/-S$/, "-E");
+      const existingDels = await deliveryService.list({ search: newSalesNo }, { noCache: true });
+      // ⚠️ 声明为最小形状 {id}：existingDels（完整 DeliveryProject）与 create（Omit<nodes>）都满足，且本处仅用 id
+      let newDel: { id: string } | undefined = existingDels.find(d => d.opportunityId === opp.id);
+      if (!newDel) {
+        // 1. 创建交付项目
+        newDel = await deliveryService.create({
+          opportunityId: opp.id,
+          salesNo: newSalesNo,
+          clientName: opp.clientName,
+          projectName: opp.projectName,
+          contractAmount: opp.amount,
+          quotationId: bestQuoteId,
+          status: '进行中',
+          planStatus: 'draft',
+          costStatus: 'draft',
+        });
+      }
+      // 2. 保存交付节点（replace 语义，重复保存幂等）
       await deliveryService.saveNodes(newDel.id, nodes);
-      // 3. 更新机会：标记为已转交付
+      // 3. 更新机会：标记为已转交付（幂等）
       await opportunityService.update(opp.id, { terminated: true, updatedAt: nowISO() });
       clearCache('/opportunities');
       setOpportunities(prev => prev.filter(o => o.id !== opp.id));

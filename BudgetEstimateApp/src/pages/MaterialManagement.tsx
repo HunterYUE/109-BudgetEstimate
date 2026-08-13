@@ -9,6 +9,7 @@ import { componentService } from '../services/componentService';
 import { invalidateCatalogCache } from '../services/catalogCache';
 import { tagService } from '../services/tagService';
 import { collectTagPaths, collectDescendantIds, findPath, uid } from '../utils/tagHelpers';
+import { todayBeijing } from '../utils/timeFormat';
 import { parseVersionFromCode } from '../utils/codeVersion';
 import { formatMoney } from '../utils/calculations';
 import type { Component, ItemType, SourcingType, ReviewStatus, TagNode } from '../types';
@@ -263,7 +264,7 @@ const MaterialManagement: React.FC = () => {
     if (!codeCheck.valid) { messageApi.warning(codeCheck.error); return; }
     const _dup = materials.find(c => c.code === editForm.code && c.id !== editingId);
     if (_dup) { messageApi.warning('编码已被' + _dup.nameCn + '使用'); return; }
-    const now = new Date().toISOString().slice(0, 10);
+    const now = todayBeijing();
     try {
       if (editingId) {
         const target = materials.find(c => c.id === editingId);

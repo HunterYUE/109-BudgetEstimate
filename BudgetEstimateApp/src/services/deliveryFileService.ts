@@ -29,7 +29,8 @@ export const deliveryFileService = {
   },
 
   /** 下载文件并返回 Blob URL（⚠️ F7 修复：不再把 JWT 放 URL query，避免 token 进服务器日志/浏览器历史/Referer；
-   *  ⚠️ L6：token 现居 HttpOnly cookie，同源 fetch 自动携带，无需任何 header 也无 token 入 URL） */
+   *  ⚠️ L6：token 现居 HttpOnly cookie，同源 fetch 自动携带，无需任何 header 也无 token 入 URL；
+   *  ⚠️ B37：调用方消费该 URL 后必须 URL.revokeObjectURL(url)（见 DeliveryDetail.handleViewFile）——不回收则每次下载泄漏一个 Blob 对象 */
   download: async (deliveryId: string, fileId: string): Promise<string> => {
     /* eslint-disable-next-line no-direct-fetch/no-fetch -- 需取 Blob，api.ts JSON 编码不适用 */
     const res = await fetch(`${(import.meta.env.VITE_API_BASE || '/api/v1')}/deliveries/${deliveryId}/files/${fileId}/download`);
