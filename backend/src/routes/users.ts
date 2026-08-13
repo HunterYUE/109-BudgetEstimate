@@ -1,9 +1,10 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
-import { query, getClient } from '../db/index.js';
+import { query } from '../db/index.js';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { AppError } from '../middleware/index.js';
-import { logAudit, objKeysToSnake } from './helpers.js';
+import { logAudit, objKeysToSnake, normalizeEmail, resetUserPassword, withTransaction } from './helpers.js';
+import { PAGE_LIMIT } from '../constants.js';
 
 const router = Router();
 
@@ -27,13 +28,12 @@ const ALL_PERMISSIONS = [
 ];
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-/** 越级保护（H1 提权链核心防线）：仅 admin/director 可创建/修改/重置密码/删除 admin·director 账号；
- *  其它角色（manager/user，即使持「用户管理」权限）不得动更高信任层级——
- *  防铸 admin 号、把现存 admin/director 降级/改密/停用/删除 */
+/** 越级保护（H1/A6 提权链核心防线）：操作者只能管理「等级 ≤ 自己」的账号——
+ *  纯 ROLE_RANK 等级比较（此前把 director 也算 super，导致 director(2) 能管理 admin(3)，
+ *  与 ROLE_RANK 自相矛盾）；防铸 admin 号、把现存更高等级降级/改密/停用/删除 */
 function assertCanManage(actorRole: string, targetRank: number): void {
-  const actorIsSuper = actorRole === 'admin' || actorRole === 'director';
-  const targetIsSuper = targetRank >= ROLE_RANK.director; // director(2) 及以上
-  if (targetIsSuper && !actorIsSuper) {
+  const actorRank = ROLE_RANK[actorRole] ?? 0; // 未知角色按最低等级处理（无越级能力）
+  if (targetRank > actorRank) {
     throw new AppError(403, '无权创建/修改同级或更高权限的账号');
   }
 }
@@ -41,7 +41,8 @@ function assertCanManage(actorRole: string, targetRank: number): void {
 /** GET /api/users - 获取用户列表 */
 router.get('/', async (_req, res, next) => {
   try {
-    const result = await query(`SELECT ${USER_FIELDS} FROM users ORDER BY created_at ASC`);
+    // ⚠️ A13 修复：补分页上限（此前无 LIMIT 全表返回；用户量增长后响应体无界）
+    const result = await query(`SELECT ${USER_FIELDS} FROM users ORDER BY created_at ASC LIMIT $1`, [PAGE_LIMIT]);
     res.json(result.rows);
   } catch (err) { next(err); }
 });
@@ -68,7 +69,7 @@ router.post('/', async (req, res, next) => {
       throw new AppError(400, '密码至少8位');
     }
     // 邮箱归一化：trim + 小写（防 ' A@x ' 注册近似重复账号；重复检测/存储均用归一化值）
-    const emailNorm = email.trim().toLowerCase();
+    const emailNorm = normalizeEmail(email);
     if (!EMAIL_RE.test(emailNorm)) {
       throw new AppError(400, '邮箱格式无效');
     }
@@ -113,7 +114,7 @@ router.put('/:id', async (req, res, next) => {
     let emailNorm: string | undefined;
     if (email !== undefined) {
       if (typeof email !== 'string') throw new AppError(400, '邮箱必须为字符串');
-      emailNorm = email.trim().toLowerCase();
+      emailNorm = normalizeEmail(email);
       if (!EMAIL_RE.test(emailNorm)) throw new AppError(400, '邮箱格式无效');
       const conflict = await query('SELECT id FROM users WHERE LOWER(email) = $1 AND id != $2', [emailNorm, id]);
       if (conflict.rows.length > 0) throw new AppError(409, '该邮箱已被其他用户使用');
@@ -147,18 +148,13 @@ router.put('/:id/password', async (req, res, next) => {
     const { id } = req.params;
     const { password } = req.body;
 
-    if (typeof password !== 'string' || !password || password.length < 8) {
-      throw new AppError(400, '密码至少8位');
-    }
-
     const existing = await query('SELECT role, email, display_name FROM users WHERE id = $1', [id]);
     if (existing.rows.length === 0) throw new AppError(404, '用户不存在');
     // ⚠️ 越级保护：非 admin 不得重置同级/更高角色账号密码（防改密接管 admin·director）
     assertCanManage(req.user!.role, ROLE_RANK[existing.rows[0].role] ?? 0);
 
-    const passwordHash = await bcrypt.hash(password, 10);
-    // ⚠️ L3：改密同步记录 password_changed_at = now()，使该用户已签发的旧 JWT 立即失效（requireAuth 比对 iat）
-    await query('UPDATE users SET password_hash = $1, password_changed_at = now() WHERE id = $2', [passwordHash, id]);
+    // ⚠️ A18：密码长度校验/哈希/改密吊销（password_changed_at）共用 resetUserPassword（与工时重置同源）
+    await resetUserPassword(id, password);
 
     logAudit(req, '重置密码', 'user', `用户 ${existing.rows[0].display_name || existing.rows[0].email} 密码已重置`);
 
@@ -223,7 +219,6 @@ router.put('/:id/role', async (req, res, next) => {
 
 /** DELETE /api/users/:id - 删除用户 */
 router.delete('/:id', async (req, res, next) => {
-  let client: any;
   try {
     const { id } = req.params;
     const currentUser = req.user!;
@@ -240,35 +235,33 @@ router.delete('/:id', async (req, res, next) => {
     // ⚠️ F13 修复：先删 timerecording.profiles（引用 users.id），再删 users，同一事务避免孤儿/外键冲突
     // ⚠️ M5 修复：① timerecording schema 可能未部署，用 to_regclass 探测，避免 .catch 吞错导致事务 abort；
     //            ② 先清空以该用户为 reviewer/created_by 的引用（无 ON DELETE 动作），否则 FK 阻塞删除
-    client = await getClient();
-    await client.query('BEGIN');
-    const sc = (await client.query(
-      `SELECT to_regclass('timerecording.profiles') AS p,
-              to_regclass('timerecording.time_records') AS tr,
-              to_regclass('timerecording.task_assignments') AS ta`
-    )).rows[0];
-    if (sc?.p) {
-      const hasProfile = (await client.query('SELECT id FROM timerecording.profiles WHERE id = $1', [id])).rows.length > 0;
-      if (hasProfile) {
-        if (sc.tr) await client.query('UPDATE timerecording.time_records SET reviewed_by = NULL WHERE reviewed_by = $1', [id]);
-        // ⚠️ created_by 为 NOT NULL：须先执行生产库 ALTER COLUMN ... DROP NOT NULL，
-        //   否则该 UPDATE 命中 23502 令整个删号事务回滚（曾给他人派过任务的管理员将删不掉）
-        if (sc.ta) await client.query('UPDATE timerecording.task_assignments SET created_by = NULL WHERE created_by = $1', [id]);
-        await client.query('DELETE FROM timerecording.profiles WHERE id = $1', [id]);
+    // ⚠️ A15：事务样板收敛为 withTransaction
+    const deleted = await withTransaction(async (client) => {
+      const sc = (await client.query(
+        `SELECT to_regclass('timerecording.profiles') AS p,
+                to_regclass('timerecording.time_records') AS tr,
+                to_regclass('timerecording.task_assignments') AS ta`
+      )).rows[0];
+      if (sc?.p) {
+        const hasProfile = (await client.query('SELECT id FROM timerecording.profiles WHERE id = $1', [id])).rows.length > 0;
+        if (hasProfile) {
+          if (sc.tr) await client.query('UPDATE timerecording.time_records SET reviewed_by = NULL WHERE reviewed_by = $1', [id]);
+          // ⚠️ created_by 为 NOT NULL：须先执行生产库 ALTER COLUMN ... DROP NOT NULL，
+          //   否则该 UPDATE 命中 23502 令整个删号事务回滚（曾给他人派过任务的管理员将删不掉）
+          if (sc.ta) await client.query('UPDATE timerecording.task_assignments SET created_by = NULL WHERE created_by = $1', [id]);
+          await client.query('DELETE FROM timerecording.profiles WHERE id = $1', [id]);
+        }
       }
-    }
-    const result = await client.query('DELETE FROM users WHERE id = $1 RETURNING id, email', [id]);
-    if (result.rows.length === 0) throw new AppError(404, '用户不存在');
-    await client.query('COMMIT');
+      const result = await client.query('DELETE FROM users WHERE id = $1 RETURNING id, email', [id]);
+      if (result.rows.length === 0) throw new AppError(404, '用户不存在');
+      return result.rows[0];
+    });
 
-    logAudit(req, '删除用户', 'user', `删除用户 ${result.rows[0].email}`);
+    logAudit(req, '删除用户', 'user', `删除用户 ${deleted.email}`);
 
     res.json({ success: true, id });
   } catch (err) {
-    if (client) await client.query('ROLLBACK').catch(() => {});
     next(err);
-  } finally {
-    if (client) client.release();
   }
 });
 

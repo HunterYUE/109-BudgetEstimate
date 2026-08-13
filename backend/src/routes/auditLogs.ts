@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { query } from '../db/index.js';
 import { AppError } from '../middleware/index.js';
+import { parsePagination } from './helpers.js';
 
 const router = Router();
 
@@ -10,18 +11,19 @@ const router = Router();
 // 自定义列表查询：LEFT JOIN users 获取显示名
 router.get('/', async (req, res, next) => {
   try {
-    const { search, limit = '100', offset = '0' } = req.query as Record<string, string>;
-    const limitNum = Math.min(1000, Math.max(1, parseInt(limit, 10) || 100));
-    const offsetNum = Math.max(0, parseInt(offset, 10) || 0);
+    const { search } = req.query;
     let sql = `SELECT al.*, u.display_name FROM audit_logs al
       LEFT JOIN users u ON u.email = al.user_name`;
     const params: any[] = [];
     if (search) {
+      // ⚠️ A10 修复：通配符转义统一口径（%/_/\ 转义），与 buildSearchWhere 一致；u.display_name 跨表别名无法走共享构造
+      const escaped = String(search).replace(/[%_\\]/g, '\\$&');
       sql += ` WHERE (al.user_name::text ILIKE $1 OR al.action::text ILIKE $1 OR al.module::text ILIKE $1 OR al.detail::text ILIKE $1 OR u.display_name::text ILIKE $1)`;
-      params.push(`%${search}%`);
+      params.push(`%${escaped}%`);
     }
-    sql += ` ORDER BY al.time DESC LIMIT ${limitNum} OFFSET ${offsetNum}`;
-    const result = await query(sql, params);
+    const { limit, offset } = parsePagination(req.query);
+    sql += ` ORDER BY al.time DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+    const result = await query(sql, [...params, limit, offset]);
     res.json(result.rows);
   } catch (err) { next(err); }
 });

@@ -1,8 +1,8 @@
 import { Router } from 'express';
-import { query, getClient } from '../db/index.js';
+import { query } from '../db/index.js';
 import { AppError } from '../middleware/index.js';
 import { requirePermission } from '../middleware/auth.js';
-import { crudRoutes, objKeysToSnake } from './helpers.js';
+import { crudRoutes, objKeysToSnake, withTransaction } from './helpers.js';
 
 const fields = [
   'id', 'code', 'name', 'type', 'parent_id', 'industry', 'region',
@@ -52,77 +52,72 @@ const router = crudRoutes('clients', fields, {
 
     // 保存客户时同步保存联系人（事务保护）
     r.put('/:id/save', async (req, res, next) => {
-      let tx: any;
       try {
-        tx = await getClient();
         const { id } = req.params;
         const body = objKeysToSnake(req.body);
         const { contacts, ...clientData } = body;
 
-        // ⚠️ L2 修复：客户不存在返回 404（此前对不存在客户更新 0 行仍返回 200 空壳）
-        const clientRow = (await tx.query('SELECT id FROM clients WHERE id = $1', [id])).rows[0];
-        if (!clientRow) throw new AppError(404, '客户未找到');
+        // ⚠️ A15：事务样板收敛为 withTransaction
+        const { updated, savedContacts } = await withTransaction(async (client) => {
+          // ⚠️ L2 修复：客户不存在返回 404（此前对不存在客户更新 0 行仍返回 200 空壳）
+          const clientRow = (await client.query('SELECT id FROM clients WHERE id = $1', [id])).rows[0];
+          if (!clientRow) throw new AppError(404, '客户未找到');
 
-        await tx.query('BEGIN');
-
-        // 更新客户主表字段
-        const updateCols = fields.filter(f => f !== 'id' && f !== 'created_at' && f !== 'updated_at' && clientData[f] !== undefined);
-        let updated;
-        if (updateCols.length > 0) {
-          const oldClient = (await tx.query('SELECT name, salesman FROM clients WHERE id = $1', [id])).rows[0];
-          const setClause = updateCols.map((f, i) => `"${f}" = $${i + 1}`).join(', ');
-          const values = updateCols.map(f => clientData[f]);
-          values.push(id);
-          updated = (await tx.query(
-            `UPDATE clients SET ${setClause}, updated_at = now() WHERE id = $${values.length} RETURNING *`,
-            values
-          )).rows[0];
-          // 客户销售员变更 → 级联更新该客户所有机会的销售员（机会销售员由客户信息带出）
-          if (clientData.salesman !== undefined && clientData.salesman !== oldClient?.salesman) {
-            await tx.query(
-              'UPDATE sales_opportunities SET salesman = $1 WHERE client_name = $2',
-              [clientData.salesman, oldClient?.name]
-            );
+          // 更新客户主表字段
+          const updateCols = fields.filter(f => f !== 'id' && f !== 'created_at' && f !== 'updated_at' && clientData[f] !== undefined);
+          let updated;
+          if (updateCols.length > 0) {
+            const oldClient = (await client.query('SELECT name, salesman FROM clients WHERE id = $1', [id])).rows[0];
+            const setClause = updateCols.map((f, i) => `"${f}" = $${i + 1}`).join(', ');
+            const values = updateCols.map(f => clientData[f]);
+            values.push(id);
+            updated = (await client.query(
+              `UPDATE clients SET ${setClause}, updated_at = now() WHERE id = $${values.length} RETURNING *`,
+              values
+            )).rows[0];
+            // 客户销售员变更 → 级联更新该客户所有机会的销售员（机会销售员由客户信息带出）
+            if (clientData.salesman !== undefined && clientData.salesman !== oldClient?.salesman) {
+              await client.query(
+                'UPDATE sales_opportunities SET salesman = $1 WHERE client_name = $2',
+                [clientData.salesman, oldClient?.name]
+              );
+            }
+            // ⚠️ F10 修复：客户改名 → 级联更新去规范化的 client_name（机会/项目/报价/交付），
+            //    否则客户详情历史（按 client_name 关联）改名后消失
+            if (clientData.name !== undefined && clientData.name !== oldClient?.name) {
+              const oldName = oldClient?.name;
+              await client.query('UPDATE sales_opportunities SET client_name = $1 WHERE client_name = $2', [clientData.name, oldName]);
+              await client.query('UPDATE projects SET client_name = $1 WHERE client_name = $2', [clientData.name, oldName]);
+              await client.query('UPDATE quotations SET client_name = $1 WHERE client_name = $2', [clientData.name, oldName]);
+              await client.query('UPDATE delivery_projects SET client_name = $1 WHERE client_name = $2', [clientData.name, oldName]);
+            }
           }
-          // ⚠️ F10 修复：客户改名 → 级联更新去规范化的 client_name（机会/项目/报价/交付），
-          //    否则客户详情历史（按 client_name 关联）改名后消失
-          if (clientData.name !== undefined && clientData.name !== oldClient?.name) {
-            const oldName = oldClient?.name;
-            await tx.query('UPDATE sales_opportunities SET client_name = $1 WHERE client_name = $2', [clientData.name, oldName]);
-            await tx.query('UPDATE projects SET client_name = $1 WHERE client_name = $2', [clientData.name, oldName]);
-            await tx.query('UPDATE quotations SET client_name = $1 WHERE client_name = $2', [clientData.name, oldName]);
-            await tx.query('UPDATE delivery_projects SET client_name = $1 WHERE client_name = $2', [clientData.name, oldName]);
+
+          // 替换联系人
+          if (Array.isArray(contacts)) {
+            await client.query('DELETE FROM client_contacts WHERE client_id = $1', [id]);
+            for (const c of contacts) {
+              const contact = objKeysToSnake(c);
+              await client.query(
+                `INSERT INTO client_contacts (client_id, name, position, phone, email, decision_role, superior)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+                [id, contact.name || '', contact.position || '', contact.phone || '',
+                 contact.email || '', contact.decision_role || '使用', contact.superior || '']
+              );
+            }
           }
-        }
 
-        // 替换联系人
-        if (Array.isArray(contacts)) {
-          await tx.query('DELETE FROM client_contacts WHERE client_id = $1', [id]);
-          for (const c of contacts) {
-            const contact = objKeysToSnake(c);
-            await tx.query(
-              `INSERT INTO client_contacts (client_id, name, position, phone, email, decision_role, superior)
-               VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-              [id, contact.name || '', contact.position || '', contact.phone || '',
-               contact.email || '', contact.decision_role || '使用', contact.superior || '']
-            );
-          }
-        }
+          // 返回完整客户（含联系人）
+          const finalRow = updated || (await client.query('SELECT * FROM clients WHERE id = $1', [id])).rows[0];
+          const savedContacts = (await client.query(
+            'SELECT * FROM client_contacts WHERE client_id = $1 ORDER BY name', [id]
+          )).rows;
+          return { updated: finalRow, savedContacts };
+        });
 
-        await tx.query('COMMIT');
-
-        // 返回完整客户（含联系人）
-        if (!updated) updated = (await query('SELECT * FROM clients WHERE id = $1', [id])).rows[0];
-        const savedContacts = (await query(
-          'SELECT * FROM client_contacts WHERE client_id = $1 ORDER BY name', [id]
-        )).rows;
         res.json({ ...updated, contacts: savedContacts });
       } catch (err) {
-        // ⚠️ N1 修复：getClient() 失败时 tx 为 undefined，须判空（与 deliveries F8 同款）
-        if (tx) await tx.query('ROLLBACK').catch(() => {});
         next(err);
-      } finally {
-        if (tx) tx.release();
       }
     });
 

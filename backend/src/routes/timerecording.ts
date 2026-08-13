@@ -1,10 +1,11 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import rateLimit from 'express-rate-limit';
-import { query, getClient } from '../db/index.js';
+import { query } from '../db/index.js';
 import { requireAuth, requireRole, signToken, setAuthCookie, clearAuthCookie, COOKIE_NAME_TR } from '../middleware/auth.js';
 import { AppError } from '../middleware/index.js';
-import { logAudit, round2 } from './helpers.js';
+import { logAudit, round2, normalizeEmail, resetUserPassword, withTransaction } from './helpers.js';
+import { PAGE_LIMIT } from '../constants.js';
 import { ensureCostCenters, recentFiscalYears, availableCostCenterFys, fiscalYearLabel } from '../jobs/costCenterSync.js';
 
 const router = Router();
@@ -214,6 +215,9 @@ const trLoginLimiter = rateLimit({
   message: { error: '登录尝试过于频繁，请 15 分钟后再试' }, // 与主登录限速一致返回 { error }，前端统一解析
 });
 
+// ⚠️ A5 修复：用户不存在也执行一次 bcrypt.compare（假比较抹平时耗，防批量探测已注册邮箱；与 auth.ts 同款）
+const DUMMY_PASSWORD_HASH = bcrypt.hashSync('tr-timing-equalizer-dummy', 10);
+
 // ─── 认证 ────────────────────────────────────────────
 
 /** POST /api/v1/timerecording/auth/login */
@@ -221,21 +225,24 @@ router.post('/auth/login', trLoginLimiter, async (req, res, next) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) throw new AppError(400, '请输入账号和密码');
+    // 类型校验（防对象/数组入参触发 PG 类型错误 500）
+    if (typeof email !== 'string' || typeof password !== 'string') throw new AppError(400, '账号和密码必须为字符串');
+    // ⚠️ A5 修复：邮箱归一化（trim+小写），LOWER 比较命中表达式索引（此前裸 email 比较未归一化，' A@x ' 无法登录）
+    const emailNorm = normalizeEmail(email);
 
     const result = await query(
       `SELECT u.id, u.email, u.display_name, u.password_hash, u.role, u.permissions, u.title,
               p.employee_id, p.name, p.role as tr_role
        FROM public.users u
        LEFT JOIN timerecording.profiles p ON p.id = u.id
-       WHERE u.email = $1 AND u.is_active = true AND (p.is_active IS NOT FALSE)`,
-      [email]
+       WHERE LOWER(u.email) = $1 AND u.is_active = true AND (p.is_active IS NOT FALSE)`,
+      [emailNorm]
     );
 
     const user = result.rows[0];
-    if (!user) throw new AppError(401, '账号或密码错误');
-
-    const valid = await bcrypt.compare(password, user.password_hash);
-    if (!valid) throw new AppError(401, '账号或密码错误');
+    // ⚠️ A5 修复：用户不存在也执行 bcrypt 假比较（抹平时耗），统一返回「账号或密码错误」不区分用户是否存在
+    const valid = await bcrypt.compare(password, user?.password_hash || DUMMY_PASSWORD_HASH);
+    if (!user || !valid) throw new AppError(401, '账号或密码错误');
 
     // ⚠️ 跨应用登录权限：销售经理仅限销售·交付应用，禁止登录任务规划和报工应用
     if (user.title === '销售经理' && user.role !== 'admin' && user.role !== 'director') {
@@ -324,7 +331,8 @@ router.get('/profiles', requireAuth, async (req, res, next) => {
                  WHERE lower(u.email) = lower(p.email) AND u.role = 'director'
               ) AS is_director
          FROM timerecording.profiles p
-        ORDER BY p.name`
+        ORDER BY p.name
+        LIMIT ${PAGE_LIMIT}`
     )).rows;
     res.json(rows);
   } catch (err) { next(err); }
@@ -460,7 +468,8 @@ router.get('/time-records', requireAuth, async (req, res, next) => {
     }
     if (cost_center) { conditions.push(`cost_center = $${idx++}`); params.push(cost_center); }
 
-    const sql = `SELECT * FROM timerecording.time_records${conditions.length ? ' WHERE ' + conditions.join(' AND ') : ''} ORDER BY date DESC, created_at DESC`;
+    const sql = `SELECT * FROM timerecording.time_records${conditions.length ? ' WHERE ' + conditions.join(' AND ') : ''} ORDER BY date DESC, created_at DESC LIMIT $${idx}`;
+    params.push(PAGE_LIMIT);
     const rows = (await query(sql, params)).rows;
     res.json(rows);
   } catch (err) { next(err); }
@@ -735,33 +744,32 @@ router.put('/time-records/:id/review', requireAuth, requireRole('director', 'adm
 
 /** 批量审批（管理员）：一次审批一组记录（如同一员工同一周），原子完成，只发一条通知 */
 router.post('/time-records/review-batch', requireAuth, requireRole('director', 'admin'), async (req, res, next) => {
-  let client: any;
   try {
     const { ids, action, review_notes } = req.body;
     if (!isValidUuidArray(ids)) throw new AppError(400, 'ids 必填且须为 uuid 数组');
     if (!['approved', 'rejected'].includes(action)) throw new AppError(400, '操作必须是 approved 或 rejected');
     if (typeof review_notes === 'string' && review_notes.length > 500) throw new AppError(400, '审核备注不能超过 500 字');
     const reviewer = req.user!;
-    client = await getClient();
-    await client.query('BEGIN');
-    // ⚠️ 审计修复：批审须保证 周原子性 —— 所有记录同一员工同一周、且全部处于 submitted。
-    //   此前 UPDATE 静默跳过非 submitted 的 id，可能造成"部分审批"，跨员工/跨周混批还会让
-    //   单条通知口径失真。前端按 user+week 分组调用，正常不会触发；此处作为纵深防御显式 400。
-    const before = (await client.query(
-      `SELECT user_id, year, week_number, status FROM timerecording.time_records WHERE id = ANY($1::uuid[])`,
-      [ids]
-    )).rows;
-    if (before.length !== ids.length) throw new AppError(400, '部分记录不存在');
-    if (before.some((b: any) => b.status !== 'submitted')) throw new AppError(400, '批审记录须全部处于待审核状态');
-    const batchUsers = new Set(before.map((b: any) => b.user_id));
-    const batchWeeks = new Set(before.map((b: any) => `${b.year}-${b.week_number}`));
-    if (batchUsers.size !== 1 || batchWeeks.size !== 1) throw new AppError(400, '批审记录须属于同一员工同一周');
-    const rows = (await client.query(
-      `UPDATE timerecording.time_records SET status = $1, review_notes = $2, reviewed_by = $3, reviewed_at = now()
-       WHERE id = ANY($4::uuid[]) AND status = 'submitted' RETURNING *`,
-      [action, review_notes || '', reviewer.userId, ids]
-    )).rows;
-    await client.query('COMMIT');
+    // ⚠️ A15：事务样板收敛为 withTransaction
+    const rows = await withTransaction(async (client) => {
+      // ⚠️ 审计修复：批审须保证 周原子性 —— 所有记录同一员工同一周、且全部处于 submitted。
+      //   此前 UPDATE 静默跳过非 submitted 的 id，可能造成"部分审批"，跨员工/跨周混批还会让
+      //   单条通知口径失真。前端按 user+week 分组调用，正常不会触发；此处作为纵深防御显式 400。
+      const before = (await client.query(
+        `SELECT user_id, year, week_number, status FROM timerecording.time_records WHERE id = ANY($1::uuid[])`,
+        [ids]
+      )).rows;
+      if (before.length !== ids.length) throw new AppError(400, '部分记录不存在');
+      if (before.some((b: any) => b.status !== 'submitted')) throw new AppError(400, '批审记录须全部处于待审核状态');
+      const batchUsers = new Set(before.map((b: any) => b.user_id));
+      const batchWeeks = new Set(before.map((b: any) => `${b.year}-${b.week_number}`));
+      if (batchUsers.size !== 1 || batchWeeks.size !== 1) throw new AppError(400, '批审记录须属于同一员工同一周');
+      return (await client.query(
+        `UPDATE timerecording.time_records SET status = $1, review_notes = $2, reviewed_by = $3, reviewed_at = now()
+         WHERE id = ANY($4::uuid[]) AND status = 'submitted' RETURNING *`,
+        [action, review_notes || '', reviewer.userId, ids]
+      )).rows;
+    });
     if (rows.length > 0) {
       // ⚠️ 请休假是存储记录不是工时：通知「共 Xh」按工作工时口径，排除请休假记录（type/code 任一命中 LE 即排除）
       const totalHours = round2(rows.filter((r: any) => !isLeaveCostCenter(r.cost_center, r.cost_center_type))
@@ -770,10 +778,7 @@ router.post('/time-records/review-batch', requireAuth, requireRole('director', '
     }
     res.json(rows);
   } catch (err) {
-    if (client) await client.query('ROLLBACK').catch(() => {});
     next(err);
-  } finally {
-    if (client) client.release();
   }
 });
 
@@ -797,7 +802,8 @@ router.get('/task-assignments', requireAuth, async (req, res, next) => {
     // ⚠️ 窗口过滤：只返回与 [start, end] 有交集的任务（甘特按 14 周窗口拉取，避免全量返回 + 窗口外任务条撑高行高）
     if (start) { conditions.push(`end_datetime >= $${idx++}`); params.push(start); }
     if (end) { conditions.push(`start_datetime <= $${idx++}`); params.push(end); }
-    const sql = `SELECT * FROM timerecording.task_assignments${conditions.length ? ' WHERE ' + conditions.join(' AND ') : ''} ORDER BY start_datetime`;
+    const sql = `SELECT * FROM timerecording.task_assignments${conditions.length ? ' WHERE ' + conditions.join(' AND ') : ''} ORDER BY start_datetime LIMIT $${idx}`;
+    params.push(PAGE_LIMIT);
     res.json((await query(sql, params)).rows);
   } catch (err) { next(err); }
 });
@@ -1023,7 +1029,6 @@ router.post('/notifications', requireAuth, async (req, res, next) => {
 
 /** 管理员创建用户（补 profile + users 表） */
 router.post('/admin/users', requireAuth, requireRole('director', 'admin'), async (req, res, next) => {
-  let client: any;
   try {
     const { email, name, password, employee_id, role = 'employee' } = req.body;
     if (!email || !name || !password) throw new AppError(400, '缺少必填字段');
@@ -1037,26 +1042,24 @@ router.post('/admin/users', requireAuth, requireRole('director', 'admin'), async
     const passwordHash = await bcrypt.hash(password, 10);
     const empId = employee_id || email.split('@')[0];
     // ⚠️ F14 修复：users + profiles 两步写放入同一事务，避免中途失败留下"有 users 无 profile"半成品
-    client = await getClient();
-    await client.query('BEGIN');
-    const user = (await client.query(
-      `INSERT INTO public.users (email, display_name, password_hash, role, password_changed_at)
-       VALUES ($1, $2, $3, $4, now()) RETURNING id`,
-      [email, name, passwordHash, 'user']
-    )).rows[0];
-    await client.query(
-      `INSERT INTO timerecording.profiles (id, employee_id, name, email, role)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [user.id, empId, name, email, role]
-    );
-    await client.query('COMMIT');
+    // ⚠️ A15：事务样板收敛为 withTransaction
+    const user = await withTransaction(async (client) => {
+      const u = (await client.query(
+        `INSERT INTO public.users (email, display_name, password_hash, role, password_changed_at)
+         VALUES ($1, $2, $3, $4, now()) RETURNING id`,
+        [email, name, passwordHash, 'user']
+      )).rows[0];
+      await client.query(
+        `INSERT INTO timerecording.profiles (id, employee_id, name, email, role)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [u.id, empId, name, email, role]
+      );
+      return u;
+    });
 
     res.status(201).json({ id: user.id, email, name, employee_id: empId, role });
   } catch (err) {
-    if (client) await client.query('ROLLBACK').catch(() => {});
     next(err);
-  } finally {
-    if (client) client.release();
   }
 });
 
@@ -1065,12 +1068,8 @@ router.post('/admin/users/:id/reset-password', requireAuth, requireRole('directo
   try {
     const { id } = req.params;
     const { password } = req.body;
-    // ⚠️ L7 修复：密码策略与主用户管理统一为至少 8 位（此前此处 6 位、users.ts 8 位，口径不一致）
-    if (!password || password.length < 8) throw new AppError(400, '密码至少8个字符');
-    const passwordHash = await bcrypt.hash(password, 10);
-    // ⚠️ L3：改密同步记录 password_changed_at = now()，使该用户已签发的旧 JWT 立即失效（requireAuth 比对 iat）
-    const updated = (await query('UPDATE public.users SET password_hash = $1, password_changed_at = now() WHERE id = $2 RETURNING id', [passwordHash, id])).rows[0];
-    if (!updated) throw new AppError(404, '用户不存在');
+    // ⚠️ A18：密码长度校验/哈希/改密吊销（password_changed_at）共用 resetUserPassword（与主用户管理 users.ts 同源）
+    await resetUserPassword(id, password);
     logAudit(req, '重置密码', 'admin', '用户 ' + id.slice(0,8) + ' 密码已重置');
     res.json({ success: true });
   } catch (err) { next(err); }
@@ -1078,27 +1077,23 @@ router.post('/admin/users/:id/reset-password', requireAuth, requireRole('directo
 
 /** 管理员删除用户 */
 router.delete('/admin/users/:id', requireAuth, requireRole('director', 'admin'), async (req, res, next) => {
-  let client: any;
   try {
     const { id } = req.params;
     // ⚠️ 自删保护：防止误删当前登录账号导致全员锁死（唯一管理员被删后无人可再管理）
     if (id === req.user!.userId) throw new AppError(400, '不能删除自己的账号');
     // ⚠️ F14 修复：profiles + users 两步删除放入同一事务，避免中途失败留下"有 profile 无 users"半成品
     // ⚠️ M5 修复：先清空以该用户为 reviewer/创建者的引用（无 ON DELETE 动作会 FK 阻塞删除），再删 profile
-    client = await getClient();
-    await client.query('BEGIN');
-    await client.query('UPDATE timerecording.time_records SET reviewed_by = NULL WHERE reviewed_by = $1', [id]);
-    await client.query('UPDATE timerecording.task_assignments SET created_by = NULL WHERE created_by = $1', [id]);
-    await client.query('DELETE FROM timerecording.profiles WHERE id = $1', [id]);
-    await client.query('DELETE FROM public.users WHERE id = $1', [id]);
-    await client.query('COMMIT');
+    // ⚠️ A15：事务样板收敛为 withTransaction
+    await withTransaction(async (client) => {
+      await client.query('UPDATE timerecording.time_records SET reviewed_by = NULL WHERE reviewed_by = $1', [id]);
+      await client.query('UPDATE timerecording.task_assignments SET created_by = NULL WHERE created_by = $1', [id]);
+      await client.query('DELETE FROM timerecording.profiles WHERE id = $1', [id]);
+      await client.query('DELETE FROM public.users WHERE id = $1', [id]);
+    });
     logAudit(req, '删除用户', 'admin', '用户 ' + id.slice(0,8) + ' 已删除');
     res.json({ success: true });
   } catch (err) {
-    if (client) await client.query('ROLLBACK').catch(() => {});
     next(err);
-  } finally {
-    if (client) client.release();
   }
 });
 

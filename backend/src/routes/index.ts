@@ -13,10 +13,10 @@ import tags from './tags.js';
 import auditLogs from './auditLogs.js';
 import timerecording from './timerecording.js';
 import settings from './settings.js';
-import { query, getClient } from '../db/index.js';
-import type { PoolClient } from 'pg';
+import { query } from '../db/index.js';
 import { AppError } from '../middleware/index.js';
-import { logAudit, objKeysToSnake } from './helpers.js';
+import { logAudit, objKeysToSnake, buildSearchWhere, parsePagination, withTransaction } from './helpers.js';
+import { DEFAULT_EUR_RATE, DEFAULT_TAX_RATE, DEFAULT_WARRANTY_RATE, DEFAULT_RISK_RATE } from '../constants.js';
 
 const router = Router();
 
@@ -50,16 +50,18 @@ const APPROVAL_READ = ['审批管理', '全部查看权限'];
 const PROJECT_READ = ['报价编制', '交付管理', '销售机会管理', '全部查看权限'];
 // 组件读取方：物料管理 / 报价编制(ItemTable) / 交付管理(DeliveryDetail 服务项)
 const COMPONENT_READ = ['物料管理', '报价编制', '交付管理', '全部查看权限'];
-router.use('/components', requireAuth, writeGuard(['物料管理', '新增物料', '全部查看权限']), readGuard(COMPONENT_READ), components);
+// ⚠️ A1 修复：writeGuard 列表只含「写动作」权限——剔除纯只读页面权限（物料管理/销售机会管理/客户管理），
+//   否则 hasPermission 的任一命中（OR）会让仅持页面查看权的用户也能增删改（越权写）。读权限集 readGuard 不变。
+router.use('/components', requireAuth, writeGuard(['新增物料', '全部查看权限']), readGuard(COMPONENT_READ), components);
 router.use('/projects', requireAuth, writeGuard(['报价编制', '全部查看权限']), readGuard(PROJECT_READ), projects);
-router.use('/opportunities', requireAuth, writeGuard(['销售机会管理', '编辑销售机会', '新建信息/线索/机会', '转线索/转机会', '销售蓝表编辑', '全部查看权限']), readGuard(OPP_READ), opportunities);
+router.use('/opportunities', requireAuth, writeGuard(['编辑销售机会', '新建信息/线索/机会', '转线索/转机会', '销售蓝表编辑', '全部查看权限']), readGuard(OPP_READ), opportunities);
 router.use('/quotations', requireAuth, writeGuard(['报价编制', '全部查看权限']), readGuard(QUOTE_READ), quotations);
 // 审批：创建（各业务模块提交）与处理（审批管理）均需对应权限；列表读取仅审批管理/万能权限
 router.use('/approvals', requireAuth, writeGuard(['审批管理', '报价编制', '交付管理', '成本录入', '转线索/转机会', '全部查看权限']), readGuard(APPROVAL_READ), approvals);
 // 交付写操作需 交付管理 或 销售机会管理（转交付创建/初始化节点）；读取需交付相关权限
 router.use('/deliveries', requireAuth, writeGuard(['交付管理', '销售机会管理', '全部查看权限']), readGuard(DELIVERY_READ), deliveries);
 // ⚠️ H1 修复：/clients 列表读取与 /clients/:id/detail 同权限集（此前列表 GET 未加 readGuard，任意登录用户可读全部客户）
-router.use('/clients', requireAuth, writeGuard(['客户管理', '新建客户', '全部查看权限']), readGuard(['客户管理', '报价编制', '销售机会管理', '全部查看权限']), clients);
+router.use('/clients', requireAuth, writeGuard(['新建客户', '全部查看权限']), readGuard(['客户管理', '报价编制', '销售机会管理', '全部查看权限']), clients);
 // 标签写操作需 新建标签（读取开放给物料打标）
 router.use('/tags', requireAuth, writeGuard(['新建标签', '全部查看权限']), tags);
 // 审计日志：与前端 /settings 同口径（用户管理/系统配置）
@@ -72,8 +74,8 @@ router.use('/settings', requireAuth, settings);
 router.post('/project-versions', requireAuth, writeGuard(['报价编制', '全部查看权限']), async (req, res, next) => {
   try {
     const snakeBody = objKeysToSnake(req.body);
-    const { project_id, version_no, eur_rate = 8.15, tax_rate = 0.13,
-      rounding_digits = 0, warranty_rate = 0.01, risk_rate = 0.03,
+    const { project_id, version_no, eur_rate = DEFAULT_EUR_RATE, tax_rate = DEFAULT_TAX_RATE,
+      rounding_digits = 0, warranty_rate = DEFAULT_WARRANTY_RATE, risk_rate = DEFAULT_RISK_RATE,
       commercial_cost = 0, total_direct_cost = 0, total_accounting_price = 0,
       discounted_price = 0, discount_rate = 0,
       gp3_profit_rate = 0, gp3_amount = 0, review_status = 'draft',
@@ -82,6 +84,10 @@ router.post('/project-versions', requireAuth, writeGuard(['报价编制', '全�
 
     if (!project_id || !version_no) {
       throw new AppError(400, '缺少必填字段：project_id, version_no');
+    }
+    // ⚠️ A4 修复：review_status 应用层枚举校验（此前直写 DB CHECK 撞 500；且防客户端直设 approved/rejected 绕过审批状态机）
+    if (!['draft', 'pending', 'approved', 'rejected'].includes(review_status)) {
+      throw new AppError(400, `无效审核状态: ${review_status}`);
     }
 
     const result = await query(
@@ -128,89 +134,84 @@ router.post('/project-versions', requireAuth, writeGuard(['报价编制', '全�
 
 // ── 项目组和明细保存（事务保护，报价编制写操作）──
 router.post('/project-groups', requireAuth, writeGuard(['报价编制', '全部查看权限']), async (req, res, next) => {
-  let client: PoolClient | undefined;
-  let committed = false;
   try {
-    client = await getClient();
     const body = objKeysToSnake(req.body);
-  const { project_id, version_id, group_no, group_type, name,
-      is_fixed = false, items = [] } = body;
+    const { project_id, version_id, group_no, group_type, name,
+        is_fixed = false, items = [] } = body;
 
     if (!project_id || !version_id || group_no === undefined || !group_type || !name) {
       throw new AppError(400, '缺少必填字段：project_id、version_id、group_no、group_type、name');
     }
 
-    await client.query('BEGIN');
+    // ⚠️ A15：事务样板收敛为 withTransaction
+    const group = await withTransaction(async (client) => {
+      const groupId = req.body.id || undefined;
+      const existing = groupId
+        ? (await client.query('SELECT id, version_id FROM project_groups WHERE id = $1', [groupId])).rows[0]
+        : null;
 
-    const groupId = req.body.id || undefined;
-    const existing = groupId
-      ? (await client.query('SELECT id, version_id FROM project_groups WHERE id = $1', [groupId])).rows[0]
-      : null;
-
-    let groupResult;
-    if (existing) {
-      // 检查版本号：版本不同则 INSERT 新记录（版本隔离），同版本则 UPDATE（version_id 已在上面一次查询取回）
-      const currentVerId = existing.version_id;
-      if (currentVerId && currentVerId !== version_id) {
-        // 版本迭代，创建新组
+      let groupResult;
+      if (existing) {
+        // 检查版本号：版本不同则 INSERT 新记录（版本隔离），同版本则 UPDATE（version_id 已在上面一次查询取回）
+        const currentVerId = existing.version_id;
+        if (currentVerId && currentVerId !== version_id) {
+          // 版本迭代，创建新组
+          groupResult = (await client.query(
+            `INSERT INTO project_groups (project_id, version_id, group_no, group_type, name, is_fixed, sort_order)
+             VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+            [project_id, version_id, group_no, group_type, name, is_fixed, group_no]
+          )).rows[0];
+        } else {
+          groupResult = (await client.query(
+            `UPDATE project_groups SET group_no=$1, group_type=$2, name=$3, is_fixed=$4, updated_at=now()
+             WHERE id=$5 RETURNING *`,
+            [group_no, group_type, name, is_fixed, groupId]
+          )).rows[0];
+          await client.query('DELETE FROM group_items WHERE group_id = $1', [groupId]);
+        }
+      } else {
         groupResult = (await client.query(
           `INSERT INTO project_groups (project_id, version_id, group_no, group_type, name, is_fixed, sort_order)
            VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
           [project_id, version_id, group_no, group_type, name, is_fixed, group_no]
         )).rows[0];
-      } else {
-        groupResult = (await client.query(
-          `UPDATE project_groups SET group_no=$1, group_type=$2, name=$3, is_fixed=$4, updated_at=now()
-           WHERE id=$5 RETURNING *`,
-          [group_no, group_type, name, is_fixed, groupId]
-        )).rows[0];
-        await client.query('DELETE FROM group_items WHERE group_id = $1', [groupId]);
       }
-    } else {
-      groupResult = (await client.query(
-        `INSERT INTO project_groups (project_id, version_id, group_no, group_type, name, is_fixed, sort_order)
-         VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-        [project_id, version_id, group_no, group_type, name, is_fixed, group_no]
-      )).rows[0];
-    }
 
-    // 插入新明细（items 中每个对象的 key 需转蛇形）
-    for (let i = 0; i < items.length; i++) {
-      const item = objKeysToSnake(items[i]);
-      await client.query(
-        `INSERT INTO group_items (group_id, item_no, item_type, component_id, code, description,
-          qty_total, unit, sourcing_type, unit_cost, design_hours, assembly_hours,
-          design_hour_rate, assembly_hour_rate, direct_cost, margin_rate,
-          basic_price, accounting_price, has_warranty, note)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
-        [groupResult.id, i + 1, item.item_type || 'COMPONENT', item.component_id || null,
-         item.code || '', item.description || '', item.qty_total || 1, item.unit || '个',
-         item.sourcing_type || 'SELF_MANUFACTURED', item.unit_cost || 0,
-         item.design_hours || 0, item.assembly_hours || 0,
-         item.design_hour_rate || 0, item.assembly_hour_rate || 0,
-         item.direct_cost || 0, item.margin_rate || 0,
-         item.basic_price || 0, item.accounting_price || 0,
-         item.has_warranty || false, item.note || '']
-      );
-    }
+      // 插入新明细（items 中每个对象的 key 需转蛇形）
+      for (let i = 0; i < items.length; i++) {
+        const item = objKeysToSnake(items[i]);
+        await client.query(
+          `INSERT INTO group_items (group_id, item_no, item_type, component_id, code, description,
+            qty_total, unit, sourcing_type, unit_cost, design_hours, assembly_hours,
+            design_hour_rate, assembly_hour_rate, direct_cost, margin_rate,
+            basic_price, accounting_price, has_warranty, note)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
+          [groupResult.id, i + 1, item.item_type || 'COMPONENT', item.component_id || null,
+           item.code || '', item.description || '', item.qty_total ?? 1, item.unit || '个',
+           item.sourcing_type || 'SELF_MANUFACTURED', item.unit_cost || 0,
+           item.design_hours || 0, item.assembly_hours || 0,
+           item.design_hour_rate || 0, item.assembly_hour_rate || 0,
+           item.direct_cost || 0, item.margin_rate || 0,
+           item.basic_price || 0, item.accounting_price || 0,
+           item.has_warranty || false, item.note || '']
+        );
+      }
 
-    await client.query('COMMIT');
-    committed = true; // 事务已提交：后续查询失败时 catch 不得再 ROLLBACK（对已提交事务误回滚）
+      return groupResult;
+    });
+
     logAudit(req, '保存项目组', 'project', '项目组 ' + name + ' 已保存');
 
     // 返回完整组（含明细）
-    const savedGroup = (await query('SELECT * FROM project_groups WHERE id = $1', [groupResult.id])).rows[0];
+    const savedGroup = (await query('SELECT * FROM project_groups WHERE id = $1', [group.id])).rows[0];
     const savedItems = (await query(
-      'SELECT * FROM group_items WHERE group_id = $1 ORDER BY item_no', [groupResult.id]
+      'SELECT * FROM group_items WHERE group_id = $1 ORDER BY item_no', [group.id]
     )).rows;
     savedGroup.items = savedItems;
 
     res.status(201).json(savedGroup);
   } catch (err) {
-    if (!committed) await client?.query('ROLLBACK').catch(() => {});
     next(err);
-  } finally {
-    client?.release();
   }
 });
 

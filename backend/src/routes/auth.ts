@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import { query } from '../db/index.js';
 import { signToken, requireAuth, setAuthCookie, clearAuthCookie, COOKIE_NAME_BUDGET } from '../middleware/auth.js';
 import { AppError } from '../middleware/index.js';
-import { logAudit } from './helpers.js';
+import { logAudit, normalizeEmail } from './helpers.js';
 
 const router = Router();
 
@@ -21,8 +21,8 @@ router.post('/login', async (req, res, next) => {
     if (typeof email !== 'string' || typeof password !== 'string') {
       throw new AppError(400, '邮箱/密码必须为字符串');
     }
-    // 邮箱归一化：trim + 小写（与 users 路由创建/更新的归一化口径一致；LOWER 比较兼容历史大小写存储）
-    const emailNorm = email.trim().toLowerCase();
+    // 邮箱归一化：trim + 小写（与 users/timerecording 登录归一化共用 normalizeEmail；LOWER 比较兼容历史大小写存储）
+    const emailNorm = normalizeEmail(email);
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailNorm)) {
       throw new AppError(400, '邮箱格式无效');
     }

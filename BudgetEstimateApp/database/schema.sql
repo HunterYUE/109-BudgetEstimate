@@ -457,6 +457,8 @@ CREATE TABLE IF NOT EXISTS delivery_projects (
 
 CREATE INDEX IF NOT EXISTS idx_delivery_projects_status ON delivery_projects(status);
 CREATE INDEX IF NOT EXISTS idx_delivery_projects_opportunity_id ON delivery_projects(opportunity_id);
+-- ⚠️ A12：sales_no 高频等值/LIKE 查询（成本中心校验、质保同步）索引
+CREATE INDEX IF NOT EXISTS idx_delivery_projects_sales_no ON delivery_projects(sales_no);
 
 COMMENT ON COLUMN delivery_projects.plan_approval IS '实施计划审批结果：{"reviewer":"...","action":"approved","comment":"...","createdAt":"..."}';
 COMMENT ON COLUMN delivery_projects.cost_approval IS '成本对比审批结果：同上格式';
@@ -646,6 +648,9 @@ CREATE TABLE IF NOT EXISTS users (
   UNIQUE(email)
 );
 
+-- ⚠️ A11：登录/密码重置按 LOWER(email) 查询，表达式索引防全表扫（email 原值唯一约束仍在）
+CREATE INDEX IF NOT EXISTS idx_users_email_lower ON users ((LOWER(email)));
+
 -- ============================================================
 -- 用户设置（UserSetting，迁移 007 添加，按用户存键值对）
 -- ============================================================
@@ -801,6 +806,9 @@ CREATE TABLE IF NOT EXISTS timerecording.profiles (
   updated_at  timestamptz DEFAULT now() NOT NULL,
   CONSTRAINT profiles_role_check CHECK (role = ANY (ARRAY['admin','employee']))
 );
+
+-- ⚠️ A11：登录/密码重置按 LOWER(email) 查询，表达式索引防全表扫
+CREATE INDEX IF NOT EXISTS idx_tr_profiles_email_lower ON timerecording.profiles ((LOWER(email)));
 
 CREATE TABLE IF NOT EXISTS timerecording.task_assignments (
   id             uuid DEFAULT gen_random_uuid() NOT NULL PRIMARY KEY,

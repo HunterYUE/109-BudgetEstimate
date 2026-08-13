@@ -1,8 +1,8 @@
 import { Router } from 'express';
-import { query, getClient } from '../db/index.js';
+import { query } from '../db/index.js';
 import { AppError } from '../middleware/index.js';
 import { hasPermission } from '../middleware/auth.js';
-import { crudRoutes, logAudit, objKeysToSnake } from './helpers.js';
+import { crudRoutes, logAudit, objKeysToSnake, buildSearchWhere, parsePagination, withTransaction } from './helpers.js';
 
 const fields = [
   'id', 'sales_no', 'client_name', 'project_name', 'amount',
@@ -16,6 +16,10 @@ const fields = [
 const crudRouter = crudRoutes('sales_opportunities', fields, {
   searchFields: ['sales_no', 'client_name', 'project_name', 'salesman'],
   orderBy: 'updated_at DESC',
+  // ⚠️ A19 修复：列表（自定义 GET /）与更新（自定义 PUT /:id 含 promote_locked/lost_at/阶段规则）均已由顶层路由覆盖，
+  //   skipList/skipUpdate 跳过 crudRoutes 中会被遮蔽的死处理器，避免两套逻辑并存
+  skipList: true,
+  skipUpdate: true,
   // ⚠️ F3 修复：机会已转交付时删除会撞 NO ACTION 外键（delivery_projects.opportunity_id），明确提示
   beforeDelete: async (id) => {
     const delivery = (await query('SELECT id FROM delivery_projects WHERE opportunity_id = $1', [id])).rows[0];
@@ -29,15 +33,10 @@ const router = Router();
 // 自定义列表查询，LEFT JOIN 蓝表（含角色）以便前端直接显示赢率
 router.get('/', async (req, res, next) => {
   try {
-    const { search, limit = '100', offset = '0' } = req.query as Record<string, string>;
-    const limitNum = Math.min(1000, Math.max(1, parseInt(limit, 10) || 100));
-    const offsetNum = Math.max(0, parseInt(offset, 10) || 0);
+    const { search } = req.query;
     const params: any[] = [];
-    let where = '';
-    if (search) {
-      where = ` WHERE (so.sales_no::text ILIKE $1 OR so.client_name::text ILIKE $1 OR so.project_name::text ILIKE $1 OR so.salesman::text ILIKE $1)`;
-      params.push(`%${search}%`);
-    }
+    let where = buildSearchWhere(search, ['sales_no', 'client_name', 'project_name', 'salesman'], params, 'so');
+    const { limit, offset } = parsePagination(req.query);
 
     const result = await query(
       `SELECT so.*,
@@ -83,8 +82,8 @@ router.get('/', async (req, res, next) => {
        ${where}
        -- ⚠️ 按销售编号升序固定排列，不可改回 updated_at DESC（否则列表随编辑刷新不停跳动）
        ORDER BY so.sales_no ASC
-       LIMIT ${limitNum} OFFSET ${offsetNum}`,
-      params
+       LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      [...params, limit, offset]
     );
     res.json(result.rows);
   } catch (err) { next(err); }
@@ -110,66 +109,63 @@ router.get('/:id/detail', async (req, res, next) => {
 
 // 蓝表保存（upsert 蓝表 + 角色，同一事务）
 router.put('/:id/blue-table', async (req, res, next) => {
-  let tx: any;
   try {
     const { id } = req.params;
-    const oppRow = (await query('SELECT sales_no FROM sales_opportunities WHERE id = $1', [id])).rows[0];
+    // ⚠️ A9 修复：同机会一次查询取回 id+sales_no，复用存在性检查与审计（此前对同一 id 连查两次）
+    const oppRow = (await query('SELECT id, sales_no FROM sales_opportunities WHERE id = $1', [id])).rows[0];
+    if (!oppRow) throw new AppError(404, '机会未找到');
     const body = objKeysToSnake({ ...req.body });
     const { veto_budget, budget_amount, timeline_plan, timeline_option,
             pricing, positioning, reaction_mode, strategy, targets, roles } = body;
 
-    const opp = (await query('SELECT id FROM sales_opportunities WHERE id = $1', [id])).rows[0];
-    if (!opp) throw new AppError(404, '机会未找到');
+    // ⚠️ A15：事务样板收敛为 withTransaction（BEGIN/COMMIT/ROLLBACK/release 统一封装）
+    const bt = await withTransaction(async (client) => {
+      // Upsert blue table
+      const blueTable = (await client.query(
+        `INSERT INTO blue_tables (opportunity_id, veto_budget, budget_amount, timeline_plan,
+          timeline_option, pricing, positioning, reaction_mode, strategy, targets)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+         ON CONFLICT (opportunity_id) DO UPDATE SET
+          veto_budget = EXCLUDED.veto_budget,
+          budget_amount = EXCLUDED.budget_amount,
+          timeline_plan = EXCLUDED.timeline_plan,
+          timeline_option = EXCLUDED.timeline_option,
+          pricing = EXCLUDED.pricing,
+          positioning = EXCLUDED.positioning,
+          reaction_mode = EXCLUDED.reaction_mode,
+          strategy = EXCLUDED.strategy,
+          targets = EXCLUDED.targets,
+          updated_at = now()
+         RETURNING *`,
+        [id, veto_budget, budget_amount, timeline_plan, timeline_option,
+         pricing, positioning, reaction_mode, strategy, JSON.stringify(targets || [])]
+      )).rows[0];
 
-    tx = await getClient();
-    await tx.query('BEGIN');
-
-    // Upsert blue table
-    const bt = (await tx.query(
-      `INSERT INTO blue_tables (opportunity_id, veto_budget, budget_amount, timeline_plan,
-        timeline_option, pricing, positioning, reaction_mode, strategy, targets)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-       ON CONFLICT (opportunity_id) DO UPDATE SET
-        veto_budget = EXCLUDED.veto_budget,
-        budget_amount = EXCLUDED.budget_amount,
-        timeline_plan = EXCLUDED.timeline_plan,
-        timeline_option = EXCLUDED.timeline_option,
-        pricing = EXCLUDED.pricing,
-        positioning = EXCLUDED.positioning,
-        reaction_mode = EXCLUDED.reaction_mode,
-        strategy = EXCLUDED.strategy,
-        targets = EXCLUDED.targets,
-        updated_at = now()
-       RETURNING *`,
-      [id, veto_budget, budget_amount, timeline_plan, timeline_option,
-       pricing, positioning, reaction_mode, strategy, JSON.stringify(targets || [])]
-    )).rows[0];
-
-    // Replace roles: delete old, insert new（与蓝表同一事务）
-    if (roles !== undefined) {
-      await tx.query('DELETE FROM blue_table_roles WHERE blue_table_id = $1', [bt.id]);
-      for (const role of roles) {
-      const rs = objKeysToSnake(role);
-        const r = {
-          role_type: rs.role_type || '',
-          name: rs.name || '',
-          influence: rs.influence || 'medium',
-          influence_weight: rs.influence_weight || 3,
-          support: rs.support || 0,
-          demand_fit: rs.demand_fit || 3,
-          relationship: rs.relationship || 3,
-        };
-        await tx.query(
-          `INSERT INTO blue_table_roles (blue_table_id, role_type, name, influence,
-            influence_weight, support, demand_fit, relationship)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-          [bt.id, r.role_type, r.name, r.influence,
-           r.influence_weight, r.support, r.demand_fit, r.relationship]
-        );
+      // Replace roles: delete old, insert new（与蓝表同一事务）
+      if (roles !== undefined) {
+        await client.query('DELETE FROM blue_table_roles WHERE blue_table_id = $1', [blueTable.id]);
+        for (const role of roles) {
+          const rs = objKeysToSnake(role);
+          const r = {
+            role_type: rs.role_type || '',
+            name: rs.name || '',
+            influence: rs.influence || 'medium',
+            influence_weight: rs.influence_weight || 3,
+            support: rs.support || 0,
+            demand_fit: rs.demand_fit || 3,
+            relationship: rs.relationship || 3,
+          };
+          await client.query(
+            `INSERT INTO blue_table_roles (blue_table_id, role_type, name, influence,
+              influence_weight, support, demand_fit, relationship)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+            [blueTable.id, r.role_type, r.name, r.influence,
+             r.influence_weight, r.support, r.demand_fit, r.relationship]
+          );
+        }
       }
-    }
-
-    await tx.query('COMMIT');
+      return blueTable;
+    });
 
     // 提交后重新查询（事务外的连接才能看到已提交的数据）
     const savedBt = (await query('SELECT * FROM blue_tables WHERE id = $1', [bt.id])).rows[0];
@@ -181,10 +177,7 @@ router.put('/:id/blue-table', async (req, res, next) => {
 
     res.json({ ...savedBt, roles: savedRoles });
   } catch (e) {
-    if (tx) await tx.query('ROLLBACK').catch(() => {});
     next(e);
-  } finally {
-    if (tx) tx.release();
   }
 });
 

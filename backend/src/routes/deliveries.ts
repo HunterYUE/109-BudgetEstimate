@@ -1,11 +1,11 @@
 import { Router, type Request } from 'express';
-import { query, getClient } from '../db/index.js';
+import { query } from '../db/index.js';
 import { AppError } from '../middleware/index.js';
 import { requirePermission } from '../middleware/auth.js';
 import multer, { type FileFilterCallback } from 'multer';
 import path from 'path';
 import fs from 'fs';
-import { crudRoutes, objKeysToSnake } from './helpers.js';
+import { crudRoutes, objKeysToSnake, buildSearchWhere, parsePagination, withTransaction } from './helpers.js';
 
 const fields = [
   'id', 'opportunity_id', 'sales_no', 'client_name', 'project_name',
@@ -48,9 +48,8 @@ const router = Router();
 // 自定义列表查询：包含节点完成统计（节点总数、已完成数）
 router.get('/', async (req, res, next) => {
   try {
-    const { search, limit = '100', offset = '0' } = req.query as Record<string, string>;
-    const limitNum = Math.min(1000, Math.max(1, parseInt(limit, 10) || 100));
-    const offsetNum = Math.max(0, parseInt(offset, 10) || 0);
+    const { search } = req.query;
+    const params: any[] = [];
     let sql = `SELECT dp.*,
         COALESCE(
           (SELECT jsonb_agg(to_jsonb(dn_sub) ORDER BY dn_sub.node_no)
@@ -59,15 +58,11 @@ router.get('/', async (req, res, next) => {
           ), '[]'::jsonb
         ) AS nodes
       FROM delivery_projects dp`;
-    const params: any[] = [];
-    if (search) {
-      const conditions = ['dp.sales_no::text ILIKE $1', 'dp.client_name::text ILIKE $1', 'dp.project_name::text ILIKE $1'];
-      sql += ` WHERE ${conditions.join(' OR ')}`;
-      params.push(`%${search}%`);
-    }
+    sql += buildSearchWhere(search, ['sales_no', 'client_name', 'project_name'], params, 'dp');
     // 与 crudRoutes 配置的 orderBy 一致：最近更新优先（原 project_name DESC 为遗留，中文名排序无意义）
+    const { limit, offset } = parsePagination(req.query);
     sql += ` ORDER BY dp.updated_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
-    const result = await query(sql, [...params, limitNum, offsetNum]);
+    const result = await query(sql, [...params, limit, offset]);
     res.json(result.rows);
   } catch (err) { next(err); }
 });
@@ -75,9 +70,12 @@ router.get('/', async (req, res, next) => {
 const crudRouter = crudRoutes('delivery_projects', fields, {
   searchFields: ['sales_no', 'client_name', 'project_name'],
   orderBy: 'updated_at DESC',
-  // ⚠️ H3 修复：计划/成本审批状态与审批结果 JSONB 只能经审批流程（POST /approvals/:id/records）流转，
-  //   禁止通用 PUT 直改（此前可直接置 plan_status='approved' 并伪造 plan_approval）。前端无此直写路径。
-  //   注意：显式传 excludeOnUpdate 会覆盖默认的 id/created_at/updated_at，必须一并保留。
+  // ⚠️ A19 修复：顶层已注册自定义列表（含节点聚合），跳过 crudRoutes 中被遮蔽的默认 LIST
+  skipList: true,
+  // ⚠️ A3/H3 修复：计划/成本审批状态与审批结果 JSONB 只能经审批流程（POST /approvals/:id/records）流转，
+  //   创建与更新均禁直设（此前无 excludeOnCreate，POST /deliveries 可直接置 plan_status='approved' 并伪造 plan_approval）。
+  //   quotation_id/opportunity_id 由转交付流程派生，同样禁直写。注意：显式传会覆盖默认，id/created_at/updated_at 必须一并保留。
+  excludeOnCreate: ['id', 'created_at', 'updated_at', 'plan_status', 'cost_status', 'plan_approval', 'cost_approval', 'quotation_id', 'opportunity_id'],
   excludeOnUpdate: ['id', 'created_at', 'updated_at', 'plan_status', 'cost_status', 'plan_approval', 'cost_approval', 'quotation_id', 'opportunity_id'],
   // ⚠️ F15 修复：删除交付项目时清理磁盘上的附件文件（DB 行靠 delivery_files CASCADE 删，物理文件不会随删）
   beforeDelete: async (id) => {
@@ -105,49 +103,48 @@ const crudRouter = crudRoutes('delivery_projects', fields, {
 
     // 添加/更新节点（事务保护）
     r.put('/:id/nodes', async (req, res, next) => {
-      let client: any;
       try {
-        client = await getClient();
         const { id } = req.params;
         // ⚠️ 节点字段必须转 snake_case（前端发 camelCase nodeNo → node_no）
         const rawNodes = (req.body.nodes || req.body);
         const nodes = Array.isArray(rawNodes) ? rawNodes.map((n: any) => objKeysToSnake(n)) : rawNodes;
         if (!Array.isArray(nodes)) throw new AppError(400, '节点数据必须为数组');
 
-        const dp = (await client.query('SELECT id FROM delivery_projects WHERE id = $1', [id])).rows[0];
-        if (!dp) throw new AppError(404, '交付项目未找到');
+        // ⚠️ A15：事务样板收敛为 withTransaction
+        await withTransaction(async (client) => {
+          const dp = (await client.query('SELECT id FROM delivery_projects WHERE id = $1', [id])).rows[0];
+          if (!dp) throw new AppError(404, '交付项目未找到');
 
-        // 备份基线（基线日期一旦审批通过写入，永不被覆盖）
-        const existingBaselines = (await client.query(
-          "SELECT node_no, baseline_planned_end_date FROM delivery_nodes WHERE delivery_project_id = $1 AND baseline_planned_end_date IS NOT NULL",
-          [id]
-        )).rows;
-        const baselineMap: Record<string, string> = {};
-        for (const row of existingBaselines) {
-          if (row.baseline_planned_end_date) {
-            baselineMap[row.node_no] = row.baseline_planned_end_date;
+          // 备份基线（基线日期一旦审批通过写入，永不被覆盖）
+          const existingBaselines = (await client.query(
+            "SELECT node_no, baseline_planned_end_date FROM delivery_nodes WHERE delivery_project_id = $1 AND baseline_planned_end_date IS NOT NULL",
+            [id]
+          )).rows;
+          const baselineMap: Record<string, string> = {};
+          for (const row of existingBaselines) {
+            if (row.baseline_planned_end_date) {
+              baselineMap[row.node_no] = row.baseline_planned_end_date;
+            }
           }
-        }
 
-        await client.query('BEGIN');
-        // Replace all nodes: delete old, insert new
-        await client.query('DELETE FROM delivery_nodes WHERE delivery_project_id = $1', [id]);
-        for (const node of nodes) {
-          const baseline = node.baseline_planned_end_date || baselineMap[node.node_no] || null;
-          await client.query(
-            `INSERT INTO delivery_nodes (delivery_project_id, node_no, name,
-              planned_start_date, planned_end_date, actual_date,
-              actual_start_date, actual_end_date, baseline_planned_end_date, status, comments, history)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-            [id, node.node_no, node.name, node.planned_start_date || '',
-             node.planned_end_date || '', node.actual_date || null,
-             node.actual_start_date || null, node.actual_end_date || null,
-             baseline,
-             node.status || 'pending', node.comments || '',
-             JSON.stringify(node.history || [])]
-          );
-        }
-        await client.query('COMMIT');
+          // Replace all nodes: delete old, insert new
+          await client.query('DELETE FROM delivery_nodes WHERE delivery_project_id = $1', [id]);
+          for (const node of nodes) {
+            const baseline = node.baseline_planned_end_date || baselineMap[node.node_no] || null;
+            await client.query(
+              `INSERT INTO delivery_nodes (delivery_project_id, node_no, name,
+                planned_start_date, planned_end_date, actual_date,
+                actual_start_date, actual_end_date, baseline_planned_end_date, status, comments, history)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+              [id, node.node_no, node.name, node.planned_start_date || '',
+               node.planned_end_date || '', node.actual_date || null,
+               node.actual_start_date || null, node.actual_end_date || null,
+               baseline,
+               node.status || 'pending', node.comments || '',
+               JSON.stringify(node.history || [])]
+            );
+          }
+        });
 
         const newNodes = (await query(
           'SELECT * FROM delivery_nodes WHERE delivery_project_id = $1 ORDER BY node_no',
@@ -156,11 +153,7 @@ const crudRouter = crudRoutes('delivery_projects', fields, {
 
         res.json(newNodes);
       } catch (err) {
-        // ⚠️ F8 修复：getClient() 失败时 client 为 undefined，须判空（此前 catch 直接 client.query 同步抛错导致请求挂死）
-        if (client) await client.query('ROLLBACK').catch(() => {});
         next(err);
-      } finally {
-        if (client) client.release();
       }
     });
   },

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { crudRoutes, logAudit, objKeysToSnake } from './helpers.js';
+import { crudRoutes, logAudit, objKeysToSnake, buildSearchWhere, parsePagination } from './helpers.js';
 import { query } from '../db/index.js';
 import { AppError } from '../middleware/index.js';
 
@@ -15,22 +15,16 @@ const customRouter = Router();
 // 自定义列表：JOIN project_versions 返回 gp3_amount、discounted_price、tax_rate
 customRouter.get('/', async (req, res, next) => {
   try {
-    const { search, limit = '100', offset = '0' } = req.query as Record<string, string>;
-    const limitNum = Math.min(1000, Math.max(1, parseInt(limit, 10) || 100));
-    const offsetNum = Math.max(0, parseInt(offset, 10) || 0);
+    const { search } = req.query;
     const params: any[] = [];
-    let where = '';
-    if (search) {
-      where = ' WHERE (q.sales_no::text ILIKE $1 OR q.client_name::text ILIKE $1 OR q.project_name::text ILIKE $1)';
-      params.push(`%${search}%`);
-    }
-    const sql = `SELECT q.*, pv.gp3_amount, pv.discounted_price, pv.tax_rate
+    let sql = `SELECT q.*, pv.gp3_amount, pv.discounted_price, pv.tax_rate
       FROM quotations q
-      LEFT JOIN project_versions pv ON pv.project_id = q.project_id AND pv.version_no = q.version_no
-      ${where}
-      ORDER BY q.sales_no DESC, q.version_no DESC
+      LEFT JOIN project_versions pv ON pv.project_id = q.project_id AND pv.version_no = q.version_no`;
+    sql += buildSearchWhere(search, ['sales_no', 'client_name', 'project_name'], params, 'q');
+    const { limit, offset } = parsePagination(req.query);
+    sql += ` ORDER BY q.sales_no DESC, q.version_no DESC
       LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
-    const result = await query(sql, [...params, limitNum, offsetNum]);
+    const result = await query(sql, [...params, limit, offset]);
     res.json(result.rows);
   } catch (err) { next(err); }
 });
@@ -92,10 +86,9 @@ customRouter.put('/sync', async (req, res, next) => {
 const crudRouter = crudRoutes('quotations', fields, {
   searchFields: ['sales_no', 'client_name', 'project_name'],
   orderBy: 'sales_no DESC, version_no DESC',
-  // 显式传 excludeOnCreate/excludeOnUpdate 会覆盖默认的 id/created_at/updated_at，必须一并保留
-  excludeOnCreate: ['id', 'created_at', 'updated_at', 'locked'],
-  // ⚠️ H2 修复：status 只能经审批流程（POST /approvals/:id/records）流转，禁止通用 PUT 直改绕过审批；
-  //   locked 由审批级联维护，禁止直改。前端无 PUT /:id 直写 status 的合法路径。
+  // ⚠️ A2 修复：status 与 locked 均只能经审批流程（POST /approvals/:id/records）流转，创建/更新均禁直设
+  //   （此前 excludeOnCreate 漏 status，POST /quotations 可传 status:'approved' 绕过审批状态机）
+  excludeOnCreate: ['id', 'created_at', 'updated_at', 'status', 'locked'],
   excludeOnUpdate: ['id', 'created_at', 'updated_at', 'status', 'locked'],
 });
 
