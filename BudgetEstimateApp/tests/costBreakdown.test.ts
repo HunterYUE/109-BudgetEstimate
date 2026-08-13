@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { Group } from '../src/types';
-import { buildCostLines, type CostLine } from '../src/utils/costBreakdown';
+import { buildCostLines } from '../src/utils/costBreakdown';
 
 /**
  * 8 行 fixture（与 computeCostComponents 口径自洽）：

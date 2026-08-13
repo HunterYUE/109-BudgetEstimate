@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { DeliveryNode, DeliveryProject, SalesOpportunity } from '../src/types';
 import {
   fmtKBase, fmtK, compressNo, chartLabel, isRealWin, oppEffectiveEnd,
-  monthEndOf, exAmount, stageAsOf, getNodeBaseline, getNodeDelay,
+  monthEndOf, exAmount, stageAsOf, getNodeDelay,
   isProjectDelivered, getProjectDoneDate, quoteProfitExTax, deliverySalesProfit,
   buildQuoteInfoMap, deliveryExTax, projectMonthlySales, fyMonthWindows, getProjectDelay,
   FY_MONTH_LABELS,
