@@ -455,7 +455,7 @@ router.get('/time-records', ...trAuth, async (req, res, next) => {
     const user = req.user!;
     // ⚠️ 总监 + 方案/交付经理可读全员（综合分析需要）；普通员工仅本人
     const manager = isManager(user);
-    const { user_id, date_from, date_to, year, week_number, status, status_in, cost_center } = req.query;
+    const { user_id, date_from, date_to, year, week_number, status, status_in, cost_center, reviewed_from } = req.query;
     const conditions: string[] = [];
     const params: any[] = [];
     let idx = 1;
@@ -467,6 +467,9 @@ router.get('/time-records', ...trAuth, async (req, res, next) => {
     }
     if (date_from) { conditions.push(`date >= $${idx++}`); params.push(date_from); }
     if (date_to) { conditions.push(`date <= $${idx++}`); params.push(date_to); }
+    // ⚠️ 截断重规划：按审批时间过滤（AdminApproval 已审核历史仅展示近 3 个月，reviewed_from 服务端有界拉取，
+    //   取代「全量拉取后客户端再过滤」——历史随年份无限增长，固定 limit 迟早截断）
+    if (reviewed_from) { conditions.push(`reviewed_at >= $${idx++}`); params.push(reviewed_from); }
     if (year) {
       const y = parseInt(year as string, 10);
       if (!Number.isInteger(y)) throw new AppError(400, 'year 格式无效');
