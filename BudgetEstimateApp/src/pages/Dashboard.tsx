@@ -30,7 +30,7 @@ const last3MonthsOf = (now: Date): { start: Date; end: Date }[] =>
     return { start, end: monthEndOf(start.getFullYear(), start.getMonth()) };
   });
 
-/* ── 区块标题 ── */
+// ── 区块标题 ──
 const SectionTitle: React.FC<{ title: string; count?: number }> = ({ title, count }) => (
   <div style={{
     fontSize: 14, fontWeight: 700, color: COLORS.textDark, marginBottom: 16, letterSpacing: 0.5,
@@ -46,7 +46,7 @@ const SectionTitle: React.FC<{ title: string; count?: number }> = ({ title, coun
   </div>
 );
 
-/* ── 框体柱状图（与销售分析风格一致） ── */
+// ── 框体柱状图（与销售分析风格一致） ──
 const VerticalBars: React.FC<{
   items: { label: string; value: number; color: string; displayValue?: string }[];
   height?: number;
@@ -133,7 +133,7 @@ const VerticalBars: React.FC<{
   );
 };
 
-/* ── 饼图（引出线沿圆周分布） ── */
+// ── 饼图（引出线沿圆周分布） ──
 const PieChart: React.FC<{
   items: { label: string; value: number; color: string }[];
   pieSize?: number;
@@ -201,7 +201,7 @@ const Dashboard: React.FC = () => {
     let cancelled = false;
     // ⚠️ allSettled：单个接口失败不拖垮整页（Promise.all 会整体拒绝导致仪表盘全空）
     Promise.allSettled([
-      // 全部传 limit:'1000'，避免后端默认 limit=100 导致统计静默截断（对齐 DeliveryAnalysis）
+      // 全部传 limit: LIST_LIMIT，避免后端默认 limit=100 导致统计静默截断（对齐 DeliveryAnalysis）
       opportunityService.list({ limit: LIST_LIMIT }),
       deliveryService.list({ limit: LIST_LIMIT }),
       clientService.list({ limit: LIST_LIMIT }),
@@ -304,7 +304,7 @@ const Dashboard: React.FC = () => {
     return result;
   }, [opportunities, last3Months, last3Labels]);
 
-  // −− 近期交付（已完成的项目，按实际完成时间倒序）−−
+  // ── 近期交付（已完成的项目，按实际完成时间倒序）──
   const recentDeliveries = useMemo(() => {
     // 近 2 个月窗口：前两个月首日（避免 setMonth 月末溢出）
     const cutoff = monthsAgoStart(now, 2);
@@ -397,7 +397,7 @@ const Dashboard: React.FC = () => {
     });
     const onTimeRate = [...inFyDels].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).map(p => {
       // 到期节点 = 已完成 或 已超基线（事实延期）；与事实延期判定一致（基线口径，非当前计划）
-      // ⚠️ 每个节点只算一次 getNodeDelay（先前在 filter 与二次 filter 中各算一次）
+      // ⚠️ getNodeDelay 每节点只算一次，结果存入 due 数组复用（不在 filter 与二次 filter 中重复计算）
       const due = (p.nodes || []).map(n => ({ node: n, delay: getNodeDelay(n, now) }));
       const scheduled = due.filter(({ node, delay }) => node.actualDate || delay.delayed);
       const delayedCnt = scheduled.filter(({ delay }) => delay.delayed).length;

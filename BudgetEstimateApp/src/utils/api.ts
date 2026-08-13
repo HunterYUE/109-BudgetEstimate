@@ -3,7 +3,7 @@
  *
  * 命名规范边界：这是前后端 camelCase/snake_case 的转换层。
  * GET 响应自动 toCamel() 转驼峰，POST/PUT body 自动 toSnake() 转蛇形。
- * 所有 API 通信必须走此客户端，禁止直接 fetch()。
+ * 所有 API 通信必须走此客户端；认证接口（login/logout/me）因 HttpOnly cookie 需原生 fetch 除外。
  * 详见 memory/naming-convention-standard.md
  */
 
@@ -104,7 +104,7 @@ async function request<T>(path: string, options?: RequestInit, noCache?: boolean
     throw new ApiError(res.status, body.error || `Request failed (${res.status})`);
   }
 
-  // 204 No Content
+  // 204 无内容 → 直接返回 undefined
   if (res.status === 204) return undefined as T;
 
   const data = await res.json();

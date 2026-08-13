@@ -81,7 +81,7 @@ const ProjectHeader: React.FC<Props> = ({ project, onUpdate, readOnly }) => {
 
   const updater = (field: string) => (e: React.ChangeEvent<HTMLInputElement>) => onUpdate?.(field, e.target?.value ?? e);
 
-  // EUR 汇率：允许输入小数点后再提交（key 变化时重新初始化）
+  // EUR 汇率：本地草稿允许输入小数点，失焦提交时按 parseFloat 校验（非法值回退当前汇率）
   const [eurDraft, setEurDraft] = useState<string>(String(v.eurRate ?? 7.8));
   const commitEur = () => {
     const num = parseFloat(eurDraft);

@@ -52,7 +52,7 @@ interface BubbleHoverInfo {
 }
 
 // ── 工具 ──
-/** 格式化日期为短格式 "M/d" */
+/** 格式化日期为短格式 "YY-MM-DD" */
 const fmtShort = (d: Date) => `${String(d.getFullYear()).slice(2)}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 
 /** 节点状态条颜色：未开始/进行中(含延期)/已完成 */
@@ -61,8 +61,8 @@ const GANTT_STATUS_COLOR: Record<string, string> = {
 };
 
 /**
- * SVG 柱状图 ⚠️ B11：已收敛至 components/charts/VerticalBarChart.tsx 单源
- * （SalesAnalysis 与 DeliveryAnalysis 共用），此处不再重复定义。
+ * ⚠️ B11：通用竖状柱状图已收敛至 components/charts/VerticalBarChart.tsx 单源
+ * （SalesAnalysis 与 DeliveryAnalysis 共用）；此处仅保留利润分组柱状图特殊变体。
  */
 // ── 利润分组柱状图（概算 vs 实际） ──
 export const ProfitChart: React.FC<{
@@ -620,7 +620,7 @@ export const BubbleChart: React.FC<{
         {data.map(d => {
           const cx = pad.left + chartW / 2 + (d.delayDays / maxTick) * chartW / 2;
           const cy = yPos(d.costDeviation);
-          // 直径 = 15 + (金额 - 200万) / 100万 × 5，连续线性映射，钳制 [3, 25]
+          // 直径 = 15 + (金额 - 200万) / 100万 × 5；半径 r = 直径/2，钳制 [3, 25]
           const diff = d.contractAmount - 2000000;
           const dia = 15 + diff / 1000000 * 5;
           const r = Math.max(3, Math.min(25, Math.round(dia / 2)));

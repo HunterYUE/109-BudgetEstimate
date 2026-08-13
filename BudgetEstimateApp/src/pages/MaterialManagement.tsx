@@ -96,7 +96,6 @@ function versionAndLog(form: Partial<Component>, currentCode: string, currentVer
 
 const onCellLock = (w: number) => lockCellWidth(w);
 
-/** 状态 Tab 样式（active 高亮色可配），收敛重复内联样式 */
 // ── 组件 ──
 
 const MaterialManagement: React.FC = () => {
@@ -112,7 +111,7 @@ const MaterialManagement: React.FC = () => {
   const loadMaterials = useCallback(async () => {
     setLoading(true);
     try {
-      // ⚠️ 传 limit:'1000'，避免后端默认 limit=100 导致列表截断
+      // ⚠️ 传 limit: LIST_LIMIT，避免后端默认 limit=100 导致列表截断
       const res = await componentService.list({ limit: LIST_LIMIT });
       if (res) {
         setMaterials(res.map(c => deepClone(c)));

@@ -93,7 +93,7 @@ const SalesAnalysis: React.FC = () => {
 
   const aliveRef = useRef(true);
   const loadAll = useCallback(async () => {
-    // ⚠️ allSettled：单个接口失败不拖垮整页；全部传 limit:'1000' 避免后端默认 limit=100 静默截断
+    // ⚠️ allSettled：单个接口失败不拖垮整页；全部传 limit: LIST_LIMIT 避免后端默认 limit=100 静默截断
     const [opps, qs, dps] = await Promise.allSettled([
       opportunityService.list({ limit: LIST_LIMIT }),
       quotationService.list({ limit: LIST_LIMIT }),
@@ -358,7 +358,7 @@ const SalesAnalysis: React.FC = () => {
     amount: fyWonByTime.reduce((s, o) => s + exAmt(o), 0),
   }), [fyWonByTime]);
 
-  // ── 输单（按输单时间 updatedAt 归入财年）──
+  // ── 输单（按输单时间 lostAt 归入财年，缺失回退 updatedAt）──
   const fyLostByTime = useMemo(() => {
     return allOpps.filter(o => {
       if (o.status !== '输') return false;
@@ -590,10 +590,10 @@ const SalesAnalysis: React.FC = () => {
         <FYSelector value={fySelect} onChange={setFySelect} />
       </div>
 
-      {/* Row 1: 概览卡片 */}
+      {/* 第一行：概览卡片 */}
       <OverviewCards items={overviewItems} />
 
-      {/* Row 2: 漏斗 | 赢单原因 | 输单原因 */}
+      {/* 第二行：漏斗 | 赢单原因 | 输单原因 */}
       <div style={{ display: 'flex', gap: 16, marginBottom: 16, flexWrap: 'wrap' }}>
         <Card size="small"
           title={<span style={{ fontSize: 14, fontWeight: 600 }}>月度订单</span>}
@@ -740,7 +740,7 @@ const SalesAnalysis: React.FC = () => {
         </Card>
       </div>
 
-      {/* Row 3: 销售排行 4×2 网格 */}
+      {/* 第三行：销售排行 4×2 网格 */}
       <div style={{ display: 'flex', flexDirection: 'column' }}>
         <div style={{ display: 'flex', gap: 16, justifyContent: 'center', marginTop: 10 }}>
           <div style={{ flex: '0 0 calc(25% - 12px)' }}><VerticalBarChart title="竞对" data={dimLossReasons} format="num" height={220} topN={7} barWidthRatio={0.6} maxBarWidth={26} hideAvgLine contentOffset={30} padBottom={28} /></div>
@@ -748,7 +748,7 @@ const SalesAnalysis: React.FC = () => {
           <div style={{ flex: '0 0 calc(25% - 12px)' }}><VerticalBarChart title="放弃" data={dimAbandonReasons} format="num" height={220} topN={6} barWidthRatio={0.6} maxBarWidth={26} hideAvgLine contentOffset={30} padBottom={28} /></div>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, marginTop: 15, gridAutoRows: 268 }}>
-          {/* ⚠️ 修复：卡片内容高 = contentOffset(30) + SVG(220) = 250，此前行高仅 250 + overflow:hidden 裁掉底部姓名；行高增至 268 留出姓名完整显示空间 */}
+          {/* ⚠️ 修复：卡片内容高 = contentOffset(30) + SVG(220) = 250，行高 268 给底部姓名留足显示空间（overflow:hidden 不再裁姓名） */}
           <div style={{ overflow: 'hidden' }}><VerticalBarChart title="订单金额" data={dimOrderAmount} format="K" contentOffset={30} /></div>
           <div style={{ overflow: 'hidden' }}><VerticalBarChart title="订单利润" data={dimProfit} format="K" contentOffset={30} /></div>
           <div style={{ overflow: 'hidden' }}><VerticalBarChart title="转化效率" data={dimEfficiency} format="%" contentOffset={30} /></div>

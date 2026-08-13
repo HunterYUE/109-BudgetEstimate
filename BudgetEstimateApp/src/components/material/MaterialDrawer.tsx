@@ -5,7 +5,7 @@ import { COLORS } from '../../styles/colors';
 import { formatMoney } from '../../utils/calculations';
 import { CATEGORY_OPTIONS, STATUS_CONFIG } from './materialConstants';
 
-// ── Detail Drawer ──
+// ── 详情抽屉 ──
 
 interface MaterialDrawerProps {
   item: Component | null;

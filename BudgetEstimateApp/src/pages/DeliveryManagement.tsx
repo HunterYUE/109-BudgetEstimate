@@ -35,7 +35,7 @@ const DeliveryManagement: React.FC = () => {
   const fetchProjects = useCallback(async () => {
     setLoading(true);
     try {
-      // ⚠️ 传 limit:'1000'，避免后端默认 limit=100 导致列表截断
+      // ⚠️ 传 limit: LIST_LIMIT，避免后端默认 limit=100 导致列表截断
       const data = await deliveryService.list({ limit: LIST_LIMIT });
       setProjects(data);
     } catch {

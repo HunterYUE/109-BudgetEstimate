@@ -30,7 +30,7 @@ import { BARE_INPUT_STYLE, tabItemStyle, parseMoneyInput } from '../utils/tableU
 
 const STAGE_OPTIONS = ['信息', '线索', '机会', '投标', '议价', '中标'];
 
-// ⚠️ B14：stageColors 收敛至 utils/constants.ts 的 STAGE_COLORS（与 SalesAnalysis 单源）
+// 状态色（过程中/赢/输/冻结）就地定义；阶段色 STAGE_COLORS 已收敛至 constants.ts（B14，与 SalesAnalysis 单源）
 const statusColors: Record<string, string> = {
 
   过程中: COLORS.primary, 赢: COLORS.success, 输: COLORS.danger, 冻结: COLORS.textLight,
@@ -119,7 +119,7 @@ const SalesOpportunityList: React.FC = () => {
   const [enterpriseClients, setEnterpriseClients] = useState<Array<{ name: string; salesman: string; type?: string }>>([]);
 
   const loadClients = useCallback(() => {
-    // ⚠️ 传 limit:'1000'：客户下拉/企业校验依赖全量客户，默认 100 会截断导致下拉缺失、校验误拒
+    // ⚠️ 传 limit: LIST_LIMIT：客户下拉/企业校验依赖全量客户，默认 100 会截断导致下拉缺失、校验误拒
     clientService.list({ limit: LIST_LIMIT }).then(data => {
       if (data) setEnterpriseClients(data.filter((c: Client) => c.type === 'enterprise'));
     }).catch(() => {});
@@ -135,7 +135,7 @@ const SalesOpportunityList: React.FC = () => {
 
   const loadOpportunities = useCallback(async () => {
     try {
-      // ⚠️ 传 limit:'1000'，避免后端默认 limit=100 导致列表截断（对齐其他页面）
+      // ⚠️ 传 limit: LIST_LIMIT，避免后端默认 limit=100 导致列表截断（对齐其他页面）
       const data = await opportunityService.list({ limit: LIST_LIMIT });
       setOpportunities(data || []);
     } catch { setOpportunities([]); }
@@ -189,9 +189,8 @@ const SalesOpportunityList: React.FC = () => {
   });
 
 
-  // ⚠️ B31 修复：locked/terminated 状态存入 ref，touch 不再依赖 opportunities 数组——
-  //   此前 touch deps=[msg, opportunities]，任何 setOpportunities（如编辑单元格失焦）都会重建 touch
-  //   → columns useMemo 重建 → 整表重渲染（数百行 × 宽 scroll.x 开销大）。锁定状态经 effect 同步，恒为最新
+  // ⚠️ B31 修复：locked/terminated 状态存入 ref，touch 不依赖 opportunities 数组——
+  //   锁定状态经 effect 同步、恒为最新，避免失焦编辑触发 setOpportunities → columns 重建 → 整表重渲染
   const lockedRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     lockedRef.current = new Set(
@@ -580,7 +579,7 @@ const SalesOpportunityList: React.FC = () => {
       }
 
       const createdStage = formData.stage || '信息';
-      // ⚠️ B25 修复：局部变量不与模块级 nowISO() 函数同名（此前局部遮蔽模块函数，易误读）
+      // ⚠️ B25 修复：局部变量不与模块级 nowISO() 函数同名，避免遮蔽误读
       const createdAt = new Date().toISOString();
       const hasStage = (arr: string[]) => arr.includes(createdStage);
       opportunityService.create({
@@ -618,9 +617,8 @@ const SalesOpportunityList: React.FC = () => {
 
 
 
-  // ⚠️ B7 修复：columns 依赖从「opportunities 数组引用」收敛为「销售员+预计结单日期」签名串。
-  //   此前列定义依赖整个数组，失焦改备注/金额（touch→setOpportunities）即重建全部列 → 整表重渲染。
-  //   该签名只在销售员/结单日期集合变化时改变，普通单元格编辑不再触发列重建。
+  // ⚠️ B7 修复：columns 依赖收敛为「销售员+预计结单日期」签名串，而非整个 opportunities 数组——
+  //   签名只在销售员/结单日期集合变化时改变，普通单元格编辑（touch→setOpportunities）不再触发列重建
   const salesDateSignature = opportunities.map(o => `${o.salesman ?? ''}|${o.expectedCloseDate ?? ''}`).join('~');
   // 筛选下拉选项独立 memo，仅依赖「销售员+结单日期」签名串：签名不变即数组引用稳定，
   // columns 依赖这两个稳定数组而非整个 opportunities，普通单元格编辑不触发列重建（B7）
@@ -1292,7 +1290,7 @@ const SalesOpportunityList: React.FC = () => {
                   </div>
                 );
               })()}
-              {/* Comment */}
+              {/* 审核备注 */}
               <div style={{ marginTop: 12, borderTop: `1px solid ${COLORS.borderLight}`, paddingTop: 10 }}>
                 <textarea
                   value={reasonModal.comment || ''}

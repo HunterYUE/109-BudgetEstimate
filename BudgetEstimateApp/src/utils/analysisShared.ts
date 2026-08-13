@@ -126,8 +126,8 @@ export const isProjectDelivered = (p: DeliveryProject): boolean =>
  * - 未完结 → null
  *
  * ⚠️ 业务不变量：节点15决定项目完成（DeliveryDetail「完成项目」按钮仅在全部节点 completed
- * 且成本审批通过时可用，line ~670）；节点切 completed 必写 actualDate/actualEndDate
- * （handleNodeStatusClick，line ~227）。故「项目已完成但节点15缺实际日」在正常流程中不存在；
+ * 且成本审批通过时可用）；节点切 completed 必写 actualDate/actualEndDate
+ * （见 handleNodeStatusClick）。故「项目已完成但节点15缺实际日」在正常流程中不存在；
  * 该 updatedAt 分支仅为异常/历史数据留的代码安全兜底——用最后修改时间近似完成时间，
  * 避免把已完结项目误判为未完结而在后续财年长期算活跃。
  */

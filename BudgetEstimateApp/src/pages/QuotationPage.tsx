@@ -29,7 +29,6 @@ import { STATUS_CONFIG } from '../components/material/materialConstants';
  *  ⚠️ B3 修复：与后端 /opportunities/next-sales-no（A{YYYY}-{MM}-{NNN}-S）及
  *  compressNo 正则 /^A\d{4}-\d{2}-\d{3}-(.)/、confirmDeliver 后缀替换契约统一。
  *  仅用于新建报价草稿的项目占位；正式机会创建时以后端 /next-sales-no 编号为准（会替换此占位符）。
- *  旧实现 A{YYYYMMDD}-{4位}-S 与 compressNo 不匹配，导致交付分析图表编号无法压缩、后端序号提取错位。
  *  转交付后后缀变为 -E，以前缀关联。 */
 function generateSalesNo(): string {
   const now = new Date();
@@ -93,7 +92,7 @@ function buildProjectPayload(p: Project, opts: { withSalesMeta?: boolean } = {})
     deliveryPeriod: p.deliveryPeriod, paymentTerms: p.paymentTerms,
     postfix: p.postfix, note: p.note,
   };
-  // ⚠️ M7 修复：不再发送 versionNo（后端 projects 无该列，此前被静默丢弃），版本信息存于 currentVersion/版本保存
+  // ⚠️ M7 修复：不再发送 versionNo（后端 projects 无该列），版本信息存于 currentVersion/版本保存
   return opts.withSalesMeta
     ? { salesNo: p.salesNo, ...base }
     : base;
@@ -129,7 +128,7 @@ function ConfirmDeleteModal({ title, description, open, onCancel, onConfirm }: {
 }
 
 
-/** Return default fixed groups with default items (from A2026-07-002-S) */
+/** 默认固定组及默认条目（新建报价草稿的初始分组） */
 function getFixedGroups(): Group[] {
   const fi = (o: Partial<GroupItem>): GroupItem => ({
     id: uuid(), itemNo: 0, itemType: 'SERVICE', componentId: '',
@@ -317,7 +316,7 @@ const QuotationPage: React.FC = () => {
               if (opp.terminated) { setQuotationLocked(true); }
               const cn = opp.clientName || '';
               // 从客户列表查找客户编号
-              // ⚠️ 传 limit:'1000'，避免后端默认 limit=100 导致客户列表截断、查不到客户编码
+              // ⚠️ 传 limit: LIST_LIMIT，避免后端默认 limit=100 导致客户列表截断、查不到客户编码
               let cc = '';
               try {
                 const clients = await clientService.list({ limit: LIST_LIMIT });
@@ -338,7 +337,7 @@ const QuotationPage: React.FC = () => {
       } finally { if (!cancelled) setLoading(false); }
     }
     load();
-    // ⚠️ 传 limit:'1000'，避免后端默认 limit=100 导致物料库截断（编码填充/校验依赖全量物料库）
+    // ⚠️ 传 limit: LIST_LIMIT，避免后端默认 limit=100 导致物料库截断（编码填充/校验依赖全量物料库）
     componentService.list({ limit: LIST_LIMIT }).then(d => { if (!cancelled && d) setComponentDB(d); }).catch(() => {});
     return () => { cancelled = true; };
   }, [quoteId]);
@@ -369,7 +368,7 @@ const QuotationPage: React.FC = () => {
         if (comp.hasWarranty !== undefined && comp.hasWarranty !== item.hasWarranty) { updated.hasWarranty = comp.hasWarranty; itemChanged = true; }
         if (comp.unit && comp.unit !== item.unit) { updated.unit = comp.unit; itemChanged = true; }
         if (comp.sourcingType && comp.sourcingType !== item.sourcingType) { updated.sourcingType = comp.sourcingType; itemChanged = true; }
-        // 填充工时费率（从数据库找 t10-1/t10-2 标签项，或使用默认值）
+        // 填充工时费率（按物料编码 SV-DESIGN/SV-INSASS 从物料库取值，缺失回退默认值）
         // ⚠️ 仅当费率 > 0 时填充：0 是合法注册值（unitCost=0 时 ?? 不会回退），
         //    若用 falsy 判断把 0 填进 0 会让 itemChanged 恒真 → effect 重跑 → 无限循环
         if (designRateFromDB > 0 && !updated.designHourRate) { updated.designHourRate = designRateFromDB; itemChanged = true; }
@@ -552,7 +551,7 @@ const QuotationPage: React.FC = () => {
       versionNo,
       salesNo: project.salesNo,
       clientName: project.clientName,
-      // ⚠️ projectName 不可回退到 projectScope（早期数据中 scope 被误填为"2年质保"）
+      // ⚠️ projectName 不可回退到 projectScope（scope 历史数据可能被误填为「2年质保」）
       projectName: project.projectName || project.clientName,
       status,
       amount: summary.discountedPrice || 0,

@@ -21,7 +21,6 @@ const typeColor = (t: string) => t === 'quotation' ? COLORS.primary : t === 'pla
 const TYPE_LABELS: Record<string, string> = { quotation: '报价审批', plan: '实施计划', cost: '成本对比', promote: '转机会审批' };
 const typeLabel = (t: string) => TYPE_LABELS[t] || t;
 
-/** Tab 样式（active 高亮色/文字色可配），收敛 5 个 Tab 的重复内联样式 */
 /** 利润率 Gauge（百分比值，>=20 绿 / >=15 橙 / <15 红） */
 const Gauge: React.FC<{ value: number }> = ({ value }) => {
   const color = value >= 20 ? COLORS.success : value >= 15 ? COLORS.amber : COLORS.danger;
@@ -56,7 +55,7 @@ const ApprovalList: React.FC = () => {
 
   useEffect(() => {
     let cancelled = false;
-    // ⚠️ 全部传 limit:'1000'，避免后端默认 limit=100 导致列表截断
+    // ⚠️ 全部传 limit: LIST_LIMIT，避免后端默认 limit=100 导致列表截断
     approvalService.list({ limit: LIST_LIMIT }).then(res => { if (!cancelled) setRequests(res); }).catch(() => { if (!cancelled) setRequests([]); });
     loadDrafts();
     return () => { cancelled = true; };

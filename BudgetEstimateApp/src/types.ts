@@ -4,7 +4,7 @@ export type SourcingType = 'PURCHASED' | 'SELF_MANUFACTURED';
 // ── 组件类型 ──
 export type ItemType = 'COMPLETE_SET' | 'COMPONENT' | 'PART' | 'SOFTWARE' | 'SERVICE';
 
-// ── 组类型（固定组顺序：集成控制→包装运输→项目交付→其他） ──
+// ── 组类型（设备/集成控制/包装运输/项目交付/实施费用/其他） ──
 export type GroupType = 'EQUIPMENT' | 'INTEGRATION' | 'PACKAGING_TRANSPORT' | 'PROJECT_DELIVERY' | 'IMPLEMENTATION_EXPENSE' | 'OTHER';
 
 // ── 组件目录中的组件 ──
@@ -38,8 +38,8 @@ export interface GroupItem {
   itemNo: number;
   itemType: ItemType;
   componentId: string;
-  code: string;                    // 编码（原name）
-  description: string;             // 描述（原spec）
+  code: string;                    // 编码（DB 列 code）
+  description: string;             // 描述（DB 列 description）
   qtyTotal: number;
   unit: string;
   sourcingType: SourcingType;    // 'SELF_MANUFACTURED'=自制, 'PURCHASED'=外购
@@ -266,10 +266,10 @@ export interface DeliveryProject {
   /** 执行状态三态：未开始/进行中/已完成（延期中为派生维度，见 analysisShared.getProjectDelay） */
   status: '未开始' | '进行中' | '已完成';
   nodes: DeliveryNode[];
-  // 实施计划审批
+  // ── 实施计划审批 ──
   planStatus: 'draft' | 'pending' | 'approved' | 'rejected';
   planApproval?: ApprovalInfo;
-  // 成本对比审批
+  // ── 成本对比审批 ──
   costStatus: 'draft' | 'pending' | 'approved' | 'rejected';
   costApproval?: ApprovalInfo;
   /** 成本审批通过后的实际总成本，由成本对比表审批时写入 */

@@ -8,7 +8,7 @@ import { CATEGORIES, CATEGORY_OPTIONS, TYPE_ABBREV, SOURCES, UNITS } from './mat
 import { LABEL_CELL_STYLE } from '../../styles/colors';
 import { BARE_INPUT_STYLE } from '../../utils/tableUtils';
 
-// ── Edit/Create Modal ──
+// ── 新增/编辑 Modal ──
 
 interface MaterialEditModalProps {
   open: boolean;
@@ -230,7 +230,7 @@ export const MaterialEditModal: React.FC<MaterialEditModalProps> = ({
   );
 };
 
-// ── Delete Confirm Modal ──
+// ── 删除确认 Modal ──
 
 interface MaterialDeleteModalProps {
   item: Component | null;

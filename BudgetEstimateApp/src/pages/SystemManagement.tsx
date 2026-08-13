@@ -77,7 +77,7 @@ const TITLE_ROLE_MAP: Record<string, string> = {
   '普通员工': 'user',
 };
 
-// ── 静态表格列定义（无状态依赖） ──
+// ── 职务选项 ──
 const TITLE_OPTIONS = ['普通员工', '销售经理', '方案经理', '交付经理', '部门总监'];
 
 const SystemManagement: React.FC = () => {
@@ -139,7 +139,7 @@ const SystemManagement: React.FC = () => {
   const loadLogs = useCallback(async () => {
     setLogLoading(true);
     try {
-      // ⚠️ 传 limit:'1000'，避免后端默认 limit=100 导致日志截断
+      // ⚠️ 传 limit: LIST_LIMIT，避免后端默认 limit=100 导致日志截断
       const data = await auditLogService.list({ limit: LIST_LIMIT });
       setLogs(data);
     } catch {

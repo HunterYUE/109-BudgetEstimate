@@ -97,7 +97,7 @@ const DeliveryAnalysis: React.FC = () => {
 
   useEffect(() => {
     let cancelled = false;
-    // 分析页需要最新数据：交付一次取全量（limit=1000）并绕过 api.ts 的 30s GET 缓存
+    // 分析页需要最新数据：交付一次取全量（limit: LIST_LIMIT）并绕过 api.ts 的 30s GET 缓存
     // ⚠️ allSettled：单个接口失败不拖垮整页（Promise.all 会整体拒绝导致整页空白）
     Promise.allSettled([
       deliveryService.list({ limit: LIST_LIMIT }, { noCache: true }),
@@ -167,10 +167,8 @@ const DeliveryAnalysis: React.FC = () => {
         } else if (new Date(n.plannedEndDate) < fyRange.start || new Date(n.plannedStartDate) > fyRange.end) {
           continue;
         }
-        // ⚠️ 到达判定：排除「尚未真正开始」的节点（未到执行阶段）——与状态字段解耦：
-        //   只要未完成、无实际开始日、且计划开始日在未来，就不计为「到达」。
-        //   此前仅排除 status==='pending' 的未来节点；in_progress 但计划在未来且无实际开始日
-        //   （如 A2026-07-003-E 节点5，进行中却计划 09-07 尚未启动）会被误计入到达。
+        // ⚠️ 到达判定：排除「尚未真正开始」的节点——只要未完成、无实际开始日、且计划开始日在未来，
+        //   就不计为「到达」（与状态字段解耦：in_progress 但计划在未来未启动的节点不得误计）。
         //   注：基线已过的未来节点仍计入「延期」（下方 delay 判定独立），符合原设计意图。
         const notStartedYet = n.status !== 'completed' && !n.actualStartDate && new Date(n.plannedStartDate) > now;
         if (!notStartedYet) reached[idx]++;
@@ -395,9 +393,8 @@ const DeliveryAnalysis: React.FC = () => {
       lifecycles.set(p.id, { start, end, exTax });
     }
 
-    // ⚠️ B8 单遍 Map 聚合：并行加权负荷是两两重叠的对称量——每对只算一次、两侧同时累加，
-    // 替代原实现对每个已完成项目重扫全量生命周期（O(C×N) 重复计算）；只处理至少一端已完成的配对，
-    // 非完成项目之间的配对从不影响任何已完成项目的负荷，直接跳过。
+    // ⚠️ B8 单遍 Map 聚合：并行加权负荷是两两重叠的对称量——每对只算一次、两侧同时累加；
+    // 只处理至少一端已完成的配对，非完成项目之间的配对不影响任何已完成项目负荷，直接跳过。
     const weightedLoad = new Map<string, { amount: number; count: number }>();
     const completedIds = new Set(completed.map(c => c.id));
     const lifeArr = [...lifecycles.entries()]; // [id, { start, end, exTax }]

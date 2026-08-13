@@ -40,7 +40,7 @@ const ClientManagement: React.FC = () => {
     setLoading(true);
     try {
       const [data, counts] = await Promise.all([
-        // ⚠️ 传 limit:'1000'，避免后端默认 limit=100 导致列表截断
+        // ⚠️ 传 limit: LIST_LIMIT，避免后端默认 limit=100 导致列表截断
         clientService.list({ limit: LIST_LIMIT }),
         clientService.getContactCounts().catch(() => ({}) as Record<string, number>),
       ]);
@@ -258,7 +258,7 @@ const ClientManagement: React.FC = () => {
     if (!parent) { messageApi.error('未找到母公司'); return; }
     try {
       // ⚠️ B5 修复：自动生成子公司编码时去重——-SUB(n) 递增直到不与现存编码冲突
-      //   （schema UNIQUE(code)，此前固定 -SUB 第二次添加即撞约束返 500）；手动填写的编码仍如实校验
+      //   （schema UNIQUE(code)，固定 -SUB 会撞约束）；手动填写的编码仍如实校验
       let subCode = (subForm.code || '').trim();
       if (!subCode) {
         const taken = new Set(clients.map(c => c.code));

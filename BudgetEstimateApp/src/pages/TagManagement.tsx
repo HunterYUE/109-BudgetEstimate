@@ -415,7 +415,7 @@ const TagManagement: React.FC = () => {
           </table>
         </div>
 
-        {/**_─ 新增标签弹窗 ─_*/}
+        {/* ── 新增标签弹窗 ── */}
         <Modal
           title={<span style={{ fontSize: 17, fontWeight: 600, color: COLORS.textDark, letterSpacing: 0.5 }}>新增标签</span>}
           open={addModalOpen}

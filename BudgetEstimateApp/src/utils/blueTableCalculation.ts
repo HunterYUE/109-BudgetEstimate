@@ -108,7 +108,7 @@ export function calcBlueTableWinRate(blueTable: BlueTable): CalcIntermediate {
     missingCoach: false,
   };
 
-  // Step 1: 否决检查
+  // ── 1 否决检查 ──
   if (blueTable.vetoBudget === 'failed' || blueTable.timelineOption === 'negative') {
     result.vetoed = true;
     result.finalRate = 0;
@@ -121,7 +121,7 @@ export function calcBlueTableWinRate(blueTable: BlueTable): CalcIntermediate {
     return result;
   }
 
-  // Step 2: 角色缺失判断（检查是否有至少一人担任该角色类型）
+  // ── 2 角色缺失判断（是否有至少一人担任该角色类型） ──
   const hasEB = roles.some(r => r.roleType === 'EB');
   const hasCoach = roles.some(r => r.roleType === 'COACH');
   result.missingEB = !hasEB;
@@ -132,7 +132,7 @@ export function calcBlueTableWinRate(blueTable: BlueTable): CalcIntermediate {
   else if (!hasCoach) result.rolePenalty = 0.85;
   else result.rolePenalty = 1.0;
 
-  // Step 3: 支持度加权平均（使用 influenceWeight 直接作为权重）
+  // ── 3 支持度加权平均（influenceWeight 直接作为权重） ──
   let totalWeight = 0;
   let weightedSupport = 0;
 
@@ -151,23 +151,23 @@ export function calcBlueTableWinRate(blueTable: BlueTable): CalcIntermediate {
 
   result.baseSupportScore = (weightedSupport / totalWeight) * 100;
 
-  // Step 4: 反应模式修正
+  // ── 4 反应模式修正 ──
   result.reactionFactor = blueTable.reactionMode === 'OC' ? 0.8 : 1.0;
 
-  // Step 5: 乘法链
+  // ── 5 乘法链 ──
   result.midRate = result.baseSupportScore * result.rolePenalty * result.reactionFactor;
 
-  // Step 6: 价格竞争力修正（加法）
+  // ── 6 价格竞争力修正（加法） ──
   result.pricingAdjustment = PRICING_ADJUSTMENTS[blueTable.pricing] ?? 0;
   const withPricing = result.midRate + result.pricingAdjustment;
 
-  // Step 7: 项目预算扣减（紧张 -5%）
+  // ── 7 项目预算扣减（紧张 -5%） ──
   result.budgetPenalty = blueTable.vetoBudget === 'possible' ? 5 : 0;
-  // Step 8: 项目节点扣减（中性 -5%）
+  // ── 8 项目节点扣减（中性 -5%） ──
   result.timelinePenalty = blueTable.timelineOption === 'neutral' ? 5 : 0;
   const withPenalties = withPricing - result.budgetPenalty - result.timelinePenalty;
 
-  // Step 9: 最终封顶
+  // ── 9 最终封顶 ──
   result.finalRate = Math.max(0, Math.min(90, Math.round(withPenalties)));
   return result;
 }

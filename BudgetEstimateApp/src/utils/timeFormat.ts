@@ -12,7 +12,7 @@ export function formatBeijing(iso: string | Date | undefined | null): string {
     //   得零填充 "2026-08-03 14:30:05"，与 todayBeijing 及历史导出口径一致
     return `${d.toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' })} ${d.toLocaleTimeString('en-GB', { timeZone: 'Asia/Shanghai', hour12: false })}`;
   } catch {
-    // Fallback: manual offset
+    // 兜底：toLocaleString 抛异常时手动加东八区偏移
     const t = d.getTime() + 8 * 3600 * 1000;
     return new Date(t).toISOString().replace('T', ' ').slice(0, 19);
   }

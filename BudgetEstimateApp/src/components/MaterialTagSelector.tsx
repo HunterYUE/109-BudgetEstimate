@@ -114,7 +114,7 @@ const MaterialTagSelector: React.FC<Props> = ({ value, onChange }) => {
             onMouseEnter={e => { if (!sel) e.currentTarget.style.background = '#f5f8ff'; }}
             onMouseLeave={e => { if (!sel) e.currentTarget.style.background = 'transparent'; }}
           >
-            {/* Expand/collapse icon */}
+            {/* 展开/折叠图标 */}
             <div style={{ width: 18, flexShrink: 0, textAlign: 'center', fontSize: 11, color: lc, userSelect: 'none' }}>
               {hasChildren ? (
                 <span onClick={(e) => { e.stopPropagation(); toggleExpand(node.id); }}
@@ -125,7 +125,7 @@ const MaterialTagSelector: React.FC<Props> = ({ value, onChange }) => {
                 <span style={{ width: 18, display: 'inline-block' }} />
               )}
             </div>
-            {/* Indentation + tree lines */}
+            {/* 缩进 + 树状连线 */}
             <div style={{ width: level * 18, flexShrink: 0, position: 'relative' }}>
               {level > 0 && (
                 <svg width={level * 18 + 14} height={28} style={{ position: 'absolute', left: -8, top: -4, pointerEvents: 'none', overflow: 'visible' }}>
@@ -145,14 +145,14 @@ const MaterialTagSelector: React.FC<Props> = ({ value, onChange }) => {
                 </svg>
               )}
             </div>
-            {/* Node name */}
+            {/* 节点名称 */}
             <span style={{
               fontSize: 13, color: sel ? COLORS.primary : lc,
               fontWeight: sel ? 600 : 400, flex: 1,
             }}>
               {node.name}
             </span>
-            {/* Selection indicator */}
+            {/* 选中指示 */}
             <div style={{
               width: 14, height: 14, borderRadius: 3, flexShrink: 0,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
