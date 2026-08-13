@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Tag, Modal } from 'antd';
+import { Tag, App } from 'antd';
 import { HistoryOutlined, SaveOutlined, SendOutlined, DownloadOutlined } from '@ant-design/icons';
 import type { DeliveryNode } from '../types';
 import IconButton from './IconButton';
@@ -60,6 +60,7 @@ const DeliveryNodeTimeline: React.FC<Props> = ({
   onSavePlan, onSubmitPlan, onExportPlan,
   saving = false,
 }) => {
+  const { modal } = App.useApp(); // ⚠️ B24：静态 Modal.info 消费 antd 主题上下文
   const sorted = [...nodes].sort((a, b) => a.nodeNo - b.nodeNo);
   const [editing, setEditing] = useState<{ id: string; field: 'plannedStartDate' | 'plannedEndDate' } | null>(null);
   const [editVal, setEditVal] = useState('');
@@ -75,7 +76,7 @@ const DeliveryNodeTimeline: React.FC<Props> = ({
 
   const showHistory = (node: DeliveryNode) => {
     if (!node.history?.length) return;
-    Modal.info({
+    modal.info({
       title: `${node.name} — 变更历史`,
       width: 500,
       content: (

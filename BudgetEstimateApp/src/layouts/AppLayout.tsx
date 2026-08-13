@@ -3,9 +3,10 @@ import { Layout, Tooltip, Dropdown } from 'antd';
 import ErrorBoundary from '../components/ErrorBoundary';
 import { useAuth } from '../utils/authContext';
 import { canSeeMenu } from '../utils/permissions';
+import { pageLoaders } from '../utils/pageLoaders';
 import { MdOutlineDashboard, MdOutlineSell, MdOutlineRequestQuote, MdOutlineFactCheck,
   MdOutlineCategory, MdOutlineFactory, MdOutlineBarChart, MdOutlineSettings,
-  MdOutlineNotificationsNone, MdOutlineLabel, MdOutlineAssessment, MdOutlineBusinessCenter,
+  MdOutlineLabel, MdOutlineAssessment, MdOutlineBusinessCenter,
   MdOutlineLogout } from 'react-icons/md';
 
 const { Header, Content } = Layout;
@@ -134,21 +135,8 @@ const AppLayout: React.FC = () => {
                 onClick={() => navigate(item.key)}
                 onMouseEnter={e => {
                   if (!isActive) e.currentTarget.style.background = 'rgba(255,255,255,0.06)';
-                  // 悬停时预加载页面 chunk（减少点击后的加载等待）
-                  const pageMap: Record<string, () => Promise<unknown>> = {
-                    '/': () => import('../pages/Dashboard'),
-                    '/analysis': () => import('../pages/SalesAnalysis'),
-                    '/opportunities': () => import('../pages/SalesOpportunityList'),
-                    '/quotations': () => import('../pages/QuotationList'),
-                    '/delivery-analysis': () => import('../pages/DeliveryAnalysis'),
-                    '/delivery': () => import('../pages/DeliveryManagement'),
-                    '/approval': () => import('../pages/ApprovalList'),
-                    '/tags': () => import('../pages/TagManagement'),
-                    '/materials': () => import('../pages/MaterialManagement'),
-                    '/clients': () => import('../pages/ClientManagement'),
-                    '/settings': () => import('../pages/SystemManagement'),
-                  };
-                  pageMap[item.key]?.();
+                  // ⚠️ B9 修复：悬停时预加载页面 chunk（与 App.tsx lazy 路由共用 pageLoaders 单一来源）
+                  pageLoaders[item.key]?.();
                 }}
                 onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = 'transparent'; }}
                 style={{
@@ -182,8 +170,8 @@ const AppLayout: React.FC = () => {
           <span style={{ flex: 1, minWidth: 0, fontSize: 17, fontWeight: 700, color: '#0d1b2a', letterSpacing: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             销售和交付管理系统
           </span>
+          {/* ⚠️ B20 修复：移除无 onClick 死交互的通知铃铛（历史遗留，未接入任何通知系统） */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
-            <MdOutlineNotificationsNone size={20} style={{ color: '#666', cursor: 'pointer' }} />
             <HeaderUserMenu />
           </div>
         </Header>

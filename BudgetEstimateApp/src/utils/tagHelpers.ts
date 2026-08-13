@@ -6,8 +6,9 @@ function cloneTree(nodes: TagNode[]): TagNode[] {
   return nodes.map(n => ({ ...n, children: n.children ? cloneTree(n.children) : undefined }));
 }
 
-function uid(): string {
-  return 't-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 5);
+/** 全局唯一 ID（B13：取代各组件自带的 makeId/safeId 实现；prefix 用于语义区分，如 uid('mat')） */
+export function uid(prefix: string = 't'): string {
+  return prefix + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 5);
 }
 
 function findPath(nodes: TagNode[], id: string): number[] | null {
@@ -70,4 +71,4 @@ export function flattenTree(nodes: TagNode[], level: number = 0, parentIsLast: b
   return result;
 }
 
-export { cloneTree, findPath, getNodeByPath, uid };
+export { cloneTree, findPath, getNodeByPath };

@@ -6,6 +6,7 @@ import { formatMoney } from '../utils/calculations';
 import { deliveryService } from '../services/deliveryService';
 import type { DeliveryProject } from '../types';
 import { COLORS } from '../styles/colors';
+import { STATUS_CONFIG } from '../components/material/materialConstants';
 import { getProjectDelay } from '../utils/analysisShared';
 import { tabItemStyle } from '../utils/tableUtils';
 
@@ -15,17 +16,11 @@ const statusTag: Record<string, { label: string; color: string }> = {
   '已完成': { label: '已完成', color: 'green' },
 };
 
-const statusLabelMap: Record<string, string> = {
-  draft: '待提交', pending: '待审批', approved: '已通过', rejected: '已驳回',
-};
-const statusColorMap: Record<string, string> = {
-  draft: COLORS.textLight, pending: COLORS.warning, approved: COLORS.success, rejected: COLORS.danger,
-};
-
-/** 审批状态徽标（草稿可自定义标签，如成本对比显示"草稿"） */
+/** 审批状态徽标（草稿可自定义标签，如成本对比显示"草稿"；⚠️ B12：label/color 收敛至 STATUS_CONFIG 单源） */
 const StatusBadge: React.FC<{ status: string; draftLabel?: string }> = ({ status, draftLabel }) => {
-  const label = status === 'draft' && draftLabel ? draftLabel : (statusLabelMap[status] || status);
-  return <span style={{ color: statusColorMap[status] || COLORS.textLight, fontWeight: 600 }}>{label}</span>;
+  const cfg = STATUS_CONFIG[status];
+  const label = status === 'draft' && draftLabel ? draftLabel : (cfg?.label || status);
+  return <span style={{ color: cfg?.color || COLORS.textLight, fontWeight: 600 }}>{label}</span>;
 };
 
 const DeliveryManagement: React.FC = () => {

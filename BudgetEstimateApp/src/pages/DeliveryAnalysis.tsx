@@ -7,7 +7,8 @@ import { COLORS } from '../styles/colors';
 import { NODE_DISPLAY_NAMES } from '../utils/constants';
 import { parseFY, FYSelector, fiscalYearLabel } from '../utils/fiscalYear';
 import { fmtK, compressNo, chartLabel, monthEndOf, getNodeBaseline, getNodeDelay, getProjectDelay, isProjectDelivered, getProjectDoneDate, quoteProfitExTax, deliverySalesProfit, buildQuoteInfoMap, deliveryExTax } from '../utils/analysisShared';
-import { VerticalBarChart, ProfitChart, ProjectGantt, BubbleChart } from '../components/charts/DeliveryCharts';
+import { ProfitChart, ProjectGantt, BubbleChart } from '../components/charts/DeliveryCharts';
+import { VerticalBarChart } from '../components/charts/VerticalBarChart';
 import type { ProfitItem, BubbleDataItem } from '../components/charts/DeliveryCharts';
 import { OverviewCards, type KpiCardItem } from '../components/shared/OverviewCards';
 import useMediaQuery from '../utils/useMediaQuery';
@@ -401,36 +402,48 @@ const DeliveryAnalysis: React.FC = () => {
       lifecycles.set(p.id, { start, end, exTax });
     }
 
+    // ⚠️ B8 单遍 Map 聚合：并行加权负荷是两两重叠的对称量——每对只算一次、两侧同时累加，
+    // 替代原实现对每个已完成项目重扫全量生命周期（O(C×N) 重复计算）；只处理至少一端已完成的配对，
+    // 非完成项目之间的配对从不影响任何已完成项目的负荷，直接跳过。
+    const weightedLoad = new Map<string, { amount: number; count: number }>();
+    const completedIds = new Set(completed.map(c => c.id));
+    const lifeArr = [...lifecycles.entries()]; // [id, { start, end, exTax }]
+    for (const [id, lc] of lifeArr) {
+      weightedLoad.set(id, { amount: lc.exTax, count: 1 }); // 自身贡献
+    }
+    for (let i = 0; i < lifeArr.length; i++) {
+      const [idA, a] = lifeArr[i];
+      for (let j = i + 1; j < lifeArr.length; j++) {
+        const [idB, b] = lifeArr[j];
+        if (!completedIds.has(idA) && !completedIds.has(idB)) continue;
+        const overlapStart = Math.max(a.start.getTime(), b.start.getTime());
+        const overlapEnd = Math.min(a.end.getTime(), b.end.getTime());
+        const overlapDuration = Math.max(0, overlapEnd - overlapStart);
+        if (overlapDuration <= 0) continue;
+        // ⚠️ 防止同日创建/完成的项目 duration=0 导致并行度除零得 Infinity
+        const durA = Math.max(1, a.end.getTime() - a.start.getTime());
+        const durB = Math.max(1, b.end.getTime() - b.start.getTime());
+        const loadA = weightedLoad.get(idA)!;
+        const loadB = weightedLoad.get(idB)!;
+        const fracA = overlapDuration / durA;
+        const fracB = overlapDuration / durB;
+        loadA.amount += b.exTax * fracA; loadA.count += fracA;
+        loadB.amount += a.exTax * fracB; loadB.count += fracB;
+      }
+    }
+
     return completed.map(p => {
       const lc = lifecycles.get(p.id); if (!lc) return null;
       // null items 在末尾 filter(Boolean) 剔除
-      // ⚠️ 防止同日创建/完成的项目 duration=0 导致并行度除零得 Infinity
-      const projDuration = Math.max(1, lc.end.getTime() - lc.start.getTime());
-
+      const wl = weightedLoad.get(p.id);
       const projDelay = calcProjDelay(p);
       const exTax = deliveryExTax(p, deliveryQuoteInfo);
       const estTotal = grandEstimatedOf(p, deliveryQuoteInfo);
       const costDev = p.costStatus === 'approved' && p.totalActualCost != null && estTotal > 0
         ? (p.totalActualCost - estTotal) / estTotal * 100 : 0;
 
-      // 时间加权并行计算
-      let weightedAmount = 0;
-      let weightedCount = 0;
-
-      for (const [otherId, otherLc] of lifecycles) {
-        if (otherId === p.id) { weightedAmount += otherLc.exTax; weightedCount += 1; continue; }
-
-        const overlapStart = Math.max(lc.start.getTime(), otherLc.start.getTime());
-        const overlapEnd = Math.min(lc.end.getTime(), otherLc.end.getTime());
-        const overlapDuration = Math.max(0, overlapEnd - overlapStart);
-
-        if (overlapDuration <= 0) continue;
-
-        const overlapFrac = overlapDuration / projDuration;
-        weightedAmount += otherLc.exTax * overlapFrac;
-        weightedCount += overlapFrac;
-      }
-
+      const weightedAmount = wl?.amount ?? 0;
+      const weightedCount = wl?.count ?? 0;
       const capacityRaw = weightedAmount * (1 + k * Math.max(0, weightedCount - 1));
 
       return {
@@ -467,10 +480,12 @@ const DeliveryAnalysis: React.FC = () => {
                 height={CARD_H} chartWidth={702} contentOffset={40} />
               <VerticalBarChart title="延期天数" data={projectDelayDays}
                 format="num" height={CARD_H} topN={15} barWidthRatio={0.75}
-                maxBarWidth={40} chartWidth={702} contentOffset={40} hideAvgLine padTop={25} padBottom={35} barLabelGap={10} />
+                maxBarWidth={40} chartWidth={702} contentOffset={40} hideAvgLine padTop={25} padBottom={35} barLabelGap={10}
+                padLeft={36} padRight={6} hoverable centeredSvg />
               <VerticalBarChart title="节点分析" data={nodeBottleneck}
                 format="num" height={CARD_H} topN={15} barWidthRatio={0.75}
-                maxBarWidth={40} chartWidth={702} contentOffset={40} hideAvgLine padTop={25} padBottom={35} disableSort />
+                maxBarWidth={40} chartWidth={702} contentOffset={40} hideAvgLine padTop={25} padBottom={35} disableSort
+                padLeft={36} padRight={6} hoverable centeredSvg />
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16, flex: 1, minWidth: 0 }}>
               <BubbleChart data={bubbleData} height={BUBBLE_SVG_H} canvasHeight={BUBBLE_CANVAS_H} bodyPadTop={37} bodyPadBottom={25} />

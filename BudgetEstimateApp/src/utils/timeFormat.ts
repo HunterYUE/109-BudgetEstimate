@@ -2,10 +2,10 @@
  * 时间格式化工具函数
  */
 
-/** 将 ISO 时间戳格式化为北京时间字符串 "yyyy-MM-dd HH:mm:ss" */
-export function formatBeijing(iso: string | undefined | null): string {
+/** 将 ISO 时间戳或 Date 格式化为北京时间字符串 "yyyy-MM-dd HH:mm:ss"（B26：直接接受 Date，免调用方先 toISOString 走 UTC 往返） */
+export function formatBeijing(iso: string | Date | undefined | null): string {
   if (!iso) return '—';
-  const d = new Date(iso);
+  const d = iso instanceof Date ? iso : new Date(iso);
   if (isNaN(d.getTime())) return '—';
   try {
     return d.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }).replace(/\//g, '-');

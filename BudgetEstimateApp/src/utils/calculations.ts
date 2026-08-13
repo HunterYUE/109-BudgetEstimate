@@ -1,4 +1,5 @@
 import type { Group, GroupItem } from '../types';
+import { TAX_RATE } from './constants';
 
 /** 直接成本 = 物料成本×数量 + 设计工时×费率 + 装配工时×费率×数量 */
 export function calcDirectCost(item: {
@@ -120,7 +121,7 @@ export function calcProjectSummary(
     ? (totalAccountingPrice - discountedPriceV) / totalAccountingPrice
     : 0;
 
-  const taxRate = version.taxRate ?? 0.13;
+  const taxRate = version.taxRate ?? TAX_RATE;
   const totalCost = totalDirectCost + warrantyCost + riskCost + commercialCost;
 
   // 输出含税值（总成本也需 × (1+税率) 才能与含税收入一致口径）
@@ -168,8 +169,8 @@ export function computeDeliveryEstGP3(
   groups: Group[],
   version?: { warrantyRate?: number; riskRate?: number; taxRate?: number; commercialCost?: number }
 ): { exTax: number; totalEstimated: number; warrantyCost: number; riskCost: number; commercialCost: number; grandEstimated: number; estGP3: number } {
-  const TAX_RATE = version?.taxRate ?? 0.13;
-  const exTax = Math.round(contractAmount / (1 + TAX_RATE));
+  const taxRate = version?.taxRate ?? TAX_RATE;
+  const exTax = Math.round(contractAmount / (1 + taxRate));
 
   // ⚠️ 质保/风险/商业费用统一走 computeCostComponents（防与 calcProjectSummary / buildCostLines 口径漂移）
   const { totalDirectCost: totalEstimated, warrantyCost, riskCost, commercialCost } = computeCostComponents(groups, version ?? {});

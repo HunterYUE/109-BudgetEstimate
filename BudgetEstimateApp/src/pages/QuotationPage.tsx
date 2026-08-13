@@ -12,25 +12,29 @@ import { quotationService } from '../services/quotationService';
 import { opportunityService } from '../services/opportunityService';
 import { approvalService } from '../services/approvalService';
 import { clientService } from '../services/clientService';
-import type { Group, GroupItem, Project, ProjectVersion, Component, Client, ReviewStatus } from '../types';
+import type { Group, GroupItem, Project, ProjectVersion, Component, Client } from '../types';
 import { calcProjectSummary, calcDirectCost, calcItemPrices, type ProjectSummary } from '../utils/calculations';
 import { clearCache } from '../utils/api';
 import { projectService } from '../services/projectService';
 import IconButton from '../components/IconButton';
 import { COLORS } from '../styles/colors';
 import { exportHtmlTable } from '../utils/exportToExcel';
-import { DEFAULT_DESIGN_HOURLY_RATE, DEFAULT_ASSEMBLY_HOURLY_RATE } from '../utils/constants';
+import { DEFAULT_DESIGN_HOURLY_RATE, DEFAULT_ASSEMBLY_HOURLY_RATE, TAX_RATE } from '../utils/constants';
+import { STATUS_CONFIG } from '../components/material/materialConstants';
 
 
-/** 生成销售编号：A{年份}-{月份}-{4位流水}-S（销售阶段）
- *  转交付后后缀变为 -E，以前缀关联 */
+/** 生成销售编号占位符：A{年份}-{月份}-{3位流水}-S（销售阶段）
+ *  ⚠️ B3 修复：与后端 /opportunities/next-sales-no（A{YYYY}-{MM}-{NNN}-S）及
+ *  compressNo 正则 /^A\d{4}-\d{2}-\d{3}-(.)/、confirmDeliver 后缀替换契约统一。
+ *  仅用于新建报价草稿的项目占位；正式机会创建时以后端 /next-sales-no 编号为准（会替换此占位符）。
+ *  旧实现 A{YYYYMMDD}-{4位}-S 与 compressNo 不匹配，导致交付分析图表编号无法压缩、后端序号提取错位。
+ *  转交付后后缀变为 -E，以前缀关联。 */
 function generateSalesNo(): string {
   const now = new Date();
   const year = now.getFullYear();
   const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  const seq = String(Math.floor(Math.random() * 9000) + 1000).padStart(4, '0');
-  return `A${year}${month}${day}-${seq}-S`;
+  const seq = String(Math.floor(Math.random() * 900) + 100).padStart(3, '0');
+  return `A${year}-${month}-${seq}-S`;
 }
 
 
@@ -50,14 +54,6 @@ function renumberEquipGroups(groups: Group[]): Group[] {
 function isTempGroupId(id: string): boolean {
   return /^(grp-|proj-|-)/.test(id);
 }
-
-/** 审核状态展示配置（标签/背景色/文字色） */
-const REVIEW_STATUS_META: Record<ReviewStatus, { label: string; bg: string; color: string }> = {
-  draft:    { label: '草稿',   bg: COLORS.bgTag,      color: COLORS.textSecondary },
-  pending:  { label: '待审批', bg: '#fff3e0',         color: COLORS.warning },
-  approved: { label: '已通过', bg: '#e8f5e9',         color: COLORS.success },
-  rejected: { label: '已驳回', bg: '#ffebee',         color: COLORS.danger },
-};
 
 /** 由汇总值构建版本保存载荷（统一 handleSave/handleSubmit 三处 saveVersion 字段映射，避免重复漂移） */
 function buildVersionPayload(
@@ -199,7 +195,7 @@ const initProject = (): Project => {
   const blankVersion = {
     id: 'v-' + crypto.randomUUID().slice(0, 6),
     versionNo: 'V1.0',
-    eurRate: 7.8, taxRate: 0.13, roundingDigits: 0,
+    eurRate: 7.8, taxRate: TAX_RATE, roundingDigits: 0,
     warrantyRate: 0.01, riskRate: 0.03, commercialCost: 0,
     totalDirectCost: 0, totalAccountingPrice: 0,
     discountedPrice: 0, discountRate: 0,
@@ -218,7 +214,7 @@ const initProject = (): Project => {
 
 /** 默认版本（无数据时 fallback） */
 const FALLBACK_VERSION: ProjectVersion = {
-  id: '', versionNo: 'V1.0', eurRate: 8.15, taxRate: 0.13, roundingDigits: 0,
+  id: '', versionNo: 'V1.0', eurRate: 8.15, taxRate: TAX_RATE, roundingDigits: 0,
   warrantyRate: 0.01, riskRate: 0.03, commercialCost: 0,
   totalDirectCost: 0, totalAccountingPrice: 0, discountedPrice: 0, discountRate: 0,
   gp3ProfitRate: 0, gp3Amount: 0, reviewStatus: 'draft',
@@ -338,7 +334,9 @@ const QuotationPage: React.FC = () => {
 
   /**
    * 当物料编码匹配数据库时，自动填充成本/工时/质保/采购方式。
-   * 幂等：仅在字段为 0/空 时填充，填充后再触发本 effect 也不会二次修改（防止无限循环）。
+   * 幂等——数值字段（成本/工时）仅当前值为 0/空 时填充，填充后再触发本 effect 不会二次修改（防止无限循环）；
+   * ⚠️ B6 语义澄清：枚举/布尔字段（质保/单位/采购方式）走「与数据库不一致即对齐」的"不等匹配回填"，
+   *   与"仅 0/空 才填充"不同——选错类型时点击编码即纠正为库内配置，而非保留旧值。两条规则均有防循环保证。
    */
   useEffect(() => {
     if (!project || componentMap.size === 0) return;
@@ -704,7 +702,7 @@ const QuotationPage: React.FC = () => {
         totalCost: submitSummary.totalCost,
         profitRate: Math.round((submitSummary.gp3 || 0) * 10000) / 100,
         gp3: submitSummary.gp3,
-        taxRate: curVer?.taxRate || 0.13,
+        taxRate: curVer?.taxRate || TAX_RATE,
         totalAccountingPrice: submitSummary.totalAccountingPrice,
         discountedPrice: submitSummary.discountedPrice || 0,
         discountRate: submitSummary.discountRate || 0,
@@ -814,10 +812,10 @@ const QuotationPage: React.FC = () => {
             <span style={{ fontSize: 17, fontWeight: 700, color: COLORS.textDark }}>报价编制</span>
             <span style={{
               fontSize: 12, fontWeight: 600, padding: '2px 10px', borderRadius: 4,
-              background: REVIEW_STATUS_META[project.currentVersion.reviewStatus].bg,
-              color: REVIEW_STATUS_META[project.currentVersion.reviewStatus].color,
+              background: STATUS_CONFIG[project.currentVersion.reviewStatus].bg,
+              color: STATUS_CONFIG[project.currentVersion.reviewStatus].color,
             }}>
-              {REVIEW_STATUS_META[project.currentVersion.reviewStatus].label}
+              {STATUS_CONFIG[project.currentVersion.reviewStatus].label}
             </span>
             {isLocked && (
               <span style={{

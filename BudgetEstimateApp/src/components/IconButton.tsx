@@ -1,5 +1,6 @@
 import React from 'react';
 import { COLORS } from '../styles/colors';
+import { withAlpha } from '../utils/color';
 
 interface IconButtonProps {
   icon: React.ReactNode;
@@ -12,19 +13,12 @@ interface IconButtonProps {
   loading?: boolean;
 }
 
-/** 将 hex 颜色转为 rgba 半透明 */
-function hexToRgba(hex: string, alpha: number): string {
-  const v = parseInt(hex.replace('#', ''), 16);
-  const r = (v >> 16) & 0xff, g = (v >> 8) & 0xff, b = v & 0xff;
-  return `rgba(${r},${g},${b},${alpha})`;
-}
-
 const IconButton: React.FC<IconButtonProps> = ({
   icon, onClick, color = COLORS.primary, hoverBg,
   title, size = 36, disabled = false,
   loading = false,
 }) => {
-  const bg = hoverBg || hexToRgba(color, 0.08);
+  const bg = hoverBg || withAlpha(color, 0.08);
 
   return (
     <div

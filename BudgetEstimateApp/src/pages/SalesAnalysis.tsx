@@ -3,7 +3,8 @@ import { Card, Spin, message } from 'antd';
 import { FiLayers, FiDollarSign, FiPercent, FiClock, FiTarget } from 'react-icons/fi';
 import type { SalesOpportunity, QuotationSummary, DeliveryProject } from '../types';
 import { parseReasons, REASON_TAXONOMY } from '../reasonTaxonomy';
-import { SalesFunnel, VerticalBarChart, type BarItem } from '../components/charts/SalesCharts';
+import { SalesFunnel } from '../components/charts/SalesCharts';
+import { VerticalBarChart, type BarItem } from '../components/charts/VerticalBarChart';
 import { OverviewCards } from '../components/shared/OverviewCards';
 import { opportunityService } from '../services/opportunityService';
 import { quotationService } from '../services/quotationService';
@@ -11,16 +12,13 @@ import { deliveryService } from '../services/deliveryService';
 import { COLORS } from '../styles/colors';
 import { parseFY, FYSelector, fiscalYearLabel } from '../utils/fiscalYear';
 import { fmtK, oppEffectiveEnd, isRealWin, monthEndOf, exAmount, stageAsOf, getProjectDoneDate, fyMonthWindows, FY_MONTH_LABELS, projectMonthlySales, deliverySalesProfit, quoteProfitExTax, buildQuoteInfoMap, deliveryExTax } from '../utils/analysisShared';
+import { STAGE_COLORS } from '../utils/constants';
 import { settingsService, type UserSettings } from '../services/settingsService';
 
 /* ============================================================
    常量
    ============================================================ */
-const stageColors: Record<string, string> = {
-  信息: COLORS.textLight, 线索: COLORS.primary, 机会: COLORS.purple,
-  投标: COLORS.warning, 议价: COLORS.amber, 中标: COLORS.success,
-};
-// ⚠️ '中标' 为占位桶：stageAsOf 只到'议价'（无中标阶段时间戳），该桶恒 0；赢单累计由 won 折线展示，勿据此推断缺陷
+// ⚠️ B14：stageColors 收敛至 utils/constants.ts 的 STAGE_COLORS（与 SalesOpportunityList 单源）
 const STAGES = ['信息', '线索', '机会', '投标', '议价', '中标'] as const;
 
 // localStorage 输入的 parseInt 保护
@@ -298,7 +296,7 @@ const SalesAnalysis: React.FC = () => {
       stage,
       count: byStage.get(stage)!.count,
       amount: byStage.get(stage)!.amount,
-      color: stageColors[stage] || COLORS.textLight,
+      color: STAGE_COLORS[stage] || COLORS.textLight,
     }));
   }, [currentPipeline, fyRange]);
 

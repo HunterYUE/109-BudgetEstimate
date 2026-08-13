@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { Tag, Card, Button, message, Modal, ConfigProvider, Spin, Switch } from 'antd';
+import { Tag, Card, Button, message, Modal, ConfigProvider, Spin, Switch, App } from 'antd';
 import { ScheduleOutlined, AuditOutlined, SendOutlined, SaveOutlined, ArrowLeftOutlined, DownloadOutlined, UploadOutlined, EyeOutlined, DeleteOutlined, CheckOutlined, CloseOutlined, LockOutlined, UnlockOutlined } from '@ant-design/icons';
 import { formatMoney, computeDeliveryEstGP3 } from '../utils/calculations';
 import { approvalService } from '../services/approvalService';
@@ -11,24 +11,19 @@ import { api, clearCache } from '../utils/api';
 import DeliveryNodeTimeline from '../components/DeliveryNodeTimeline';
 import IconButton from '../components/IconButton';
 import ItemCostTable from '../components/ItemCostTable';
-import type { DeliveryProject, DeliveryNode, NodeChangeEntry, Group, ProjectVersion, ReviewStatus } from '../types';
+import type { DeliveryProject, DeliveryNode, NodeChangeEntry, Group, ProjectVersion } from '../types';
 import { COLORS } from '../styles/colors';
+import { STATUS_CONFIG } from '../components/material/materialConstants';
 import { getNodeDelay, getProjectDelay } from '../utils/analysisShared';
 import { buildCostLines } from '../utils/costBreakdown';
-import { DEFAULT_DESIGN_HOURLY_RATE, DEFAULT_ASSEMBLY_HOURLY_RATE } from '../utils/constants';
+import { DEFAULT_DESIGN_HOURLY_RATE, DEFAULT_ASSEMBLY_HOURLY_RATE, TAX_RATE } from '../utils/constants';
 import { exportHtmlTable } from '../utils/exportToExcel';
 import { deliveryFileService, type DeliveryFile } from '../services/deliveryFileService';
-import { todayBeijing } from '../utils/timeFormat';
+import { todayBeijing, formatBeijing } from '../utils/timeFormat';
 import { useAuth } from '../utils/authContext';
 import { tabItemStyle } from '../utils/tableUtils';
 
 const STATUS_CYCLE: DeliveryNode['status'][] = ['pending', 'in_progress', 'completed'];
-const STATUS_LABELS: Record<ReviewStatus, { label: string; color: string }> = {
-  draft: { label: '草稿', color: COLORS.textSecondary },
-  pending: { label: '待审批', color: COLORS.warning },
-  approved: { label: '已通过', color: COLORS.success },
-  rejected: { label: '已驳回', color: COLORS.danger },
-};
 
 /** 附件类型配置（short=徽标短名，color=徽标底色） */
 const ATTACHMENT_TYPES = [
@@ -53,8 +48,9 @@ function buildChangeEntry(
     (startChanged && endChanged ? ', ' : '') +
     (endChanged ? '结束: ' + change.newEndVal : '');
   const now = new Date();
-  const beijingDate = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' });
-  const beijingTs = new Date(now.getTime() + 8 * 3600 * 1000).toISOString().replace('T', ' ').slice(0, 19);
+  // ⚠️ B17 修复：北京日期/时间戳复用 utils/timeFormat（todayBeijing/formatBeijing），弃手动 +8h 与 toLocaleDateString 双实现
+  const beijingDate = todayBeijing();
+  const beijingTs = formatBeijing(now);
   return { id: crypto.randomUUID(), field: 'plannedDate', oldValue: oldDesc, newValue: newDesc, changedAt: beijingDate, modifier, changedAtFull: beijingTs };
 }
 
@@ -62,6 +58,7 @@ const DeliveryDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [msg, ctx] = message.useMessage();
+  const { modal } = App.useApp(); // ⚠️ B24：静态 Modal.confirm 消费 antd 主题上下文
   const location = useLocation();
   // 从 sessionStorage 恢复 tab（刷新后保留），其次从 location.state（从父页面跳转），最后默认 plan
   const [tab, setTab] = useState<'plan' | 'cost' | 'files'>(() => {
@@ -182,7 +179,7 @@ const DeliveryDetail: React.FC = () => {
   const handleRemoveFile = (fileId: string) => {
     if (!id) return;
     // ⚠️ 附件删除不可恢复，需确认（合同/协议等关键文件误删即永久丢失）
-    Modal.confirm({
+    modal.confirm({
       title: '确认删除该附件？',
       content: '删除后不可恢复。',
       okText: '删除',
@@ -223,7 +220,7 @@ const DeliveryDetail: React.FC = () => {
     if (!quotationProject) return undefined;
     const v = quotationProject.currentVersion || quotationProject.versions?.[0];
     if (!v) return undefined;
-    return { warrantyRate: v.warrantyRate ?? 0, riskRate: v.riskRate ?? 0, taxRate: v.taxRate ?? 0.13, commercialCost: v.commercialCost ?? 0 };
+    return { warrantyRate: v.warrantyRate ?? 0, riskRate: v.riskRate ?? 0, taxRate: v.taxRate ?? TAX_RATE, commercialCost: v.commercialCost ?? 0 };
   }, [quotationProject]);
 
   /** 报价版本完整财务数据（用于审批创建） */
@@ -450,7 +447,7 @@ const DeliveryDetail: React.FC = () => {
       profitRate: Math.round(gp3ProfitRate * 10000) / 100,
       gp3: gp3ProfitRate,
       versionNo: ver?.versionNo || '',
-      taxRate: quotationVersion?.taxRate ?? 0.13,
+      taxRate: quotationVersion?.taxRate ?? TAX_RATE,
       totalAccountingPrice: totalAccountingPrice,
       discountedPrice: discountedPrice,
       discountRate: ver?.discountRate || 0,
@@ -488,7 +485,7 @@ const DeliveryDetail: React.FC = () => {
       return;
     }
     const ver = quotationVersionFull;
-    const taxRate = quotationVersion?.taxRate ?? 0.13;
+    const taxRate = quotationVersion?.taxRate ?? TAX_RATE;
     const actProfit = exTax - grandActual;                // 未税利润（与概览条一致）
     const actGP3 = exTax > 0 ? actProfit / exTax : 0;    // GP3（未税=含税）
     // gp3Amount 存含税利润，gp3 存费率（未税/含税相同 totalCost 存未税值供对照）
@@ -615,7 +612,7 @@ const DeliveryDetail: React.FC = () => {
   const renderApprovalBar = (type: 'plan' | 'cost') => {
     const status = type === 'plan' ? project.planStatus : project.costStatus;
     const label = type === 'plan' ? '实施计划' : '成本对比';
-    const cfg = STATUS_LABELS[status];
+    const cfg = STATUS_CONFIG[status];
 
     return (
       <div style={{
@@ -666,7 +663,7 @@ const DeliveryDetail: React.FC = () => {
             )}
             {project.status !== '已完成' && project.nodes.every(n => n.status === 'completed') && project.costStatus === 'approved' && (
               <span onClick={() => {
-                Modal.confirm({
+                modal.confirm({
                   title: '确认完成项目',
                   content: '所有节点已完成且成本对比已审批通过。确认将此项目标记为已完成？',
                   okText: '确认完成',

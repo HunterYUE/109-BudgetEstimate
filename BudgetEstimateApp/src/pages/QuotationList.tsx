@@ -8,16 +8,9 @@ import { formatBeijing } from '../utils/timeFormat';
 import { parseFY, FYSelector, fiscalYearLabel } from '../utils/fiscalYear';
 import type { QuotationSummary } from '../types';
 import { COLORS } from '../styles/colors';
+import { STATUS_CONFIG } from '../components/material/materialConstants';
 import { BARE_INPUT_STYLE } from '../utils/tableUtils';
 import { tabItemStyle } from '../utils/tableUtils';
-
-const statusConfig: Record<string, { label: string; color: string }> = {
-  draft:    { label: '草稿',   color: COLORS.textSecondary },
-  pending:  { label: '待审批', color: COLORS.warning },
-  approved: { label: '已通过', color: COLORS.success },
-  rejected: { label: '已驳回', color: COLORS.danger },
-};
-
 
 const QuotationList: React.FC = () => {
   const navigate = useNavigate();
@@ -80,7 +73,7 @@ const QuotationList: React.FC = () => {
     {
       title: '状态', dataIndex: 'status', width: 80, align: 'center' as const,
       render: (v: string) => {
-        const cfg = statusConfig[v] || { label: v, color: COLORS.textLight };
+        const cfg = STATUS_CONFIG[v] || { label: v, color: COLORS.textLight };
         return <Tag color={cfg.color}>{cfg.label}</Tag>;
       },
     },

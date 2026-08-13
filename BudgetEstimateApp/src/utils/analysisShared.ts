@@ -1,7 +1,10 @@
 import type { SalesOpportunity, DeliveryNode, DeliveryProject } from '../types';
+import { TAX_RATE } from './constants';
 
+/** 千单位数字（不带 K 后缀）：1234 → "1"（⚠️ B18：DeliveryCharts 旧 fmtKNum 与本函数重复，收敛共用） */
+export const fmtKBase = (v: number) => Math.round(v / 1000).toLocaleString();
 /** 格式化数字为千单位显示（如 1234 → "1K"） */
-export const fmtK = (v: number) => Math.round(v / 1000).toLocaleString() + 'K';
+export const fmtK = (v: number) => fmtKBase(v) + 'K';
 /** 压缩销售编号：A2026-07-003-S → 2607003S */
 export const compressNo = (sn: string | undefined | null): string => {
   const m = sn && sn.match(/^A(\d{4})-(\d{2})-(\d{3})-(.)(-.)?$/);
@@ -34,7 +37,7 @@ export const monthEndOf = (year: number, month: number): Date =>
 
 /** 未税金额：含税 ÷ (1+税率)，缺省 13%（全应用统一未税口径） */
 export const exAmount = (v: number, taxRate?: number): number =>
-  Math.round(v / (1 + (taxRate ?? 0.13)));
+  Math.round(v / (1 + (taxRate ?? TAX_RATE)));
 
 /** 机会在指定时间点的阶段：取"进入阶段时间 ≤ 该时间"的最高阶段（议价→投标→机会→线索→信息） */
 export const stageAsOf = (o: SalesOpportunity, date: Date): string => {
@@ -176,7 +179,7 @@ export const buildQuoteInfoMap = <T extends { id: string; quotationId?: string }
     if (!e.quotationId) continue;
     const q = quoteById(e.quotationId);
     if (!q) continue;
-    const taxRate = q.taxRate ?? 0.13;
+    const taxRate = q.taxRate ?? TAX_RATE;
     const discounted = q.discountedPrice ?? 0;
     const gp3Amt = q.gp3Amount ?? 0;
     map.set(e.id, { taxRate, discounted, gp3Amt, rate: discounted > 0 ? gp3Amt / discounted : 0 });

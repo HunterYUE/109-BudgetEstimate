@@ -6,8 +6,10 @@ import {
   CheckOutlined, CloseOutlined,
 } from '@ant-design/icons';
 import { componentService } from '../services/componentService';
+import { invalidateCatalogCache } from '../services/catalogCache';
 import { tagService } from '../services/tagService';
-import { collectTagPaths, collectDescendantIds, findPath } from '../utils/tagHelpers';
+import { collectTagPaths, collectDescendantIds, findPath, uid } from '../utils/tagHelpers';
+import { parseVersionFromCode } from '../utils/codeVersion';
 import { formatMoney } from '../utils/calculations';
 import type { Component, ItemType, SourcingType, ReviewStatus, TagNode } from '../types';
 import { COLORS, LABEL_CELL_STYLE } from '../styles/colors';
@@ -27,10 +29,6 @@ import { tabItemStyle } from '../utils/tableUtils';
 
 function deepClone(c: Component): Component {
   return { ...c, changeLog: Array.isArray(c.changeLog) ? c.changeLog.map(e => ({ ...e })) : [] };
-}
-
-function makeId(): string {
-  return 'mat-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6);
 }
 
 /** 编辑 payload：editForm 有值用 editForm，否则保留 target（`??` 保留合法 0） */
@@ -90,12 +88,6 @@ function versionAndLog(form: Partial<Component>, currentCode: string, currentVer
     ? { version: newVersion, date: now, note: '编码变更' }
     : { version: currentVersion, date: now, note: '信息更新' };
   return { newVersion, logEntry };
-}
-
-function parseVersionFromCode(code: string): { version: string; isTemp: boolean } | null {
-  const m = code?.match(/-V(\d+\.\d+)$/);
-  if (!m) return null;
-  return { version: 'V' + m[1], isTemp: parseInt(m[1], 10) < 1 };
 }
 
 const onCellLock = (w: number) => lockCellWidth(w);
@@ -286,6 +278,7 @@ const MaterialManagement: React.FC = () => {
         messageApi.success('物料已创建');
       }
       await loadMaterials();
+      invalidateCatalogCache(); // ⚠️ B2：物料变更后失效报价页编码下拉缓存
     } catch (err) {
       console.error('[Material] 保存失败:', err);
       // API 失败，回退到本地更新（仅本地展示，刷新后丢失）
@@ -305,7 +298,7 @@ const MaterialManagement: React.FC = () => {
         messageApi.warning('保存失败，已保存到本地');
       } else {
         const parsed = parseVersionFromCode(editForm.code || '');
-        const newItem: Component = { id: makeId(), ...buildCreateFields(editForm, parsed?.version || 'V0.1', now) } as Component;
+        const newItem: Component = { id: uid('mat'), ...buildCreateFields(editForm, parsed?.version || 'V0.1', now) } as Component;
         setMaterials(prev => [...prev, newItem]);
         messageApi.warning('保存失败，已保存到本地');
       }
@@ -329,6 +322,7 @@ const MaterialManagement: React.FC = () => {
         messageApi.success('删除申请已提交，待总监审批');
       }
       await loadMaterials();
+      invalidateCatalogCache(); // ⚠️ B2
     } catch (err) {
       console.error('[Material] 保存失败:', err);
       // API 失败，回退到本地更新（仅本地展示，刷新后丢失）
@@ -358,6 +352,7 @@ const MaterialManagement: React.FC = () => {
         messageApi.success('物料已通过审核');
       }
       await loadMaterials();
+      invalidateCatalogCache(); // ⚠️ B2
     } catch (err) {
       console.error('[Material] 保存失败:', err);
       // API 失败，回退到本地更新
@@ -382,6 +377,7 @@ const MaterialManagement: React.FC = () => {
         messageApi.warning('物料已驳回');
       }
       await loadMaterials();
+      invalidateCatalogCache(); // ⚠️ B2
     } catch (err) {
       console.error('[Material] 保存失败:', err);
       // API 失败，回退到本地更新

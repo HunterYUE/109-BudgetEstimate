@@ -9,15 +9,10 @@ import { formatMoney } from '../utils/calculations';
 import { formatBeijing } from '../utils/timeFormat';
 import type { ApprovalRequest, QuotationSummary, DeliveryProject } from '../types';
 import { COLORS } from '../styles/colors';
+import { STATUS_CONFIG } from '../components/material/materialConstants';
 import { useAuth } from '../utils/authContext';
 import { BARE_INPUT_STYLE } from '../utils/tableUtils';
 import { tabItemStyle } from '../utils/tableUtils';
-
-const statusConfig: Record<string, { label: string; color: string }> = {
-  pending:  { label: '待审批', color: COLORS.warning },
-  approved: { label: '已通过', color: COLORS.success },
-  rejected: { label: '已驳回', color: COLORS.danger },
-};
 
 const typeColor = (t: string) => t === 'quotation' ? COLORS.primary : t === 'plan' ? COLORS.warning : t === 'cost' ? COLORS.success : COLORS.purple;
 
@@ -181,7 +176,7 @@ const ApprovalList: React.FC = () => {
                   const cur = opts.indexOf(typeFilter);
                   setTypeFilter(opts[(cur + 1) % opts.length] as typeof typeFilter);
                 }}>
-                {typeFilter ? ({ quotation: '报价审批', plan: '实施计划', cost: '成本对比', promote: '转机会审批' }[typeFilter] || typeFilter) : '全部'} ▾
+                {typeFilter ? typeLabel(typeFilter) : '全部'} ▾
               </td>
             </tr>
           </tbody>
@@ -246,7 +241,7 @@ const ApprovalList: React.FC = () => {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                     <span style={{ fontSize: 15, fontWeight: 600, color: COLORS.textDark }}>{req.clientName}</span>
                     <span style={{ fontSize: 12, color: COLORS.textLight }}>{req.salesNo}</span>
-                    {req.status !== 'pending' && <Tag color={statusConfig[req.status]?.color} style={{ fontWeight: 600, fontSize: 12, lineHeight: '20px', borderRadius: 3 }}>{statusConfig[req.status]?.label}</Tag>}
+                    {req.status !== 'pending' && <Tag color={STATUS_CONFIG[req.status]?.color} style={{ fontWeight: 600, fontSize: 12, lineHeight: '20px', borderRadius: 3 }}>{STATUS_CONFIG[req.status]?.label}</Tag>}
                     <Tag color={typeColor(req.approvalType)} style={{ fontSize: 12, border: 'none', fontWeight: 600 }}>{typeLabel(req.approvalType)}</Tag>
                     {req.versionNo && <span style={{ fontSize: 12, color: COLORS.textLight }}>{req.versionNo}</span>}
                   </div>

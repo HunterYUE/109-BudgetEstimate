@@ -43,7 +43,3 @@ export function generateClientCode(grade: string, areaCode: string, cityCode: st
   return `${grade}-${areaCode}-${cityCode}-${seq}`;
 }
 
-export function makeId(): string {
-  return 'cl-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6);
-}
-

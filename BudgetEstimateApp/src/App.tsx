@@ -2,21 +2,23 @@ import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { lazy, Suspense } from 'react';
 import { AuthProvider, useAuth } from './utils/authContext';
 import { canAccessRoute } from './utils/permissions';
+import { pageLoaders } from './utils/pageLoaders';
 import AppLayout from './layouts/AppLayout';
 
-const Dashboard = lazy(() => import('./pages/Dashboard'));
-const SalesOpportunityList = lazy(() => import('./pages/SalesOpportunityList'));
-const QuotationList = lazy(() => import('./pages/QuotationList'));
-const QuotationPage = lazy(() => import('./pages/QuotationPage'));
-const ApprovalList = lazy(() => import('./pages/ApprovalList'));
-const DeliveryDetail = lazy(() => import('./pages/DeliveryDetail'));
-const ClientManagement = lazy(() => import('./pages/ClientManagement'));
-const MaterialManagement = lazy(() => import('./pages/MaterialManagement'));
-const TagManagement = lazy(() => import('./pages/TagManagement'));
-const DeliveryManagement = lazy(() => import('./pages/DeliveryManagement'));
-const DeliveryAnalysis = lazy(() => import('./pages/DeliveryAnalysis'));
-const SalesAnalysis = lazy(() => import('./pages/SalesAnalysis'));
-const SystemManagement = lazy(() => import('./pages/SystemManagement'));
+// ⚠️ B9 修复：lazy 组件统一取自 pageLoaders（与 AppLayout 悬停预加载同源，增删页面只改一处）
+const Dashboard = lazy(pageLoaders['/']);
+const SalesOpportunityList = lazy(pageLoaders['/opportunities']);
+const QuotationList = lazy(pageLoaders['/quotations']);
+const QuotationPage = lazy(pageLoaders['/quotations/:id']);
+const ApprovalList = lazy(pageLoaders['/approval']);
+const DeliveryDetail = lazy(pageLoaders['/delivery/:id']);
+const ClientManagement = lazy(pageLoaders['/clients']);
+const MaterialManagement = lazy(pageLoaders['/materials']);
+const TagManagement = lazy(pageLoaders['/tags']);
+const DeliveryManagement = lazy(pageLoaders['/delivery']);
+const DeliveryAnalysis = lazy(pageLoaders['/delivery-analysis']);
+const SalesAnalysis = lazy(pageLoaders['/analysis']);
+const SystemManagement = lazy(pageLoaders['/settings']);
 const Login = lazy(() => import('./pages/Login'));
 
 /** 受保护路由：未登录则跳转到 /login */

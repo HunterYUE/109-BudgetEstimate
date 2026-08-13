@@ -6,6 +6,7 @@ import type { BlueTable, BlueTableRole, VetoBudgetOption, TimelineOption, Influe
 import { PRICING_ADJUSTMENTS, PRICING_LABELS, POSITIONING_LABELS, POSITIONING_EXPLANATIONS, REACTION_LABELS, REACTION_EXPLANATIONS, calcBlueTableWinRate, getDefaultWeight } from '../utils/blueTableCalculation';
 import { COLORS } from '../styles/colors';
 import { lockCellWidth, BARE_INPUT_STYLE } from '../utils/tableUtils';
+import { uid } from '../utils/tagHelpers';
 
 interface BlueTableModalProps {
   open: boolean;
@@ -21,15 +22,19 @@ const ROLE_LABELS: Record<string, string> = {
   COACH: 'COACH',
 };
 
-/** crypto.randomUUID() 降级方案（不支持的环境回退到时间戳+随机数） */
-const safeId = () => { try { return crypto.randomUUID(); } catch { return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8); } };
+/** 预算充足度选项（⚠️ B10：原渲染路径 IIFE 内联重建数组，提升为模块常量） */
+const BUDGET_OPTS: Array<{ v: VetoBudgetOption; label: string }> = [
+  { v: 'ok', label: '充足' },
+  { v: 'possible', label: '紧张' },
+  { v: 'failed', label: '不足' },
+];
 
 // ── 默认角色 ──
 function defaultRole(overrides?: Partial<BlueTableRole>): BlueTableRole {
   const roleType = overrides?.roleType || 'EB';
   const influence = overrides?.influence || 'medium';
   return {
-    id: 'role-' + safeId().slice(0, 6),
+    id: uid('role'),
     roleType,
     name: '',
     influence,
@@ -380,11 +385,6 @@ const BlueTableModal: React.FC<BlueTableModalProps> = ({ open, opportunity, onSa
                     fontSize: 13, padding: 0, margin: 0, fontWeight: 600,
                   }} />
                 {(() => {
-                  const BUDGET_OPTS = [
-                    { v: 'ok' as VetoBudgetOption, label: '充足' },
-                    { v: 'possible' as VetoBudgetOption, label: '紧张' },
-                    { v: 'failed' as VetoBudgetOption, label: '不足' },
-                  ];
                   const curIdx = BUDGET_OPTS.findIndex(o => o.v === bt.vetoBudget);
                   return (
                     <span style={{ cursor: 'pointer', color: bt.vetoBudget === 'failed' ? COLORS.danger : COLORS.primary, fontSize: 13, userSelect: 'none', fontWeight: 600, whiteSpace: 'nowrap', background: COLORS.bgLight, padding: '2px 8px', borderRadius: 3 }}

@@ -1,19 +1,11 @@
 import React, { useState, useMemo } from 'react';
 import { Card } from 'antd';
 import { COLORS } from '../../styles/colors';
-import { fmtK, type NodeDelayInfo } from '../../utils/analysisShared';
+import { fmtK, fmtKBase, type NodeDelayInfo } from '../../utils/analysisShared';
 
 /* ============================================================
    类型定义
    ============================================================ */
-export interface BarItem {
-  name: string;
-  value: number;
-  subValue?: number;
-  color?: string;
-  tooltip?: string;
-}
-
 export interface ProfitItem {
   name: string;
   estProfit: number;
@@ -73,174 +65,9 @@ const GANTT_STATUS_COLOR: Record<string, string> = {
 };
 
 /* ============================================================
-   SVG 柱状图（增强版，支持 subValue / per-bar color）
+   SVG 柱状图 ⚠️ B11：已收敛至 components/charts/VerticalBarChart.tsx 单源
+   （SalesAnalysis 与 DeliveryAnalysis 共用），此处不再重复定义。
    ============================================================ */
-export const VerticalBarChart: React.FC<{
-  title: string;
-  data: BarItem[];
-  format?: 'K' | '%' | 'num';
-  height?: number;
-  topN?: number;
-  contentOffset?: number;
-  barWidthRatio?: number;
-  maxBarWidth?: number;
-  noCard?: boolean;
-  chartWidth?: number;
-  disableSort?: boolean;
-  targetValue?: number;
-  targetLabel?: string;
-  padTop?: number;
-  padBottom?: number;
-  hideAvgLine?: boolean;
-  cardBorder?: boolean;
-  barLabelGap?: number;
-}> = ({ title, data, format = 'num', height = 220, topN = 10, contentOffset = 0, barWidthRatio = 0.55, maxBarWidth = 36, noCard, chartWidth = 460, disableSort, targetValue, targetLabel, padTop = 32, padBottom = 28, hideAvgLine, cardBorder = true, barLabelGap = 18 }) => {
-  const [hoveredTip, setHoveredTip] = useState<{ lines: string[]; cx: number; barTop: number; chartW?: number } | null>(null);
-  const working = disableSort ? data : [...data].sort((a, b) => b.value - a.value);
-  const top = working.slice(0, topN);
-  const rawMax = Math.max(...top.map(d => d.value), 0);
-  const effectiveMax = Math.max(1, targetValue ? Math.max(rawMax, targetValue) : (rawMax > 0 ? rawMax : (format === '%' ? 100 : 1)));
-  const avg = data.length > 0 ? data.reduce((s, d) => s + d.value, 0) / data.length : 0;
-  const slots: (BarItem | null)[] = Array.from({ length: topN }, (_, i) => top[i] || null);
-
-  const fmtAxis = (v: number): string => {
-    if (format === 'K') return Math.round(v / 1000).toLocaleString() + 'K';
-    if (format === '%') return v.toFixed(1) + '%';
-    return String(Math.round(v));
-  };
-
-  const W = chartWidth;
-  const pad = { top: padTop, bottom: padBottom, left: 36, right: 6 };
-  const chartW = W - pad.left - pad.right;
-  const chartH = height - pad.top - pad.bottom;
-  const slotW = chartW / topN;
-  const barW = Math.min(slotW * barWidthRatio, maxBarWidth);
-  const gridVals = effectiveMax <= 10
-    ? Array.from({ length: effectiveMax + 1 }, (_, i) => i).reverse()
-    : Array.from({ length: 5 }, (_, i) => (effectiveMax * (4 - i)) / 4);
-
-  const chart = (
-    <>
-      {title && <span style={{ position: 'absolute', top: 6, right: 10, fontSize: 11, color: COLORS.chartGray, zIndex: 1 }}>{title}</span>}
-      <svg width="calc(100% - 30px)" height={height} viewBox={`0 0 ${W} ${height}`} style={{ display: 'block', margin: '0 auto' }}>
-        <defs><filter id="bar-shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="1" dy="2" stdDeviation="2" flood-opacity="0.15" /></filter></defs>
-        {gridVals.map((gv, i) => {
-          const y = pad.top + (1 - gv / effectiveMax) * chartH;
-          return (
-            <g key={`g-${i}`}>
-              <line x1={pad.left} y1={y} x2={W - pad.right} y2={y} stroke={COLORS.borderLight} strokeWidth={1} />
-              <text x={pad.left - 4} y={y + 3} textAnchor="end" fontSize={9} fill="#aaa">
-                {fmtAxis(gv)}
-              </text>
-            </g>
-          );
-        })}
-
-        {targetValue != null && targetValue > 0 ? (() => {
-          const tgtY = pad.top + (1 - targetValue / effectiveMax) * chartH;
-          return (
-            <g>
-              <line x1={pad.left} y1={tgtY} x2={W - pad.right} y2={tgtY}
-                stroke={COLORS.warning} strokeWidth={1} strokeDasharray="5,3" />
-              <text x={W - pad.right - 8} y={tgtY + 3}
-                textAnchor="start" fontSize={9} fill={COLORS.warning}>{targetLabel || fmtAxis(targetValue)}</text>
-            </g>
-          );
-        })() : (!hideAvgLine && avg > 0 && data.some(d => d.value > 0) && (() => {
-          const avgY = pad.top + (1 - avg / effectiveMax) * chartH;
-          return (
-            <g>
-              <line x1={pad.left} y1={avgY} x2={W - pad.right} y2={avgY}
-                stroke={COLORS.warning} strokeWidth={1} strokeDasharray="5,3" />
-              <text x={W - pad.right - 8} y={avgY + 3}
-                textAnchor="start" fontSize={9} fill={COLORS.warning}>{(() => {
-                if (format === 'K') return fmtAxis(avg);
-                if (format === '%') return avg.toFixed(1) + '%';
-                return String(Math.round(avg));
-              })()}</text>
-            </g>
-          );
-        })())}
-
-        {slots.map((item, i) => {
-          const cx = pad.left + i * slotW + slotW / 2;
-          if (!item) return <g key={`e-${i}`} />;
-
-          const isZero = item.value === 0;
-          const barH = isZero ? 0 : Math.max(2, (item.value / effectiveMax) * chartH);
-          const color = item.color || (targetValue != null && targetValue > 0 ? (item.value >= targetValue ? COLORS.primary : COLORS.danger) : COLORS.primary);
-          let label: string;
-          if (isZero) label = '—';
-          else if (format === 'K') label = fmtK(item.value);
-          else if (format === '%') label = `${item.value.toFixed(1)}%`;
-          else label = `${item.value}`;
-
-          const barTop = pad.top + chartH - barH;
-
-          return (
-            <g key={item.name + '-' + i}
-              onMouseEnter={() => item.tooltip && setHoveredTip({ lines: item.tooltip.split('\n'), cx, barTop, chartW: chartWidth })}
-              onMouseLeave={() => setHoveredTip(null)}>
-              <text x={cx} y={barTop - barLabelGap} textAnchor="middle" fontSize={9}
-                fill={color} fontWeight={600}>{label}</text>
-              {item.subValue != null && item.subValue > 0 && (
-                <text x={cx} y={barTop - 6} textAnchor="middle" fontSize={9}
-                  fill={COLORS.purple} fontWeight={600}>（{format === 'K' ? fmtK(item.subValue) : item.subValue}）</text>
-              )}
-              {!isZero && (
-                <rect x={cx - barW / 2} y={barTop} width={barW} height={barH}
-                  fill="none" stroke={color} strokeWidth={2.5} rx={0} ry={0} />
-              )}
-              <text x={cx} textAnchor="middle" fontSize={10} fill="#444">
-                {item.name.includes('\n') ? (
-                  item.name.split('\n').map((part, li) =>
-                    li === 0
-                      ? <tspan key={li} x={cx} y={height - 19}>{part}</tspan>
-                      : <tspan key={li} x={cx} dy={13}>{part}</tspan>
-                  )
-                ) : (
-                  <tspan x={cx} y={height - 5}>{item.name}</tspan>
-                )}
-              </text>
-            </g>
-          );
-        })}
-        {/* 样式化 tooltip：靠右超出时自动翻转到左侧 */}
-        {hoveredTip && (() => {
-          const tw = 170;
-          const tipRight = hoveredTip.cx + 8 + tw;
-          const containerW = hoveredTip.chartW || chartWidth;
-          const flip = tipRight > containerW - 4;
-          const tx = flip ? hoveredTip.cx - 8 - tw : hoveredTip.cx + 8;
-          return (
-            <g>
-              <rect x={tx} y={hoveredTip.barTop - 16} width={tw} height={18 + hoveredTip.lines.length * 18} rx={5} ry={5}
-                fill="#fff" stroke={COLORS.border} strokeWidth={1} filter="url(#bar-shadow)" />
-              <text x={tx + 8} y={hoveredTip.barTop + 2} fontSize={12} fontWeight={700} fill={COLORS.textDark}>{hoveredTip.lines[0]}</text>
-              <line x1={tx + 8} y1={hoveredTip.barTop + 10} x2={tx + 8 + tw - 16} y2={hoveredTip.barTop + 10} stroke={COLORS.borderLight} strokeWidth={1} />
-              {hoveredTip.lines.slice(1).map((line, li) => (
-                <text key={li} x={tx + 8} y={hoveredTip.barTop + 32 + li * 18} fontSize={11} fill="#444">{line}</text>
-              ))}
-            </g>
-          );
-        })()}
-      </svg>
-    </>
-  );
-
-  if (noCard) {
-    return <div style={{ minHeight: '100%', position: 'relative', paddingTop: contentOffset }}>{chart}</div>;
-  }
-
-  return (
-    <Card size="small"
-      style={{ borderRadius: 8, border: cardBorder ? `1px solid ${COLORS.borderLight}` : ' none', background: cardBorder ? '#fff' : 'transparent', height: '100%', position: 'relative', boxShadow: 'none', width: '100%' }}
-      styles={{ body: { padding: `${contentOffset}px 0 0 0`, height: '100%' } }}
-    >
-      {chart}
-    </Card>
-  );
-};
 
 /* ============================================================
    利润分组柱状图（概算 vs 实际）
@@ -265,7 +92,6 @@ export const ProfitChart: React.FC<{
     ? Array.from({ length: effectiveMax + 1 }, (_, i) => i).reverse()
     : Array.from({ length: 5 }, (_, i) => (effectiveMax * (4 - i)) / 4);
 
-  const fmtKNum = (v: number) => Math.round(v / 1000).toLocaleString();
   const fmtPct = (v: number) => (v * 100).toFixed(1);
 
   return (
@@ -304,14 +130,14 @@ export const ProfitChart: React.FC<{
               {estH >= actH ? (
                 <>
                   <text x={cx} y={estTop - 7} textAnchor="middle" fontSize={9}
-                    fill={COLORS.primary} fontWeight={600}>{fmtKNum(item.estProfit)}</text>
+                    fill={COLORS.primary} fontWeight={600}>{fmtKBase(item.estProfit)}</text>
                   <text x={cx} y={estTop - 17} textAnchor="middle" fontSize={9}
                     fill={COLORS.primary}>{fmtPct(item.estGP3)}</text>
                 </>
               ) : (
                 <>
                   <text x={cx} y={estTop + 14} textAnchor="middle" fontSize={9}
-                    fill={COLORS.primary} fontWeight={600}>{fmtKNum(item.estProfit)}</text>
+                    fill={COLORS.primary} fontWeight={600}>{fmtKBase(item.estProfit)}</text>
                   <text x={cx} y={estTop + 23} textAnchor="middle" fontSize={9}
                     fill={COLORS.primary}>{fmtPct(item.estGP3)}</text>
                 </>
@@ -326,14 +152,14 @@ export const ProfitChart: React.FC<{
                   {actH >= estH ? (
                     <>
                       <text x={cx} y={(actTop) - 7} textAnchor="middle" fontSize={9}
-                        fill={COLORS.purple} fontWeight={600}>{fmtKNum(item.actProfit!)}</text>
+                        fill={COLORS.purple} fontWeight={600}>{fmtKBase(item.actProfit!)}</text>
                       <text x={cx} y={(actTop) - 17} textAnchor="middle" fontSize={9}
                         fill={COLORS.purple}>{fmtPct(item.actGP3!)}</text>
                     </>
                   ) : (
                     <>
                       <text x={cx} y={(actTop) + 14} textAnchor="middle" fontSize={9}
-                        fill={COLORS.purple} fontWeight={600}>{fmtKNum(item.actProfit!)}</text>
+                        fill={COLORS.purple} fontWeight={600}>{fmtKBase(item.actProfit!)}</text>
                       <text x={cx} y={(actTop) + 23} textAnchor="middle" fontSize={9}
                         fill={COLORS.purple}>{fmtPct(item.actGP3!)}</text>
                     </>

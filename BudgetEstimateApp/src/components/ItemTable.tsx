@@ -3,37 +3,11 @@ import { Table, Tooltip, Button, Input, Popover } from 'antd';
 import { DeleteOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import type { GroupItem, SourcingType, GroupType, Component, ItemType } from '../types';
-import { componentService } from '../services/componentService';
+import { loadCatalog } from '../services/catalogCache';
+import { parseVersionFromCode } from '../utils/codeVersion';
 import { calcDirectCost, calcItemPrices } from '../utils/calculations';
 import { COLORS } from '../styles/colors';
 import { lockCellWidth, BARE_INPUT_STYLE } from '../utils/tableUtils';
-
-// 组件目录缓存（模块级，避免重复加载）
-let catalogCache: Component[] | null = null;
-let catalogLoading = false;
-const catalogWaiters: Array<(data: Component[]) => void> = [];
-
-function loadCatalog(): Promise<Component[]> {
-  if (catalogCache) return Promise.resolve(catalogCache);
-  if (catalogLoading) {
-    return new Promise(resolve => { catalogWaiters.push(resolve); });
-  }
-  catalogLoading = true;
-  // ⚠️ 传 limit:'1000'：物料目录是报价编码下拉唯一数据源，默认 100 会截断合法编码（与 QuotationPage 校验的 1000 条不一致）
-  return componentService.list({ limit: '1000' }).then(data => {
-    catalogCache = data || [];
-    catalogLoading = false;
-    catalogWaiters.forEach(r => r(catalogCache!));
-    catalogWaiters.length = 0;
-    return catalogCache!;
-  }).catch(() => {
-    catalogCache = [];
-    catalogLoading = false;
-    catalogWaiters.forEach(r => r([]));
-    catalogWaiters.length = 0;
-    return [];
-  });
-}
 
 interface Props {
   items: GroupItem[];
@@ -59,6 +33,44 @@ function getColumnConfig(groupType: GroupType) {
 
 const typeColors: Record<string, string> = {
   COMPLETE_SET: COLORS.primary, COMPONENT: '#008080', SOFTWARE: COLORS.purple, SERVICE: COLORS.success, PART: "#8B4513",
+};
+
+
+/**
+ * 数值输入框：受控显示 + 本地编辑态
+ * ⚠️ B1：行内数值用受控 value 而非 defaultValue——CodeCell 选码回填 unitCost/designHours/assemblyHours 时，
+ * 行 key 不变、非受控输入不会刷新，旧值残留与 state 脱节。此处本地 text 随外部 value 同步，保证回填即刷新。
+ */
+const EditableNumberInput: React.FC<{
+  value?: number | null;
+  onCommit: (val: number) => void;
+  min?: number;
+  step?: number;
+  align?: 'left' | 'right' | 'center';
+}> = ({ value, onCommit, min = 0, step = 1, align = 'center' }) => {
+  const [text, setText] = React.useState(value != null ? String(value) : '');
+
+  // 外部 value 变化（选码回填等）时同步本地字符串
+  useEffect(() => { setText(value != null ? String(value) : ''); }, [value]);
+
+  const commit = () => {
+    const cleaned = text.replace(/[^\d.]/g, '');
+    const val = parseFloat(cleaned);
+    if (!isNaN(val) && val >= min) {
+      onCommit(val);
+    } else {
+      setText(value != null ? String(value) : '');
+    }
+  };
+
+  return (
+    <input type="number" min={min} step={step} value={text}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+      style={{ width: '100%', textAlign: align, ...BARE_INPUT_STYLE, fontSize: 13, MozAppearance: 'textfield' }}
+    />
+  );
 };
 
 
@@ -163,14 +175,6 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
 
   const isInDB = (code: string) => catalog.length > 0 ? catalog.some(c => c.code === code) : null;
 
-  // 解析版本号：从编码尾部匹配 -Vx.y
-  const parseVersion = (code: string): { version: string; isTemp: boolean } | null => {
-    const m = code?.match(/-V(\d+\.\d+)$/);
-    if (!m) return null;
-    const major = parseInt(m[1], 10);
-    return { version: 'V' + m[1], isTemp: major < 1 };
-  };
-
   // Define columns with locked widths
   const onCellLock = (w: number) => lockCellWidth(w);
 
@@ -215,7 +219,7 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
         const matched = isInDB(v);
         return (
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            <span style={{ fontSize: 13, color: matched === false ? COLORS.textLight : (parseVersion(v)?.isTemp ? '#fa8c16' : COLORS.primary) }}>{v}</span>
+            <span style={{ fontSize: 13, color: matched === false ? COLORS.textLight : (parseVersionFromCode(v)?.isTemp ? '#fa8c16' : COLORS.primary) }}>{v}</span>
             {v && matched === false && (
               <Tooltip title="此编码不在组件数据库中，请先注册">
                 <span style={{ color: 'red', fontWeight: 700, fontSize: 16, lineHeight: 1 }}>!</span>
@@ -270,10 +274,8 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
     title: '数量', dataIndex: 'qtyTotal', width: 52, align: 'center' as const,
     onCell: onCellLock(52),
     render: (v: number, _record: GroupItem, idx: number) => editing ? (
-      <input type="number" min={0} defaultValue={v}
-        onChange={e => { const raw = e.target.value; if (raw === '') return; const val = parseInt(raw, 10); if (!isNaN(val) && val >= 0) updateItem(idx, { qtyTotal: val }); }}
-        onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-        style={{ width: '100%', textAlign: 'center', ...BARE_INPUT_STYLE, fontSize: 13, MozAppearance: 'textfield' }} />
+      <EditableNumberInput value={v} align="center" step={1}
+        onCommit={(val) => updateItem(idx, { qtyTotal: val })} />
     ) : <span style={{ display: 'block', textAlign: 'center' }}>{v}</span>,
   }];
 
@@ -285,10 +287,8 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
         return <span>{'¥'}{Math.round(v).toLocaleString()}</span>;
       }
       return (
-        <input type="number" min={0} step={1} defaultValue={v}
-          onChange={e => { const raw = e.target.value; if (raw === '') return; const val = parseFloat(raw); if (!isNaN(val) && val >= 0) updateItem(idx, { unitCost: val }); }}
-          onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-          style={{ width: '100%', textAlign: 'right', ...BARE_INPUT_STYLE, fontSize: 13, MozAppearance: 'textfield' }} />
+        <EditableNumberInput value={v} align="right" step={1}
+          onCommit={(val) => updateItem(idx, { unitCost: val })} />
       );
     },
   }];
@@ -301,10 +301,8 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
         return <span style={{ display: 'block', textAlign: 'right' }}>{v}</span>;
       }
       return (
-        <input type="number" min={0} step={0.5} defaultValue={v}
-          onChange={e => { const raw = e.target.value; if (raw === '') return; const val = parseFloat(raw); if (!isNaN(val) && val >= 0) updateItem(idx, { designHours: val }); }}
-          onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-          style={{ width: '100%', textAlign: 'right', ...BARE_INPUT_STYLE, fontSize: 13, MozAppearance: 'textfield' }} />
+        <EditableNumberInput value={v} align="right" step={0.5}
+          onCommit={(val) => updateItem(idx, { designHours: val })} />
       );
     },
   }] : [];
@@ -317,10 +315,8 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
         return <span style={{ display: 'block', textAlign: 'right' }}>{v}</span>;
       }
       return (
-        <input type="number" min={0} step={0.5} defaultValue={v}
-          onChange={e => { const raw = e.target.value; if (raw === '') return; const val = parseFloat(raw); if (!isNaN(val) && val >= 0) updateItem(idx, { assemblyHours: val }); }}
-          onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-          style={{ width: '100%', textAlign: 'right', ...BARE_INPUT_STYLE, fontSize: 13, MozAppearance: 'textfield' }} />
+        <EditableNumberInput value={v} align="right" step={0.5}
+          onCommit={(val) => updateItem(idx, { assemblyHours: val })} />
       );
     },
   }] : [];

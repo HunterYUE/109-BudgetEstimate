@@ -9,8 +9,22 @@ import type { TableProps } from 'antd';
 import { BARE_INPUT_STYLE } from '../utils/tableUtils';
 import { tabItemStyle } from '../utils/tableUtils';
 
-/** 新建用户的默认初始密码（建议用户在首次登录后修改） */
-const DEFAULT_USER_PASSWORD = 'ChangeMe@2024';
+/** 生成随机初始密码（≥8 位，大小写字母+数字+特殊字符混合）
+ *  ⚠️ B27：弃共享硬编码默认密码 ChangeMe@2024——任一管理员看到弹窗即知道全员初始密码，
+ *  存在账号接管风险；改为每人随机、创建成功时仅此一次展示，由创建人安全渠道告知本人。 */
+function generateRandomPassword(): string {
+  const sets = ['ABCDEFGHJKMNPQRSTUVWXYZ', 'abcdefghjkmnpqrstuvwxyz', '23456789', '!@#$%^&*'];
+  const pool = sets.join('');
+  const chars = sets.map(s => s[crypto.getRandomValues(new Uint32Array(1))[0] % s.length]);
+  for (let i = chars.length; i < 12; i++) {
+    chars.push(pool[crypto.getRandomValues(new Uint32Array(1))[0] % pool.length]);
+  }
+  for (let i = chars.length - 1; i > 0; i--) {
+    const j = crypto.getRandomValues(new Uint32Array(1))[0] % (i + 1);
+    [chars[i], chars[j]] = [chars[j], chars[i]];
+  }
+  return chars.join('');
+}
 
 /* ============================================================
    共用样式
@@ -162,12 +176,14 @@ const SystemManagement: React.FC = () => {
 
     setSaving(true);
     try {
+      // ⚠️ B27：每人随机初始密码，创建成功后一次性展示（下方成功消息），不落库明文
+      const password = generateRandomPassword();
       const created = await userService.create({
         email: newEmail.trim(),
         displayName: newName.trim(),
         title: newTitle,
         phone: newPhone.trim(),
-        password: DEFAULT_USER_PASSWORD,
+        password,
         role: TITLE_ROLE_MAP[newTitle] || 'user',
       });
       // 为新用户初始化默认权限（基于选择的职务）
@@ -182,7 +198,7 @@ const SystemManagement: React.FC = () => {
       }
       setUsers(prev => [...prev, { ...created, permissions: defaultPerms }]);
       setAddOpen(false);
-      messageApi.success(`用户 ${created.displayName} 添加成功（初始密码 ${DEFAULT_USER_PASSWORD}）`);
+      messageApi.success(`用户 ${created.displayName} 添加成功，初始密码：${password}（仅此一次展示，请通过安全渠道告知用户）`);
     } catch (err: unknown) {
       messageApi.error((err as Error).message || '添加失败');
     } finally {
@@ -471,7 +487,7 @@ const SystemManagement: React.FC = () => {
               </tbody>
             </table>
             <div style={{ fontSize: 11, color: '#aaa', marginTop: 12, textAlign: 'center' }}>
-              💡 新增用户初始密码为 <strong>{DEFAULT_USER_PASSWORD}</strong>
+              💡 新增用户将生成随机初始密码，创建成功后仅此一次展示，请通过安全渠道告知用户
             </div>
           </Modal>
 

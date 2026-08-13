@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { message, Modal } from 'antd';
+import { Modal, App } from 'antd';
 import type { Project } from '../types';
 import { COLORS } from '../styles/colors';
 import { BARE_INPUT_STYLE } from '../utils/tableUtils';
@@ -164,17 +164,22 @@ const ProjectHeader: React.FC<Props> = ({ project, onUpdate, readOnly }) => {
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                 {PAYMENT_LABELS.map((label, i) => {
                   const curIdx = PCT_OPTIONS.findIndex(o => o.value === pct[i]);
+                  // ⚠️ B4 修复：curIdx=-1（自定义值如 33%、或该期未配置 undefined）时，
+                  // 钳制到最近选项而非 (0+1)%13 跳到 0%；undefined 回退到中位选项 30%（预付默认）。
+                  const safeIdx = curIdx >= 0
+                    ? curIdx
+                    : (isFinite(pct[i]) ? Math.max(0, Math.min(PCT_OPTIONS.length - 1, Math.round(pct[i] / 5))) : Math.floor(PCT_OPTIONS.length / 2));
                   return (
                     <span key={label} style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                       <span style={{ fontSize: 12, whiteSpace: 'nowrap' }}>{label}</span>
                       <span style={{ cursor: 'pointer', color: COLORS.primary, fontSize: 12, userSelect: 'none', position: 'relative', top: 2 }}
                         onClick={() => {
                           const next = [...pct];
-                          const nIdx = (curIdx + 1) % PCT_OPTIONS.length;
+                          const nIdx = (safeIdx + 1) % PCT_OPTIONS.length;
                           next[i] = PCT_OPTIONS[nIdx].value;
                           onUpdate?.('paymentTerms', formatPayment(next));
                         }}>
-                        {PCT_OPTIONS[curIdx]?.label ?? pct[i]} ▾
+                        {PCT_OPTIONS[safeIdx]?.label ?? pct[i]} ▾
                       </span>
                     </span>
                   );
@@ -213,6 +218,7 @@ const ProjectHeader: React.FC<Props> = ({ project, onUpdate, readOnly }) => {
 
 
 const ProjectLayoutUpload: React.FC<{ value: string; onChange: (v: string) => void }> = ({ value, onChange }) => {
+  const { message, modal } = App.useApp(); // ⚠️ B23：消费 antd 主题上下文，弃静态 message/Modal
   const inputRef = useRef<HTMLInputElement>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [modalSize, setModalSize] = useState({ w: 800, h: 600 });
@@ -273,7 +279,7 @@ const ProjectLayoutUpload: React.FC<{ value: string; onChange: (v: string) => vo
     const file = e.target.files?.[0];
     if (!file) return;
     if (!['application/pdf', 'image/png'].includes(file.type)) {
-      Modal.warning({ title: '文件格式不支持', content: '仅支持 PDF 或 PNG 格式', okText: '知道了' });
+      modal.warning({ title: '文件格式不支持', content: '仅支持 PDF 或 PNG 格式', okText: '知道了' });
       return;
     }
     if (file.size > 3 * 1024 * 1024) {

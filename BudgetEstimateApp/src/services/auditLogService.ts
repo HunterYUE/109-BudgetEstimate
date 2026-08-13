@@ -15,6 +15,4 @@ export const auditLogService = {
   /** 获取操作日志列表 */
   list: (params?: Record<string, string>) =>
     api.get<AuditLog[]>('/audit-logs' + (params ? '?' + new URLSearchParams(params).toString() : '')),
-
-  /** 创建操作日志 */
 };

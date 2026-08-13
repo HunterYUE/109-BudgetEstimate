@@ -1,5 +1,5 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { Table, Tag, Button, Space, message, Modal } from 'antd';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import { Table, Tag, Button, Space, message, App } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import {
   PlusOutlined, EyeOutlined, EditOutlined,
@@ -25,6 +25,7 @@ const ClientManagement: React.FC = () => {
   const [gradeFilter, setGradeFilter] = useState('');
   const [drawerClient, setDrawerClient] = useState<Client | null>(null);
   const [messageApi, msgContextHolder] = message.useMessage();
+  const { modal } = App.useApp(); // ⚠️ B24：静态 Modal.confirm 消费 antd 主题上下文
 
   const [contactCounts, setContactCounts] = useState<Record<string, number>>({});
 
@@ -50,6 +51,7 @@ const ClientManagement: React.FC = () => {
   // Edit modal
   const [editOpen, setEditOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const editRequestRef = useRef(0); // ⚠️ B5：编辑请求自增号，丢弃过期 getDetail 结果
   const [editForm, setEditForm] = useState<Partial<Client>>({});
   const [editContacts, setEditContacts] = useState<Contact[]>([]);
 
@@ -129,6 +131,9 @@ const ClientManagement: React.FC = () => {
   }, [currentGrade, areaCode, editCity, editingId]);
 
   const openEdit = useCallback(async (client: Client) => {
+    // ⚠️ B5 修复：快速连点不同客户时，前一次 getDetail 的异步结果晚到会覆盖后一次的表单。
+    // 用自增请求号标记最新一次请求，过期结果直接丢弃。
+    const reqId = ++editRequestRef.current;
     setEditingId(client.id);
     // 从编码解析城市
     const codeMatch = client.code?.match(/^(?:[ABC]-)?([A-Z]{2})-([A-Z]{2,4})-\d{4}$/);
@@ -136,6 +141,7 @@ const ClientManagement: React.FC = () => {
     // 获取完整数据（含联系人）
     let detail = client;
     try { detail = await clientService.getDetail(client.id); } catch { /* 详情加载失败时回退列表数据 */ }
+    if (reqId !== editRequestRef.current) return; // ⚠️ 已有更新的编辑请求，丢弃本次过期结果
     setEditForm({
       code: detail.code,
       name: detail.name,
@@ -269,7 +275,7 @@ const ClientManagement: React.FC = () => {
   // ── Delete subsidiary ──
 
   const deleteSubsidiary = (id: string) => {
-    Modal.confirm({
+    modal.confirm({
       title: '确认删除',
       content: '确定删除该子公司记录？',
       okText: '确认',

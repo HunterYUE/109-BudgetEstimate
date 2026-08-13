@@ -685,7 +685,7 @@ const Dashboard: React.FC = () => {
                       <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.textDark, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.salesNo}</div>
                       <div style={{ fontSize: 11, color: COLORS.textLight, display: 'flex', gap: 10, marginTop: 1 }}>
                         <span>{p.clientName}</span>
-                        <span>{formatBeijing(doneDate?.toISOString() || p.updatedAt)}</span>
+                        <span>{formatBeijing(doneDate || p.updatedAt)}</span>
                       </div>
                     </div>
                     <span style={{ fontSize: 13, fontWeight: 700, color: COLORS.success, whiteSpace: 'nowrap' }}>¥{fmtK(deliveryExTax(p, deliveryQuoteInfo))}</span>

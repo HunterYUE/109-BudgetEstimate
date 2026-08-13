@@ -2,7 +2,7 @@ import React, { useState, useMemo, useCallback, useEffect } from 'react';
 
 import { useNavigate } from 'react-router-dom';
 
-import { Button, Table, Tag, Modal, message, Dropdown, Switch, Tooltip } from 'antd';
+import { Button, Table, Tag, Modal, message, Dropdown, Switch, Tooltip, App } from 'antd';
 
 import { PlusOutlined, EditOutlined, FileAddOutlined, CheckCircleOutlined, CloseCircleOutlined, PauseCircleOutlined, PlayCircleOutlined, CheckOutlined, CloseOutlined } from '@ant-design/icons';
 
@@ -20,7 +20,7 @@ import { oppEffectiveEnd } from '../utils/analysisShared';
 import { COLORS } from '../styles/colors';
 import { api, clearCache } from '../utils/api';
 import { calcBlueTableWinRate } from '../utils/blueTableCalculation';
-import { NODE_NAMES } from '../utils/constants';
+import { NODE_NAMES, STAGE_COLORS, TAX_RATE } from '../utils/constants';
 import { formatBeijing } from '../utils/timeFormat';
 import { useAuth } from '../utils/authContext';
 import { BARE_INPUT_STYLE, tabItemStyle, parseMoneyInput } from '../utils/tableUtils';
@@ -29,14 +29,7 @@ import { BARE_INPUT_STYLE, tabItemStyle, parseMoneyInput } from '../utils/tableU
 
 const STAGE_OPTIONS = ['信息', '线索', '机会', '投标', '议价', '中标'];
 
-const stageColors: Record<string, string> = {
-
-  信息: COLORS.textLight, 线索: COLORS.primary, 机会: COLORS.purple,
-
-  投标: COLORS.warning, 议价: COLORS.amber, 中标: COLORS.success,
-
-};
-
+// ⚠️ B14：stageColors 收敛至 utils/constants.ts 的 STAGE_COLORS（与 SalesAnalysis 单源）
 const statusColors: Record<string, string> = {
 
   过程中: COLORS.primary, 赢: COLORS.success, 输: COLORS.danger, 冻结: COLORS.textLight,
@@ -114,6 +107,7 @@ const SalesOpportunityList: React.FC = () => {
   const { user } = useAuth();
 
   const [msg, ctx] = message.useMessage();
+  const { modal } = App.useApp(); // ⚠️ B24：静态 Modal.warning 消费 antd 主题上下文
 
   const [opportunities, setOpportunities] = useState<SalesOpportunity[]>([]);
   const [enterpriseClients, setEnterpriseClients] = useState<Array<{ name: string; salesman: string; type?: string }>>([]);
@@ -392,7 +386,7 @@ const SalesOpportunityList: React.FC = () => {
   const handlePromote = useCallback((opp: SalesOpportunity, targetStage: string) => {
     // 线索→机会必须填写蓝表
     if (targetStage === '机会' && (!opp.blueTable || opp.blueTable.roles.length === 0)) {
-      Modal.warning({
+      modal.warning({
         title: '需要先填写销售蓝表',
         content: '从线索晋升到机会前，请先完成销售蓝表评估（包含至少一个采购角色）。',
         okText: '知道了',
@@ -416,7 +410,7 @@ const SalesOpportunityList: React.FC = () => {
         let gp3Amount = 0;
         let totalCost = 0;
         let profitRate = 0;
-        let taxRate = 0.13;
+        let taxRate = TAX_RATE;
         let amount = opp.amount || 0;
         let foundApproved = false;
 
@@ -439,11 +433,11 @@ const SalesOpportunityList: React.FC = () => {
                 discountedPrice = ver.discountedPrice || 0;
                 discountRate = ver.discountRate || 0;
                 totalCost = ver.totalCost || 0;
-                taxRate = ver.taxRate || 0.13;
+                taxRate = ver.taxRate || TAX_RATE;
                 amount = ver.discountedPrice || amount;
                 gp3 = ver.gp3ProfitRate || 0;
                 // ⚠️ 优先读存储的 gp3Amount，为 0 时从汇总值回退计算（兼容旧数据；本系统 0 表示缺失而非真实零值）
-                gp3Amount = ver.gp3Amount || Math.round((ver.discountedPrice || 0) - Math.round((ver.totalCost || 0) * (1 + (ver.taxRate || 0.13))));
+                gp3Amount = ver.gp3Amount || Math.round((ver.discountedPrice || 0) - Math.round((ver.totalCost || 0) * (1 + (ver.taxRate || TAX_RATE))));
                 profitRate = Math.round((ver.gp3ProfitRate || 0) * 10000) / 100;
               } else {
                 discountedPrice = qt.amount || 0;
@@ -562,7 +556,8 @@ const SalesOpportunityList: React.FC = () => {
       }
 
       const createdStage = formData.stage || '信息';
-      const nowISO = new Date().toISOString();
+      // ⚠️ B25 修复：局部变量不与模块级 nowISO() 函数同名（此前局部遮蔽模块函数，易误读）
+      const createdAt = new Date().toISOString();
       const hasStage = (arr: string[]) => arr.includes(createdStage);
       opportunityService.create({
         salesNo,
@@ -578,10 +573,10 @@ const SalesOpportunityList: React.FC = () => {
         notes: formData.notes || '',
         reasons: formData.reasons || '',
         // 创建时按创建阶段记录进入各阶段时间（信息=创建时间、中标=won_at）
-        leadAt: hasStage(['线索', '机会', '投标', '议价', '中标']) ? nowISO : undefined,
-        opportunityAt: hasStage(['机会', '投标', '议价', '中标']) ? nowISO : undefined,
-        bidAt: hasStage(['投标', '议价', '中标']) ? nowISO : undefined,
-        negotiationAt: hasStage(['议价', '中标']) ? nowISO : undefined,
+        leadAt: hasStage(['线索', '机会', '投标', '议价', '中标']) ? createdAt : undefined,
+        opportunityAt: hasStage(['机会', '投标', '议价', '中标']) ? createdAt : undefined,
+        bidAt: hasStage(['投标', '议价', '中标']) ? createdAt : undefined,
+        negotiationAt: hasStage(['议价', '中标']) ? createdAt : undefined,
       }).then(() => {
         loadOpportunities();
         msg.success('机会已创建');
@@ -599,6 +594,10 @@ const SalesOpportunityList: React.FC = () => {
 
 
 
+  // ⚠️ B7 修复：columns 依赖从「opportunities 数组引用」收敛为「销售员+预计结单日期」签名串。
+  //   此前列定义依赖整个数组，失焦改备注/金额（touch→setOpportunities）即重建全部列 → 整表重渲染。
+  //   该签名只在销售员/结单日期集合变化时改变，普通单元格编辑不再触发列重建。
+  const salesDateSignature = opportunities.map(o => `${o.salesman ?? ''}|${o.expectedCloseDate ?? ''}`).join('~');
   const columns = useMemo(() => [
     { title: '序号', key: 'index', width: 26, align: 'center' as const,
       render: (_: unknown, rec: SalesOpportunity, i: number) =>
@@ -655,7 +654,7 @@ const SalesOpportunityList: React.FC = () => {
         if (rec.terminated || rec.promoteLocked) return <Tag color={COLORS.textLight} style={{ cursor: 'default', margin: 0 }}>{v}</Tag>;
         // 信息/线索 tab 只读显示，通过操作列按钮晋级
         if (tabFilter === 'info' || tabFilter === 'lead') {
-          return <Tag color={stageColors[v] || COLORS.textLight} style={{ margin: 0 }}>{v}</Tag>;
+          return <Tag color={STAGE_COLORS[v] || COLORS.textLight} style={{ margin: 0 }}>{v}</Tag>;
         }
         // 机会 tab 可选：机会、投标、议价、中标
         return (
@@ -669,7 +668,7 @@ const SalesOpportunityList: React.FC = () => {
               } : undefined,
             })),
           }} trigger={['click']}>
-            <Tag color={stageColors[v] || COLORS.textLight}
+            <Tag color={STAGE_COLORS[v] || COLORS.textLight}
               style={{ cursor: 'pointer', margin: 0 }}>
               {v} <span style={{ fontSize: 10, marginLeft: 2 }}>▼</span>
             </Tag>
@@ -818,7 +817,7 @@ const SalesOpportunityList: React.FC = () => {
     },
     { title: '操作日期', dataIndex: 'updatedAt', width: 100,
       render: (v: string) => <span style={{ fontSize: 13, color: COLORS.textLight }}>{formatBeijing(v)}</span> },
-  ], [tabFilter, touch, handlePromote, handleConfirmTerminate, handleWinDeliver, opportunities, handleStatusAction, navigate]);
+  ], [tabFilter, touch, handlePromote, handleConfirmTerminate, handleWinDeliver, salesDateSignature, handleStatusAction, navigate]);
 
 
 
