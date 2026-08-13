@@ -6,6 +6,7 @@ import { formatBeijing } from '../utils/timeFormat';
 import { LIST_LIMIT } from '../utils/constants';
 import { userService, type UserRecord } from '../services/userService';
 import { auditLogService, type AuditLog } from '../services/auditLogService';
+import { useAuth } from '../utils/authContext';
 import type { TableProps } from 'antd';
 import { BARE_INPUT_STYLE } from '../utils/tableUtils';
 import { tabItemStyle } from '../utils/tableUtils';
@@ -88,6 +89,7 @@ const TITLE_OPTIONS = ['普通员工', '销售经理', '方案经理', '交付�
 const SystemManagement: React.FC = () => {
   const [tab, setTab] = useState<TabKey>('users');
   const [messageApi, msgContextHolder] = message.useMessage();
+  const { user: currentUser } = useAuth();
 
   // 用户数据
   const [users, setUsers] = useState<UserRecord[]>([]);
@@ -166,13 +168,20 @@ const SystemManagement: React.FC = () => {
   /* ---- 用户管理操作 ---- */
 
   const toggleUserActive = useCallback(async (user: UserRecord) => {
+    // ⚠️ B6 修复：禁停用当前登录账号（防误操作把自己锁在门外，锁死后只能等他人或数据库恢复）；
+    //   禁停用最后一个启用的管理员（防全员停用后无人可恢复系统）
+    if (currentUser && user.id === currentUser.id) { messageApi.warning('不能停用当前登录账号'); return; }
+    if (user.isActive && user.role === 'admin') {
+      const otherActiveAdmins = users.filter(u => u.id !== user.id && u.isActive && u.role === 'admin');
+      if (otherActiveAdmins.length === 0) { messageApi.warning('系统至少需保留一个启用状态的管理员'); return; }
+    }
     try {
       const updated = await userService.update(user.id, { isActive: !user.isActive });
       setUsers(prev => prev.map(u => u.id === updated.id ? updated : u));
     } catch (err: unknown) {
       messageApi.error('操作失败：' + ((err as Error).message || ''));
     }
-  }, [messageApi]);
+  }, [messageApi, currentUser, users]);
 
   const handleAddUser = async () => {
     if (!newName.trim()) { messageApi.warning('请输入用户姓名'); return; }

@@ -8,7 +8,7 @@ import {
 import { componentService } from '../services/componentService';
 import { invalidateCatalogCache } from '../services/catalogCache';
 import { tagService } from '../services/tagService';
-import { collectTagPaths, collectDescendantIds, findPath, uid } from '../utils/tagHelpers';
+import { collectTagPaths, collectDescendantIds, findPath } from '../utils/tagHelpers';
 import { todayBeijing } from '../utils/timeFormat';
 import { LIST_LIMIT } from '../utils/constants';
 import { parseVersionFromCode } from '../utils/codeVersion';
@@ -278,39 +278,20 @@ const MaterialManagement: React.FC = () => {
           changeLog: [...target.changeLog, logEntry],
           reviewStatus: 'pending',
         });
-        messageApi.success('物料已更新，需重新审核');
       } else {
         const parsed = parseVersionFromCode(editForm.code || '');
         await componentService.create(buildCreateFields(editForm, parsed?.version || 'V0.1', now));
-        messageApi.success('物料已创建');
       }
       await loadMaterials();
       invalidateCatalogCache(); // ⚠️ B2：物料变更后失效报价页编码下拉缓存
+      messageApi.success(editingId ? '物料已更新，需重新审核' : '物料已创建');
+      setEditOpen(false);
     } catch (err) {
       console.error('[Material] 保存失败:', err);
-      // API 失败，回退到本地更新（仅本地展示，刷新后丢失）
-      if (editingId) {
-        setMaterials(prev => prev.map(c => {
-          if (c.id !== editingId) return c;
-          const { newVersion, logEntry } = versionAndLog(editForm, c.code, c.version, now);
-          return {
-            ...c,
-            ...buildEditFields(editForm, c),
-            version: newVersion,
-            updatedAt: now,
-            changeLog: [...c.changeLog, logEntry],
-            reviewStatus: 'pending',
-          };
-        }));
-        messageApi.warning('保存失败，已保存到本地');
-      } else {
-        const parsed = parseVersionFromCode(editForm.code || '');
-        const newItem: Component = { id: uid('mat'), ...buildCreateFields(editForm, parsed?.version || 'V0.1', now) } as Component;
-        setMaterials(prev => [...prev, newItem]);
-        messageApi.warning('保存失败，已保存到本地');
-      }
+      // ⚠️ B7 修复：API 失败不再本地伪造假 id/本地回退——「已保存到本地、刷新后丢失」的假数据会误导
+      //   用户以为已入库，伪造 id 还会与后端真实数据并存；仅提示错误并保持弹窗打开可修正重试
+      messageApi.error('保存失败，请重试');
     }
-    setEditOpen(false);
   };
 
   const deleteItem = useCallback((item: Component) => {
@@ -331,17 +312,10 @@ const MaterialManagement: React.FC = () => {
       await loadMaterials();
       invalidateCatalogCache(); // ⚠️ B2
     } catch (err) {
-      console.error('[Material] 保存失败:', err);
-      // API 失败，回退到本地更新（仅本地展示，刷新后丢失）
-      if (item.note?.startsWith('[删除]')) {
-        setMaterials(prev => prev.filter(c => c.id !== item.id));
-        messageApi.warning('删除失败，已从本地移除（刷新后恢复）');
-      } else {
-        setMaterials(prev => prev.map(c =>
-          c.id === item.id ? { ...c, reviewStatus: 'pending' as ReviewStatus, note: '[删除]' } : c
-        ));
-        messageApi.warning('删除申请提交失败，已保存到本地');
-      }
+      console.error('[Material] 删除失败:', err);
+      // ⚠️ B7 修复：API 失败不再本地移除/本地标记（刷新后恢复的假状态误导用户，且列表与后端不一致），
+      //   仅提示错误；条目保持真实状态，用户可重试
+      messageApi.error(item.note?.startsWith('[删除]') ? '永久删除失败，请重试' : '删除申请提交失败，请重试');
     }
     setDeleteModalItem(null);
   };

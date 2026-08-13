@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Button, Modal, Input, message as antMsg, Spin } from 'antd';
 import { PlusOutlined, DeleteOutlined, ArrowUpOutlined, ArrowDownOutlined, CheckOutlined, CloseOutlined } from '@ant-design/icons';
 
@@ -45,19 +45,23 @@ const TagManagement: React.FC = () => {
 
   const [loading, setLoading] = useState(true);
 
+  // ⚠️ B4 修复：树加载提取为 loadTree 供「失败回滚」复用——重命名/改说明/删除失败时回拉服务端树，
+  //   撤销乐观本地更新（此前乐观更新失败不回滚，页面状态与后端不一致直到手动刷新）
+  const loadTree = useCallback(async () => {
+    try {
+      const data = await tagService.getTree();
+      if (data && data.length > 0) setTree(data);
+    } catch {
+      msg.warning('标签数据加载失败');
+    }
+  }, [msg]);
+
   // 挂载时从 API 加载标签树（种子数据已入库：backend/migrations/031-seed-tags.sql）
   useEffect(() => {
     (async () => {
-      try {
-        const data = await tagService.getTree();
-        if (data && data.length > 0) setTree(data);
-      } catch {
-        msg.warning('标签数据加载失败');
-      } finally {
-        setLoading(false);
-      }
+      try { await loadTree(); } finally { setLoading(false); }
     })();
-  }, [msg]);
+  }, [loadTree]);
 
   const flatRows = useMemo(() => flattenTree(tree), [tree]);
   const expandView: 'expand' | 'collapse' = expandedIds.size >= flatRows.length ? 'expand' : 'collapse';
@@ -98,7 +102,7 @@ const TagManagement: React.FC = () => {
     // 持久化到后端
     tagService.update(id, { name: newName }).then(
       () => msg.success('标签已重命名'),
-      () => msg.error('重命名失败，请重试')
+      () => { msg.error('重命名失败，请重试'); loadTree(); }
     );
   };
 
@@ -118,7 +122,7 @@ const TagManagement: React.FC = () => {
     // 持久化
     tagService.update(id, { description: newDesc || '' }).then(
       () => {},
-      () => msg.error('保存说明失败')
+      () => { msg.error('保存说明失败'); loadTree(); }
     );
   };
 
@@ -185,11 +189,12 @@ const TagManagement: React.FC = () => {
     });
     if (removedEditing) setEditingId(null);
     setDeleteTarget(null);
-    msg.success('已删除');
     // 持久化到后端
+    // ⚠️ B4 修复：成功消息移到 API 回包后（此前调用前即提示「已删除」，实际删除失败却显示成功）；
+    //   失败时回拉服务端树撤销乐观删除，保证本地与后端一致
     tagService.delete(target.id).then(
-      () => {},
-      () => msg.error('删除失败，请重试')
+      () => msg.success('已删除'),
+      () => { msg.error('删除失败，请重试'); loadTree(); }
     );
   };
 

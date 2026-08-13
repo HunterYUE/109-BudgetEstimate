@@ -86,11 +86,21 @@ export const ProfitChart: React.FC<{
   const slotW = (W - pad.left - pad.right) / maxN;
   const allValues = slots.flatMap(s => [s.estProfit, s.actProfit ?? 0]);
   const rawMax = Math.max(...allValues, 0);
-  const effectiveMax = Math.max(1, rawMax);
-
-  const gridVals = effectiveMax <= 10
-    ? Array.from({ length: effectiveMax + 1 }, (_, i) => i).reverse()
-    : Array.from({ length: 5 }, (_, i) => (effectiveMax * (4 - i)) / 4);
+  const rawMin = Math.min(...allValues, 0);
+  // ⚠️ B3 修复：移植 VerticalBarChart #13 负数刻度算法——存在亏损（负利润）时按真实量程 [rawMin, rawMax] 铺开、
+  //   0 基线按比例定位、负值柱向下探；纯正值路径与旧公式（zeroY=底部）完全一致，无视觉回归
+  const hasNeg = rawMin < 0;
+  const effectiveMax = hasNeg ? Math.max(rawMax - rawMin, 1) : Math.max(1, rawMax);
+  /** 数值 → Y 坐标（含负值时 rawMax 在顶、rawMin 在底；纯正值时 0 在底） */
+  const yOf = (v: number) => hasNeg
+    ? pad.top + ((rawMax - v) / effectiveMax) * chartH
+    : pad.top + (1 - v / effectiveMax) * chartH;
+  const zeroY = yOf(0);
+  const gridVals = hasNeg
+    ? Array.from({ length: 5 }, (_, i) => rawMax - (i * effectiveMax) / 4)
+    : (effectiveMax <= 10
+      ? Array.from({ length: effectiveMax + 1 }, (_, i) => i).reverse()
+      : Array.from({ length: 5 }, (_, i) => (effectiveMax * (4 - i)) / 4));
 
   const fmtPct = (v: number) => (v * 100).toFixed(1);
 
@@ -102,7 +112,7 @@ export const ProfitChart: React.FC<{
       <span style={{ position: 'absolute', top: 6, right: 10, fontSize: 11, color: COLORS.chartGray, zIndex: 1 }}>利润分析</span>
       <svg width="calc(100% - 30px)" height={height} viewBox={`0 0 ${W} ${height}`} style={{ display: 'block', margin: '0 auto' }}>
         {gridVals.map((gv, i) => {
-          const y = pad.top + (1 - gv / effectiveMax) * chartH;
+          const y = yOf(gv);
           return (
             <g key={`g-${i}`}>
               <line x1={pad.left} y1={y} x2={W - pad.right} y2={y} stroke={COLORS.borderLight} strokeWidth={1} />
@@ -114,11 +124,13 @@ export const ProfitChart: React.FC<{
         {slots.map((item, i) => {
           const cx = pad.left + i * slotW + slotW / 2;
           const barW = Math.min(slotW * 0.75, 40);
-          const estH = Math.max(2, (item.estProfit / effectiveMax) * chartH);
-          const estTop = pad.top + chartH - estH;
+          // ⚠️ B3 修复：负利润柱自 0 基线向下探（正值 barTop=zeroY-estH、负值 barTop=zeroY）——
+          //   此前负值被当正值从底部上探，亏损项目表现为 0 高矮柱误导分析
+          const estH = Math.max(2, (Math.abs(item.estProfit) / effectiveMax) * chartH);
+          const estTop = item.estProfit >= 0 ? zeroY - estH : zeroY;
           const hasAct = item.actProfit != null;
-          const actH = hasAct ? Math.max(2, (item.actProfit! / effectiveMax) * chartH) : 0;
-          const actTop = pad.top + chartH - actH;
+          const actH = hasAct ? Math.max(2, (Math.abs(item.actProfit!) / effectiveMax) * chartH) : 0;
+          const actTop = hasAct ? (item.actProfit! >= 0 ? zeroY - actH : zeroY) : 0;
 
           return (
             <g key={item.name + '-' + i}>

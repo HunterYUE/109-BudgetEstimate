@@ -205,6 +205,9 @@ const SummarySection: React.FC<Props> = ({ groups, version, onDiscountChange, on
             ) : (
             <input type="text" inputMode="numeric"
               // ⚠️ 显示存储的含税值（直接展示避免含税↔未税往返取整 ±1 漂移；calcProjectSummary 内部另算未税值供 GP3）
+              // ⚠️ B1 修复：加 key=折后报价——折后价变化（折扣调整/版本切换）时强制重挂载刷新 defaultValue；
+              //   此前无 key，React 复用旧 input，改折后价不重渲染、输入框残留旧值（与上方 com-cost 键位同款模式）
+              key={'disc-' + Math.round(displayDiscounted)}
               defaultValue={'¥' + Math.round(displayDiscounted).toLocaleString()}
               onInput={(e) => {
                 const input = e.currentTarget;

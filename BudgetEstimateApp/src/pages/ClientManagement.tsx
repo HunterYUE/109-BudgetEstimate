@@ -257,8 +257,17 @@ const ClientManagement: React.FC = () => {
     const parent = clients.find(c => c.id === subParentId);
     if (!parent) { messageApi.error('未找到母公司'); return; }
     try {
+      // ⚠️ B5 修复：自动生成子公司编码时去重——-SUB(n) 递增直到不与现存编码冲突
+      //   （schema UNIQUE(code)，此前固定 -SUB 第二次添加即撞约束返 500）；手动填写的编码仍如实校验
+      let subCode = (subForm.code || '').trim();
+      if (!subCode) {
+        const taken = new Set(clients.map(c => c.code));
+        let n = 1;
+        subCode = parent.code + '-SUB';
+        while (taken.has(subCode)) subCode = parent.code + '-SUB' + (++n);
+      }
       await clientService.create({
-        code: subForm.code || parent.code + '-SUB',
+        code: subCode,
         name: subForm.name,
         type: 'subsidiary',
         parentId: subParentId,

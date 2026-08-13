@@ -162,8 +162,14 @@ export const VerticalBarChart: React.FC<VerticalBarChartProps> = ({
               <text x={cx} y={isNegBar ? barTop + barH + barLabelGap : barTop - barLabelGap} textAnchor="middle" fontSize={valueFontSize}
                 fill={color} fontWeight={600}>{label}</text>
               {item.subValue != null && item.subValue > 0 && (
-                <text x={cx} y={isNegBar ? barTop + barH + 6 : barTop - 6} textAnchor="middle" fontSize={valueFontSize}
+                <>
+                {/* ⚠️ B8 修复：副值标签改为相对主值标签基线 +valueFontSize+2 定位——barLabelGap=10（延期天数图）
+                    时旧公式 -10/-6 主副值 4px 重叠；barLabelGap=18（默认，销售分析/节点分析图）下与旧位置 barTop-6
+                    完全一致，无视觉回归 */}
+                <text x={cx} y={(isNegBar ? barTop + barH + barLabelGap : barTop - barLabelGap) + valueFontSize + 2}
+                  textAnchor="middle" fontSize={valueFontSize}
                   fill={COLORS.purple} fontWeight={600}>（{format === 'K' ? fmtK(item.subValue) : item.subValue}）</text>
+                </>
               )}
               {barH > 0 && (
                 <rect x={cx - barW / 2} y={barTop} width={barW} height={barH}

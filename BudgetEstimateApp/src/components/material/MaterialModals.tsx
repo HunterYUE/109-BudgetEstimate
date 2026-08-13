@@ -171,7 +171,7 @@ export const MaterialEditModal: React.FC<MaterialEditModalProps> = ({
               <td style={LABEL_CELL_STYLE}>单位成本</td>
               <td style={{ padding: '7px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>
                 <input type="number" min={0} value={editForm.unitCost ?? ''}
-                  onChange={e => onFormChange({ ...editForm, unitCost: e.target.value === '' ? undefined : parseInt(e.target.value, 10) })}
+                  onChange={e => onFormChange({ ...editForm, unitCost: e.target.value === '' ? undefined : parseFloat(e.target.value) })}
                   style={{ width: '100%', ...BARE_INPUT_STYLE, fontSize: 13, padding: '2px 0', margin: 0, display: 'block', boxSizing: 'border-box', lineHeight: 1.3 }} />
               </td>
             </tr>
@@ -179,13 +179,13 @@ export const MaterialEditModal: React.FC<MaterialEditModalProps> = ({
               <td style={LABEL_CELL_STYLE}>设计工时</td>
               <td style={{ padding: '7px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>
                 <input type="number" min={0} value={editForm.designHours ?? ''}
-                  onChange={e => onFormChange({ ...editForm, designHours: e.target.value === '' ? undefined : parseInt(e.target.value, 10) })}
+                  onChange={e => onFormChange({ ...editForm, designHours: e.target.value === '' ? undefined : parseFloat(e.target.value) })}
                   style={{ width: '100%', ...BARE_INPUT_STYLE, fontSize: 13, padding: '2px 0', margin: 0, display: 'block', boxSizing: 'border-box', lineHeight: 1.3 }} />
               </td>
               <td style={LABEL_CELL_STYLE}>装配工时</td>
               <td style={{ padding: '7px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle' }}>
                 <input type="number" min={0} value={editForm.assemblyHours ?? ''}
-                  onChange={e => onFormChange({ ...editForm, assemblyHours: e.target.value === '' ? undefined : parseInt(e.target.value, 10) })}
+                  onChange={e => onFormChange({ ...editForm, assemblyHours: e.target.value === '' ? undefined : parseFloat(e.target.value) })}
                   style={{ width: '100%', ...BARE_INPUT_STYLE, fontSize: 13, padding: '2px 0', margin: 0, display: 'block', boxSizing: 'border-box', lineHeight: 1.3 }} />
               </td>
             </tr>
