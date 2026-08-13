@@ -54,7 +54,9 @@ const VerticalBars: React.FC<{
   groupGaps?: number[];
   gapSize?: number;
   barWidth?: number;
-}> = ({ items, height = 120, unit, maxSlots, groupGaps, gapSize = 14, barWidth = 25 }) => {
+  /** 柱顶数值/展示文案字号（默认 9；利润概览/新增机会等窄卡可传 8 缩小一号） */
+  valueFontSize?: number;
+}> = ({ items, height = 120, unit, maxSlots, groupGaps, gapSize = 14, barWidth = 25, valueFontSize = 9 }) => {
   const slotCount = maxSlots || items.length;
   const maxVal = items.reduce((m, i) => Math.max(m, i.value), 0);
   const max = maxVal > 0 ? maxVal : 1;
@@ -83,13 +85,13 @@ const VerticalBars: React.FC<{
               {item ? (
                 <>
                   {item.displayValue ? (
-                    <div style={{ fontSize: 9, fontWeight: 600, color: item.color, marginBottom: 3, textAlign: 'center', lineHeight: 1.2 }}>
+                    <div style={{ fontSize: valueFontSize, fontWeight: 600, color: item.color, marginBottom: 3, textAlign: 'center', lineHeight: 1.2 }}>
                       {item.displayValue.split('\n').map((line, li) => (
                         <div key={li}>{line}</div>
                       ))}
                     </div>
                   ) : (
-                    <span style={{ fontSize: 9, fontWeight: 600, color: item.color, marginBottom: 3, textAlign: 'center', lineHeight: 1.2 }}>{item.value}{unit || ''}</span>
+                    <span style={{ fontSize: valueFontSize, fontWeight: 600, color: item.color, marginBottom: 3, textAlign: 'center', lineHeight: 1.2 }}>{item.value}{unit || ''}</span>
                   )}
                   {/* 0 值（含负值）不渲染柱条，仅保留数值标签，避免 4% 兜底产生误导性 stub */}
                   {item.value > 0 && (
@@ -552,7 +554,7 @@ const Dashboard: React.FC = () => {
             <div style={{ width: 1, background: COLORS.borderLight, flexShrink: 0 }} />
             <div style={{ flex: 2.8125, display: 'flex', flexDirection: 'column' }}>
               <div style={{ fontSize: 10, color: COLORS.textLight, fontWeight: 500, textAlign: 'right', marginBottom: 2, paddingRight: 2 }}>利润概览</div>
-              <VerticalBars items={deliveryStats.profitOverview} height={210} unit="K" groupGaps={[2]} barWidth={22.5} />
+              <VerticalBars items={deliveryStats.profitOverview} height={210} unit="K" groupGaps={[2]} barWidth={22.5} valueFontSize={8} />
             </div>
           </div>
         </Card>
@@ -600,7 +602,7 @@ const Dashboard: React.FC = () => {
             <div style={{ padding: 24, textAlign: 'center', color: COLORS.textLight, fontSize: 13 }}>当前财年暂无新增</div>
           ) : (
             <div style={{ marginTop: 50 }}>
-              <VerticalBars items={fyTrend} height={200} unit="K" />
+              <VerticalBars items={fyTrend} height={200} unit="K" valueFontSize={8} />
             </div>
           )}
         </Card>
