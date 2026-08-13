@@ -4,7 +4,7 @@ import {
   fmtKBase, fmtK, compressNo, chartLabel, isRealWin, oppEffectiveEnd,
   monthEndOf, exAmount, stageAsOf, getNodeDelay,
   isProjectDelivered, getProjectDoneDate, quoteProfitExTax, deliverySalesProfit,
-  buildQuoteInfoMap, deliveryExTax, projectMonthlySales, fyMonthWindows, getProjectDelay,
+  buildQuoteInfoMap, deliveryExTax, projectMonthlySales, fyMonthWindows, getProjectDelay, getNodeBaseline,
   FY_MONTH_LABELS,
 } from '../src/utils/analysisShared';
 
@@ -142,6 +142,15 @@ describe('quoteProfitExTax / deliverySalesProfit', () => {
     expect(quoteProfitExTax(undefined)).toBe(0);
     expect(quoteProfitExTax(-113, 0.13)).toBe(-100);
   });
+  it('quoteProfitExTax(0) → 0（F04 合法 0 不被 || 覆盖；!= null 判定保留 0）', () => {
+    expect(quoteProfitExTax(0, 0.13)).toBe(0);
+    expect(quoteProfitExTax(0)).toBe(0);
+  });
+  it('actualEndDate 旧字段兼容：isProjectDelivered / getProjectDoneDate 认 actualEndDate', () => {
+    const p = { id: 'p1', status: '已完成', nodes: [{ nodeNo: 15, status: 'completed', actualEndDate: '2026-05-20' }], updatedAt: '2026-04-01T00:00:00Z' } as any;
+    expect(isProjectDelivered(p)).toBe(true);
+    expect(getProjectDoneDate(p)!.getTime()).toBe(new Date('2026-05-20').getTime());
+  });
   it('实际利润 = 未税 − 实际成本；无成本 → undefined（不设假利润）', () => {
     expect(deliverySalesProfit(1000, 800)).toBe(200);
     expect(deliverySalesProfit(1000, undefined)).toBeUndefined();
@@ -213,5 +222,66 @@ describe('FY_MONTH_LABELS 财年 12 月标签（index0=7月 → 11=6月）', () 
     expect(FY_MONTH_LABELS[5]).toBe('Dec');
     expect(FY_MONTH_LABELS[6]).toBe('Jan');
     expect(FY_MONTH_LABELS[11]).toBe('Jun');
+  });
+});
+
+describe('oppEffectiveEnd 缺时间戳回退 updatedAt（F05 财年归属：有效结束=业务事件，缺失才兜底）', () => {
+  it('输但缺 lostAt → 回退 updatedAt', () => {
+    const lostNoAt = oppEffectiveEnd({ status: '输', updatedAt: '2026-03-01T00:00:00Z' } as any);
+    expect(lostNoAt.getTime()).toBe(new Date('2026-03-01T00:00:00Z').getTime());
+  });
+  it('status 未知/其他 → 回退 updatedAt', () => {
+    const other = oppEffectiveEnd({ status: '其他', updatedAt: '2026-03-01T00:00:00Z' } as any);
+    expect(other.getTime()).toBe(new Date('2026-03-01T00:00:00Z').getTime());
+  });
+});
+
+describe('stageAsOf 同天边界（阶段时间 ≤ 判定日即进入）', () => {
+  const o: SalesOpportunity = {
+    negotiationAt: '2026-06-01', bidAt: '2026-05-01', opportunityAt: '2026-04-01', leadAt: '2026-03-01',
+  } as any;
+  it('判定日 == 议价进入日（当天中午）→ 议价', () => {
+    // ⚠️ 契约真相：无时区日期字符串 '2026-06-01' 按 UTC 解析 = 北京 08:00；
+    //   凌晨(00:00)判定会早于 08:00 → 未进入。当天 12:00 判定已过 08:00 → 议价。
+    expect(stageAsOf(o, new Date('2026-06-01T12:00:00'))).toBe('议价');
+  });
+  it('无任何阶段时间 → 信息', () => {
+    expect(stageAsOf({} as any, new Date(2026, 6, 1))).toBe('信息');
+  });
+});
+
+describe('monthEndOf 12 月跨年边界（year+1 的 1 月）', () => {
+  it('2026-12 → 2026-12-31 23:59:59.999', () => {
+    const d = monthEndOf(2026, 11);
+    expect(d.getFullYear()).toBe(2026);
+    expect(d.getMonth()).toBe(11);
+    expect(d.getDate()).toBe(31);
+    expect(d.getMilliseconds()).toBe(999);
+  });
+});
+
+describe('deliveryExTax 缺报价税率回退 13%（TAX_RATE 缺省）', () => {
+  it('info 无该 id → 按 13% 未税化', () => {
+    expect(deliveryExTax({ id: 'p-none', contractAmount: 1130 } as any, new Map())).toBe(1000);
+  });
+});
+
+describe('getNodeBaseline 基线语义（审批计划结束日，无基线 undefined）', () => {
+  it('取 baselinePlannedEndDate', () => {
+    expect(getNodeBaseline({ nodeNo: 1, baselinePlannedEndDate: '2026-06-30' } as any)).toBe('2026-06-30');
+  });
+  it('缺基线 / 节点为空 → undefined', () => {
+    expect(getNodeBaseline({ nodeNo: 1 } as any)).toBeUndefined();
+    expect(getNodeBaseline(undefined)).toBeUndefined();
+  });
+});
+
+describe('getProjectDelay 提前完成（负天数，delayed=false）', () => {
+  it('节点15 实际完成日早于基线 → 提前，无延期', () => {
+    const p = {
+      id: 'p1', status: '已完成',
+      nodes: [{ nodeNo: 15, status: 'completed', actualDate: '2026-06-25', baselinePlannedEndDate: '2026-06-30' }],
+    } as any;
+    expect(getProjectDelay(p, new Date(2026, 6, 20))).toEqual({ hasBaseline: true, delayed: false, days: -5 });
   });
 });

@@ -35,6 +35,10 @@ describe('calcItemPrices 预期售价 = 成本 / (1 − 毛利率)', () => {
     expect(basicPrice).toBeCloseTo(153.85, 2);
     expect(accountingPrice).toBe(154);
   });
+  it('负毛利率（加价出售）→ 成本/(1-负毛利) 即 成本/1.2', () => {
+    const { basicPrice } = calcItemPrices(100, -0.2);
+    expect(basicPrice).toBeCloseTo(83.33, 2); // 100/1.2
+  });
   it('毛利率 ≥1 分母非正 → 回退成本原值', () => {
     const { basicPrice } = calcItemPrices(100, 1);
     expect(basicPrice).toBe(100);
