@@ -171,7 +171,7 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
 
   const isInDB = (code: string) => catalog.length > 0 ? catalog.some(c => c.code === code) : null;
 
-  // Define columns with locked widths
+  // 定义锁定列宽的列
   const onCellLock = (w: number) => lockCellWidth(w);
 
   const colSeq = {

@@ -24,7 +24,7 @@ const MaterialTagSelector: React.FC<Props> = ({ value, onChange }) => {
   const flatRows = useMemo(() => flattenTree(tagTree), [tagTree]);
   const tagPathMap = useMemo(() => collectTagPaths(tagTree), [tagTree]);
 
-  // Visible rows based on expanded state
+  // 按展开状态计算可见行
   const visibleRows = useMemo(() => flatRows.filter((row, index) => {
     if (row.level === 0) return true;
     let ancestorLevel = row.level - 1;
@@ -57,7 +57,7 @@ const MaterialTagSelector: React.FC<Props> = ({ value, onChange }) => {
     }
   };
 
-  // Resolve selected IDs to display labels
+  // 把选中的 ID 解析为显示标签
   const selectedLabels = useMemo(() => {
     return value.map(id => {
       const found = tagPathMap.find(t => t.id === id);

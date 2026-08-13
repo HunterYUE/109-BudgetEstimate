@@ -310,7 +310,7 @@ const MaterialManagement: React.FC = () => {
         messageApi.success('删除申请已提交，待总监审批');
       }
       await loadMaterials();
-      invalidateCatalogCache(); // ⚠️ B2
+      invalidateCatalogCache(); // ⚠️ B2：失效报价页编码下拉缓存（同 286 说明）
     } catch (err) {
       console.error('[Material] 删除失败:', err);
       // ⚠️ B7 修复：API 失败不再本地移除/本地标记（刷新后恢复的假状态误导用户，且列表与后端不一致），
@@ -333,7 +333,7 @@ const MaterialManagement: React.FC = () => {
         messageApi.success('物料已通过审核');
       }
       await loadMaterials();
-      invalidateCatalogCache(); // ⚠️ B2
+      invalidateCatalogCache(); // ⚠️ B2：失效报价页编码下拉缓存（同 286 说明）
     } catch (err) {
       console.error('[Material] 保存失败:', err);
       // API 失败，回退到本地更新
@@ -358,7 +358,7 @@ const MaterialManagement: React.FC = () => {
         messageApi.warning('物料已驳回');
       }
       await loadMaterials();
-      invalidateCatalogCache(); // ⚠️ B2
+      invalidateCatalogCache(); // ⚠️ B2：失效报价页编码下拉缓存（同 286 说明）
     } catch (err) {
       console.error('[Material] 保存失败:', err);
       // API 失败，回退到本地更新

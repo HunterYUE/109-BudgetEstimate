@@ -14,8 +14,6 @@ export const tagService = {
   /** 获取标签树（完整层级） */
   getTree: () => api.get<TagNode[]>('/tags/tree/all'),
 
-  /** 获取标签列表（展平） */
-
   /** 创建标签 — 传入 name 和可选的 parentId */
   create: (data: { name: string; parentId?: string | null; description?: string }) =>
     api.post<TagRow>('/tags', { sortOrder: 0, description: '', ...data }),

@@ -13,10 +13,7 @@ import type { ProfitItem, BubbleDataItem } from '../components/charts/DeliveryCh
 import { OverviewCards, type KpiCardItem } from '../components/shared/OverviewCards';
 import useMediaQuery from '../utils/useMediaQuery';
 
-/* ============================================================
-   概览卡片（共享组件 OverviewCards，样式对齐工时应用仪表盘 KPI 卡）
-   ============================================================ */
-
+// ── 概览卡片（共享组件 OverviewCards，样式对齐工时应用仪表盘 KPI 卡） ──
 /** 某财年截止到某月月底的累计 KPI 口径；hasData=false 表示该月早于财年起点、无完整月数据 */
 interface MonthlyCum {
   hasData: boolean;
@@ -51,9 +48,7 @@ const cumVal = (m: MonthlyCum, idx: number): string => {
   return arr[idx] || '—';
 };
 
-/* ============================================================
-   模块级工具函数（不依赖组件状态，避免每次渲染重建）
-   ============================================================ */
+// ── 模块级工具函数（不依赖组件状态，避免每次渲染重建） ──
 /** 节点总数（与 NODE_DISPLAY_NAMES 一一对应，避免硬编码 15） */
 const NODE_COUNT = NODE_DISPLAY_NAMES.length;
 
@@ -87,13 +82,11 @@ const defaultFy = fiscalYearLabel(new Date());
 
 // ── 布局常量（左列 3 张卡片：利润分析/延期天数/节点分析，每张高225px，间距16px）──
 const CARD_H = 225;
-const LEFT_COL_H = (2 + 30 + CARD_H) * 3 + 16 * 2; // 803
-const BUBBLE_SVG_H = LEFT_COL_H - 2 - 37 - 25; // 739
-const BUBBLE_CANVAS_H = LEFT_COL_H - 2 - 10 - 22 - 30 + 25; // 764
+const LEFT_COL_H = (2 + 30 + CARD_H) * 3 + 16 * 2;
+const BUBBLE_SVG_H = LEFT_COL_H - 2 - 37 - 25;
+const BUBBLE_CANVAS_H = LEFT_COL_H - 2 - 10 - 22 - 30 + 25;
 
-/* ============================================================
-   主组件
-   ============================================================ */
+// ── 主组件 ──
 const DeliveryAnalysis: React.FC = () => {
   const [fySelect, setFySelect] = useState(defaultFy);
   // 窄屏（<1280 内容区）左右列改上下堆叠，图表保持固有尺寸而非等比缩到不可读

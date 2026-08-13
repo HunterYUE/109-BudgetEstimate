@@ -66,8 +66,7 @@ function createEmptyBlueTable(): BlueTable {
     updatedAt: todayBeijing(),
   };
 }
-
-/* ─── 子组件：三角形 ▲/▼ 增减列（供各 Triangle 控件复用，消除 4 份重复箭头样式） ─── */
+// ── 子组件：三角形 ▲/▼ 增减列（供各 Triangle 控件复用，消除 4 份重复箭头样式） ──
 const TriangleArrows: React.FC<{ onUp: () => void; onDown: () => void }> = ({ onUp, onDown }) => (
   <div style={{ display: 'flex', flexDirection: 'column', gap: 0, lineHeight: 1 }}>
     <span onClick={onUp}
@@ -76,9 +75,7 @@ const TriangleArrows: React.FC<{ onUp: () => void; onDown: () => void }> = ({ on
       style={{ cursor: 'pointer', color: '#999', fontSize: 9, lineHeight: 1, height: 12, display: 'block', userSelect: 'none' }}>▼</span>
   </div>
 );
-
-/* ─── 子组件：三角形数字增减 ─── */
-
+// ── 子组件：三角形数字增减 ──
 const TriangleNumberCell: React.FC<{
   value: number; onChange: (v: number) => void;
   min: number; max: number; step?: number;
@@ -95,8 +92,7 @@ const TriangleNumberCell: React.FC<{
     </div>
   );
 };
-
-/* ─── 子组件：影响力三角形循环 ─── */
+// ── 子组件：影响力三角形循环 ──
 const TriangleInfluenceCell: React.FC<{
   value: InfluenceLevel; weight: number;
   onInfluence: (v: InfluenceLevel) => void;
@@ -114,9 +110,7 @@ const TriangleInfluenceCell: React.FC<{
     </div>
   );
 };
-
-
-/* ─── 子组件：项目定位三角形循环 ─── */
+// ── 子组件：项目定位三角形循环 ──
 const TrianglePositioningCell: React.FC<{
   value: number; onChange: (v: number) => void;
 }> = ({ value, onChange }) => {
@@ -133,8 +127,7 @@ const TrianglePositioningCell: React.FC<{
     </div>
   );
 };
-
-/* ─── 子组件：反应模式三角形循环 ─── */
+// ── 子组件：反应模式三角形循环 ──
 const REACTION_MODES: ReactionMode[] = ['G', 'T', 'EK', 'OC'];
 const TriangleReactionCell: React.FC<{
   value: ReactionMode; onChange: (v: ReactionMode) => void;
@@ -155,9 +148,7 @@ const TriangleReactionCell: React.FC<{
 };
 
 
-/* ═══════════════════════════════════════════════ *
- *  主组件                                          *
- * ═══════════════════════════════════════════════ */
+// ── 主组件 ──
 
 const BlueTableModal: React.FC<BlueTableModalProps> = ({ open, opportunity, onSave, onClose }) => {
   const readOnly = !onSave;
@@ -345,13 +336,13 @@ const BlueTableModal: React.FC<BlueTableModalProps> = ({ open, opportunity, onSa
     >
       {ctx}
 
-      {/* ======== 独立卡片区块（表单区）======== */}
+      {/* ── 独立卡片区块（表单区） ── */}
       {/* ⚠️ 表单区须包在 position:relative 容器内，view-only 覆盖层放在容器内部：
           body 是滚动容器（maxHeight 限高），overlay 若直接放 body 层，absolute+inset:0 只覆盖首屏可视高度，
           滚动后下方字段仍可编辑 → view-only 失效。包一层后 overlay 覆盖整个表单区高度 */}
       <div style={{ position: 'relative' }}>
         {readOnly && <div style={{ position: 'absolute', inset: 0, zIndex: 10, cursor: 'default' }} />}
-        {/* ═══════ 1. 否决检查 ═══════ */}
+        {/* ── 1. 否决检查 ── */}
         <div style={{
           borderRadius: 8, border: `1px solid ${COLORS.borderLight}`,
           boxShadow: '0 2px 8px rgba(0,0,0,0.04)', overflow: 'hidden',
@@ -437,7 +428,7 @@ const BlueTableModal: React.FC<BlueTableModalProps> = ({ open, opportunity, onSa
           </div>
         </div>
 
-        {/* ═══════ 2. 采购角色 ═══════ */}
+        {/* ── 2. 采购角色 ── */}
         <div style={{
           borderRadius: 8, border: `1px solid ${COLORS.borderLight}`,
           boxShadow: '0 2px 8px rgba(0,0,0,0.04)', overflow: 'hidden',
@@ -479,7 +470,7 @@ const BlueTableModal: React.FC<BlueTableModalProps> = ({ open, opportunity, onSa
           </div>
         </div>
 
-        {/* ═══════ 3. 价格竞争力 ═══════ */}
+        {/* ── 3. 价格竞争力 ── */}
         <div style={{
           borderRadius: 8, border: `1px solid ${COLORS.borderLight}`,
           boxShadow: '0 2px 8px rgba(0,0,0,0.04)', overflow: 'hidden',
@@ -517,7 +508,7 @@ const BlueTableModal: React.FC<BlueTableModalProps> = ({ open, opportunity, onSa
           </div>
         </div>
 
-        {/* ═══════ 4. 策略计划 ═══════ */}
+        {/* ── 4. 策略计划 ── */}
         <div style={{
           borderRadius: 8, border: `1px solid ${COLORS.borderLight}`,
           boxShadow: '0 2px 8px rgba(0,0,0,0.04)', overflow: 'hidden',
@@ -653,7 +644,7 @@ const BlueTableModal: React.FC<BlueTableModalProps> = ({ open, opportunity, onSa
           </div>
         </div>
 
-        {/* ═══════ 5. 计算结果 ═══════ */}
+        {/* ── 5. 计算结果 ── */}
         <div style={{
           borderRadius: 8, border: `1px solid ${COLORS.borderLight}`,
           boxShadow: '0 2px 8px rgba(0,0,0,0.04)', overflow: 'hidden',
@@ -710,7 +701,7 @@ const BlueTableModal: React.FC<BlueTableModalProps> = ({ open, opportunity, onSa
           </div>
         </div>
 
-        {/* ═══════ 6. 蓝表状态 ═══════ */}
+        {/* ── 6. 蓝表状态 ── */}
         <div style={{
           borderRadius: 8, border: `1px solid ${COLORS.borderLight}`,
           boxShadow: '0 2px 8px rgba(0,0,0,0.04)', overflow: 'hidden',
@@ -750,7 +741,7 @@ const BlueTableModal: React.FC<BlueTableModalProps> = ({ open, opportunity, onSa
           style={{ color: COLORS.primary, fontSize: 16, width: 36, height: 36, borderRadius: 3 }} />}
       </div>
 
-        {/* ═══════ 7. 填写说明 ═══════ */}
+        {/* ── 7. 填写说明 ── */}
         <div style={{
           borderRadius: 8, border: `1px solid ${COLORS.borderLight}`,
           boxShadow: '0 2px 8px rgba(0,0,0,0.04)', overflow: 'hidden',

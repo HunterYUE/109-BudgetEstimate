@@ -55,14 +55,14 @@ const ClientManagement: React.FC = () => {
 
   useEffect(() => { fetchClients(); }, [fetchClients]);
 
-  // Edit modal
+  // 编辑弹窗
   const [editOpen, setEditOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const editRequestRef = useRef(0); // ⚠️ B5：编辑请求自增号，丢弃过期 getDetail 结果
   const [editForm, setEditForm] = useState<Partial<Client>>({});
   const [editContacts, setEditContacts] = useState<Contact[]>([]);
 
-  // Add subsidiary modal
+  // 新增子公司弹窗
   const [subOpen, setSubOpen] = useState(false);
   const [subParentId, setSubParentId] = useState('');
   const [subForm, setSubForm] = useState({ name: '', code: '', industry: '', region: '', salesman: '', creditLevel: 'B' as CreditLevel, grade: 'B' as ClientGrade });

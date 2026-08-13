@@ -24,7 +24,7 @@ body {
   padding: 0;
 }
 
-/* ── Responsive scaling ── */
+/* ── 响应式缩放 ── */
 html { overflow-y: scroll; }
 .ant-table-wrapper { overflow-x: auto; overflow-y: hidden; width: 100%; }
 table.proj-header { min-width: 900px; }
@@ -42,7 +42,7 @@ table.proj-header { min-width: 900px; }
   .ant-card { margin-bottom: 8px; }
 }
 
-/* ── Table input overrides ── */
+/* ── 表格输入控件覆盖 ── */
 .ant-table-tbody input[type=number]::-webkit-inner-spin-button,
 .ant-table-tbody input[type=number]::-webkit-outer-spin-button {
   -webkit-appearance: none !important; margin: 0 !important;
@@ -53,7 +53,7 @@ table.proj-header { min-width: 900px; }
 }
 .ant-table-tbody .ant-tag { font-size: 12px !important; }
 
-/* ── Filter dropdown ── */
+/* ── 筛选下拉 ── */
 .ant-dropdown .ant-table-filter-dropdown {
   width: 160px !important;
   min-width: 160px !important;
@@ -141,7 +141,7 @@ table.proj-header { min-width: 900px; }
   box-shadow: none !important; padding: 4px 12px !important;
 }
 
-/* ── Ant Design table overrides ── */
+/* ── Ant Design 表格覆盖 ── */
 /* 移除所有单元格内输入控件的边框 */
 .ant-table-tbody .ant-select-selector,
 .ant-table-tbody .ant-input-number-input,

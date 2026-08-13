@@ -3,9 +3,7 @@ import { Card } from 'antd';
 import { COLORS } from '../../styles/colors';
 import { fmtK, fmtKBase, type NodeDelayInfo } from '../../utils/analysisShared';
 
-/* ============================================================
-   类型定义
-   ============================================================ */
+// ── 类型定义 ──
 export interface ProfitItem {
   name: string;
   estProfit: number;
@@ -53,9 +51,7 @@ interface BubbleHoverInfo {
   fillOpacity: number; color: string;
 }
 
-/* ============================================================
-   工具
-   ============================================================ */
+// ── 工具 ──
 /** 格式化日期为短格式 "M/d" */
 const fmtShort = (d: Date) => `${String(d.getFullYear()).slice(2)}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 
@@ -64,14 +60,11 @@ const GANTT_STATUS_COLOR: Record<string, string> = {
   pending: '#1a4f83', in_progress: '#593b73', completed: '#275d3e',
 };
 
-/* ============================================================
-   SVG 柱状图 ⚠️ B11：已收敛至 components/charts/VerticalBarChart.tsx 单源
-   （SalesAnalysis 与 DeliveryAnalysis 共用），此处不再重复定义。
-   ============================================================ */
-
-/* ============================================================
-   利润分组柱状图（概算 vs 实际）
-   ============================================================ */
+/**
+ * SVG 柱状图 ⚠️ B11：已收敛至 components/charts/VerticalBarChart.tsx 单源
+ * （SalesAnalysis 与 DeliveryAnalysis 共用），此处不再重复定义。
+ */
+// ── 利润分组柱状图（概算 vs 实际） ──
 export const ProfitChart: React.FC<{
   data: ProfitItem[];
   height?: number;
@@ -199,10 +192,7 @@ export const ProfitChart: React.FC<{
   );
 };
 
-/* ============================================================
-   甘特子组件
-   ============================================================ */
-
+// ── 甘特子组件 ──
 /** 单条甘特节点条（hover 提升到父组件） */
 const GanttNode: React.FC<{
   slot: GanttSlot;
@@ -305,9 +295,7 @@ const GanttTooltip: React.FC<{
   );
 };
 
-/* ============================================================
-   项目时间节点分布（甘特图）
-   ============================================================ */
+// ── 项目时间节点分布（甘特图） ──
 /** 甘特图项目行数据 */
 interface GanttProject {
   name: string;
@@ -464,10 +452,7 @@ export const ProjectGantt: React.FC<{
   );
 };
 
-/* ============================================================
-   气泡子组件
-   ============================================================ */
-
+// ── 气泡子组件 ──
 /** 单个气泡（hover 提升到父组件） */
 const BubbleNode: React.FC<{
   item: BubbleDataItem;
@@ -545,9 +530,7 @@ const BubbleTooltip: React.FC<{
   );
 };
 
-/* ============================================================
-   健康矩阵（气泡图）
-   ============================================================ */
+// ── 健康矩阵（气泡图） ──
 export const BubbleChart: React.FC<{
   data: BubbleDataItem[];
   height?: number;

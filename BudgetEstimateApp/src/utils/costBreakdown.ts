@@ -59,7 +59,7 @@ export function buildCostLines(
     actual: act(item.id),
   });
 
-  // ===== 1. EQUIPMENT 材料部分 =====
+  // ── 1. EQUIPMENT 材料部分 ──
   for (const g of groups) {
     if (g.groupType !== 'EQUIPMENT') continue;
     for (const item of g.items) {
@@ -67,7 +67,7 @@ export function buildCostLines(
     }
   }
 
-  // ===== 2. INTEGRATION 材料部分 =====
+  // ── 2. INTEGRATION 材料部分 ──
   const integGroup = groups.find(g => g.groupType === 'INTEGRATION');
   if (integGroup) {
     for (const item of integGroup.items) {
@@ -75,7 +75,7 @@ export function buildCostLines(
     }
   }
 
-  // ===== 3. 人工成本：设计/装配汇总 =====
+  // ── 3. 人工成本：设计/装配汇总 ──
   // 仅限 EQUIPMENT/INTEGRATION 工时 + PROJECT_DELIVERY 的 SV-DESIGN/SV-INSASS 服务项
   let totalDesignHours = 0, totalDesignCost = 0;
   let totalAssemblyHours = 0, totalAssemblyCost = 0;
@@ -112,7 +112,7 @@ export function buildCostLines(
     lines.push({ key: '_assy_debug', category: '人工成本', code: 'SV-INSASS-000000-V1.0', detail: '装配调试', qty: Math.round(totalAssemblyHours), estimated: totalAssemblyCost, actual: act('_assy_debug') });
   }
 
-  // ===== 4. PROJECT_DELIVERY 其他服务项（排除已汇总到设计/装配的项） =====
+  // ── 4. PROJECT_DELIVERY 其他服务项（排除已汇总到设计/装配的项） ──
   const deliveryGroup = groups.find(g => g.groupType === 'PROJECT_DELIVERY');
   if (deliveryGroup) {
     for (const item of deliveryGroup.items) {
@@ -121,7 +121,7 @@ export function buildCostLines(
     }
   }
 
-  // ===== 5. 项目费用 =====
+  // ── 5. 项目费用 ──
   for (const g of groups) {
     if (g.groupType === 'PACKAGING_TRANSPORT' || g.groupType === 'IMPLEMENTATION_EXPENSE' || g.groupType === 'OTHER') {
       for (const item of g.items) {
@@ -130,7 +130,7 @@ export function buildCostLines(
     }
   }
 
-  // ===== 6. 风险 / 商业 / 质保 =====
+  // ── 6. 风险 / 商业 / 质保 ──
   if (version) {
     // ⚠️ 质保基数/风险/商业费用统一走 computeCostComponents（与 calcProjectSummary / computeDeliveryEstGP3 同口径）
     const { riskCost, commercialCost, warrantyCost } = computeCostComponents(groups, version);

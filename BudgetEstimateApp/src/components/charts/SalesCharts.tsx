@@ -2,9 +2,7 @@ import React from 'react';
 import { COLORS } from '../../styles/colors';
 import { fmtK } from '../../utils/analysisShared';
 
-/* ============================================================
-   SV G 销售漏斗
-   ============================================================ */
+// ── SV G 销售漏斗 ──
 export interface FunnelProps {
   funnelData: { stage: string; count: number; amount: number; color: string }[];
   fyInfo: { count: number; amount: number };
@@ -148,7 +146,7 @@ export const SalesFunnel: React.FC<FunnelProps> = ({ funnelData, fyInfo, fyLead,
   );
 };
 
-/* ============================================================
-   竖状柱状图 ⚠️ B11：已收敛至 components/charts/VerticalBarChart.tsx 单源
-   （SalesAnalysis 与 DeliveryAnalysis 共用），此处不再重复定义。
-   ============================================================ */
+/**
+ * 竖状柱状图 ⚠️ B11：已收敛至 components/charts/VerticalBarChart.tsx 单源
+ * （SalesAnalysis 与 DeliveryAnalysis 共用），此处不再重复定义。
+ */

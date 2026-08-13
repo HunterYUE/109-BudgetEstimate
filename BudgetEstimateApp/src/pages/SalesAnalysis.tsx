@@ -15,9 +15,7 @@ import { fmtK, oppEffectiveEnd, isRealWin, monthEndOf, exAmount, stageAsOf, getP
 import { STAGE_COLORS, LIST_LIMIT } from '../utils/constants';
 import { settingsService, type UserSettings } from '../services/settingsService';
 
-/* ============================================================
-   常量
-   ============================================================ */
+// ── 常量 ──
 // ⚠️ B14：stageColors 收敛至 utils/constants.ts 的 STAGE_COLORS（与 SalesOpportunityList 单源）
 const STAGES = ['信息', '线索', '机会', '投标', '议价', '中标'] as const;
 

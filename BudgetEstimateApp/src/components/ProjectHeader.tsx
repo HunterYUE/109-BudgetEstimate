@@ -208,7 +208,7 @@ const ProjectHeader: React.FC<Props> = ({ project, onUpdate, readOnly }) => {
             </td>
             <td style={labelStyle}>项目方案</td>
             <td style={cellStyle} colSpan={3}>
-              <ProjectLayoutUpload value={project.projectLayout} 
+              <ProjectLayoutUpload value={project.projectLayout}
                 onChange={(v) => onUpdate?.('projectLayout', v)} />
             </td>
           </tr>

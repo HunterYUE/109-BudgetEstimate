@@ -84,7 +84,7 @@ const ItemCostTable: React.FC<Props> = ({ groups, actualCosts, onActualCostChang
   // ⚠️ laborRates 参与人工成本计算（design/assembly 费率兜底），必须列入依赖，否则物料库费率加载后人工区不重算
   }, [groups, actualCosts, version, laborRates]);
 
-  // ---- Totals ----
+  // ── 合计 ──
   const totals = useMemo(() => {
     const allHeaders = rows.filter(r => r._type === 'header');
     const est = allHeaders.reduce((s, r) => s + r.estimated, 0);
@@ -102,7 +102,7 @@ const ItemCostTable: React.FC<Props> = ({ groups, actualCosts, onActualCostChang
     if (id) onActualCostChange(id, newVal);
   }, [locked, onActualCostChange]);
 
-  // ---- Columns ----
+  // ── 列定义 ──
   const columns = useMemo(() => [
     {
       title: '成本类别', width: 120,

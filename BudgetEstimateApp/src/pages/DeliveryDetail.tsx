@@ -261,7 +261,7 @@ const DeliveryDetail: React.FC = () => {
   const costCanEdit = project?.costStatus !== 'pending' && (project?.costStatus !== 'approved' || costOverride);
   const isDirector = user?.role === 'director';
 
-  // ---- Node handlers ----
+  // ── 节点操作 ──
   /** 节点状态变更：不记历史，仅更新实际日期字段 */
   const handleNodeStatusClick = useCallback((nodeId: string, newStatus?: string) => {
     if (!project) return;
@@ -416,7 +416,7 @@ const DeliveryDetail: React.FC = () => {
     }
   }, [project, savingPlan, flushPendingDateChanges, msg]);
 
-  // ---- Cost handlers ----
+  // ── 成本操作 ──
   const handleActualCostChange = useCallback((itemId: string, value: number) => {
     if (costLocked) return;
     // ⚠️ 最终审计修正：值未变化不重复写 state/不标 dirty（此前失焦无改动也触发，
@@ -426,14 +426,14 @@ const DeliveryDetail: React.FC = () => {
     setCostDirty(true);
   }, [costLocked, actualCosts]);
 
-  // ---- Approval handlers ----
+  // ── 审批操作 ──
   const handleSubmitPlan = useCallback(() => {
     if (!project) return;
     if (project.planStatus === 'approved') {
       msg.success('实施计划已审批通过');
       return;
     }
-    // Check all planned dates are set
+    // 校验全部计划日期已填写
     const emptyDates = project.nodes.filter(n => !n.plannedStartDate || !n.plannedEndDate);
     if (emptyDates.length > 0) {
       msg.warning(`请先填写所有节点的计划开始和结束时间（${emptyDates.map(n => n.name).join('、')}）`);

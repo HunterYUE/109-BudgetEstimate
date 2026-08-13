@@ -3,11 +3,11 @@ import { Card } from 'antd';
 import { COLORS } from '../../styles/colors';
 import { fmtK } from '../../utils/analysisShared';
 
-/* ============================================================
-   竖状柱状图（SVG 绘制，显示前 N 名）
-   ⚠️ B11 修复：原 SalesCharts.tsx 与 DeliveryCharts.tsx 各有一份近 90 行的重复实现，收敛为单源。
-   差异通过 props 化：padLeft/padRight（Y 轴留白）、hoverable（悬浮 tooltip）、centeredSvg（居中收窄）。
-   ============================================================ */
+/**
+ * 竖状柱状图（SVG 绘制，显示前 N 名）
+ * ⚠️ B11 修复：原 SalesCharts.tsx 与 DeliveryCharts.tsx 各有一份近 90 行的重复实现，收敛为单源。
+ * 差异通过 props 化：padLeft/padRight（Y 轴留白）、hoverable（悬浮 tooltip）、centeredSvg（居中收窄）。
+ */
 export interface BarItem {
   name: string;
   value: number;

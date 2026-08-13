@@ -2,8 +2,6 @@ import { api } from '../utils/api';
 import type { Project, ProjectVersion, Group, GroupItem } from '../types';
 
 export const projectService = {
-  /** 获取项目列表 */
-
   /** 获取单个项目（含版本、组、明细） */
   getFull: (id: string, opts?: { noCache?: boolean }) =>
     api.get<Project & { versions: ProjectVersion[]; groups: Group[] }>(`/projects/${id}/full`, opts),

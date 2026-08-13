@@ -28,9 +28,7 @@ function generateRandomPassword(): string {
   return chars.join('');
 }
 
-/* ============================================================
-   共用样式
-   ============================================================ */
+// ── 共用样式 ──
 const VAL_CELL_STYLE: React.CSSProperties = {
   padding: '7px 12px', fontSize: 12, border: `1px solid ${COLORS.border}`,
   verticalAlign: 'middle',
@@ -53,9 +51,7 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: 'logs', label: '操作日志' },
 ];
 
-/* ============================================================
-   角色权限模板
-   ============================================================ */
+// ── 角色权限模板 ──
 const ALL_PERMISSIONS = [
   '仪表盘查看', '销售分析', '销售机会管理', '新建信息/线索/机会', '编辑销售机会', '转线索/转机会',
   '销售蓝表编辑', '报价列表查看', '报价编制', '审批管理', '交付管理', '交付分析',
@@ -81,9 +77,7 @@ const TITLE_ROLE_MAP: Record<string, string> = {
   '普通员工': 'user',
 };
 
-/* ============================================================
-   静态表格列定义（无状态依赖）
-   ============================================================ */
+// ── 静态表格列定义（无状态依赖） ──
 const TITLE_OPTIONS = ['普通员工', '销售经理', '方案经理', '交付经理', '部门总监'];
 
 const SystemManagement: React.FC = () => {
@@ -165,7 +159,7 @@ const SystemManagement: React.FC = () => {
     setEditTarget(null);
   };
 
-  /* ---- 用户管理操作 ---- */
+  // ── 用户管理操作 ──
 
   const toggleUserActive = useCallback(async (user: UserRecord) => {
     // ⚠️ B6 修复：禁停用当前登录账号（防误操作把自己锁在门外，锁死后只能等他人或数据库恢复）；
@@ -321,7 +315,7 @@ const SystemManagement: React.FC = () => {
     }
   };
 
-  /* ---- 表格列 ---- */
+  // ── 表格列 ──
   const userColumns: TableProps<UserRecord>['columns'] = useMemo(() => [
     { title: '姓名', dataIndex: 'displayName', key: 'displayName', width: 100 },
     {
@@ -369,7 +363,7 @@ const SystemManagement: React.FC = () => {
     },
   ], [toggleUserActive, openEditModal, openPwdModal, openPermModal]);
 
-  /* ---- 操作日志 ---- */
+  // ── 操作日志 ──
   const logModules = useMemo(() => {
     const mods = new Set(logs.map(l => l.module));
     return ['全部', ...Array.from(mods)];
@@ -424,9 +418,7 @@ const SystemManagement: React.FC = () => {
         ))}
       </div>
 
-      {/* ================================================================
-          用户管理
-          ================================================================ */}
+      {/* ── 用户管理 ── */}
       {tab === 'users' && (
         <div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
@@ -652,9 +644,7 @@ const SystemManagement: React.FC = () => {
         </div>
       )}
 
-      {/* ================================================================
-          操作日志
-          ================================================================ */}
+      {/* ── 操作日志 ── */}
       {tab === 'logs' && (
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>

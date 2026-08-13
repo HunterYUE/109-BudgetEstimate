@@ -1,13 +1,13 @@
-// ===== 组件来源类型 =====
+// ── 组件来源类型 ──
 export type SourcingType = 'PURCHASED' | 'SELF_MANUFACTURED';
 
-// ===== 组件类型 =====
+// ── 组件类型 ──
 export type ItemType = 'COMPLETE_SET' | 'COMPONENT' | 'PART' | 'SOFTWARE' | 'SERVICE';
 
-// ===== 组类型（固定组顺序：集成控制→包装运输→项目交付→其他）=====
+// ── 组类型（固定组顺序：集成控制→包装运输→项目交付→其他） ──
 export type GroupType = 'EQUIPMENT' | 'INTEGRATION' | 'PACKAGING_TRANSPORT' | 'PROJECT_DELIVERY' | 'IMPLEMENTATION_EXPENSE' | 'OTHER';
 
-// ===== 组件目录中的组件 =====
+// ── 组件目录中的组件 ──
 export interface Component {
   id: string;
   code: string;
@@ -32,7 +32,7 @@ export interface Component {
   tags?: string[];               // 标签路径数组，如 ["上下料系统","桁架上下料","桁架机械手"]
 }
 
-// ===== 组内明细项 =====
+// ── 组内明细项 ──
 export interface GroupItem {
   id: string;
   itemNo: number;
@@ -56,7 +56,7 @@ export interface GroupItem {
   note: string;
 }
 
-// ===== 组 =====
+// ── 组 ──
 export interface Group {
   id: string;
   groupNo: number;
@@ -66,7 +66,7 @@ export interface Group {
   items: GroupItem[];
 }
 
-// ===== 项目版本 =====
+// ── 项目版本 ──
 export type ReviewStatus = 'draft' | 'pending' | 'approved' | 'rejected';
 
 export interface ProjectVersion {
@@ -96,7 +96,7 @@ export interface ProjectVersion {
   projectExpense?: number;
 }
 
-// ===== 项目 =====
+// ── 项目 ──
 export interface Project {
   id: string;
   salesNo: string;
@@ -115,7 +115,7 @@ export interface Project {
   groups: Group[];
 }
 
-// ===== 销售机会 =====
+// ── 销售机会 ──
 export interface SalesOpportunity {
   id: string;
   salesNo: string;
@@ -158,7 +158,7 @@ export interface SalesOpportunity {
   blueTable?: BlueTable;       // 销售蓝表数据（可选）
 }
 
-// ===== 报价列表摘要 =====
+// ── 报价列表摘要 ──
 export interface QuotationSummary {
   id: string;
   salesNo: string;
@@ -182,7 +182,7 @@ export interface QuotationSummary {
   locked?: boolean;
 }
 
-// ===== 审批请求 =====
+// ── 审批请求 ──
 /** 审批记录（planApproval / costApproval 共用） */
 export interface ApprovalInfo {
   reviewer: string;
@@ -223,7 +223,7 @@ export interface ApprovalRequest {
   latestRecord?: ApprovalInfo;
 }
 
-// ===== 交付管理 =====
+// ── 交付管理 ──
 /** 节点变更历史条目 */
 export interface NodeChangeEntry {
   id: string;
@@ -283,7 +283,7 @@ export interface DeliveryProject {
 }
 
 
-// ===== 客户管理 =====
+// ── 客户管理 ──
 export type CreditLevel = 'A' | 'B' | 'C';
 export type ClientGrade = 'A' | 'B' | 'C';
 
@@ -309,7 +309,7 @@ export interface ClientHistoryRecord {
 
 export type AccountType = 'enterprise' | 'subsidiary';
 
-// ===== 销售蓝表 =====
+// ── 销售蓝表 ──
 export type VetoBudgetOption = 'ok' | 'possible' | 'failed';
 export type TimelineOption = 'optimistic' | 'neutral' | 'negative';
 export type InfluenceLevel = 'high' | 'medium' | 'low';
@@ -373,7 +373,7 @@ export interface Client {
   createdAt: string;
 }
 
-// ===== 标签系统 =====
+// ── 标签系统 ──
 export interface TagNode {
   id: string;
   name: string;
