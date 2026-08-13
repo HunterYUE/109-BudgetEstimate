@@ -92,8 +92,13 @@ export function buildSearchWhere(search: unknown, fields: string[], params: any[
   if (search === undefined || search === null || search === '') return '';
   const escaped = String(search).replace(/[%_\\]/g, '\\$&');
   const prefix = tableAlias ? tableAlias + '.' : '';
-  const conditions = fields.map(f => `${prefix}"${f}"::text ILIKE $${params.length + 1}`);
-  for (let i = 0; i < fields.length; i++) params.push(`%${escaped}%`);
+  // ⚠️ 2026-08-13 修复：逐字段递增参数索引（此前所有字段共用 $1，第 2..N 个参数是死参数——
+  //   行为恰好正确因搜索值相同，但索引契约错误、潜在隐患）。map 内先 push 再取 params.length 为当前字段下标。
+  const conditions = fields.map(f => {
+    params.push(`%${escaped}%`);
+    return `${prefix}"${f}"::text ILIKE $${params.length}`;
+  });
+
   return ` WHERE ${conditions.join(' OR ')}`;
 }
 
