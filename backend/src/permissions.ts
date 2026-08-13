@@ -58,3 +58,18 @@ export function findPageViewLeaks(
 ): string[] {
   return pageViewOnly.filter(p => writePerms.includes(p));
 }
+
+/** 审批写守卫选择（routes/index.ts /approvals 挂载用）：
+ *  按 approval_type 选对应模块写权限；无 type 或未知 type 走审批管理兜底（防未知类型空放行） */
+export function selectApprovalPerms(approvalType: string | undefined): string[] {
+  const perms = approvalType ? APPROVAL_WRITE[approvalType] : undefined;
+  return perms || APPROVAL_WRITE_FALLBACK;
+}
+
+/** 交付写守卫选择（routes/index.ts /deliveries 挂载用）：
+ *  转交付链路（创建 POST + 节点保存 PUT /:id/nodes）→ DELIVERY_CREATE_WRITE（允许销售机会管理），
+ *  其余写操作（改成本/删交付/附件管理/改状态等）→ DELIVERY_OTHER_WRITE（须交付管理） */
+export function selectDeliveryPerms(method: string, path: string): string[] {
+  if (method === 'POST' || (method === 'PUT' && path.endsWith('/nodes'))) return DELIVERY_CREATE_WRITE;
+  return DELIVERY_OTHER_WRITE;
+}

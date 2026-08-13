@@ -8,5 +8,10 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['tests/**/*.test.{ts,tsx,js,jsx}'],
+    coverage: {
+      provider: 'v8',
+      include: ['src/**'],
+      reporter: ['text', 'html'],
+    },
   },
 })

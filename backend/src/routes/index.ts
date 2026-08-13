@@ -16,8 +16,7 @@ import settings from './settings.js';
 import { query } from '../db/index.js';
 import { AppError } from '../middleware/index.js';
 import { logAudit, objKeysToSnake, withTransaction } from './helpers.js';
-import { WRITE_GUARD, READ_GUARD, APPROVAL_WRITE, APPROVAL_WRITE_FALLBACK,
-  DELIVERY_CREATE_WRITE, DELIVERY_OTHER_WRITE } from '../permissions.js';
+import { WRITE_GUARD, READ_GUARD, selectApprovalPerms, selectDeliveryPerms } from '../permissions.js';
 import { DEFAULT_EUR_RATE, DEFAULT_TAX_RATE, DEFAULT_WARRANTY_RATE, DEFAULT_RISK_RATE } from '../constants.js';
 
 const router = Router();
@@ -61,9 +60,7 @@ router.use('/approvals', requireAuth,
   (req: Request, res: Response, next: NextFunction) => {
     if (req.method === 'GET') return next(); // 交给 readGuard
     const type = (req.body?.approval_type as string | undefined) || (req.body?.approvalType as string | undefined);
-    const perms = type ? APPROVAL_WRITE[type] : undefined;
-    if (perms) return requirePermission(...perms)(req, res, next);
-    return requirePermission(...APPROVAL_WRITE_FALLBACK)(req, res, next);
+    return requirePermission(...selectApprovalPerms(type))(req, res, next);
   },
   readGuard(READ_GUARD.approvals), approvals);
 // ⚠️ A101 修复：交付写权限按方法拆分——「销售机会管理」仅限转交付创建/初始化节点（POST /deliveries、PUT /:id/nodes），
@@ -73,12 +70,7 @@ router.use('/approvals', requireAuth,
 router.use('/deliveries', requireAuth,
   (req: Request, res: Response, next: NextFunction) => {
     if (req.method === 'GET') return next(); // 交给 readGuard
-    // 转交付链路：创建 + 节点保存（销售机会管理 合法写路径）
-    if (req.method === 'POST' || (req.method === 'PUT' && req.path.endsWith('/nodes'))) {
-      return requirePermission(...DELIVERY_CREATE_WRITE)(req, res, next);
-    }
-    // 其余写操作（改成本/删交付/附件管理/改状态等）需交付管理
-    return requirePermission(...DELIVERY_OTHER_WRITE)(req, res, next);
+    return requirePermission(...selectDeliveryPerms(req.method, req.path))(req, res, next);
   },
   readGuard(READ_GUARD.deliveries), deliveries);
 // ⚠️ H1 修复：/clients 列表读取与 /clients/:id/detail 同权限集（此前列表 GET 未加 readGuard，任意登录用户可读全部客户）

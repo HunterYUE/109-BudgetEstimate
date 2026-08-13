@@ -141,6 +141,17 @@ export async function resetUserPassword(userId: string, password: string): Promi
   if (!updated) throw new AppError(404, '用户不存在');
 }
 
+/** 计算 CREATE/UPDATE 可写列：fields 中既不在排除列表、且 body 有值（!== undefined）的列。
+ *  A2/A3 契约核心：excludeOnCreate/Update 里的字段（如 status、plan_approval）即便请求体传入也被剥除，
+ *  让「创建时直设审批状态」这类绕过状态机的写入在列构造层就被挡掉。 */
+export function computeInsertCols(
+  fields: string[],
+  exclude: string[],
+  snakeBody: Record<string, any>,
+): string[] {
+  return fields.filter(f => !exclude.includes(f) && snakeBody[f] !== undefined);
+}
+
 /** 生成标准 CRUD 路由 */
 export function crudRoutes(table: string, fields: string[], options?: {
   /** 排序字段 */
@@ -182,8 +193,6 @@ export function crudRoutes(table: string, fields: string[], options?: {
   const textArraySet = new Set(textArrayCols);
 
   const quotedFields = fields.map(f => `"${f}"`).join(', ');
-  const quotedCols = fields.filter(f => !excludeOnCreate.includes(f));
-
   // LIST（skipList：顶层已注册自定义列表时跳过，防遮蔽死代码）
   if (!skipList) router.get('/', asyncHandler(async (req, res) => {
     const { search } = req.query;
@@ -233,7 +242,7 @@ export function crudRoutes(table: string, fields: string[], options?: {
       await options.beforeCreate(snakeBody);
     }
     // 过滤掉 undefined 字段（数据库有默认值或可空），只插入有值的列
-    const activeCols = quotedCols.filter(c => snakeBody[c] !== undefined);
+    const activeCols = computeInsertCols(fields, excludeOnCreate, snakeBody);
     if (activeCols.length === 0) {
       throw new AppError(400, '没有要插入的字段');
     }
@@ -254,7 +263,7 @@ export function crudRoutes(table: string, fields: string[], options?: {
     if (options?.beforeUpdate) {
       await options.beforeUpdate(req.params.id, snakeBody);
     }
-    const updateCols = fields.filter(f => !excludeOnUpdate.includes(f) && snakeBody[f] !== undefined);
+    const updateCols = computeInsertCols(fields, excludeOnUpdate, snakeBody);
     if (updateCols.length === 0) {
       throw new AppError(400, '没有要更新的字段');
     }

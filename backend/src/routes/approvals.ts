@@ -13,6 +13,20 @@ const fields = [
   'created_at', 'updated_at',
 ];
 
+/** 审批动作白名单（POST /:id/records）与终审状态判定——审批状态机唯一来源（测试直测本组纯函数） */
+export const APPROVAL_ACTIONS = ['approved', 'rejected'] as const;
+export const FINAL_APPROVAL_STATUS = ['approved', 'rejected'] as const;
+
+/** 审批动作是否合法（approved/rejected；其他值 400）。undefined 判非法（缺 action 也是非法） */
+export function isValidApprovalAction(action: string | undefined): boolean {
+  return !!action && (APPROVAL_ACTIONS as readonly string[]).includes(action);
+}
+
+/** 是否终审状态（approved/rejected 不可再写记录、不可改财务字段、不可删除——三条守卫同口径） */
+export function isFinalApprovalStatus(status: string | undefined): boolean {
+  return !!status && (FINAL_APPROVAL_STATUS as readonly string[]).includes(status);
+}
+
 // 标准 CRUD（不含 GET /，因为我们会自定义列表查询）
 const crudRouter = crudRoutes('approval_requests', fields, {
   searchFields: ['sales_no', 'client_name', 'project_name', 'submitter'],
@@ -25,7 +39,7 @@ const crudRouter = crudRoutes('approval_requests', fields, {
   // ⚠️ 最终审计修正：已终审审批不允许经通用 PUT 改财务字段（展示/审计口径污染；此前 excludeOnUpdate 只挡 status/submit_time）
   beforeUpdate: async (id) => {
     const existing = (await query('SELECT status FROM approval_requests WHERE id = $1', [id])).rows[0];
-    if (existing && (existing.status === 'approved' || existing.status === 'rejected')) {
+    if (existing && isFinalApprovalStatus(existing.status)) {
       throw new AppError(409, '该审批已处理完毕，不可修改');
     }
   },
@@ -150,7 +164,7 @@ router.post('/:id/records', async (req, res, next) => {
     const { id } = req.params;
     const { action, comment } = req.body;
     if (!action) throw new AppError(400, '缺少必填字段：action');
-    if (!['approved', 'rejected'].includes(action)) throw new AppError(400, `无效操作: ${action}`);
+    if (!isValidApprovalAction(action)) throw new AppError(400, `无效操作: ${action}`);
     // ⚠️ 权限检查前置：先鉴权再读数据（此前先 SELECT 审批再鉴权，未授权也能探测审批详情）
     if (!hasPermission(req.user?.permissions, '审批管理', '全部查看权限')) throw new AppError(403, '无审批权限');
     // ⚠️ M3 修复：reviewer 强制取自登录用户（防伪造审批人），不再接受 body 传入的 reviewer
@@ -163,7 +177,7 @@ router.post('/:id/records', async (req, res, next) => {
       const ar = (await client.query('SELECT * FROM approval_requests WHERE id = $1 FOR UPDATE', [id])).rows[0];
       if (!ar) throw new AppError(404, '审批请求未找到');
       // ⚠️ F11 修复：已终审的审批不允许再次写入记录（防双击重复/状态翻转；驳回后重提会新建审批，不在此流转）
-      if (ar.status === 'approved' || ar.status === 'rejected') {
+      if (isFinalApprovalStatus(ar.status)) {
         throw new AppError(409, '该审批已处理完毕，不可重复审批');
       }
       const record = (await client.query('INSERT INTO approval_records (approval_request_id, reviewer, action, comment) VALUES ($1,$2,$3,$4) RETURNING *', [id, reviewer, action, comment || ''])).rows[0];
@@ -230,7 +244,7 @@ router.delete('/:id', async (req, res, next) => {
       if (!row) throw new AppError(404, '审批请求不存在');
       // ⚠️ 审计修复：已终审（approved/rejected）的审批是历史证据，删除会抹掉审批决策痕迹——拒绝删除；
       //   pending 审批可删（=取消提交）。与 beforeUpdate「终审禁改财务字段」口径一致。
-      if (row.status === 'approved' || row.status === 'rejected') {
+      if (isFinalApprovalStatus(row.status)) {
         throw new AppError(409, '该审批已处理完毕，不可删除');
       }
       deletedRow = row;
