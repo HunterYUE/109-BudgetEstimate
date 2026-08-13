@@ -92,7 +92,9 @@ const DeliveryManagement: React.FC = () => {
               <span>合同金额 &yen;{formatMoney(p.contractAmount)}</span>
             </div>
             <div style={{ fontSize: 12, color: COLORS.textLight, marginTop: 2, display: 'flex', gap: 16 }}>
-              <span>计划：<StatusBadge status={p.planStatus} /></span>
+              {/* ⚠️ B12 复核：计划审批状态 draft 显示「待提交」（与审批流语义一致，提交后才进入审批）；
+                  成本状态默认「草稿」不变 */}
+              <span>计划：<StatusBadge status={p.planStatus} draftLabel="待提交" /></span>
               <span>成本：<StatusBadge status={p.costStatus} draftLabel="草稿" /></span>
             </div>
           </div>

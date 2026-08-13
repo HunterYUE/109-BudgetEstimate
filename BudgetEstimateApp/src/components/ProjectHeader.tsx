@@ -164,22 +164,25 @@ const ProjectHeader: React.FC<Props> = ({ project, onUpdate, readOnly }) => {
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                 {PAYMENT_LABELS.map((label, i) => {
                   const curIdx = PCT_OPTIONS.findIndex(o => o.value === pct[i]);
-                  // ⚠️ B4 修复：curIdx=-1（自定义值如 33%、或该期未配置 undefined）时，
-                  // 钳制到最近选项而非 (0+1)%13 跳到 0%；undefined 回退到中位选项 30%（预付默认）。
-                  const safeIdx = curIdx >= 0
-                    ? curIdx
-                    : (isFinite(pct[i]) ? Math.max(0, Math.min(PCT_OPTIONS.length - 1, Math.round(pct[i] / 5))) : Math.floor(PCT_OPTIONS.length / 2));
+                  // ⚠️ B4 复核修复：选项上限仅 60%（PCT_OPTIONS 13 档 0–60%）。此前对自定义值（如 100%）用
+                  // Math.round(pct/5) 钳制索引显示最近选项标签，导致「100% 显示为 60%」。现自定义值直接显示真实值；
+                  //   undefined（该期未配置）回退到中位选项 30%（预付默认）。点击循环从「当前值之后的下一个选项」
+                  //   起步（超过 60% 上限回绕到 0%），而非用钳制索引 (safeIdx+1)%13。
+                  const nVal = isFinite(pct[i]) ? pct[i] : PCT_OPTIONS[Math.floor(PCT_OPTIONS.length / 2)].value;
+                  const display = curIdx >= 0
+                    ? PCT_OPTIONS[curIdx].label
+                    : (isFinite(pct[i]) ? `${pct[i]}%` : PCT_OPTIONS[Math.floor(PCT_OPTIONS.length / 2)].label);
                   return (
                     <span key={label} style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                       <span style={{ fontSize: 12, whiteSpace: 'nowrap' }}>{label}</span>
                       <span style={{ cursor: 'pointer', color: COLORS.primary, fontSize: 12, userSelect: 'none', position: 'relative', top: 2 }}
                         onClick={() => {
                           const next = [...pct];
-                          const nIdx = (safeIdx + 1) % PCT_OPTIONS.length;
-                          next[i] = PCT_OPTIONS[nIdx].value;
+                          const gt = PCT_OPTIONS.findIndex(o => o.value > nVal);
+                          next[i] = PCT_OPTIONS[gt >= 0 ? gt : 0].value;
                           onUpdate?.('paymentTerms', formatPayment(next));
                         }}>
-                        {PCT_OPTIONS[safeIdx]?.label ?? pct[i]} ▾
+                        {display} ▾
                       </span>
                     </span>
                   );

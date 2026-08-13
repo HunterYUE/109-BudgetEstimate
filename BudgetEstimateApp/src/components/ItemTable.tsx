@@ -275,7 +275,7 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
     onCell: onCellLock(52),
     render: (v: number, _record: GroupItem, idx: number) => editing ? (
       <EditableNumberInput value={v} align="center" step={1}
-        onCommit={(val) => updateItem(idx, { qtyTotal: val })} />
+        onCommit={(val) => updateItem(idx, { qtyTotal: Math.round(val) })} />
     ) : <span style={{ display: 'block', textAlign: 'center' }}>{v}</span>,
   }];
 

@@ -14,6 +14,8 @@ import {
 import { ClientEditModal, ClientSubModal } from '../components/client/ClientModals';
 import ClientDrawer from '../components/client/ClientDrawer';
 import { BARE_INPUT_STYLE } from '../utils/tableUtils';
+import { useAuth } from '../utils/authContext';
+import { hasPermission } from '../utils/permissions';
 
 // ── 组件 ──
 
@@ -26,6 +28,9 @@ const ClientManagement: React.FC = () => {
   const [drawerClient, setDrawerClient] = useState<Client | null>(null);
   const [messageApi, msgContextHolder] = message.useMessage();
   const { modal } = App.useApp(); // ⚠️ B24：静态 Modal.confirm 消费 antd 主题上下文
+  const { user } = useAuth();
+  // ⚠️ A1 复核：写动作需「新建客户」权限（与后端 writeGuard 同源）；无写权用户隐藏 新建客户/编辑 按钮，仅可查看
+  const canWrite = hasPermission(user?.permissions, ['新建客户', '全部查看权限']);
 
   const [contactCounts, setContactCounts] = useState<Record<string, number>>({});
 
@@ -358,13 +363,15 @@ const ClientManagement: React.FC = () => {
               } catch { setDrawerClient(record); }
             }}
             style={{ color: COLORS.primary, fontSize: 12 }}>详情</Button>
-          <Button type="text" size="small" icon={<EditOutlined />}
-            onClick={() => openEdit(record)}
-            style={{ color: COLORS.primary, fontSize: 12 }}>编辑</Button>
+          {canWrite && (
+            <Button type="text" size="small" icon={<EditOutlined />}
+              onClick={() => openEdit(record)}
+              style={{ color: COLORS.primary, fontSize: 12 }}>编辑</Button>
+          )}
         </Space>
       ),
     },
-  ], [clients, contactCounts, openEdit]);
+  ], [clients, contactCounts, canWrite, openEdit]);
 
   // ── Render ──
 
@@ -411,8 +418,10 @@ const ClientManagement: React.FC = () => {
               </span>
             </td>
             <td style={{ padding: 0, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle', textAlign: 'center' }}>
-              <Button type="text" icon={<PlusOutlined />} onClick={openNewEnterprise}
-                style={{ color: COLORS.primary, fontSize: 18, width: 42, height: 42 }} />
+              {canWrite && (
+                <Button type="text" icon={<PlusOutlined />} onClick={openNewEnterprise}
+                  style={{ color: COLORS.primary, fontSize: 18, width: 42, height: 42 }} />
+              )}
             </td>
           </tr>
         </tbody>

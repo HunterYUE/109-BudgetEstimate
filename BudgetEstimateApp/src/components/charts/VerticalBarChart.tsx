@@ -35,6 +35,8 @@ interface VerticalBarChartProps {
   hideAvgLine?: boolean;
   cardBorder?: boolean;
   barLabelGap?: number;
+  /** 柱顶数值标签字号（B11 复核：合并前为 10，收敛后误降为 9，恢复默认 10） */
+  valueFontSize?: number;
   padLeft?: number;
   padRight?: number;
   /** 悬浮显示 item.tooltip（Delivery 用）；Sales 场景数据无 tooltip，保持关闭 */
@@ -47,7 +49,7 @@ export const VerticalBarChart: React.FC<VerticalBarChartProps> = ({
   title, data, format = 'num', height = 220, topN = 10, contentOffset = 0,
   barWidthRatio = 0.55, maxBarWidth = 36, noCard, chartWidth = 460, disableSort,
   targetValue, targetLabel, padTop = 32, padBottom = 28, hideAvgLine,
-  cardBorder = true, barLabelGap = 18, padLeft = 42, padRight = 26,
+  cardBorder = true, barLabelGap = 18, valueFontSize = 10, padLeft = 42, padRight = 26,
   hoverable = false, centeredSvg = false,
 }) => {
   const [hoveredTip, setHoveredTip] = useState<{ lines: string[]; cx: number; barTop: number; chartW?: number } | null>(null);
@@ -79,7 +81,9 @@ export const VerticalBarChart: React.FC<VerticalBarChartProps> = ({
       {title && <span style={{ position: 'absolute', top: 6, right: 10, fontSize: 11, color: COLORS.chartGray, zIndex: 1 }}>{title}</span>}
       <svg width={centeredSvg ? 'calc(100% - 30px)' : '100%'} height={height} viewBox={`0 0 ${W} ${height}`}
         style={{ display: 'block', ...(centeredSvg ? { margin: '0 auto' } : {}) }}>
-        {centeredSvg && (
+        {/* ⚠️ B11 复核：bar-shadow 唯一消费者是 tooltip（hoverable），原耦合到 centeredSvg——
+            若 hoverable 与 centeredSvg 分离则引用缺失；改按 hoverable 定义 */}
+        {hoverable && (
           <defs><filter id="bar-shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="1" dy="2" stdDeviation="2" flood-opacity="0.15" /></filter></defs>
         )}
         {/* Y 轴网格线 + 标签 */}
@@ -102,9 +106,11 @@ export const VerticalBarChart: React.FC<VerticalBarChartProps> = ({
             <g>
               <line x1={pad.left} y1={tgtY} x2={W - pad.right} y2={tgtY}
                 stroke={COLORS.warning} strokeWidth={1} strokeDasharray="5,3" />
-              {targetLabel && (
-                <text x={W - pad.right - 8} y={tgtY + 3} textAnchor="start" fontSize={9} fill={COLORS.warning}>{targetLabel}</text>
-              )}
+              {/* ⚠️ B11 复核：targetLabel 缺省时回退显示格式化目标值（原实现 targetLabel || fmtAxis(targetValue)，
+                  合并时误改为仅 targetLabel 存在才渲染——传 targetValue 不传 targetLabel 会丢目标线标签） */}
+              <text x={W - pad.right - 8} y={tgtY + 3} textAnchor="start" fontSize={9} fill={COLORS.warning}>
+                {targetLabel || fmtAxis(targetValue)}
+              </text>
             </g>
           );
         })() : (!hideAvgLine && avg > 0 && data.some(d => d.value > 0) && (() => {
@@ -113,7 +119,6 @@ export const VerticalBarChart: React.FC<VerticalBarChartProps> = ({
             <g>
               <line x1={pad.left} y1={avgY} x2={W - pad.right} y2={avgY}
                 stroke={COLORS.warning} strokeWidth={1} strokeDasharray="5,3" />
-              <text x={W - pad.right - 8} y={avgY + 3} textAnchor="start" fontSize={9} fill={COLORS.warning}>{fmtAxis(avg)}</text>
             </g>
           );
         })())}
@@ -138,10 +143,10 @@ export const VerticalBarChart: React.FC<VerticalBarChartProps> = ({
             <g key={item.name + '-' + i}
               onMouseEnter={hoverable && item.tooltip ? () => setHoveredTip({ lines: item.tooltip!.split('\n'), cx, barTop, chartW: chartWidth }) : undefined}
               onMouseLeave={hoverable ? () => setHoveredTip(null) : undefined}>
-              <text x={cx} y={barTop - barLabelGap} textAnchor="middle" fontSize={9}
+              <text x={cx} y={barTop - barLabelGap} textAnchor="middle" fontSize={valueFontSize}
                 fill={color} fontWeight={600}>{label}</text>
               {item.subValue != null && item.subValue > 0 && (
-                <text x={cx} y={barTop - 6} textAnchor="middle" fontSize={9}
+                <text x={cx} y={barTop - 6} textAnchor="middle" fontSize={valueFontSize}
                   fill={COLORS.purple} fontWeight={600}>（{format === 'K' ? fmtK(item.subValue) : item.subValue}）</text>
               )}
               {!isZero && (

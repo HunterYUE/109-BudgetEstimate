@@ -49,3 +49,13 @@ export function canSeeMenu(permissions: string[] | undefined, menuKey: string): 
   if (!required) return true;
   return required.some(p => permissions.includes(p));
 }
+
+/**
+ * ⚠️ A1 复核：检查用户是否持有任一「写动作」权限——用于前端隐藏无权用户的增删改按钮/入口。
+ *   与后端 writeGuard 权限列表同源（仅写动作权限，不含纯只读页面权限，防「有查看权但无写权」用户误点后 403）。
+ *   仅作 UX 门控；真实鉴权仍以后端 writeGuard 为准。
+ */
+export function hasPermission(permissions: string[] | undefined, writePerms: string[]): boolean {
+  if (!permissions || permissions.length === 0) return false;
+  return writePerms.some(p => permissions.includes(p));
+}

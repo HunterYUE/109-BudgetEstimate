@@ -110,6 +110,9 @@ const SystemManagement: React.FC = () => {
   const [permOpen, setPermOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<UserRecord | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<UserRecord | null>(null);
+  // ⚠️ B27 复核：随机初始密码仅此一次展示——message toast 数秒自动消失，密码即永久丢失；
+  //   改为持久 Modal + 一键复制（关闭后不再展示，创建人须当场抄送用户）
+  const [tempCred, setTempCred] = useState<{ name: string; email: string; password: string } | null>(null);
 
   // 新增用户表单
   const [newName, setNewName] = useState('');
@@ -198,7 +201,9 @@ const SystemManagement: React.FC = () => {
       }
       setUsers(prev => [...prev, { ...created, permissions: defaultPerms }]);
       setAddOpen(false);
-      messageApi.success(`用户 ${created.displayName} 添加成功，初始密码：${password}（仅此一次展示，请通过安全渠道告知用户）`);
+      messageApi.success(`用户 ${created.displayName} 添加成功`);
+      // ⚠️ B27 复核：初始密码改由持久 Modal 展示（toast 自动消失会丢密码），见下方「初始密码」弹窗
+      setTempCred({ name: created.displayName, email: created.email, password });
     } catch (err: unknown) {
       messageApi.error((err as Error).message || '添加失败');
     } finally {
@@ -687,6 +692,47 @@ const SystemManagement: React.FC = () => {
         <div style={{ textAlign: 'center', padding: '16px 0' }}>
           <div style={{ fontSize: 40, marginBottom: 12 }}>🗑️</div>
           <div style={{ fontSize: 14, color: COLORS.textSecondary }}>确定删除用户「{deleteTarget?.displayName}」吗？</div>
+        </div>
+      </Modal>
+
+      {/* ⚠️ B27 复核：初始密码仅此一次展示——持久 Modal（非自动消失的 toast）+ 一键复制，
+          关闭后不再展示，创建人须当场抄送用户；阻止右上角 X 关闭防误关丢密码 */}
+      <Modal
+        title={<span style={{ fontSize: 17, fontWeight: 600, color: COLORS.textDark }}>用户创建成功 · 初始密码</span>}
+        open={!!tempCred}
+        closable={false}
+        maskClosable={false}
+        width={440}
+        destroyOnHidden
+        footer={[
+          <Button
+            key="copy"
+            type="primary"
+            icon={<KeyOutlined />}
+            onClick={() => {
+              if (tempCred) {
+                navigator.clipboard?.writeText(tempCred.password)
+                  .then(() => messageApi.success('初始密码已复制，请通过安全渠道告知用户'))
+                  .catch(() => messageApi.warning('复制失败，请手动抄记密码'));
+              }
+            }}
+          >复制密码</Button>,
+          <Button key="done" onClick={() => { setTempCred(null); messageApi.success('已确认，初始密码不再展示'); }}>我已告知用户</Button>,
+        ]}
+      >
+        <div style={{ padding: '8px 0' }}>
+          <div style={{ fontSize: 13, color: COLORS.textSecondary, marginBottom: 12 }}>
+            以下初始密码<strong style={{ color: COLORS.danger }}>仅此一次展示</strong>，关闭后无法再次查看。请立即通过安全渠道告知用户，并提醒其登录后尽快修改密码。
+          </div>
+          <div style={{ fontSize: 13, color: COLORS.textSecondary, marginBottom: 8 }}>
+            账号：<span style={{ color: COLORS.textDark, fontWeight: 600 }}>{tempCred?.email}</span>
+          </div>
+          <div style={{
+            background: '#f5f5f5', borderRadius: 6, padding: '12px 14px', fontSize: 16,
+            fontWeight: 700, color: COLORS.primary, fontFamily: 'monospace', textAlign: 'center', letterSpacing: 1,
+          }}>
+            {tempCred?.password}
+          </div>
         </div>
       </Modal>
 

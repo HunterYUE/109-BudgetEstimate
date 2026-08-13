@@ -23,6 +23,7 @@ import { calcBlueTableWinRate } from '../utils/blueTableCalculation';
 import { NODE_NAMES, STAGE_COLORS, TAX_RATE } from '../utils/constants';
 import { formatBeijing } from '../utils/timeFormat';
 import { useAuth } from '../utils/authContext';
+import { hasPermission } from '../utils/permissions';
 import { BARE_INPUT_STYLE, tabItemStyle, parseMoneyInput } from '../utils/tableUtils';
 
 
@@ -105,6 +106,11 @@ const SalesOpportunityList: React.FC = () => {
 
   const navigate = useNavigate();
   const { user } = useAuth();
+  // ⚠️ A1 复核：写按钮按细粒度权限门控（与后端 writeGuard 同源）——无对应写权用户仅可查看
+  const perms = user?.permissions || [];
+  const canCreateOpp = hasPermission(perms, ['新建信息/线索/机会', '全部查看权限']);
+  const canEditOpp = hasPermission(perms, ['编辑销售机会', '全部查看权限']);
+  const canConvert = hasPermission(perms, ['转线索/转机会', '编辑销售机会', '全部查看权限']);
 
   const [msg, ctx] = message.useMessage();
   const { modal } = App.useApp(); // ⚠️ B24：静态 Modal.warning 消费 antd 主题上下文
@@ -783,40 +789,40 @@ const SalesOpportunityList: React.FC = () => {
       render: (_: unknown, rec: SalesOpportunity) => {
         if (tabFilter === 'info') {
           if (rec.terminated) return <span style={{ fontSize: 12, color: COLORS.textLight }}>已终止</span>;
-          if (rec.status === '输') return (
+          if (rec.status === '输') return canConvert ? (
             <Button type="text" size="small" icon={<CloseOutlined style={{ fontSize: 18 }} />}
               onClick={() => handleConfirmTerminate(rec)}
               style={{ color: COLORS.purple }} title="确认终止" />
-          );
-          return (
+          ) : <span style={{ fontSize: 12, color: COLORS.textLight }}>—</span>;
+          return canConvert ? (
             <Button type="text" size="small" icon={<CheckOutlined style={{ fontSize: 18 }} />}
               onClick={() => handlePromote(rec, '线索')}
               style={{ color: COLORS.purple }} title="转线索" />
-          );
+          ) : <span style={{ fontSize: 12, color: COLORS.textLight }}>—</span>;
         }
         if (tabFilter === 'lead') {
           if (rec.terminated) return <span style={{ fontSize: 12, color: COLORS.textLight }}>已终止</span>;
-          if (rec.status === '输') return (
+          if (rec.status === '输') return canConvert ? (
             <Button type="text" size="small" icon={<CloseOutlined style={{ fontSize: 18 }} />}
               onClick={() => handleConfirmTerminate(rec)}
               style={{ color: COLORS.purple }} title="确认终止" />
-          );
-          return (
+          ) : <span style={{ fontSize: 12, color: COLORS.textLight }}>—</span>;
+          return canConvert ? (
             <Button type="text" size="small" icon={<CheckOutlined style={{ fontSize: 18 }} />}
               onClick={() => handlePromote(rec, '机会')}
               style={{ color: COLORS.purple }} title="转机会" />
-          );
+          ) : <span style={{ fontSize: 12, color: COLORS.textLight }}>—</span>;
         }
         if (rec.terminated) return <span style={{ fontSize: 12, color: COLORS.textLight }}>已终止</span>;
         if (rec.promoteLocked) return <span style={{ fontSize: 12, color: COLORS.warning }}>审批中</span>;
         return (
           <div style={{ display: 'flex', gap: 4, justifyContent: 'center', flexWrap: 'wrap' }}>
-            {rec.status === '赢' && !rec.terminated && (
+            {rec.status === '赢' && !rec.terminated && canConvert && (
               <Button type="text" size="small" icon={<CheckOutlined style={{ fontSize: 18 }} />}
                 onClick={() => handleWinDeliver(rec)}
                 style={{ color: COLORS.purple }} title="转交付" />
             )}
-            {rec.status === '输' && (
+            {rec.status === '输' && canConvert && (
               <Button type="text" size="small" icon={<CloseOutlined style={{ fontSize: 18 }} />}
                 onClick={() => handleConfirmTerminate(rec)}
                 style={{ color: COLORS.purple }} title="确认终止" />
@@ -827,7 +833,7 @@ const SalesOpportunityList: React.FC = () => {
     },
     { title: '操作日期', dataIndex: 'updatedAt', width: 100,
       render: (v: string) => <span style={{ fontSize: 13, color: COLORS.textLight }}>{formatBeijing(v)}</span> },
-  ], [tabFilter, touch, handlePromote, handleConfirmTerminate, handleWinDeliver, salesmanFilterOptions, closeDateFilterOptions, handleStatusAction, navigate]);
+  ], [tabFilter, touch, canCreateOpp, canEditOpp, canConvert, handlePromote, handleConfirmTerminate, handleWinDeliver, salesmanFilterOptions, closeDateFilterOptions, handleStatusAction, navigate]);
 
 
 
@@ -867,6 +873,7 @@ const SalesOpportunityList: React.FC = () => {
 
       </div>
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+        {canCreateOpp && (
         <Button type="default" ghost
           onClick={() => openCreateModal(tabFilter === 'info' ? '信息' : tabFilter === 'lead' ? '线索' : '机会')}
           style={{
@@ -880,6 +887,7 @@ const SalesOpportunityList: React.FC = () => {
         >
           <PlusOutlined /> 新增{tabFilter === 'info' ? '信息' : tabFilter === 'lead' ? '线索' : '机会'}
         </Button>
+        )}
       </div>
 
 

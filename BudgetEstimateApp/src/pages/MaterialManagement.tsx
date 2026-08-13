@@ -23,6 +23,8 @@ import {
 } from '../components/material/materialConstants';
 import { MaterialDrawer } from '../components/material/MaterialDrawer';
 import { tabItemStyle } from '../utils/tableUtils';
+import { useAuth } from '../utils/authContext';
+import { hasPermission } from '../utils/permissions';
 
 
 // ── 辅助函数 ──
@@ -99,6 +101,9 @@ const MaterialManagement: React.FC = () => {
   const [materials, setMaterials] = useState<Component[]>([]);
   const [loading, setLoading] = useState(false);
   const [messageApi, msgContextHolder] = message.useMessage();
+  const { user } = useAuth();
+  // ⚠️ A1 复核：写动作需「新增物料」权限（与后端 writeGuard 同源）；无写权用户隐藏增/改/删/审核按钮，仅可查看
+  const canWrite = hasPermission(user?.permissions, ['新增物料', '全部查看权限']);
 
   // ── 数据加载 ──
 
@@ -505,28 +510,32 @@ const MaterialManagement: React.FC = () => {
           <Button type="text" size="small" icon={<EyeOutlined />}
             onClick={() => setDrawerItem(rec)}
             style={{ color: COLORS.primary, fontSize: 14 }} />
-          <Button type="text" size="small" icon={<EditOutlined />}
-            onClick={() => openEdit(rec)}
-            style={{ color: rec.reviewStatus === 'pending' ? COLORS.borderInput : COLORS.primary, fontSize: 14 }}
-            disabled={rec.reviewStatus === 'pending'} />
-          {rec.reviewStatus === 'pending' && (
+          {canWrite && (
             <>
-              <Button type="text" size="small" icon={<CheckOutlined />}
-                onClick={() => handleApprove(rec)}
-                style={{ color: COLORS.success, fontSize: 16 }} />
-              <Button type="text" size="small" icon={<CloseOutlined />}
-                onClick={() => handleReject(rec)}
-                style={{ color: COLORS.danger, fontSize: 16 }} />
+              <Button type="text" size="small" icon={<EditOutlined />}
+                onClick={() => openEdit(rec)}
+                style={{ color: rec.reviewStatus === 'pending' ? COLORS.borderInput : COLORS.primary, fontSize: 14 }}
+                disabled={rec.reviewStatus === 'pending'} />
+              {rec.reviewStatus === 'pending' && (
+                <>
+                  <Button type="text" size="small" icon={<CheckOutlined />}
+                    onClick={() => handleApprove(rec)}
+                    style={{ color: COLORS.success, fontSize: 16 }} />
+                  <Button type="text" size="small" icon={<CloseOutlined />}
+                    onClick={() => handleReject(rec)}
+                    style={{ color: COLORS.danger, fontSize: 16 }} />
+                </>
+              )}
+              <Button type="text" size="small" icon={<DeleteOutlined />}
+                onClick={() => deleteItem(rec)}
+                style={{ color: rec.reviewStatus === 'pending' ? COLORS.borderInput : COLORS.textLight, fontSize: 14 }}
+                disabled={rec.reviewStatus === 'pending'} />
             </>
           )}
-          <Button type="text" size="small" icon={<DeleteOutlined />}
-            onClick={() => deleteItem(rec)}
-            style={{ color: rec.reviewStatus === 'pending' ? COLORS.borderInput : COLORS.textLight, fontSize: 14 }}
-            disabled={rec.reviewStatus === 'pending'} />
         </Space>
       ),
     },
-  ], [materials, tagTree, tagPathMap, brandFilterOptions, openEdit, deleteItem, handleApprove, handleReject]);
+  ], [materials, tagTree, tagPathMap, brandFilterOptions, canWrite, openEdit, deleteItem, handleApprove, handleReject]);
 
   // ── 统计 ──
 
@@ -584,8 +593,10 @@ const MaterialManagement: React.FC = () => {
               </span>
             </td>
             <td style={{ padding: 0, border: `1px solid ${COLORS.border}`, verticalAlign: 'middle', textAlign: 'center' }}>
-              <Button type="text" icon={<PlusOutlined />} onClick={openNew}
-                style={{ color: COLORS.primary, fontSize: 18, width: 42, height: 42 }} />
+              {canWrite && (
+                <Button type="text" icon={<PlusOutlined />} onClick={openNew}
+                  style={{ color: COLORS.primary, fontSize: 18, width: 42, height: 42 }} />
+              )}
             </td>
           </tr>
         </tbody>
