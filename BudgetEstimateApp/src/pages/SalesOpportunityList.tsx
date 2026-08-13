@@ -394,7 +394,7 @@ const SalesOpportunityList: React.FC = () => {
       return;
     }
     setPromoteOpp({ opp, targetStage });
-  }, []);
+  }, [modal]);
 
   const confirmPromote = useCallback(async () => {
     if (!promoteOpp) return;
@@ -598,6 +598,16 @@ const SalesOpportunityList: React.FC = () => {
   //   此前列定义依赖整个数组，失焦改备注/金额（touch→setOpportunities）即重建全部列 → 整表重渲染。
   //   该签名只在销售员/结单日期集合变化时改变，普通单元格编辑不再触发列重建。
   const salesDateSignature = opportunities.map(o => `${o.salesman ?? ''}|${o.expectedCloseDate ?? ''}`).join('~');
+  // 筛选下拉选项独立 memo，仅依赖「销售员+结单日期」签名串：签名不变即数组引用稳定，
+  // columns 依赖这两个稳定数组而非整个 opportunities，普通单元格编辑不触发列重建（B7）
+  const salesmanFilterOptions = useMemo(() =>
+    Array.from(new Set(opportunities.map(o => o.salesman).filter(Boolean))).map(s => ({ text: s, value: s })),
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- 签名串已完整编码该投影，仅其变化才重建
+  [salesDateSignature]);
+  const closeDateFilterOptions = useMemo(() =>
+    Array.from(new Set(opportunities.map(o => o.expectedCloseDate).filter(Boolean))).sort().map(s => ({ text: s, value: s })),
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- 签名串已完整编码该投影，仅其变化才重建
+  [salesDateSignature]);
   const columns = useMemo(() => [
     { title: '序号', key: 'index', width: 26, align: 'center' as const,
       render: (_: unknown, rec: SalesOpportunity, i: number) =>
@@ -735,13 +745,13 @@ const SalesOpportunityList: React.FC = () => {
         }
       },
     { title: '区域销售', dataIndex: 'salesman', width: 32,
-      filters: [{ text: '全部', value: '__all__' }, ...Array.from(new Set(opportunities.map(o => o.salesman).filter(Boolean))).map(s => ({ text: s, value: s }))],
+      filters: [{ text: '全部', value: '__all__' }, ...salesmanFilterOptions],
       filterSearch: true,
       onFilter: (value: unknown, record: SalesOpportunity) => value === '__all__' || record.salesman === value,
       render: (v: string, rec: SalesOpportunity) =>
         <span style={{ fontSize: 13, color: rec.terminated ? COLORS.textLight : COLORS.textDark }}>{v || '—'}</span> },
     { title: '预计定标', dataIndex: 'expectedCloseDate', width: 67,
-      filters: Array.from(new Set(opportunities.map(o => o.expectedCloseDate).filter(Boolean))).sort().map(s => ({ text: s, value: s })),
+      filters: closeDateFilterOptions,
       onFilter: (value: unknown, record: SalesOpportunity) => record.expectedCloseDate === value,
       render: (v: string, rec: SalesOpportunity) => (rec.terminated || rec.promoteLocked)
         ? <span style={{ fontSize: 13, color: COLORS.textLight }}>{v || '—'}</span>
@@ -817,7 +827,7 @@ const SalesOpportunityList: React.FC = () => {
     },
     { title: '操作日期', dataIndex: 'updatedAt', width: 100,
       render: (v: string) => <span style={{ fontSize: 13, color: COLORS.textLight }}>{formatBeijing(v)}</span> },
-  ], [tabFilter, touch, handlePromote, handleConfirmTerminate, handleWinDeliver, salesDateSignature, handleStatusAction, navigate]);
+  ], [tabFilter, touch, handlePromote, handleConfirmTerminate, handleWinDeliver, salesmanFilterOptions, closeDateFilterOptions, handleStatusAction, navigate]);
 
 
 
