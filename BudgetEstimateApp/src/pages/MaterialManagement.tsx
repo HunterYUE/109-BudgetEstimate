@@ -401,8 +401,8 @@ const MaterialManagement: React.FC = () => {
 
   const columns: ColumnsType<Component> = useMemo(() => [
     {
-      title: '编码', dataIndex: 'code', width: 185,
-      onCell: onCellLock(185),
+      title: '编码', dataIndex: 'code', width: 175,
+      onCell: onCellLock(175),
       render: (v: string, rec: Component) => {
         return (
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -420,7 +420,7 @@ const MaterialManagement: React.FC = () => {
         );
       },
     },
-    { title: '名称', dataIndex: 'nameCn', width: 145, onCell: onCellLock(145),
+    { title: '名称', dataIndex: 'nameCn', width: 135, onCell: onCellLock(135),
       render: (v: string) => <span style={{ fontSize: 12, color: '#555' }}>{v}</span>,
     },
     {
@@ -457,8 +457,8 @@ const MaterialManagement: React.FC = () => {
       onFilter: (value: unknown, record: Component) => value === '__all__' || record.unit === value,
       render: (v: string) => <span style={{ fontSize: 12, color: '#555' }}>{v || '—'}</span>,
     },
-    { title: '规格', dataIndex: 'specification', width: 160, onCell: onCellLock(160),
-      render: (v: string) => <span style={{ fontSize: 12, color: COLORS.textSecondary }}>{v || '—'}</span>,
+    { title: '规格', dataIndex: 'specification', width: 210, onCell: onCellLock(210),
+      render: (v: string) => <span title={v} style={{ fontSize: 12, color: COLORS.textSecondary, display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{v || '—'}</span>,
     },
     {
       title: '来源', dataIndex: 'sourcingType', width: 52, align: 'center' as const, onCell: onCellLock(52),
@@ -503,7 +503,7 @@ const MaterialManagement: React.FC = () => {
       },
     },
     {
-      title: '', key: 'action', width: 130, align: 'center' as const, onCell: onCellLock(130),
+      title: '', key: 'action', width: 100, align: 'center' as const, onCell: onCellLock(100),
       render: (_: unknown, rec: Component) => (
         <Space size={0}>
           <Button type="text" size="small" icon={<EyeOutlined />}

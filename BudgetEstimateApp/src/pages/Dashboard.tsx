@@ -565,7 +565,7 @@ const Dashboard: React.FC = () => {
           styles={{ body: { padding: '16px 18px' } }}>
           <SectionTitle title="管道节点" />
           <div style={{ marginTop: 50, marginLeft: -20 }}>
-            <VerticalBars items={stageDist} height={250} groupGaps={[2, 5, 8, 11]} barWidth={22.5} />
+            <VerticalBars items={stageDist} height={250} groupGaps={[2, 5, 8, 11]} barWidth={24.5} />
           </div>
         </Card>
 
