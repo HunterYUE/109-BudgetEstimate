@@ -155,7 +155,7 @@ const crudRouter = crudRoutes('delivery_projects', fields, {
             }
           }
 
-          // Replace all nodes: delete old, insert new
+          // 整组替换节点：先删旧后插新
           await client.query('DELETE FROM delivery_nodes WHERE delivery_project_id = $1', [id]);
           for (const node of nodes) {
             const baseline = node.baseline_planned_end_date || baselineMap[node.node_no] || null;

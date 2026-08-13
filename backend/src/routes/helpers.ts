@@ -193,7 +193,7 @@ export function crudRoutes(table: string, fields: string[], options?: {
   const textArraySet = new Set(textArrayCols);
 
   const quotedFields = fields.map(f => `"${f}"`).join(', ');
-  // LIST（skipList：顶层已注册自定义列表时跳过，防遮蔽死代码）
+  // ── 列表（skipList：顶层已注册自定义列表时跳过，防遮蔽死代码）──
   if (!skipList) router.get('/', asyncHandler(async (req, res) => {
     const { search } = req.query;
     let sql = `SELECT ${quotedFields} FROM "${table}"`;
@@ -205,7 +205,7 @@ export function crudRoutes(table: string, fields: string[], options?: {
     res.json(result.rows);
   }));
 
-  // GET BY ID
+  // ── 按 ID 查询 ──
   router.get('/:id', asyncHandler(async (req, res) => {
     const result = await query(
       `SELECT ${quotedFields} FROM "${table}" WHERE id = $1`,
@@ -233,7 +233,7 @@ export function crudRoutes(table: string, fields: string[], options?: {
     });
   }
 
-  // CREATE
+  // ── 创建 ──
   router.post('/', asyncHandler(async (req, res) => {
     // 自动转换请求体字段名（支持驼峰或蛇形）
     const snakeBody = objKeysToSnake({ ...req.body });
@@ -256,7 +256,7 @@ export function crudRoutes(table: string, fields: string[], options?: {
     res.status(201).json(result.rows[0]);
   }));
 
-  // UPDATE（skipUpdate：顶层已注册自定义更新时跳过，防遮蔽死代码）
+  // ── 更新（skipUpdate：顶层已注册自定义更新时跳过，防遮蔽死代码）──
   if (!skipUpdate) router.put('/:id', asyncHandler(async (req, res) => {
     const snakeBody = objKeysToSnake({ ...req.body });
     // ⚠️ A103：更新前状态机守卫（如报价审批中禁改财务字段）
@@ -284,7 +284,7 @@ export function crudRoutes(table: string, fields: string[], options?: {
     res.json(result.rows[0]);
   }));
 
-  // DELETE
+  // ── 删除 ──
   router.delete('/:id', asyncHandler(async (req, res) => {
     // ⚠️ F3/F4 修复：删除前业务引用检查（抛错则阻止并给出明确提示，而非撞外键返回通用 400）
     if (options?.beforeDelete) {

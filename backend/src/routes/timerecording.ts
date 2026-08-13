@@ -162,7 +162,7 @@ const trAppGuard: RequestHandler = (req, res, next) => {
 /** 工时受保护路由鉴权组合：requireAuth 加载用户 → trAppGuard 拦截销售经理（替代裸 requireAuth） */
 const trAuth: RequestHandler[] = [requireAuth, trAppGuard];
 
-// ─── 服务端权威计算（S4 修复）─────────────────────────────
+// ── 服务端权威计算（S4 修复） ──
 // hours/hour_type 一律由后端按起止时间与日期重算，不信任前端传入值（防伪造、防前后端口径漂移）。
 
 /** "HH:MM"（或含秒 "HH:MM:SS"）→ 分钟数；格式非法返回 null */
@@ -234,7 +234,7 @@ const trLoginLimiter = rateLimit({
   message: { error: '登录尝试过于频繁，请 15 分钟后再试' }, // 与主登录限速一致返回 { error }，前端统一解析
 });
 
-// ─── 认证 ────────────────────────────────────────────
+// ── 认证 ──
 
 /** POST /api/v1/timerecording/auth/login */
 router.post('/auth/login', trLoginLimiter, async (req, res, next) => {
@@ -331,7 +331,7 @@ router.post('/auth/logout', (_req, res) => {
   res.json({ ok: true });
 });
 
-// ─── 用户档案 ──────────────────────────────────────
+// ── 用户档案 ──
 
 // ⚠️ 全员档案列表：管理员看全字段；非管理员仅返回 id/employee_id/name/is_active/created_at（供任务规划/我的账户展示，
 //   不泄漏邮箱/角色——平衡隐私与任务规划需要全员名单；created_at=系统注册日，个人统计开工率应出勤起点需要）
@@ -414,7 +414,7 @@ router.put('/profiles/:id', ...trAuth, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// ─── 成本中心 ─────────────────────────────────────
+// ── 成本中心 ──
 
 /**
  * 可用成本中心清单（按类型分组）：
@@ -468,7 +468,7 @@ router.get('/cost-centers', ...trAuth, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// ─── 工时记录 ──────────────────────────────────────
+// ── 工时记录 ──
 
 /** 列表（支持按用户/日期/周筛选） */
 router.get('/time-records', ...trAuth, async (req, res, next) => {
@@ -684,7 +684,7 @@ router.delete('/time-records/:id', ...trAuth, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// ─── 审批 ──────────────────────────────────────────
+// ── 审批 ──
 
 /** 提交审核（⚠️ F6 补漏：只能提交自己的草稿记录；submitted_at 供「30 天内可撤回」判定）
  *  ⚠️ 周推送规则：目标周周日 20:30 前不可提交（禁半周/未来周提交）——先取记录日期校验，避免先改后拒 */
@@ -836,7 +836,7 @@ router.post('/time-records/review-batch', ...trAuth, requireRole('director', 'ad
   }
 });
 
-// ─── 任务分配 ──────────────────────────────────────
+// ── 任务分配 ──
 
 router.get('/task-assignments', ...trAuth, async (req, res, next) => {
   try {
@@ -1022,7 +1022,7 @@ router.delete('/task-assignments/:id', ...trAuth, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// ─── 通知 ──────────────────────────────────────────
+// ── 通知 ──
 
 // 角标统计通知条数（前端 unreadCount = 列表长度）。上限 200：submit-batch 会向所有启用管理员扇出 submission 通知，
 //   活跃总监 90 天窗口内可累积数百条；200 ≈ 一个多月未读缓冲。点击即删使列表窗口随删除滑动，超出部分仍可逐批消化。
@@ -1055,7 +1055,7 @@ router.delete('/notifications/:id', ...trAuth, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// ─── 通知写入（替代 RPC） ──────────────────────────
+// ── 通知写入（替代 RPC） ──
 
 router.post('/notifications', ...trAuth, async (req, res, next) => {
   try {
@@ -1081,7 +1081,7 @@ router.post('/notifications', ...trAuth, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// ─── 管理员功能 ──────────────────────────────────
+// ── 管理员功能 ──
 
 /** 管理员创建用户（补 profile + users 表） */
 router.post('/admin/users', ...trAuth, requireRole('director', 'admin'), async (req, res, next) => {

@@ -126,7 +126,7 @@ router.put('/:id/blue-table', async (req, res, next) => {
 
     // ⚠️ A15：事务样板收敛为 withTransaction（BEGIN/COMMIT/ROLLBACK/release 统一封装）
     const bt = await withTransaction(async (client) => {
-      // Upsert blue table
+      // Upsert 蓝表
       const blueTable = (await client.query(
         `INSERT INTO blue_tables (opportunity_id, veto_budget, budget_amount, timeline_plan,
           timeline_option, pricing, positioning, reaction_mode, strategy, targets)
@@ -147,7 +147,7 @@ router.put('/:id/blue-table', async (req, res, next) => {
          pricing, positioning, reaction_mode, strategy, JSON.stringify(targets || [])]
       )).rows[0];
 
-      // Replace roles: delete old, insert new（与蓝表同一事务）
+      // 整组替换角色：先删旧后插新（与蓝表同一事务）
       if (roles !== undefined) {
         await client.query('DELETE FROM blue_table_roles WHERE blue_table_id = $1', [blueTable.id]);
         for (const role of roles) {
