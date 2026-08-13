@@ -126,10 +126,14 @@ const DeliveryDetail: React.FC = () => {
             const ver = (proj.versions || []).find((v: ProjectVersion) => v.versionNo === qvn);
             const vid = ver?.id || '';
             const filtered = (proj.groups || []).filter((g: Group) => (g as unknown as Record<string, unknown>).versionId === vid);
-            // ⚠️ 最终审计修正：版本匹配成功（ver 存在）时只保留该版本组，即便为空（该版本确实无组）；
-            //   仅当无匹配版本（legacy 旧数据无 versionId）才回退全量组——此前 filtered 为空会错误回退全量组，
-            //   把其它版本的组混进成本对比，金额/成本对不上
-            if (!cancelled) setQuotationProject({ ...proj, groups: ver ? filtered : proj.groups });
+            // ⚠️ 最终审计修正：版本匹配成功（ver 存在）时只保留该版本组——该版本确实无组（filtered 空）且
+            //   存在已带版本号的组时保持空，不再错误回退全量组把其它版本混进成本对比；
+            //   兼容 legacy 旧数据（组均无 versionId）仍回退全量组（对齐 QuotationPage 同款 hasVersionedGroups 判定）
+            const hasVersionedGroups = (proj.groups || []).some((g: Group) => (g as unknown as Record<string, unknown>).versionId);
+            if (!cancelled) setQuotationProject({
+              ...proj,
+              groups: ver ? (filtered.length > 0 || hasVersionedGroups ? filtered : proj.groups) : proj.groups,
+            });
           });
         }).catch(() => {/* empty */});
       }

@@ -55,12 +55,9 @@ customRouter.put('/sync', async (req, res, next) => {
     if (existing?.status === 'pending') {
       throw new AppError(409, '该报价待审批中，无法同步保存');
     }
-    // ⚠️ 最终审计修正：已审批通过的报价同样禁止 sync 回写（此前 F18 只拦 pending、漏 approved——
-    //   持报价编制权限者可把已通过报价 sync 回 pending 并同时改金额，绕过「审批后锁定」语义重新走审批）
-    if (existing?.status === 'approved') {
-      throw new AppError(409, '该报价已审批通过，如需变更请重新发起审批流程');
-    }
-
+    // ⚠️ 终审复核：approved 报价不做 sync 拦截——已审批报价在未签单（未中标/赢）时本就可编辑（QuotationPage
+    //   shouldLock=false），编辑保存经 B61 重置为 draft 再重新走审批；若在此拦截 sync 会 409 阻断该正常变更流程。
+    //   真实锁定信号是「已签单」（中标+赢 → quotationLocked=true），由前端只读守卫 + 机会锁定共同承担。
     const result = await query(
       `INSERT INTO quotations (project_id, version_no, sales_no, client_name,
         project_name, status, amount, total_cost, profit_rate, opportunity_id)
