@@ -88,6 +88,7 @@ router.post('/', async (req, res, next) => {
       )).rows[0];
     });
 
+    logAudit(req, '提交审批', 'approval', '类型:' + (approval_type || '') + ' 编号:' + (record?.sales_no || '') + ' 审批已提交');
     res.status(201).json(record);
   } catch (err) {
     if (err instanceof AppError) return next(err);
@@ -209,11 +210,18 @@ router.delete('/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
     // ⚠️ A15：事务样板收敛为 withTransaction
+    let deletedRow: { approval_type?: string; sales_no?: string } | undefined;
     await withTransaction(async (client) => {
       const row = (await client.query(
-        'SELECT approval_type, opportunity_id, delivery_id, quotation_id FROM approval_requests WHERE id = $1', [id]
+        'SELECT approval_type, opportunity_id, delivery_id, quotation_id, status, sales_no FROM approval_requests WHERE id = $1', [id]
       )).rows[0];
       if (!row) throw new AppError(404, '审批请求不存在');
+      // ⚠️ 审计修复：已终审（approved/rejected）的审批是历史证据，删除会抹掉审批决策痕迹——拒绝删除；
+      //   pending 审批可删（=取消提交）。与 beforeUpdate「终审禁改财务字段」口径一致。
+      if (row.status === 'approved' || row.status === 'rejected') {
+        throw new AppError(409, '该审批已处理完毕，不可删除');
+      }
+      deletedRow = row;
       // 回滚级联（仅当关联记录仍处于该审批设置的 pending/locked 状态时复位，避免覆盖后续新审批）
       if (row.approval_type === 'plan' && row.delivery_id) {
         await client.query(`UPDATE delivery_projects SET plan_status = 'draft', updated_at = now() WHERE id = $1 AND plan_status = 'pending'`, [row.delivery_id]);
@@ -234,6 +242,7 @@ router.delete('/:id', async (req, res, next) => {
       }
       await client.query('DELETE FROM approval_requests WHERE id = $1', [id]);
     });
+    logAudit(req, '删除审批', 'approval', '审批 ID:' + id + ' 类型:' + (deletedRow?.approval_type || '') + ' 已删除');
     res.json({ deleted: true, id });
   } catch (err) {
     next(err);

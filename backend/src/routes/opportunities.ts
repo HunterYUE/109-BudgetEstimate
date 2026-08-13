@@ -205,8 +205,11 @@ router.put('/:id', async (req, res, next) => {
       }
     }
     // 通过检查后交给标准 CRUD PUT 处理（复用上面的 body 转换结果）
+    // ⚠️ 修复：阶段时间戳（lead_at/opportunity_at/bid_at/negotiation_at）禁直设——由下方阶段规则
+    //   COALESCE 服务端采集（首次写入不覆盖），客户端直写可伪造“进入某阶段的时间”污染财年归集口径
     const updateCols = fields.filter(f =>
-      !['id', 'created_at', 'updated_at', 'won_at', 'lost_at'].includes(f) && body[f] !== undefined
+      !['id', 'created_at', 'updated_at', 'won_at', 'lost_at',
+        'lead_at', 'opportunity_at', 'bid_at', 'negotiation_at'].includes(f) && body[f] !== undefined
     );
     if (updateCols.length === 0) throw new AppError(400, '没有要更新的字段');
     let setClause = updateCols.map((f, i) => `"${f}" = $${i + 1}`).join(', ');
@@ -239,17 +242,23 @@ router.put('/:id', async (req, res, next) => {
       // ⚠️ A105 修复：转交付须真实存在交付项目——防仅持写权限者伪造 terminated 直接把机会标成赢单
       //   （无交付的"赢"是假赢单，会污染赢率/财年归集口径）
       const delivery = (await query('SELECT 1 FROM delivery_projects WHERE opportunity_id = $1', [id])).rows[0];
-      if (!delivery) throw new AppError(400, '转交付须先创建交付项目');
       const cur = (await query('SELECT status FROM sales_opportunities WHERE id = $1', [id])).rows[0];
-      if (cur?.status === '赢') {
-        setClause += `, won_at = COALESCE(won_at, now())`;
+      if (delivery) {
+        if (cur?.status === '赢') {
+          setClause += `, won_at = COALESCE(won_at, now())`;
+        } else if (cur?.status === '输') {
+          // ⚠️ 最终审计修正：转交付 = 赢单终极确认——已标输的机会转入交付同样算赢单（置赢/中标 + won_at，清 lost_at）；
+          //   此前该分支只写 lost_at，不改 status/stage、won_at 恒 NULL，赢单财年归集永远丢失
+          setClause += `, status = '赢', stage = '中标', won_at = COALESCE(won_at, now()), lost_at = NULL`;
+        } else {
+          // 过程中/冻结转交付 → 100% 确认为赢单
+          setClause += `, status = '赢', stage = '中标', won_at = COALESCE(won_at, now())`;
+        }
       } else if (cur?.status === '输') {
-        // ⚠️ 最终审计修正：转交付 = 赢单终极确认——已标输的机会转入交付同样算赢单（置赢/中标 + won_at，清 lost_at）；
-        //   此前该分支只写 lost_at，不改 status/stage、won_at 恒 NULL，赢单财年归集永远丢失
-        setClause += `, status = '赢', stage = '中标', won_at = COALESCE(won_at, now()), lost_at = NULL`;
+        // ⚠️ 审计修复：无交付项目的"输"机会归档终止（前端终止按钮对 status='输' 的归档流）——
+        //   仅置 terminated，不改状态/阶段/won_at（输单归档=确认战败，不产生赢单）；无交付的非输机会仍 400（A105 防伪赢单回归）
       } else {
-        // 过程中/冻结转交付 → 100% 确认为赢单
-        setClause += `, status = '赢', stage = '中标', won_at = COALESCE(won_at, now())`;
+        throw new AppError(400, '转交付须先创建交付项目');
       }
     }
     rawValues.push(id);

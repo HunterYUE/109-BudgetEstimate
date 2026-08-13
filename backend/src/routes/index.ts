@@ -57,7 +57,25 @@ router.use('/projects', requireAuth, writeGuard(['报价编制', '全部查看�
 router.use('/opportunities', requireAuth, writeGuard(['编辑销售机会', '新建信息/线索/机会', '转线索/转机会', '销售蓝表编辑', '全部查看权限']), readGuard(OPP_READ), opportunities);
 router.use('/quotations', requireAuth, writeGuard(['报价编制', '全部查看权限']), readGuard(QUOTE_READ), quotations);
 // 审批：创建（各业务模块提交）与处理（审批管理）均需对应权限；列表读取仅审批管理/万能权限
-router.use('/approvals', requireAuth, writeGuard(['审批管理', '报价编制', '交付管理', '成本录入', '转线索/转机会', '全部查看权限']), readGuard(APPROVAL_READ), approvals);
+// ⚠️ 审计修复：审批写守卫按 approval_type 拆分——此前 blanket writeGuard OR-set 让仅持单一模块权限者
+//   （如仅"报价编制"）也能创建 plan/cost/promote 审批、仅持"交付管理"者也能创建 quotation 审批。
+//   创建方须持对应模块写权限：quotation→报价编制、plan/cost→交付管理（cost 兼容成本录入）、promote→转线索/转机会；
+//   无 approval_type 的请求（审批处理 POST /:id/records、通用 PUT/DELETE）→ 审批管理兜底（与 approvals.ts 内部守卫口径一致）。
+router.use('/approvals', requireAuth,
+  (req: Request, res: Response, next: NextFunction) => {
+    if (req.method === 'GET') return next(); // 交给 readGuard
+    const type = (req.body?.approval_type as string | undefined) || (req.body?.approvalType as string | undefined);
+    const permsForType: Record<string, string[]> = {
+      quotation: ['报价编制', '全部查看权限'],
+      plan: ['交付管理', '全部查看权限'],
+      cost: ['交付管理', '成本录入', '全部查看权限'],
+      promote: ['转线索/转机会', '全部查看权限'],
+    };
+    const perms = type ? permsForType[type] : undefined;
+    if (perms) return requirePermission(...perms)(req, res, next);
+    return requirePermission('审批管理', '全部查看权限')(req, res, next);
+  },
+  readGuard(APPROVAL_READ), approvals);
 // ⚠️ A101 修复：交付写权限按方法拆分——「销售机会管理」仅限转交付创建/初始化节点（POST /deliveries、PUT /:id/nodes），
 //   修改实际成本/删除交付/附件管理等其余写操作须「交付管理」。此前 blanket writeGuard OR 让仅持
 //   「销售机会管理」的用户可对任意交付改 total_actual_cost、DELETE 整条交付（还会清磁盘附件）。
@@ -105,10 +123,25 @@ router.post('/project-versions', requireAuth, writeGuard(['报价编制', '全�
       throw new AppError(400, `无效审核状态: ${review_status}`);
     }
     const existingVer = (await query(
-      'SELECT 1 FROM project_versions WHERE project_id = $1 AND version_no = $2', [project_id, version_no]
+      'SELECT review_status FROM project_versions WHERE project_id = $1 AND version_no = $2', [project_id, version_no]
     )).rows[0];
     if (!existingVer && ['approved', 'rejected'].includes(review_status)) {
       throw new AppError(400, '新版本须从草稿开始，审核状态由审批流程流转');
+    }
+    // ⚠️ 审计修复：待审批（review_status='pending'）版本禁覆写——审批人基于提交时快照做决策，
+    //   期间被改财务数据会让审批与机会回写口径失真（与 quotations beforeUpdate pending 守卫同口径）。
+    //   但仅当存在关联审批请求时才拦截：提交链路为保存版本(pending)→sync报价(pending)→创建审批，
+    //   若审批创建失败会残留 pending 无请求，此时应允许覆盖重提（与 quotations sync pending 判定同口径），否则报价永久锁死。
+    if (existingVer?.review_status === 'pending') {
+      const pendingReq = (await query(
+        `SELECT 1 FROM approval_requests ar
+         JOIN quotations q ON q.id = ar.quotation_id
+         WHERE q.project_id = $1 AND q.version_no = $2`,
+        [project_id, version_no]
+      )).rows[0];
+      if (pendingReq) {
+        throw new AppError(409, '该版本待审批中，审批完成前不可修改');
+      }
     }
 
     const result = await query(

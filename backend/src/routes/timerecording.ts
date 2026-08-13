@@ -135,7 +135,9 @@ function isValidUuidArray(ids: any): ids is string[] {
  *   director 总监（全部权限） / manager 方案·交付经理（可分配任务、查看综合分析） / employee 员工（仅本人填报/统计）
  */
 const trRoleOf = (u: { role?: string; permissions?: string[] } | undefined): 'director' | 'manager' | 'employee' => {
-  if (u?.role === 'director') return 'director';
+  // ⚠️ 修复：admin（系统/工时管理员）按 director 级处理——后端 requireRole('director','admin')
+  //   已视 admin 为全权管理员，前端导航/路由若仍按 employee 收缩会把管理入口藏掉（前后台权限不一致）
+  if (u?.role === 'director' || u?.role === 'admin') return 'director';
   const perms: string[] = u?.permissions || [];
   if (perms.includes('报价编制') || perms.includes('交付管理')) return 'manager';
   return 'employee';
@@ -586,7 +588,12 @@ router.put('/time-records/:id', ...trAuth, async (req, res, next) => {
     //   否则残留"草稿带提交时间"的数据异常，撤回判定/历史口径会失真）
     updates.push(
       `status = CASE WHEN status = 'rejected' THEN 'draft' ELSE status END`,
-      `submitted_at = CASE WHEN status = 'rejected' THEN NULL ELSE submitted_at END`
+      `submitted_at = CASE WHEN status = 'rejected' THEN NULL ELSE submitted_at END`,
+      // ⚠️ 审计修复：驳回编辑回草稿须同步清空审核链（与撤回通道 withdraw 清空口径一致）——
+      //   残留 review_notes/reviewed_by/reviewed_at + draft 状态会让审核历史与统计口径失真
+      `review_notes = CASE WHEN status = 'rejected' THEN NULL ELSE review_notes END`,
+      `reviewed_by = CASE WHEN status = 'rejected' THEN NULL ELSE reviewed_by END`,
+      `reviewed_at = CASE WHEN status = 'rejected' THEN NULL ELSE reviewed_at END`
     );
     values.push(req.params.id);
     // 归属校验：非管理员只能改自己的记录
@@ -1077,10 +1084,14 @@ router.post('/admin/users', ...trAuth, requireRole('director', 'admin'), async (
     // ⚠️ F14 修复：users + profiles 两步写放入同一事务，避免中途失败留下"有 users 无 profile"半成品
     // ⚠️ A15：事务样板收敛为 withTransaction
     const user = await withTransaction(async (client) => {
+      // ⚠️ 修复：users.role 同步为请求角色（admin→'admin'，employee→'user'）——此前恒写 'user'，
+      //   导致工时管理员创建的 admin 账号永远过不了 requireRole('director','admin')，管理功能形同虚设。
+      //   employees 仍落 'user'（VALID_ROLES 含 user；'employee' 非预算角色体系，避免系统管理页出现未知角色）
+      const usersRole = role === 'admin' ? 'admin' : 'user';
       const u = (await client.query(
         `INSERT INTO public.users (email, display_name, password_hash, role, password_changed_at)
          VALUES ($1, $2, $3, $4, now()) RETURNING id`,
-        [normEmail, name, passwordHash, 'user']
+        [normEmail, name, passwordHash, usersRole]
       )).rows[0];
       await client.query(
         `INSERT INTO timerecording.profiles (id, employee_id, name, email, role)

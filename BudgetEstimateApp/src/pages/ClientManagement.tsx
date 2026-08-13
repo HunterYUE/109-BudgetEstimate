@@ -14,6 +14,7 @@ import {
 import { ClientEditModal, ClientSubModal } from '../components/client/ClientModals';
 import ClientDrawer from '../components/client/ClientDrawer';
 import { todayBeijing } from '../utils/timeFormat';
+import { LIST_LIMIT } from '../utils/constants';
 import { BARE_INPUT_STYLE } from '../utils/tableUtils';
 import { useAuth } from '../utils/authContext';
 import { hasPermission } from '../utils/permissions';
@@ -40,7 +41,7 @@ const ClientManagement: React.FC = () => {
     try {
       const [data, counts] = await Promise.all([
         // ⚠️ 传 limit:'1000'，避免后端默认 limit=100 导致列表截断
-        clientService.list({ limit: '1000' }),
+        clientService.list({ limit: LIST_LIMIT }),
         clientService.getContactCounts().catch(() => ({}) as Record<string, number>),
       ]);
       setClients(data);

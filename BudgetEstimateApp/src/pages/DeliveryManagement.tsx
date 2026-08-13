@@ -9,6 +9,7 @@ import { COLORS } from '../styles/colors';
 import { STATUS_CONFIG } from '../components/material/materialConstants';
 import { getProjectDelay } from '../utils/analysisShared';
 import { tabItemStyle } from '../utils/tableUtils';
+import { LIST_LIMIT } from '../utils/constants';
 
 const statusTag: Record<string, { label: string; color: string }> = {
   '未开始': { label: '未开始', color: 'default' },
@@ -35,7 +36,7 @@ const DeliveryManagement: React.FC = () => {
     setLoading(true);
     try {
       // ⚠️ 传 limit:'1000'，避免后端默认 limit=100 导致列表截断
-      const data = await deliveryService.list({ limit: '1000' });
+      const data = await deliveryService.list({ limit: LIST_LIMIT });
       setProjects(data);
     } catch {
       messageApi.warning('加载交付项目失败');

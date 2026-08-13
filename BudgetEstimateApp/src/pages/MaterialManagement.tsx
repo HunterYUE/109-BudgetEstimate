@@ -10,6 +10,7 @@ import { invalidateCatalogCache } from '../services/catalogCache';
 import { tagService } from '../services/tagService';
 import { collectTagPaths, collectDescendantIds, findPath, uid } from '../utils/tagHelpers';
 import { todayBeijing } from '../utils/timeFormat';
+import { LIST_LIMIT } from '../utils/constants';
 import { parseVersionFromCode } from '../utils/codeVersion';
 import { formatMoney } from '../utils/calculations';
 import type { Component, ItemType, SourcingType, ReviewStatus, TagNode } from '../types';
@@ -112,7 +113,7 @@ const MaterialManagement: React.FC = () => {
     setLoading(true);
     try {
       // ⚠️ 传 limit:'1000'，避免后端默认 limit=100 导致列表截断
-      const res = await componentService.list({ limit: '1000' });
+      const res = await componentService.list({ limit: LIST_LIMIT });
       if (res) {
         setMaterials(res.map(c => deepClone(c)));
       }

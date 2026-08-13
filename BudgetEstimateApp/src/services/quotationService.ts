@@ -2,8 +2,8 @@ import { api } from '../utils/api';
 import type { QuotationSummary } from '../types';
 
 export const quotationService = {
-  list: (params?: Record<string, string>) =>
-    api.get<QuotationSummary[]>('/quotations' + (params ? '?' + new URLSearchParams(params).toString() : '')),
+  list: (params?: Record<string, string>, opts?: { noCache?: boolean }) =>
+    api.get<QuotationSummary[]>('/quotations' + (params ? '?' + new URLSearchParams(params).toString() : ''), opts),
 
   get: (id: string) => api.get<QuotationSummary>(`/quotations/${id}`),
 

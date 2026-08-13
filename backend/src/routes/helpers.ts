@@ -154,6 +154,9 @@ export function crudRoutes(table: string, fields: string[], options?: {
   beforeCreate?: (snakeBody: Record<string, any>) => Promise<void>;
   /** 更新前钩子：抛错则阻止更新（用于状态机守卫，如报价审批中禁改财务字段） */
   beforeUpdate?: (id: string, snakeBody: Record<string, any>) => Promise<void>;
+  /** 更新后钩子：更新成功且返回行后调用（用于审计留痕等非阻塞后处理，如已审批交付成本被覆盖时记审计）。
+   *  收到 req 以便 logAudit；抛错会使本次更新请求返回 500（调用方应内部吞错，参考 logAudit 的 try/catch） */
+  afterUpdate?: (req: Request, id: string, snakeBody: Record<string, any>, updatedRow: Record<string, any>) => Promise<void>;
   /** TEXT[] 列名（空数组须序列化为 '{}' 而非 '[]'，后者对 PG 数组字面量非法） */
   textArrayCols?: string[];
   /** 跳过默认 GET / 列表（当顶层已注册自定义列表，避免遮蔽死代码） */
@@ -259,6 +262,10 @@ export function crudRoutes(table: string, fields: string[], options?: {
     );
     if (result.rows.length === 0) {
       throw new AppError(404, `记录不存在`);
+    }
+    // ⚠️ 审计修复 #12：更新后钩子（如已审批交付成本被覆盖修改时记审计）——放在响应前、成功后
+    if (options?.afterUpdate) {
+      await options.afterUpdate(req, req.params.id, snakeBody, result.rows[0]);
     }
     res.json(result.rows[0]);
   }));

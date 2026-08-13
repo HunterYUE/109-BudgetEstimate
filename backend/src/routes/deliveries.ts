@@ -5,7 +5,7 @@ import { requirePermission } from '../middleware/auth.js';
 import multer, { type FileFilterCallback } from 'multer';
 import path from 'path';
 import fs from 'fs';
-import { crudRoutes, objKeysToSnake, buildSearchWhere, parsePagination, withTransaction } from './helpers.js';
+import { crudRoutes, objKeysToSnake, buildSearchWhere, parsePagination, withTransaction, logAudit } from './helpers.js';
 
 const fields = [
   'id', 'opportunity_id', 'sales_no', 'client_name', 'project_name',
@@ -91,6 +91,19 @@ const crudRouter = crudRoutes('delivery_projects', fields, {
     if (quote.opportunity_id !== opportunity_id) throw new AppError(400, '报价不属于该销售机会，无法转交付');
     const existing = (await query('SELECT 1 FROM delivery_projects WHERE opportunity_id = $1', [opportunity_id])).rows[0];
     if (existing) throw new AppError(409, '该机会已转交付，请勿重复创建交付项目');
+  },
+  // ⚠️ 审计修复 #12：已审批交付的成本被覆盖修改须审计留痕（DeliveryDetail 总监解锁覆盖成本场景）——
+  //   覆盖成本 = 直接修改已批准的成本对比，是敏感操作；记录操作者与修改后的总实际成本。
+  //   只补审计、不强制重新审批（用户选定方案：改前不拦、改后留痕）。
+  afterUpdate: async (req, id, snakeBody, updatedRow) => {
+    const costFields = ['total_actual_cost', 'actual_costs'];
+    const costChanged = costFields.some(f => snakeBody[f] !== undefined);
+    // 仅当成本字段被修改（排除 plan 节点保存走 /:id/nodes 不会经过这里；状态/计划字段不算成本覆盖）
+    if (costChanged) {
+      logAudit(req, '修改成本', 'delivery',
+        `交付 ${updatedRow.sales_no || id.slice(0, 8)} 成本被修改${updatedRow.cost_status === 'approved' ? '（已审批覆盖）' : ''}，总实际成本 ${updatedRow.total_actual_cost ?? 0}`)
+        .catch(err => console.warn('[deliveries] 成本修改审计写入失败', (err as Error).message));
+    }
   },
   // ⚠️ F15 修复：删除交付项目时清理磁盘上的附件文件（DB 行靠 delivery_files CASCADE 删，物理文件不会随删）
   beforeDelete: async (id) => {

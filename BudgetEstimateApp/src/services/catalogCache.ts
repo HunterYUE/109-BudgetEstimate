@@ -1,4 +1,5 @@
 import { componentService } from './componentService';
+import { LIST_LIMIT } from '../utils/constants';
 import type { Component } from '../types';
 
 // 组件目录缓存（模块级，避免重复加载）
@@ -32,7 +33,7 @@ export function loadCatalog(): Promise<Component[]> {
 function fetchCatalog(gen: number): Promise<Component[]> {
   catalogLoading = true;
   // ⚠️ 传 limit:'1000'：物料目录是报价编码下拉唯一数据源，默认 100 会截断合法编码（与 QuotationPage 校验的 1000 条不一致）
-  return componentService.list({ limit: '1000' }).then(data => {
+  return componentService.list({ limit: LIST_LIMIT }).then(data => {
     catalogLoading = false;
     // 同代 waiter 用本次结果满足；失效后（gen 落后）的 waiter 不拿旧数据——经 loadCatalog() 重新发起新代加载
     const sameGen: Array<(d: Component[]) => void> = [];

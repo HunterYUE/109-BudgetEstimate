@@ -20,7 +20,7 @@ import { oppEffectiveEnd } from '../utils/analysisShared';
 import { COLORS } from '../styles/colors';
 import { api, clearCache } from '../utils/api';
 import { calcBlueTableWinRate } from '../utils/blueTableCalculation';
-import { NODE_NAMES, STAGE_COLORS, TAX_RATE } from '../utils/constants';
+import { NODE_NAMES, STAGE_COLORS, TAX_RATE, LIST_LIMIT } from '../utils/constants';
 import { formatBeijing } from '../utils/timeFormat';
 import { useAuth } from '../utils/authContext';
 import { hasPermission } from '../utils/permissions';
@@ -120,7 +120,7 @@ const SalesOpportunityList: React.FC = () => {
 
   const loadClients = useCallback(() => {
     // ⚠️ 传 limit:'1000'：客户下拉/企业校验依赖全量客户，默认 100 会截断导致下拉缺失、校验误拒
-    clientService.list({ limit: '1000' }).then(data => {
+    clientService.list({ limit: LIST_LIMIT }).then(data => {
       if (data) setEnterpriseClients(data.filter((c: Client) => c.type === 'enterprise'));
     }).catch(() => {});
   }, []);
@@ -136,7 +136,7 @@ const SalesOpportunityList: React.FC = () => {
   const loadOpportunities = useCallback(async () => {
     try {
       // ⚠️ 传 limit:'1000'，避免后端默认 limit=100 导致列表截断（对齐其他页面）
-      const data = await opportunityService.list({ limit: '1000' });
+      const data = await opportunityService.list({ limit: LIST_LIMIT });
       setOpportunities(data || []);
     } catch { setOpportunities([]); }
   }, []);

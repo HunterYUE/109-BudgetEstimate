@@ -4,7 +4,7 @@ import { deliveryService } from '../services/deliveryService';
 import { quotationService } from '../services/quotationService';
 import type { DeliveryProject } from '../types';
 import { COLORS } from '../styles/colors';
-import { NODE_DISPLAY_NAMES } from '../utils/constants';
+import { NODE_DISPLAY_NAMES, LIST_LIMIT } from '../utils/constants';
 import { parseFY, FYSelector, fiscalYearLabel } from '../utils/fiscalYear';
 import { fmtK, compressNo, chartLabel, monthEndOf, getNodeBaseline, getNodeDelay, getProjectDelay, isProjectDelivered, getProjectDoneDate, quoteProfitExTax, deliverySalesProfit, buildQuoteInfoMap, deliveryExTax } from '../utils/analysisShared';
 import { ProfitChart, ProjectGantt, BubbleChart } from '../components/charts/DeliveryCharts';
@@ -107,8 +107,8 @@ const DeliveryAnalysis: React.FC = () => {
     // 分析页需要最新数据：交付一次取全量（limit=1000）并绕过 api.ts 的 30s GET 缓存
     // ⚠️ allSettled：单个接口失败不拖垮整页（Promise.all 会整体拒绝导致整页空白）
     Promise.allSettled([
-      deliveryService.list({ limit: '1000' }, { noCache: true }),
-      quotationService.list({ limit: '1000' }),
+      deliveryService.list({ limit: LIST_LIMIT }, { noCache: true }),
+      quotationService.list({ limit: LIST_LIMIT }, { noCache: true }),
     ]).then(([dps, quotes]) => {
       if (cancelled) return;
       if (dps.status === 'fulfilled') setDeliveryProjects(dps.value.map(p => ({ ...p, nodes: p.nodes || [] })));

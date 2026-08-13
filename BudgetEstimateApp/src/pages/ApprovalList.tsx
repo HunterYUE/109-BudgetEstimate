@@ -7,6 +7,7 @@ import { deliveryService } from '../services/deliveryService';
 import { quotationService } from '../services/quotationService';
 import { formatMoney } from '../utils/calculations';
 import { formatBeijing } from '../utils/timeFormat';
+import { LIST_LIMIT } from '../utils/constants';
 import type { ApprovalRequest, QuotationSummary, DeliveryProject } from '../types';
 import { COLORS } from '../styles/colors';
 import { STATUS_CONFIG } from '../components/material/materialConstants';
@@ -49,14 +50,14 @@ const ApprovalList: React.FC = () => {
   // ⚠️ B35 修复：草稿清单单独成函数——审批通过/驳回后端级联会改变草稿状态（报价转交付会新增交付草稿、
   //   已审批单据不再停留草稿），此前草稿仅挂载时加载一次，审批操作后不刷新导致草稿 Tab 数据陈旧
   const loadDrafts = useCallback(() => {
-    quotationService.list({ limit: '1000' }).then(res => setDraftQuotations(res)).catch(() => setDraftQuotations([]));
-    deliveryService.list({ limit: '1000' }).then(res => setDraftDeliveries(res)).catch(() => setDraftDeliveries([]));
+    quotationService.list({ limit: LIST_LIMIT }).then(res => setDraftQuotations(res)).catch(() => setDraftQuotations([]));
+    deliveryService.list({ limit: LIST_LIMIT }).then(res => setDraftDeliveries(res)).catch(() => setDraftDeliveries([]));
   }, []);
 
   useEffect(() => {
     let cancelled = false;
     // ⚠️ 全部传 limit:'1000'，避免后端默认 limit=100 导致列表截断
-    approvalService.list({ limit: '1000' }).then(res => { if (!cancelled) setRequests(res); }).catch(() => { if (!cancelled) setRequests([]); });
+    approvalService.list({ limit: LIST_LIMIT }).then(res => { if (!cancelled) setRequests(res); }).catch(() => { if (!cancelled) setRequests([]); });
     loadDrafts();
     return () => { cancelled = true; };
   }, [loadDrafts]);
@@ -144,7 +145,7 @@ const ApprovalList: React.FC = () => {
         comment: approvalComment,
       });
       // 重新加载列表确保 latestRecord 数据最新
-      approvalService.list({ limit: '1000' }).then(res => setRequests(res)).catch(() => {});
+      approvalService.list({ limit: LIST_LIMIT }).then(res => setRequests(res)).catch(() => {});
       loadDrafts(); // ⚠️ B35 修复：审批后同步刷新草稿清单（后端级联可能新增/移除草稿项）
       if (modal.action === 'approved') msg.success('已通过');
       else msg.warning('已驳回');

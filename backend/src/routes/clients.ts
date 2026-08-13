@@ -90,6 +90,8 @@ const router = crudRoutes('clients', fields, {
               await client.query('UPDATE projects SET client_name = $1 WHERE client_name = $2', [clientData.name, oldName]);
               await client.query('UPDATE quotations SET client_name = $1 WHERE client_name = $2', [clientData.name, oldName]);
               await client.query('UPDATE delivery_projects SET client_name = $1 WHERE client_name = $2', [clientData.name, oldName]);
+              // ⚠️ 审计修复：审批请求也带冗余 client_name，改名后一并级联（否则审批列表显示旧客户名）
+              await client.query('UPDATE approval_requests SET client_name = $1 WHERE client_name = $2', [clientData.name, oldName]);
             }
           }
 

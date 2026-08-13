@@ -3,6 +3,7 @@ import { Table, Button, Modal, message, Switch } from 'antd';
 import { PlusOutlined, EditOutlined, KeyOutlined, CheckOutlined, CloseOutlined, SettingOutlined, DeleteOutlined } from '@ant-design/icons';
 import { COLORS, LABEL_CELL_STYLE } from '../styles/colors';
 import { formatBeijing } from '../utils/timeFormat';
+import { LIST_LIMIT } from '../utils/constants';
 import { userService, type UserRecord } from '../services/userService';
 import { auditLogService, type AuditLog } from '../services/auditLogService';
 import type { TableProps } from 'antd';
@@ -143,7 +144,7 @@ const SystemManagement: React.FC = () => {
     setLogLoading(true);
     try {
       // ⚠️ 传 limit:'1000'，避免后端默认 limit=100 导致日志截断
-      const data = await auditLogService.list({ limit: '1000' });
+      const data = await auditLogService.list({ limit: LIST_LIMIT });
       setLogs(data);
     } catch {
       messageApi.error('加载操作日志失败');

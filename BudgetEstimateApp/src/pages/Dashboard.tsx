@@ -5,6 +5,7 @@ import { RightOutlined } from '@ant-design/icons';
 import { FiBarChart2, FiAward, FiPlusCircle, FiTruck, FiTool } from 'react-icons/fi';
 import { parseFY, fiscalYearLabel } from '../utils/fiscalYear';
 import { formatBeijing } from '../utils/timeFormat';
+import { LIST_LIMIT } from '../utils/constants';
 import { fmtK, chartLabel, oppEffectiveEnd, isRealWin, monthEndOf, exAmount, stageAsOf, getNodeDelay, getProjectDelay, isProjectDelivered, getProjectDoneDate, projectMonthlySales, FY_MONTH_LABELS, buildQuoteInfoMap, deliveryExTax } from '../utils/analysisShared';
 import { COLORS } from '../styles/colors';
 import { OverviewCards } from '../components/shared/OverviewCards';
@@ -201,10 +202,10 @@ const Dashboard: React.FC = () => {
     // ⚠️ allSettled：单个接口失败不拖垮整页（Promise.all 会整体拒绝导致仪表盘全空）
     Promise.allSettled([
       // 全部传 limit:'1000'，避免后端默认 limit=100 导致统计静默截断（对齐 DeliveryAnalysis）
-      opportunityService.list({ limit: '1000' }),
-      deliveryService.list({ limit: '1000' }),
-      clientService.list({ limit: '1000' }),
-      quotationService.list({ limit: '1000' }),
+      opportunityService.list({ limit: LIST_LIMIT }),
+      deliveryService.list({ limit: LIST_LIMIT }),
+      clientService.list({ limit: LIST_LIMIT }),
+      quotationService.list({ limit: LIST_LIMIT }),
     ]).then(([opps, dels, clis, quots]) => {
       if (cancelled) return;
       if (opps.status === 'fulfilled') setOpportunities(opps.value);

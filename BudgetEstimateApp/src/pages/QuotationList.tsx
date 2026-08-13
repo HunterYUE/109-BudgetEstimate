@@ -6,6 +6,7 @@ import { quotationService } from '../services/quotationService';
 import { formatMoney } from '../utils/calculations';
 import { formatBeijing } from '../utils/timeFormat';
 import { parseFY, FYSelector, fiscalYearLabel } from '../utils/fiscalYear';
+import { LIST_LIMIT } from '../utils/constants';
 import type { QuotationSummary } from '../types';
 import { COLORS } from '../styles/colors';
 import { STATUS_CONFIG } from '../components/material/materialConstants';
@@ -25,7 +26,7 @@ const QuotationList: React.FC = () => {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    quotationService.list({ limit: '1000' })
+    quotationService.list({ limit: LIST_LIMIT })
       .then(res => {
         if (!cancelled) setData(res);
       })

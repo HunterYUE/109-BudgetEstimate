@@ -16,7 +16,7 @@ import { COLORS } from '../styles/colors';
 import { STATUS_CONFIG } from '../components/material/materialConstants';
 import { getNodeDelay, getProjectDelay } from '../utils/analysisShared';
 import { buildCostLines } from '../utils/costBreakdown';
-import { DEFAULT_DESIGN_HOURLY_RATE, DEFAULT_ASSEMBLY_HOURLY_RATE, TAX_RATE } from '../utils/constants';
+import { DEFAULT_DESIGN_HOURLY_RATE, DEFAULT_ASSEMBLY_HOURLY_RATE, TAX_RATE, LIST_LIMIT } from '../utils/constants';
 import { exportHtmlTable, escapeHtml } from '../utils/exportToExcel';
 import { deliveryFileService, type DeliveryFile } from '../services/deliveryFileService';
 import { uuid } from '../utils/uuid';
@@ -132,6 +132,10 @@ const DeliveryDetail: React.FC = () => {
             const hasVersionedGroups = (proj.groups || []).some((g: Group) => (g as unknown as Record<string, unknown>).versionId);
             if (!cancelled) setQuotationProject({
               ...proj,
+              // ⚠️ 审计修复 #8：groups 已按匹配版本 ver 过滤，但报价财务参数（warranty/risk/tax/commercial）
+              //   此前仍取 currentVersion（最新版）导致成本对比用错版本——统一覆写为匹配版本，
+              //   无匹配时回退项目当前/首个版本（兼容 legacy 无版本号数据）
+              currentVersion: ver || proj.currentVersion || proj.versions?.[0],
               groups: ver ? (filtered.length > 0 || hasVersionedGroups ? filtered : proj.groups) : proj.groups,
             });
           });
@@ -139,8 +143,8 @@ const DeliveryDetail: React.FC = () => {
       }
       // 加载物料费率（设计会签/装配调试）
       Promise.all([
-        componentService.list({ search: 'SV-DESIGN-000000-V1.0', limit: '1000' }),
-        componentService.list({ search: 'SV-INSASS-000000-V1.0', limit: '1000' }),
+        componentService.list({ search: 'SV-DESIGN-000000-V1.0', limit: LIST_LIMIT }),
+        componentService.list({ search: 'SV-INSASS-000000-V1.0', limit: LIST_LIMIT }),
       ]).then(([designComps, assyComps]) => {
         if (cancelled) return;
         const designRate = designComps?.[0]?.unitCost || DEFAULT_DESIGN_HOURLY_RATE;

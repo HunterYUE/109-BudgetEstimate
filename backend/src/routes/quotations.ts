@@ -53,7 +53,16 @@ customRouter.put('/sync', async (req, res, next) => {
       [project_id, version_no]
     )).rows[0];
     if (existing?.status === 'pending') {
-      throw new AppError(409, '该报价待审批中，无法同步保存');
+      // ⚠️ 审计修复：status='pending' 须结合是否存在关联审批请求判定——提交审批链路为
+      //   保存版本(pending) → sync 报价(pending) → 创建审批请求；若审批创建失败（无权限/网络/参数错），
+      //   报价会残留 status='pending' 但无审批请求，此前的 409 会永久锁死该报价无法再保存。
+      //   仅当存在真实审批请求时拦截（审批中不可改财务字段）。
+      const hasApproval = (await query(
+        'SELECT 1 FROM approval_requests WHERE quotation_id = $1', [existing.id]
+      )).rows[0];
+      if (hasApproval) {
+        throw new AppError(409, '该报价待审批中，无法同步保存');
+      }
     }
     // ⚠️ 终审复核：approved 报价不做 sync 拦截——已审批报价在未签单（未中标/赢）时本就可编辑（QuotationPage
     //   shouldLock=false），编辑保存经 B61 重置为 draft 再重新走审批；若在此拦截 sync 会 409 阻断该正常变更流程。

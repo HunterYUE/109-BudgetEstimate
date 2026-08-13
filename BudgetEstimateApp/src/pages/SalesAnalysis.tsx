@@ -12,7 +12,7 @@ import { deliveryService } from '../services/deliveryService';
 import { COLORS } from '../styles/colors';
 import { parseFY, FYSelector, fiscalYearLabel } from '../utils/fiscalYear';
 import { fmtK, oppEffectiveEnd, isRealWin, monthEndOf, exAmount, stageAsOf, getProjectDoneDate, fyMonthWindows, FY_MONTH_LABELS, projectMonthlySales, deliverySalesProfit, quoteProfitExTax, buildQuoteInfoMap, deliveryExTax } from '../utils/analysisShared';
-import { STAGE_COLORS } from '../utils/constants';
+import { STAGE_COLORS, LIST_LIMIT } from '../utils/constants';
 import { settingsService, type UserSettings } from '../services/settingsService';
 
 /* ============================================================
@@ -97,9 +97,9 @@ const SalesAnalysis: React.FC = () => {
   const loadAll = useCallback(async () => {
     // ⚠️ allSettled：单个接口失败不拖垮整页；全部传 limit:'1000' 避免后端默认 limit=100 静默截断
     const [opps, qs, dps] = await Promise.allSettled([
-      opportunityService.list({ limit: '1000' }),
-      quotationService.list({ limit: '1000' }),
-      deliveryService.list({ limit: '1000' }),
+      opportunityService.list({ limit: LIST_LIMIT }),
+      quotationService.list({ limit: LIST_LIMIT }),
+      deliveryService.list({ limit: LIST_LIMIT }),
     ]);
     if (!aliveRef.current) return;
     if (opps.status === 'fulfilled') setAllOpps(opps.value);

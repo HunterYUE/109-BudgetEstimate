@@ -21,7 +21,7 @@ import { COLORS } from '../styles/colors';
 import { uuid } from '../utils/uuid';
 import { todayBeijing } from '../utils/timeFormat';
 import { exportHtmlTable, escapeHtml } from '../utils/exportToExcel';
-import { DEFAULT_DESIGN_HOURLY_RATE, DEFAULT_ASSEMBLY_HOURLY_RATE, TAX_RATE } from '../utils/constants';
+import { DEFAULT_DESIGN_HOURLY_RATE, DEFAULT_ASSEMBLY_HOURLY_RATE, TAX_RATE, LIST_LIMIT } from '../utils/constants';
 import { STATUS_CONFIG } from '../components/material/materialConstants';
 
 
@@ -320,7 +320,7 @@ const QuotationPage: React.FC = () => {
               // ⚠️ 传 limit:'1000'，避免后端默认 limit=100 导致客户列表截断、查不到客户编码
               let cc = '';
               try {
-                const clients = await clientService.list({ limit: '1000' });
+                const clients = await clientService.list({ limit: LIST_LIMIT });
                 const match = clients.find((c: Client) => c.name === cn);
                 if (match) cc = match.code || '';
               } catch { /* 静默忽略，使用回退值 */ }
@@ -339,7 +339,7 @@ const QuotationPage: React.FC = () => {
     }
     load();
     // ⚠️ 传 limit:'1000'，避免后端默认 limit=100 导致物料库截断（编码填充/校验依赖全量物料库）
-    componentService.list({ limit: '1000' }).then(d => { if (!cancelled && d) setComponentDB(d); }).catch(() => {});
+    componentService.list({ limit: LIST_LIMIT }).then(d => { if (!cancelled && d) setComponentDB(d); }).catch(() => {});
     return () => { cancelled = true; };
   }, [quoteId]);
 

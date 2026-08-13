@@ -29,8 +29,9 @@ export const MoneyInput: React.FC<{
     committed.current = num;
     setText(num ? '¥' + num.toLocaleString() : '');
     // ⚠️ 最终审计修正：值未变化不回调 onCommit（此前失焦/Enter 无条件回调，
-    //   金额未改也触发父级 setState + 标记 dirty，造成多余渲染与「未改也显示未保存」的假象）
-    if (num !== value) onCommit(num);
+    //   金额未改也触发父级 setState + 标记 dirty，造成多余渲染与「未改也显示未保存」的假象）；
+    //   取整比较——显示即 Math.round(value)，浮点存储（如 1234.6 内部误差）不得误判为变更
+    if (Math.round(num) !== Math.round(value)) onCommit(num);
     setEditing(false);
   };
 

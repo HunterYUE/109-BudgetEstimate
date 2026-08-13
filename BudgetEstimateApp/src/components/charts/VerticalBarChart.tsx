@@ -56,7 +56,14 @@ export const VerticalBarChart: React.FC<VerticalBarChartProps> = ({
   const working = disableSort ? data : [...data].sort((a, b) => b.value - a.value);
   const top = working.slice(0, topN);
   const rawMax = Math.max(...top.map(d => d.value), 0);
-  const effectiveMax = Math.max(1, targetValue ? Math.max(rawMax, targetValue) : (rawMax > 0 ? rawMax : (format === '%' ? 100 : 1)));
+  const rawMin = Math.min(...top.map(d => d.value), 0);
+  // ⚠️ 审计修复 #13：全负值数据（如某财年交付全部提前、延期天数均为负）此前 rawMax=0 → effectiveMax 归 1，
+  //   Y 轴塌缩为误导性的 [1,0]、负值标签全部挤在底部；含负值时改按真实量程 [rawMin, rawMax] 铺开、
+  //   0 基线按比例定位、负值柱向下探（正确表达「提前」方向）。纯正值路径维持原 effectiveMax（targetValue 参与缩放）。
+  const hasNeg = rawMin < 0;
+  const effectiveMax = hasNeg
+    ? Math.max(rawMax - rawMin, 1)
+    : Math.max(1, targetValue ? Math.max(rawMax, targetValue) : (rawMax > 0 ? rawMax : (format === '%' ? 100 : 1)));
   const avg = data.length > 0 ? data.reduce((s, d) => s + d.value, 0) / data.length : 0;
   const slots: (BarItem | null)[] = Array.from({ length: topN }, (_, i) => top[i] || null);
 
@@ -72,9 +79,16 @@ export const VerticalBarChart: React.FC<VerticalBarChartProps> = ({
   const chartH = height - pad.top - pad.bottom;
   const slotW = chartW / topN;
   const barW = Math.min(slotW * barWidthRatio, maxBarWidth);
-  const gridVals = effectiveMax <= 10
-    ? Array.from({ length: effectiveMax + 1 }, (_, i) => i).reverse()
-    : Array.from({ length: 5 }, (_, i) => (effectiveMax * (4 - i)) / 4);
+  /** 数值 → Y 坐标（含负值时 rawMax 在顶、rawMin 在底；纯正值时 0 在底、effectiveMax 在顶） */
+  const yOf = (v: number) => hasNeg
+    ? pad.top + ((rawMax - v) / effectiveMax) * chartH
+    : pad.top + (1 - v / effectiveMax) * chartH;
+  const zeroY = yOf(0);
+  const gridVals = hasNeg
+    ? Array.from({ length: 5 }, (_, i) => rawMax - (i * effectiveMax) / 4)
+    : (effectiveMax <= 10
+      ? Array.from({ length: effectiveMax + 1 }, (_, i) => i).reverse()
+      : Array.from({ length: 5 }, (_, i) => (effectiveMax * (4 - i)) / 4));
 
   const chart = (
     <>
@@ -88,7 +102,7 @@ export const VerticalBarChart: React.FC<VerticalBarChartProps> = ({
         )}
         {/* Y 轴网格线 + 标签 */}
         {gridVals.map((gv, i) => {
-          const y = pad.top + (1 - gv / effectiveMax) * chartH;
+          const y = yOf(gv);
           return (
             <g key={`g-${i}`}>
               <line x1={pad.left} y1={y} x2={W - pad.right} y2={y} stroke={COLORS.borderLight} strokeWidth={1} />
@@ -101,7 +115,7 @@ export const VerticalBarChart: React.FC<VerticalBarChartProps> = ({
 
         {/* 目标线 或 平均值虚线 */}
         {targetValue != null && targetValue > 0 ? (() => {
-          const tgtY = pad.top + (1 - targetValue / effectiveMax) * chartH;
+          const tgtY = yOf(targetValue);
           return (
             <g>
               <line x1={pad.left} y1={tgtY} x2={W - pad.right} y2={tgtY}
@@ -114,7 +128,7 @@ export const VerticalBarChart: React.FC<VerticalBarChartProps> = ({
             </g>
           );
         })() : (!hideAvgLine && avg > 0 && data.some(d => d.value > 0) && (() => {
-          const avgY = pad.top + (1 - avg / effectiveMax) * chartH;
+          const avgY = yOf(avg);
           return (
             <g>
               <line x1={pad.left} y1={avgY} x2={W - pad.right} y2={avgY}
@@ -128,10 +142,10 @@ export const VerticalBarChart: React.FC<VerticalBarChartProps> = ({
           const cx = pad.left + i * slotW + slotW / 2;
           if (!item) return <g key={`e-${i}`} />;
 
-          // ⚠️ 最终审计修正：非正数（≤0）统一底对齐 0 高，不再 Math.max(2, 负) 渲染出 2px 假柱——
-          //   延期天数提前交付为负值，此前显示成极短正柱误导读图；负值仍显示其真实标签（如 -5）
-          const isNonPositive = item.value <= 0;
-          const barH = isNonPositive ? 0 : Math.max(2, (item.value / effectiveMax) * chartH);
+          // ⚠️ 审计修复 #13：正值自 0 基线向上、负值向下（提前交付不再是 0 高标签挤底部的误导形态）；
+          //   纯正值路径 barTop 公式与既往一致（zeroY=底部 → pad.top+chartH-barH）
+          const isNegBar = item.value < 0;
+          const barH = item.value === 0 ? 0 : Math.max(2, (Math.abs(item.value) / effectiveMax) * chartH);
           const color = item.color || (targetValue != null && targetValue > 0 ? (item.value >= targetValue ? COLORS.primary : COLORS.danger) : COLORS.primary);
           let label: string;
           if (item.value === 0) label = '—';
@@ -139,19 +153,19 @@ export const VerticalBarChart: React.FC<VerticalBarChartProps> = ({
           else if (format === '%') label = `${item.value.toFixed(1)}%`;
           else label = `${item.value}`;
 
-          const barTop = pad.top + chartH - barH;
+          const barTop = isNegBar ? zeroY : (zeroY - barH);
 
           return (
             <g key={item.name + '-' + i}
               onMouseEnter={hoverable && item.tooltip ? () => setHoveredTip({ lines: item.tooltip!.split('\n'), cx, barTop, chartW: chartWidth }) : undefined}
               onMouseLeave={hoverable ? () => setHoveredTip(null) : undefined}>
-              <text x={cx} y={barTop - barLabelGap} textAnchor="middle" fontSize={valueFontSize}
+              <text x={cx} y={isNegBar ? barTop + barH + barLabelGap : barTop - barLabelGap} textAnchor="middle" fontSize={valueFontSize}
                 fill={color} fontWeight={600}>{label}</text>
               {item.subValue != null && item.subValue > 0 && (
-                <text x={cx} y={barTop - 6} textAnchor="middle" fontSize={valueFontSize}
+                <text x={cx} y={isNegBar ? barTop + barH + 6 : barTop - 6} textAnchor="middle" fontSize={valueFontSize}
                   fill={COLORS.purple} fontWeight={600}>（{format === 'K' ? fmtK(item.subValue) : item.subValue}）</text>
               )}
-              {!isNonPositive && (
+              {barH > 0 && (
                 <rect x={cx - barW / 2} y={barTop} width={barW} height={barH}
                   fill="none" stroke={color} strokeWidth={centeredSvg ? 2.5 : 3} rx={0} ry={0} />
               )}

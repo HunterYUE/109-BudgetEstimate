@@ -36,3 +36,8 @@ export const DEFAULT_ASSEMBLY_HOURLY_RATE = 85;
 
 /** 默认增值税率 13%（⚠️ B22：报价版本 taxRate 缺省回退值，全应用统一，散落魔法数字收敛至此） */
 export const TAX_RATE = 0.13;
+
+// ===== 列表接口统一拉取上限 =====
+// 对齐后端 parsePagination PAGE_LIMIT=100000；前端聚合/全量读取（仪表盘/分析/管理页）显式传此值，
+// 防数据量上涨后静默截断——此前散落的 limit:'1000' 在 20+ 员工正式部署下会截断聚合数据
+export const LIST_LIMIT = '100000';

@@ -127,6 +127,13 @@ router.put('/:id', async (req, res, next) => {
       values
     );
 
+    // ⚠️ 审计修复：邮箱变更双写 timerecording.profiles（冗余展示字段，无 FK）——不同步会让工时侧
+    //   /auth/me 等返回旧邮箱、数据自相矛盾；timerecording schema 未部署时 to_regclass 探测跳过
+    if (emailNorm !== undefined) {
+      const sc = (await query(`SELECT to_regclass('timerecording.profiles') AS p`)).rows[0];
+      if (sc?.p) await query('UPDATE timerecording.profiles SET email = $1 WHERE id = $2', [emailNorm, id]);
+    }
+
     res.json(result.rows[0]);
   } catch (err) { next(err); }
 });
