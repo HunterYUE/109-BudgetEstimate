@@ -379,7 +379,7 @@ const QuotationPage: React.FC = () => {
         // directCost 恒为 0 会触发 setProject → effect 再跑 → 无限循环，故不以 directCost===0 为触发条件
         if (itemChanged) {
           updated.directCost = calcDirectCost(updated);
-          const p = calcItemPrices(updated.directCost, updated.marginRate || 0.15);
+          const p = calcItemPrices(updated.directCost, updated.marginRate ?? 0.15);
           updated.basicPrice = p.basicPrice;
           updated.accountingPrice = p.accountingPrice;
           changed = true; return updated;

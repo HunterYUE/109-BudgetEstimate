@@ -128,11 +128,13 @@ export const VerticalBarChart: React.FC<VerticalBarChartProps> = ({
           const cx = pad.left + i * slotW + slotW / 2;
           if (!item) return <g key={`e-${i}`} />;
 
-          const isZero = item.value === 0;
-          const barH = isZero ? 0 : Math.max(2, (item.value / effectiveMax) * chartH);
+          // ⚠️ 最终审计修正：非正数（≤0）统一底对齐 0 高，不再 Math.max(2, 负) 渲染出 2px 假柱——
+          //   延期天数提前交付为负值，此前显示成极短正柱误导读图；负值仍显示其真实标签（如 -5）
+          const isNonPositive = item.value <= 0;
+          const barH = isNonPositive ? 0 : Math.max(2, (item.value / effectiveMax) * chartH);
           const color = item.color || (targetValue != null && targetValue > 0 ? (item.value >= targetValue ? COLORS.primary : COLORS.danger) : COLORS.primary);
           let label: string;
-          if (isZero) label = '—';
+          if (item.value === 0) label = '—';
           else if (format === 'K') label = fmtK(item.value);
           else if (format === '%') label = `${item.value.toFixed(1)}%`;
           else label = `${item.value}`;
@@ -149,7 +151,7 @@ export const VerticalBarChart: React.FC<VerticalBarChartProps> = ({
                 <text x={cx} y={barTop - 6} textAnchor="middle" fontSize={valueFontSize}
                   fill={COLORS.purple} fontWeight={600}>（{format === 'K' ? fmtK(item.subValue) : item.subValue}）</text>
               )}
-              {!isZero && (
+              {!isNonPositive && (
                 <rect x={cx - barW / 2} y={barTop} width={barW} height={barH}
                   fill="none" stroke={color} strokeWidth={centeredSvg ? 2.5 : 3} rx={0} ry={0} />
               )}

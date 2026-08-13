@@ -8,7 +8,9 @@ export function formatBeijing(iso: string | Date | undefined | null): string {
   const d = iso instanceof Date ? iso : new Date(iso);
   if (isNaN(d.getTime())) return '—';
   try {
-    return d.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }).replace(/\//g, '-');
+    // ⚠️ 最终审计修正：zh-CN toLocaleString 输出非补零的 "2026-8-3 14:30:05"；改用 en-CA 日期 + en-GB 时间
+    //   得零填充 "2026-08-03 14:30:05"，与 todayBeijing 及历史导出口径一致
+    return `${d.toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' })} ${d.toLocaleTimeString('en-GB', { timeZone: 'Asia/Shanghai', hour12: false })}`;
   } catch {
     // Fallback: manual offset
     const t = d.getTime() + 8 * 3600 * 1000;

@@ -55,6 +55,11 @@ customRouter.put('/sync', async (req, res, next) => {
     if (existing?.status === 'pending') {
       throw new AppError(409, '该报价待审批中，无法同步保存');
     }
+    // ⚠️ 最终审计修正：已审批通过的报价同样禁止 sync 回写（此前 F18 只拦 pending、漏 approved——
+    //   持报价编制权限者可把已通过报价 sync 回 pending 并同时改金额，绕过「审批后锁定」语义重新走审批）
+    if (existing?.status === 'approved') {
+      throw new AppError(409, '该报价已审批通过，如需变更请重新发起审批流程');
+    }
 
     const result = await query(
       `INSERT INTO quotations (project_id, version_no, sales_no, client_name,
@@ -93,11 +98,11 @@ const crudRouter = crudRoutes('quotations', fields, {
   // ⚠️ A103 修复：报价审批中（status='pending'）禁改财务字段——审批人基于提交时快照做决策，
   //   期间被改金额会让审批与机会回写口径失真（sync 端点有 409 守卫，通用 PUT 此前无）。
   beforeUpdate: async (id, snakeBody) => {
-    const FINANCIAL = ['amount', 'total_cost', 'profit_rate', 'sales_no'];
+    const FINANCIAL = ['amount', 'total_cost', 'profit_rate', 'sales_no', 'opportunity_id'];
     if (!FINANCIAL.some(f => snakeBody[f] !== undefined)) return;
     const existing = (await query('SELECT status FROM quotations WHERE id = $1', [id])).rows[0];
     if (existing?.status === 'pending') {
-      throw new AppError(409, '该报价待审批中，审批完成前不可修改金额/成本/毛利率/编号');
+      throw new AppError(409, '该报价待审批中，审批完成前不可修改金额/成本/毛利率/编号/关联机会');
     }
   },
 });

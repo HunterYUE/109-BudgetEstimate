@@ -244,7 +244,9 @@ router.put('/:id', async (req, res, next) => {
       if (cur?.status === '赢') {
         setClause += `, won_at = COALESCE(won_at, now())`;
       } else if (cur?.status === '输') {
-        setClause += `, lost_at = COALESCE(lost_at, now())`;
+        // ⚠️ 最终审计修正：转交付 = 赢单终极确认——已标输的机会转入交付同样算赢单（置赢/中标 + won_at，清 lost_at）；
+        //   此前该分支只写 lost_at，不改 status/stage、won_at 恒 NULL，赢单财年归集永远丢失
+        setClause += `, status = '赢', stage = '中标', won_at = COALESCE(won_at, now()), lost_at = NULL`;
       } else {
         // 过程中/冻结转交付 → 100% 确认为赢单
         setClause += `, status = '赢', stage = '中标', won_at = COALESCE(won_at, now())`;

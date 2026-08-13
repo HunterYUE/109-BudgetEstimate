@@ -126,7 +126,10 @@ const DeliveryDetail: React.FC = () => {
             const ver = (proj.versions || []).find((v: ProjectVersion) => v.versionNo === qvn);
             const vid = ver?.id || '';
             const filtered = (proj.groups || []).filter((g: Group) => (g as unknown as Record<string, unknown>).versionId === vid);
-            if (!cancelled) setQuotationProject({ ...proj, groups: filtered.length > 0 ? filtered : proj.groups });
+            // ⚠️ 最终审计修正：版本匹配成功（ver 存在）时只保留该版本组，即便为空（该版本确实无组）；
+            //   仅当无匹配版本（legacy 旧数据无 versionId）才回退全量组——此前 filtered 为空会错误回退全量组，
+            //   把其它版本的组混进成本对比，金额/成本对不上
+            if (!cancelled) setQuotationProject({ ...proj, groups: ver ? filtered : proj.groups });
           });
         }).catch(() => {/* empty */});
       }
@@ -408,9 +411,12 @@ const DeliveryDetail: React.FC = () => {
   // ---- Cost handlers ----
   const handleActualCostChange = useCallback((itemId: string, value: number) => {
     if (costLocked) return;
+    // ⚠️ 最终审计修正：值未变化不重复写 state/不标 dirty（此前失焦无改动也触发，
+    //   未保存标识一直亮起、审批数据塞满等价回写）
+    if (actualCosts[itemId] === value) return;
     setActualCosts(prev => ({ ...prev, [itemId]: value }));
     setCostDirty(true);
-  }, [costLocked]);
+  }, [costLocked, actualCosts]);
 
   // ---- Approval handlers ----
   const handleSubmitPlan = useCallback(() => {
@@ -478,7 +484,9 @@ const DeliveryDetail: React.FC = () => {
 
   const handleOpenSubmitCost = useCallback(() => {
     if (!project) return;
-    if (Object.keys(actualCosts).length === 0) {
+    // ⚠️ 最终审计修正：校验改为「至少一项 >0 的实际成本」——此前只看 key 数量，
+    //   录入后全清空（0 值）也算有数据，可提交 0 成本审批，违背提交语义
+    if (Object.values(actualCosts).every(v => !(v > 0))) {
       msg.warning('请至少录入一项实际成本再提交');
       return;
     }

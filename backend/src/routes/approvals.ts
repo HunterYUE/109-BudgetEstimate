@@ -22,6 +22,13 @@ const crudRouter = crudRoutes('approval_requests', fields, {
   excludeOnCreate: ['id', 'created_at', 'updated_at'],
   // ⚠️ L1 修复：status 只能经 POST /:id/records 走审批状态机（写记录+级联），禁止通用 PUT 直改（会绕过级联/审计断链）
   excludeOnUpdate: ['id', 'created_at', 'updated_at', 'status', 'submit_time'],
+  // ⚠️ 最终审计修正：已终审审批不允许经通用 PUT 改财务字段（展示/审计口径污染；此前 excludeOnUpdate 只挡 status/submit_time）
+  beforeUpdate: async (id) => {
+    const existing = (await query('SELECT status FROM approval_requests WHERE id = $1', [id])).rows[0];
+    if (existing && (existing.status === 'approved' || existing.status === 'rejected')) {
+      throw new AppError(409, '该审批已处理完毕，不可修改');
+    }
+  },
 });
 
 // 顶层路由 — 自定义 LIST 优先于 crudRouter 的默认 LIST（否则默认 LIST 永远拦截请求）
@@ -68,9 +75,13 @@ router.post('/', async (req, res, next) => {
         }
       }
 
-      // ⚠️ M1 修复：status/submit_time 只能经审批流程（POST /:id/records）流转，创建时禁止直设（此前可创建即 approved）
+      // ⚠️ M1 修复：status/submit_time 只能经审批流程（POST /:id/records）流转，禁止直设 approved/rejected（此前可创建即 approved）。
+      //   最终审计回归修正：创建即「提交审批」，必须落库为 pending——此前直接剔 status 依赖 DB 默认 draft，
+      //   新建审批不进待审批列表、UI 无审批按钮，整个审批流程卡死（生产回归）。现显式强制 status='pending'。
       const insertCols = fields.filter(f => !['id', 'created_at', 'updated_at', 'status', 'submit_time'].includes(f) && body[f] !== undefined);
       if (insertCols.length === 0) throw new AppError(400, '没有要插入的字段');
+      insertCols.push('status');
+      body.status = 'pending';
       return (await client.query(
         `INSERT INTO approval_requests (${insertCols.map(f => `"${f}"`).join(', ')}) VALUES (${insertCols.map((_, i) => `$${i + 1}`).join(', ')}) RETURNING *`,
         insertCols.map(f => body[f])
@@ -171,7 +182,7 @@ router.post('/:id/records', async (req, res, next) => {
         }
         if (newStatus === 'approved') {
           const qt = (await client.query('SELECT opportunity_id, amount FROM quotations WHERE id = $1', [ar.quotation_id])).rows[0];
-          if (qt?.opportunity_id && qt?.amount > 0) await client.query('UPDATE sales_opportunities SET amount = $1, updated_at = now() WHERE id = $2', [Math.round(parseFloat(qt.amount) || 0), qt.opportunity_id]);
+          if (qt?.opportunity_id && qt?.amount > 0) await client.query('UPDATE sales_opportunities SET amount = $1, updated_at = now() WHERE id = $2', [Math.round((parseFloat(qt.amount) || 0) * 100) / 100, qt.opportunity_id]);
         }
       }
       return { record, approvalType: ar.approval_type };

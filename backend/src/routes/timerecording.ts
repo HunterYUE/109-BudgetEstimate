@@ -1063,28 +1063,31 @@ router.post('/admin/users', ...trAuth, requireRole('director', 'admin'), async (
     // ⚠️ 审计修复：profiles.role 撞 profiles_role_check 约束（仅 admin/employee）会返回 500，此处显式预校验给 400
     if (!['admin', 'employee'].includes(role)) throw new AppError(400, '角色不合法，仅支持 admin/employee');
     // ⚠️ L4 修复：重复邮箱预检，避免撞唯一约束返回笼统错误（与 users.ts 口径一致）
-    const dup = (await query('SELECT id FROM public.users WHERE email = $1', [email])).rows[0];
+    // ⚠️ 最终审计修正：建用户走 normalizeEmail 归一化（A17 此前未覆盖此路径）——去重与落库都用归一邮箱，
+    //   与登录 LOWER(email) 口径一致，防大小写近似账号绕过去重/UNIQUE 造成登录歧义（rows[0] 不定）
+    const normEmail = normalizeEmail(email);
+    const dup = (await query('SELECT id FROM public.users WHERE LOWER(email) = $1', [normEmail])).rows[0];
     if (dup) throw new AppError(409, '该邮箱已被注册');
 
     const passwordHash = await bcrypt.hash(password, 10);
-    const empId = employee_id || email.split('@')[0];
+    const empId = employee_id || normEmail.split('@')[0];
     // ⚠️ F14 修复：users + profiles 两步写放入同一事务，避免中途失败留下"有 users 无 profile"半成品
     // ⚠️ A15：事务样板收敛为 withTransaction
     const user = await withTransaction(async (client) => {
       const u = (await client.query(
         `INSERT INTO public.users (email, display_name, password_hash, role, password_changed_at)
          VALUES ($1, $2, $3, $4, now()) RETURNING id`,
-        [email, name, passwordHash, 'user']
+        [normEmail, name, passwordHash, 'user']
       )).rows[0];
       await client.query(
         `INSERT INTO timerecording.profiles (id, employee_id, name, email, role)
          VALUES ($1, $2, $3, $4, $5)`,
-        [u.id, empId, name, email, role]
+        [u.id, empId, name, normEmail, role]
       );
       return u;
     });
 
-    res.status(201).json({ id: user.id, email, name, employee_id: empId, role });
+    res.status(201).json({ id: user.id, email: normEmail, name, employee_id: empId, role });
   } catch (err) {
     next(err);
   }
