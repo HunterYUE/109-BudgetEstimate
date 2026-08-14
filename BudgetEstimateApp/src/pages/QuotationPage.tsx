@@ -598,6 +598,12 @@ const QuotationPage: React.FC = () => {
     // ⚠️ B61 修复：已通过/已驳回的报价被再次编辑保存时状态重置为草稿——否则内容已修改却仍保持 approved/rejected，
     //    绕过审批状态机（改过数据不经重审即显示"已通过"）。pending 保持不动（单据仍在审批中），draft 亦不动
     const statusForSave = curVer.reviewStatus === 'approved' || curVer.reviewStatus === 'rejected' ? 'draft' : curVer.reviewStatus;
+    // ⚠️ UX 补（审计 B4）：降级发生即提示，不再静默——用户可预期"保存后状态降级、需重新审批"
+    if (statusForSave !== curVer.reviewStatus) {
+      messageApi.warning(curVer.reviewStatus === 'approved'
+        ? '该报价当前为「已通过」，保存后将重置为草稿并需重新审批'
+        : '该报价当前为「已驳回」，保存后将重置为草稿');
+    }
     try {
       savingRef.current = true;
       setIsSaving(true); // ⚠️ 防止重复点击

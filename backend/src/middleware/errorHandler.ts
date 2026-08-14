@@ -10,6 +10,27 @@ export class AppError extends Error {
   }
 }
 
+/**
+ * PG 错误码 → 对外响应（消息 + 状态码）。errorHandler 分支的纯函数化提取（行为等价）：
+ * A110 不透传 DB detail（服务端 console.error 保留完整信息），按码给出可定位提示。
+ */
+export function pgErrorResponse(code: string): { message: string; status: number } {
+  switch (code) {
+    case '22P02': // 无效类型/枚举值
+      return { message: '字段值无效，请检查枚举或格式', status: 400 };
+    case '23505': // 唯一约束冲突
+      return { message: '数据已存在', status: 409 };
+    case '23503': // 外键约束
+      return { message: '存在关联数据，无法操作', status: 409 };
+    case '23514': // CHECK 约束
+      return { message: '数据不满足校验规则', status: 400 };
+    case '23502': // 非空约束
+      return { message: '缺少必填字段', status: 400 };
+    default:
+      return { message: '数据操作错误', status: 400 };
+  }
+}
+
 export function errorHandler(
   err: Error,
   req: Request,
@@ -48,29 +69,7 @@ export function errorHandler(
     console.error(`[DB ERROR] ${requestInfo} — ${pgErr.code}: ${pgErr.message}`, pgErr.detail || '');
     // ⚠️ A110 修复：detail 含表/列名等内部结构（如 `Key (email)=(...) already exists`、`enum quotations_status`），
     //   此前透传给前端泄漏数据库结构；服务端 console.error 已保留完整 detail，排障不受影响
-    let msg = '数据操作错误';
-    let status = 400;
-    switch (pgErr.code) {
-      case '22P02': // 无效类型/枚举值
-        msg = '字段值无效，请检查枚举或格式';
-        break;
-      case '23505': // 唯一约束冲突
-        msg = '数据已存在';
-        status = 409;
-        break;
-      case '23503': // 外键约束
-        msg = '存在关联数据，无法操作';
-        status = 409;
-        break;
-      case '23514': // CHECK 约束
-        msg = '数据不满足校验规则';
-        break;
-      case '23502': // 非空约束
-        msg = '缺少必填字段';
-        break;
-      default:
-        msg = '数据操作错误';
-    }
+    const { message: msg, status } = pgErrorResponse(pgErr.code);
     res.status(status).json({ error: msg });
     return;
   }

@@ -11,7 +11,7 @@ import { ensureCostCenters, recentFiscalYears, availableCostCenterFys, fiscalYea
 const router = Router();
 
 /** 是否为工时系统管理员（director/admin，JWT role） */
-const isTrAdmin = (u: { role?: string } | undefined): boolean => !!u && (u.role === 'director' || u.role === 'admin');
+export const isTrAdmin = (u: { role?: string } | undefined): boolean => !!u && (u.role === 'director' || u.role === 'admin');
 
 /**
  * 成本中心存在性校验（共享基底，任务与工时记录复用）：
@@ -83,7 +83,7 @@ const LE_CODE_RE = /^A\d{4}-LE-\d{3}$/;
 
 /** 是否请休假成本中心（编码 A####-LE-### 或类型标记 leave）：请休假硬性规则共用判断，
  *  防客户端把 LE 码标成其他类型（type 与 code 任一命中即按请休假校验） */
-function isLeaveCostCenter(code: string | null | undefined, type?: string | null): boolean {
+export function isLeaveCostCenter(code: string | null | undefined, type?: string | null): boolean {
   return type === 'leave' || LE_CODE_RE.test(code || '');
 }
 
@@ -114,7 +114,7 @@ async function assertLeaveValid(opts: {
 }
 
 /** 由日期计算 ISO 周号与 ISO 年（周一起，与 PG EXTRACT(WEEK/ISOYEAR) 及前端 dayjs isoWeek 一致） */
-function isoWeekOf(dateStr: string): { year: number; week: number } {
+export function isoWeekOf(dateStr: string): { year: number; week: number } {
   const [y, m, d] = dateStr.split('-').map(Number);
   const date = new Date(Date.UTC(y, m - 1, d));
   const dayNum = date.getUTCDay() || 7; // 周日=7（ISO 周一始）
@@ -126,7 +126,7 @@ function isoWeekOf(dateStr: string): { year: number; week: number } {
 
 /** uuid 数组校验（submit-batch/review-batch 入参，防 22P02 整批 400） */
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-function isValidUuidArray(ids: any): ids is string[] {
+export function isValidUuidArray(ids: any): ids is string[] {
   return Array.isArray(ids) && ids.length > 0 && ids.every(v => typeof v === 'string' && UUID_RE.test(v));
 }
 
@@ -134,7 +134,7 @@ function isValidUuidArray(ids: any): ids is string[] {
  * 工时角色（派生自预算用户 role + permissions）：
  *   director 总监（全部权限） / manager 方案·交付经理（可分配任务、查看综合分析） / employee 员工（仅本人填报/统计）
  */
-const trRoleOf = (u: { role?: string; permissions?: string[] } | undefined): 'director' | 'manager' | 'employee' => {
+export const trRoleOf = (u: { role?: string; permissions?: string[] } | undefined): 'director' | 'manager' | 'employee' => {
   // ⚠️ 修复：admin（系统/工时管理员）按 director 级处理——后端 requireRole('director','admin')
   //   已视 admin 为全权管理员，前端导航/路由若仍按 employee 收缩会把管理入口藏掉（前后台权限不一致）
   if (u?.role === 'director' || u?.role === 'admin') return 'director';
@@ -143,7 +143,7 @@ const trRoleOf = (u: { role?: string; permissions?: string[] } | undefined): 'di
   return 'employee';
 };
 /** 是否能分配任务 / 查看全员数据（总监 + 方案·交付经理） */
-const isManager = (u: { role?: string; permissions?: string[] } | undefined): boolean => trRoleOf(u) !== 'employee';
+export const isManager = (u: { role?: string; permissions?: string[] } | undefined): boolean => trRoleOf(u) !== 'employee';
 
 /**
  * ⚠️ A106 修复：跨应用登录权限纵深防御——销售经理（title='销售经理' 且非 director/admin）禁止调用任何工时 API。
@@ -166,7 +166,7 @@ const trAuth: RequestHandler[] = [requireAuth, trAppGuard];
 // hours/hour_type 一律由后端按起止时间与日期重算，不信任前端传入值（防伪造、防前后端口径漂移）。
 
 /** "HH:MM"（或含秒 "HH:MM:SS"）→ 分钟数；格式非法返回 null */
-function toMinutes(t?: string | null): number | null {
+export function toMinutes(t?: string | null): number | null {
   if (!t) return null;
   // 锚定结尾并允许可选秒段：尾随垃圾（"12:34:56:78"）、越界秒（"12:34:99"）均拒绝
   const m = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(t);
@@ -177,7 +177,7 @@ function toMinutes(t?: string | null): number | null {
 }
 
 /** 净工时：由起止时间换算（纯时长，无餐时扣减；15 分钟步进下为 0.25 的倍数） */
-function serverHours(start?: string | null, end?: string | null): number {
+export function serverHours(start?: string | null, end?: string | null): number {
   const s = toMinutes(start), e = toMinutes(end);
   if (s == null || e == null || e <= s) return 0;
   return Math.round(((e - s) / 60) * 100) / 100;
@@ -188,7 +188,7 @@ const STATUTORY_HOLIDAYS: Record<number, string[]> = {
   2025: ['01-01','01-28','01-29','01-30','01-31','02-01','02-02','02-03','02-04','04-04','04-05','04-06','05-01','05-02','05-03','05-04','05-05','05-31','06-01','06-02','10-01','10-02','10-03','10-04','10-05','10-06','10-07','10-08'],
   2026: ['01-01','01-02','01-03','02-15','02-16','02-17','02-18','02-19','02-20','02-21','02-22','02-23','04-04','04-05','04-06','05-01','05-02','05-03','05-04','05-05','06-19','06-20','06-21','09-25','09-26','09-27','10-01','10-02','10-03','10-04','10-05','10-06','10-07'],
 };
-function isStatutoryHoliday(d: Date): boolean {
+export function isStatutoryHoliday(d: Date): boolean {
   const list = STATUTORY_HOLIDAYS[d.getFullYear()];
   if (!list) return false;
   const mm = String(d.getMonth() + 1).padStart(2, '0');
@@ -197,7 +197,7 @@ function isStatutoryHoliday(d: Date): boolean {
 }
 
 /** 加班判定：晚时段(18:00-20:30)重叠 OR 周末 OR 法定节假日（与前端 isOvertime 一致） */
-function serverHourType(date?: string | null, start?: string | null, end?: string | null): 'normal' | 'overtime' {
+export function serverHourType(date?: string | null, start?: string | null, end?: string | null): 'normal' | 'overtime' {
   const s = toMinutes(start), e = toMinutes(end);
   const evening = s != null && e != null && Math.max(0, Math.min(e, 1230) - Math.max(s, 1080)) > 0;
   const [y, m, d] = String(date || '').split('-').map(Number);
@@ -220,7 +220,7 @@ function assertWeekSubmittable(dateStr: string): void {
 }
 
 /** 校验日期为真实历法日期（格式 + 回验，拦截 2026-02-30/2026-13-01 等越界日期） */
-function isValidDateStr(s: unknown): s is string {
+export function isValidDateStr(s: unknown): s is string {
   if (typeof s !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
   const [y, m, d] = s.split('-').map(Number);
   const dt = new Date(y, m - 1, d);
