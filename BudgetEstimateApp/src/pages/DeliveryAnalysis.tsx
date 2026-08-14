@@ -467,11 +467,14 @@ const DeliveryAnalysis: React.FC = () => {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16, flex: isNarrow ? '1 1 auto' : '0 0 calc(3 / 7 * (100% - 96px) + 32px)' }}>
               <ProfitChart data={profitChartData.items}
                 height={CARD_H} chartWidth={702} contentOffset={40} />
-              {/* ⚠️ 延期天数图：柱体整体下移 15px 增加顶部留白（正值柱显示空间）——padTop +15 / padBottom −15 同步
-                  （height 不变、chartH 不变，柱体与数值标签几何高度不变，仅整段下移；X 标签在 SVG 底框 height-5 不动） */}
+              {/* ⚠️ 延期天数图：X 标签下移 10px + 柱体整体下移 10px + 卡片容器向下增高 10px（标签/柱体重叠反馈修复）
+                  ——height CARD_H+10→CARD_H+20、padTop 40→50 同步；chartH=165、padBottom=30 不变（框体几何高度不变），
+                  X 标签 y=height-5 由 230→240、柱基线 zeroY 由 205→215 同步下移，正值柱顶部留白增加 10px；卡片 275→285。
+                  取消 chartWidth={702}：组件按未传 chartWidth 自适应容器宽度（scale=1 精确渲染，
+                  标签 y=240 不再被 height:auto 缩放挤出 SVG 底部），柱宽 33→31.4 微调 */}
               <VerticalBarChart title="延期天数" data={projectDelayDays}
-                format="num" height={CARD_H + 10} topN={15} barWidthRatio={0.75}
-                maxBarWidth={40} chartWidth={702} contentOffset={40} hideAvgLine padTop={40} padBottom={30} barLabelGap={10}
+                format="num" height={CARD_H + 20} topN={15} barWidthRatio={0.75}
+                maxBarWidth={40} contentOffset={40} hideAvgLine padTop={50} padBottom={30} barLabelGap={10}
                 padLeft={36} padRight={6} hoverable centeredSvg />
               <VerticalBarChart title="节点分析" data={nodeBottleneck}
                 format="num" height={CARD_H} topN={15} barWidthRatio={0.75}

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Card } from 'antd';
 import { COLORS } from '../../styles/colors';
 import { fmtK } from '../../utils/analysisShared';
@@ -47,12 +47,33 @@ interface VerticalBarChartProps {
 
 export const VerticalBarChart: React.FC<VerticalBarChartProps> = ({
   title, data, format = 'num', height = 220, topN = 10, contentOffset = 0,
-  barWidthRatio = 0.55, maxBarWidth = 36, noCard, chartWidth = 460, disableSort,
+  barWidthRatio = 0.55, maxBarWidth = 36, noCard, chartWidth, disableSort,
   targetValue, targetLabel, padTop = 32, padBottom = 28, hideAvgLine,
   cardBorder = true, barLabelGap = 18, valueFontSize = 10, padLeft = 42, padRight = 26,
   hoverable = false, centeredSvg = false,
 }) => {
   const [hoveredTip, setHoveredTip] = useState<{ lines: string[]; cx: number; barTop: number; chartW?: number } | null>(null);
+  // ⚠️ 根因修复：App.css `.app-content svg { max-width: 100%; height: auto }` 使 SVG 渲染高 = 容器宽 x vbH / vbW，
+  //   viewBox 宽若不等于容器实际宽则内容被等比缩放（Sales 排行卡默认 460 vs 容器约 376 -> scale 约 0.82：
+  //   底部大量空白 + X 轴标签被压入柱体，height/padBottom 等参数全部「不生效」）。
+  //   ResizeObserver 实测 SVG 渲染宽并同步为 viewBox 宽 -> 比例对齐 scale 约 1，height 属性精确生效。
+  //   仅「未显式传 chartWidth」的图表启用（排行卡等默认场景，首帧用 460 兜底后一帧内修正，含响应式变宽）；
+  //   显式传 chartWidth 的场景（Delivery/节点/月度/竞对等）保持既定 viewBox 缩放，零回归。
+  const fixedW = chartWidth ?? 460;
+  const adaptive = chartWidth === undefined;
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [svgW, setSvgW] = useState<number | null>(null);
+  useEffect(() => {
+    if (!adaptive) return;
+    const el = svgRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect?.width;
+      if (w && w > 0) setSvgW(w);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [adaptive]);
   const working = disableSort ? data : [...data].sort((a, b) => b.value - a.value);
   const top = working.slice(0, topN);
   const rawMax = Math.max(...top.map(d => d.value), 0);
@@ -73,7 +94,7 @@ export const VerticalBarChart: React.FC<VerticalBarChartProps> = ({
     return String(Math.round(v));
   };
 
-  const W = chartWidth;
+  const W = adaptive ? (svgW ?? fixedW) : fixedW;
   const pad = { top: padTop, bottom: padBottom, left: padLeft, right: padRight };
   const chartW = W - pad.left - pad.right;
   const chartH = height - pad.top - pad.bottom;
@@ -93,8 +114,8 @@ export const VerticalBarChart: React.FC<VerticalBarChartProps> = ({
   const chart = (
     <>
       {title && <span style={{ position: 'absolute', top: 6, right: 10, fontSize: 11, color: COLORS.chartGray, zIndex: 1 }}>{title}</span>}
-      <svg width={centeredSvg ? 'calc(100% - 30px)' : '100%'} height={height} viewBox={`0 0 ${W} ${height}`}
-        style={{ display: 'block', ...(centeredSvg ? { margin: '0 auto' } : {}) }}>
+      <svg ref={svgRef} width={centeredSvg ? 'calc(100% - 30px)' : '100%'} height={height} viewBox={`0 0 ${W} ${height}`}
+        style={{ display: 'block', ...(adaptive ? { height } : {}), ...(centeredSvg ? { margin: '0 auto' } : {}) }}>
         {/* ⚠️ B11 复核：bar-shadow 唯一消费者是 tooltip（hoverable），原耦合到 centeredSvg——
             若 hoverable 与 centeredSvg 分离则引用缺失；改按 hoverable 定义 */}
         {hoverable && (
@@ -157,7 +178,7 @@ export const VerticalBarChart: React.FC<VerticalBarChartProps> = ({
 
           return (
             <g key={item.name + '-' + i}
-              onMouseEnter={hoverable && item.tooltip ? () => setHoveredTip({ lines: item.tooltip!.split('\n'), cx, barTop, chartW: chartWidth }) : undefined}
+              onMouseEnter={hoverable && item.tooltip ? () => setHoveredTip({ lines: item.tooltip!.split('\n'), cx, barTop, chartW: W }) : undefined}
               onMouseLeave={hoverable ? () => setHoveredTip(null) : undefined}>
               <text x={cx} y={isNegBar ? barTop + barH + barLabelGap : barTop - barLabelGap} textAnchor="middle" fontSize={valueFontSize}
                 fill={color} fontWeight={600}>{label}</text>
@@ -193,7 +214,7 @@ export const VerticalBarChart: React.FC<VerticalBarChartProps> = ({
         {hoverable && hoveredTip && (() => {
           const tw = 170;
           const tipRight = hoveredTip.cx + 8 + tw;
-          const containerW = hoveredTip.chartW || chartWidth;
+          const containerW = hoveredTip.chartW || fixedW;
           const flip = tipRight > containerW - 4;
           const tx = flip ? hoveredTip.cx - 8 - tw : hoveredTip.cx + 8;
           return (

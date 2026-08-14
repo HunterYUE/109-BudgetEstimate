@@ -743,18 +743,20 @@ const SalesAnalysis: React.FC = () => {
       {/* 第三行：销售排行 4×2 网格 */}
       <div style={{ display: 'flex', flexDirection: 'column' }}>
         <div style={{ display: 'flex', gap: 16, justifyContent: 'center', marginTop: 10 }}>
-          <div style={{ flex: '0 0 calc(25% - 12px)' }}><VerticalBarChart title="竞对" data={dimLossReasons} format="num" height={220} topN={7} barWidthRatio={0.6} maxBarWidth={26} hideAvgLine contentOffset={30} padBottom={28} /></div>
-          <div style={{ flex: '0 0 calc(25% - 12px)' }}><VerticalBarChart title="取消" data={dimCancelReasons} format="num" height={220} topN={4} barWidthRatio={0.6} maxBarWidth={26} hideAvgLine contentOffset={30} padBottom={28} /></div>
-          <div style={{ flex: '0 0 calc(25% - 12px)' }}><VerticalBarChart title="放弃" data={dimAbandonReasons} format="num" height={220} topN={6} barWidthRatio={0.6} maxBarWidth={26} hideAvgLine contentOffset={30} padBottom={28} /></div>
+          <div style={{ flex: '0 0 calc(25% - 12px)' }}><VerticalBarChart title="竞对" data={dimLossReasons} format="num" height={220} topN={7} barWidthRatio={0.6} maxBarWidth={26} chartWidth={460} hideAvgLine contentOffset={30} padBottom={28} /></div>
+          <div style={{ flex: '0 0 calc(25% - 12px)' }}><VerticalBarChart title="取消" data={dimCancelReasons} format="num" height={220} topN={4} barWidthRatio={0.6} maxBarWidth={26} chartWidth={460} hideAvgLine contentOffset={30} padBottom={28} /></div>
+          <div style={{ flex: '0 0 calc(25% - 12px)' }}><VerticalBarChart title="放弃" data={dimAbandonReasons} format="num" height={220} topN={6} barWidthRatio={0.6} maxBarWidth={26} chartWidth={460} hideAvgLine contentOffset={30} padBottom={28} /></div>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, marginTop: 15, gridAutoRows: 233 }}>
-          {/* ⚠️ 卡片下框线上移 35px（268→233）：SVG 高度 220→203 且 padBottom 28→11 同步补偿——
-              chartH=160、zeroY=192 不变（柱体几何完全不动），X 轴标签随卡片底上移 17px 消除下方空白；
-              内容高 = contentOffset(30) + SVG(203) = 233 恰好等于行高，姓名不裁（标签下留 5px） */}
-          <div style={{ overflow: 'hidden' }}><VerticalBarChart title="订单金额" data={dimOrderAmount} format="K" contentOffset={30} height={203} padBottom={11} /></div>
-          <div style={{ overflow: 'hidden' }}><VerticalBarChart title="订单利润" data={dimProfit} format="K" contentOffset={30} height={203} padBottom={11} /></div>
-          <div style={{ overflow: 'hidden' }}><VerticalBarChart title="转化效率" data={dimEfficiency} format="%" contentOffset={30} height={203} padBottom={11} /></div>
-          <div style={{ overflow: 'hidden' }}><VerticalBarChart title="管道潜力" data={dimPipeline} format="K" contentOffset={30} height={203} padBottom={11} /></div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, marginTop: 15, gridAutoRows: 213 }}>
+          {/* ⚠️ 排行卡：卡片下框线上移 20px（233→213）+ X 标签与柱体分离（此前 padBottom=11 在消除 viewBox 缩放后标签侵入柱底）。
+              参数：SVG 高度 203→183（内容高 30+183=213 恰等于行高，底部无空白）、padBottom 11→23；
+              柱顶 padTop=32 不动，柱底 zeroY=192→160（卡片 213 物理上无法容纳原 zeroY=192+标签，柱体整体上移 32px、
+              高度 160→128 减 32px，为「卡片减 20px + 标签与柱底分离 8px」的数学必然）；X 标签基线 y=183-5=178 顶≈168，
+              柱底 160 在标签顶上方 8px 不重叠（间距 = padBottom−15） */}
+          <div style={{ overflow: 'hidden' }}><VerticalBarChart title="订单金额" data={dimOrderAmount} format="K" contentOffset={30} height={183} padBottom={23} /></div>
+          <div style={{ overflow: 'hidden' }}><VerticalBarChart title="订单利润" data={dimProfit} format="K" contentOffset={30} height={183} padBottom={23} /></div>
+          <div style={{ overflow: 'hidden' }}><VerticalBarChart title="转化效率" data={dimEfficiency} format="%" contentOffset={30} height={183} padBottom={23} /></div>
+          <div style={{ overflow: 'hidden' }}><VerticalBarChart title="管道潜力" data={dimPipeline} format="K" contentOffset={30} height={183} padBottom={23} /></div>
         </div>
       </div>
     </div>

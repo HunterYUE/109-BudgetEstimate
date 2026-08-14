@@ -26,7 +26,7 @@ const noDirectFetchRule = {
 };
 
 export default defineConfig([
-  globalIgnores(['dist']),
+  globalIgnores(['dist', 'verify']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [
@@ -46,6 +46,13 @@ export default defineConfig([
       'no-direct-fetch/no-fetch': 'warn',
       // React 19 数据加载模式兼容：useEffect + setState 是标准初始化模式
       'react-hooks/set-state-in-effect': 'off',
+    },
+  },
+  // 例外：verify/ 验证工具页面（无 export，fast-refresh 规则误报；lint 脚本带 --no-ignore 会绕过 globalIgnores）
+  {
+    files: ['verify/**/*.{ts,tsx}'],
+    rules: {
+      'react-refresh/only-export-components': 'off',
     },
   },
   // 例外：api.ts（客户端自身）和 authContext（认证流程，发生在 token 获取前）
