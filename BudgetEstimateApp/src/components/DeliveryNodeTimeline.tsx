@@ -5,6 +5,7 @@ import type { DeliveryNode } from '../types';
 import IconButton from './IconButton';
 import { COLORS, TAG_COLORS as COMMENT_TAG_COLORS } from '../styles/colors';
 import { getNodeDelay } from '../utils/analysisShared';
+import { NODE_STATUS_META } from '../utils/constants';
 
 interface Props {
   nodes: DeliveryNode[];
@@ -20,9 +21,8 @@ interface Props {
   saving?: boolean;
 }
 
-const STATUS_LABELS: Record<string, string> = {
-  pending: '未开始', in_progress: '进行中', completed: '已完成',
-};
+// F08：节点状态文案收敛单源 constants.NODE_STATUS_META（此前与 DeliveryDetail.statusMap 逐字重复）
+const STATUS_LABELS = NODE_STATUS_META;
 
 /** 计算工作日 */
 function workDays(start: string, end: string): number {

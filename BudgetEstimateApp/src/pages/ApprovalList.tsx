@@ -5,7 +5,7 @@ import { CheckCircleOutlined, CloseCircleOutlined, EyeOutlined, CheckOutlined, C
 import { approvalService } from '../services/approvalService';
 import { deliveryService } from '../services/deliveryService';
 import { quotationService } from '../services/quotationService';
-import { formatMoney } from '../utils/calculations';
+import { formatMoney, rateToPercent } from '../utils/calculations';
 import { formatBeijing } from '../utils/timeFormat';
 import { LIST_LIMIT } from '../utils/constants';
 import type { ApprovalRequest, QuotationSummary, DeliveryProject } from '../types';
@@ -272,7 +272,7 @@ const ApprovalList: React.FC = () => {
                         </span>
                       ) : null}
                     </span>
-                    <span><strong style={{ color: COLORS.primary }}>&yen;{formatMoney(req.gp3Amount || 0)}</strong> <span style={{ color: COLORS.textLight }}>(<Gauge value={Math.round((req.gp3 || 0) * 10000) / 100} />%)</span></span>
+                    <span><strong style={{ color: COLORS.primary }}>&yen;{formatMoney(req.gp3Amount || 0)}</strong> <span style={{ color: COLORS.textLight }}>(<Gauge value={rateToPercent(req.gp3 || 0)} />%)</span></span>
                   </div>
                   <div style={{ marginTop: 4, fontSize: 12, color: COLORS.textLight }}>
                     {req.submitter}@{formatBeijing(req.submitTime)}

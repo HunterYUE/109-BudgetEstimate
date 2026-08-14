@@ -68,7 +68,7 @@ export const VerticalBarChart: React.FC<VerticalBarChartProps> = ({
   const slots: (BarItem | null)[] = Array.from({ length: topN }, (_, i) => top[i] || null);
 
   const fmtAxis = (v: number): string => {
-    if (format === 'K') return Math.round(v / 1000).toLocaleString() + 'K';
+    if (format === 'K') return fmtK(v);
     if (format === '%') return v.toFixed(1) + '%';
     return String(Math.round(v));
   };

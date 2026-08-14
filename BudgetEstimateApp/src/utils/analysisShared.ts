@@ -1,5 +1,6 @@
 import type { SalesOpportunity, DeliveryNode, DeliveryProject } from '../types';
 import { TAX_RATE } from './constants';
+import { COLORS } from '../styles/colors';
 
 /** 千单位数字（不带 K 后缀）：1234 → "1"（⚠️ B18：DeliveryCharts 旧 fmtKNum 与本函数重复，收敛共用） */
 export const fmtKBase = (v: number) => Math.round(v / 1000).toLocaleString();
@@ -17,6 +18,14 @@ export const chartLabel = (salesNo: string | undefined | null): string => {
   const s = compressNo(salesNo);
   return s.length > 4 ? s.slice(0, 4) + '\n' + s.slice(4) : s;
 };
+
+/** 项目执行状态三态色：已完成绿、延期中（派生）红、否则蓝（DeliveryManagement/DeliveryCharts 6 处内联收敛单源，F08） */
+export const projectStatusColor = (status: string, delayed: boolean): string =>
+  status === '已完成' ? COLORS.success : delayed ? COLORS.danger : COLORS.primary;
+
+/** 项目执行状态三态背景色：已完成绿、延期中红、否则浅蓝（与 projectStatusColor 配套，2 处内联收敛单源） */
+export const projectStatusBg = (status: string, delayed: boolean): string =>
+  status === '已完成' ? '#e8f5e9' : delayed ? '#ffebee' : '#e6f0fa';
 
 /** 机会是否已确认为真正的赢单：需先标记为赢（status='赢'）再转交付（terminated=true），两者缺一不可 */
 export const isRealWin = (o: SalesOpportunity): boolean =>

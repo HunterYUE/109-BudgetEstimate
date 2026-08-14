@@ -154,6 +154,11 @@ export function formatMoney(value: number | undefined | null, locale = 'zh-CN'):
   return Math.round(num).toLocaleString(locale);
 }
 
+/** 费率（小数）→ 百分比数值（0.35 → 35）：各页散落 `Math.round(v * 10000) / 100` 收敛单源（F08 重复逻辑家族） */
+export function rateToPercent(v: number): number {
+  return Math.round(v * 10000) / 100;
+}
+
 /**
  * 计算交付项目的概算 GP3（不含实际成本）
  * 公式：

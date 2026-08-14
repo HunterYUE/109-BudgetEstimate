@@ -13,7 +13,7 @@ import { opportunityService } from '../services/opportunityService';
 import { approvalService } from '../services/approvalService';
 import { clientService } from '../services/clientService';
 import type { Group, GroupItem, Project, ProjectVersion, Component, Client } from '../types';
-import { calcProjectSummary, calcDirectCost, calcItemPrices, type ProjectSummary } from '../utils/calculations';
+import { calcProjectSummary, calcDirectCost, calcItemPrices, rateToPercent, formatMoney, type ProjectSummary } from '../utils/calculations';
 import { clearCache } from '../utils/api';
 import { projectService } from '../services/projectService';
 import IconButton from '../components/IconButton';
@@ -556,7 +556,7 @@ const QuotationPage: React.FC = () => {
       status,
       amount: summary.discountedPrice || 0,
       totalCost: summary.totalCost || 0,
-      profitRate: Math.round((summary.gp3 || 0) * 10000) / 100,
+      profitRate: rateToPercent(summary.gp3 || 0),
       opportunityId: oppIdRef.current,
     });
     return result;
@@ -709,7 +709,7 @@ const QuotationPage: React.FC = () => {
         salesNo: project.salesNo, clientName: project.clientName,
         projectName: project.projectName || project.clientName, status: 'pending',
         amount: submitSummary.discountedPrice || 0, totalCost: submitSummary.totalCost || 0,
-        profitRate: Math.round((submitSummary.gp3 || 0) * 10000) / 100,
+        profitRate: rateToPercent(submitSummary.gp3 || 0),
         opportunityId: oppIdRef.current,
       });
       const quotationId = synced?.id || '';
@@ -719,7 +719,7 @@ const QuotationPage: React.FC = () => {
         projectName: project.projectName || project.clientName,
         amount: submitSummary.discountedPrice || 0,
         totalCost: submitSummary.totalCost,
-        profitRate: Math.round((submitSummary.gp3 || 0) * 10000) / 100,
+        profitRate: rateToPercent(submitSummary.gp3 || 0),
         gp3: submitSummary.gp3,
         taxRate: curVer?.taxRate || TAX_RATE,
         totalAccountingPrice: submitSummary.totalAccountingPrice,
@@ -789,15 +789,15 @@ const QuotationPage: React.FC = () => {
         '<td>' + escapeHtml(g.name) + '</td>' +
         '<td style="text-align:center">1</td>' +
         '<td class="amount"></td>' +
-        '<td class="amount">¥' + Math.round(groupTotal).toLocaleString() + '</td></tr>';
+        '<td class="amount">¥' + formatMoney(groupTotal) + '</td></tr>';
       for (let ii = 0; ii < g.items.length; ii++) {
         const item = g.items[ii];
         if (item.accountingPrice <= 0) continue;
         groupsHtml += '<tr><td style="text-align:center">' + g.groupNo + '.' + item.itemNo + '</td>' +
           '<td>' + escapeHtml(item.code || item.description || '—') + '</td>' +
           '<td style="text-align:center">' + item.qtyTotal + '</td>' +
-          '<td class="amount">¥' + Math.round(item.accountingPrice / (item.qtyTotal || 1)).toLocaleString() + '</td>' +
-          '<td class="amount">¥' + Math.round(item.accountingPrice).toLocaleString() + '</td></tr>';
+          '<td class="amount">¥' + formatMoney(item.accountingPrice / (item.qtyTotal || 1)) + '</td>' +
+          '<td class="amount">¥' + formatMoney(item.accountingPrice) + '</td></tr>';
       }
     }
 
@@ -809,8 +809,8 @@ const QuotationPage: React.FC = () => {
     html += '<td style="border:none;padding:2px 8px;font-size:12px"><b>日期：</b>' + todayBeijing() + '</td></tr></table>';
     html += '<table style="width:100%;border-collapse:collapse"><thead><tr><th style="width:44px">序号</th><th>项目</th><th style="width:52px">数量</th><th style="width:120px">单价(未税)</th><th style="width:130px">总价(未税)</th></tr></thead><tbody>' + groupsHtml + '</tbody></table>';
     html += '<table style="width:100%;border-collapse:collapse;margin-top:12px">';
-    html += '<tr><td style="border:none;text-align:right;padding:4px 10px;font-size:13px"><b>预期总价（含税）：</b>¥' + Math.round(summary.totalAccountingPrice).toLocaleString() + '</td></tr>';
-    html += '<tr><td style="border:none;text-align:right;padding:4px 10px;font-size:13px"><b>折后报价（含税）：</b>¥' + Math.round(summary.discountedPrice).toLocaleString() + '</td></tr></table>';
+    html += '<tr><td style="border:none;text-align:right;padding:4px 10px;font-size:13px"><b>预期总价（含税）：</b>¥' + formatMoney(summary.totalAccountingPrice) + '</td></tr>';
+    html += '<tr><td style="border:none;text-align:right;padding:4px 10px;font-size:13px"><b>折后报价（含税）：</b>¥' + formatMoney(summary.discountedPrice) + '</td></tr></table>';
     html += '<p style="font-size:11px;color:#999;margin-top:16px">明细项/单价为不含税价格，预期总价/折后报价为含税价格</p>';
 
     exportHtmlTable('报价表_' + project.clientName + '_' + project.salesNo, html);
@@ -871,7 +871,7 @@ const QuotationPage: React.FC = () => {
           &nbsp;③ 毛利率=1−成本÷售价 &nbsp;④ 质保基数=标"✕"项次的直接成本之和，标"✕"表示物料本身不含质保，需项目集成时统筹
           &nbsp;⑤ 风险基数=直接成本=物料成本+人工成本+项目费用
           &nbsp;⑥ 编码不在数据库将显示红色<strong style={{color:'red'}}>!</strong>示警
-          &nbsp;⑦ 实际成本与概算对比：分项 -5%~+10%、总成本 -2.5%~+5% 为正常，超出此范围标红，<strong style={{color:COLORS.primary}}>目标不是做多也不是做少，而是越来越准</strong>
+          &nbsp;⑦ 实际成本与概算对比：超支（正偏差）标红、不超支（≤0）为绿色，<strong style={{color:COLORS.primary}}>目标不是做多也不是做少，而是越来越准</strong>
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>

@@ -7,7 +7,7 @@ import { deliveryService } from '../services/deliveryService';
 import type { DeliveryProject } from '../types';
 import { COLORS } from '../styles/colors';
 import { STATUS_CONFIG } from '../components/material/materialConstants';
-import { getProjectDelay } from '../utils/analysisShared';
+import { getProjectDelay, projectStatusColor, projectStatusBg } from '../utils/analysisShared';
 import { tabItemStyle } from '../utils/tableUtils';
 import { LIST_LIMIT } from '../utils/constants';
 
@@ -71,9 +71,7 @@ const DeliveryManagement: React.FC = () => {
         onClick={() => navigate(`/delivery/${p.id}`)}
         style={{
           borderRadius: 6, marginBottom: 8, cursor: 'pointer',
-          borderLeft: `4px solid ${
-            p.status === '已完成' ? COLORS.success : delayed ? COLORS.danger : COLORS.primary
-          }`,
+          borderLeft: `4px solid ${projectStatusColor(p.status, delayed)}`,
         }}
         styles={{ body: { padding: '14px 20px' } }}
       >
@@ -104,9 +102,9 @@ const DeliveryManagement: React.FC = () => {
           <div style={{
             width: 40, height: 40, borderRadius: '50%', flexShrink: 0,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            background: p.status === '已完成' ? '#e8f5e9' : delayed ? '#ffebee' : '#e6f0fa',
+            background: projectStatusBg(p.status, delayed),
             fontSize: 13, fontWeight: 700,
-            color: p.status === '已完成' ? COLORS.success : delayed ? COLORS.danger : COLORS.primary,
+            color: projectStatusColor(p.status, delayed),
           }}>
             {done}/{total}
           </div>

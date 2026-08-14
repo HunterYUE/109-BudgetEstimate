@@ -2,7 +2,7 @@ import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Tag, Card, Button, message, Modal, ConfigProvider, Spin, Switch, App } from 'antd';
 import { ScheduleOutlined, AuditOutlined, SendOutlined, SaveOutlined, ArrowLeftOutlined, DownloadOutlined, UploadOutlined, EyeOutlined, DeleteOutlined, CheckOutlined, CloseOutlined, LockOutlined, UnlockOutlined } from '@ant-design/icons';
-import { formatMoney, computeDeliveryEstGP3 } from '../utils/calculations';
+import { formatMoney, computeDeliveryEstGP3, rateToPercent } from '../utils/calculations';
 import { approvalService } from '../services/approvalService';
 import { deliveryService } from '../services/deliveryService';
 import { projectService } from '../services/projectService';
@@ -16,7 +16,7 @@ import { COLORS } from '../styles/colors';
 import { STATUS_CONFIG } from '../components/material/materialConstants';
 import { getNodeDelay, getProjectDelay } from '../utils/analysisShared';
 import { buildCostLines } from '../utils/costBreakdown';
-import { DEFAULT_DESIGN_HOURLY_RATE, DEFAULT_ASSEMBLY_HOURLY_RATE, TAX_RATE, LIST_LIMIT } from '../utils/constants';
+import { DEFAULT_DESIGN_HOURLY_RATE, DEFAULT_ASSEMBLY_HOURLY_RATE, TAX_RATE, LIST_LIMIT, NODE_STATUS_META } from '../utils/constants';
 import { exportHtmlTable, escapeHtml } from '../utils/exportToExcel';
 import { deliveryFileService, type DeliveryFile } from '../services/deliveryFileService';
 import { uuid } from '../utils/uuid';
@@ -477,7 +477,7 @@ const DeliveryDetail: React.FC = () => {
       projectName: project.projectName,
       amount: discountedPrice || project.contractAmount,
       totalCost: totalCost,
-      profitRate: Math.round(gp3ProfitRate * 10000) / 100,
+      profitRate: rateToPercent(gp3ProfitRate),
       gp3: gp3ProfitRate,
       versionNo: ver?.versionNo || '',
       taxRate: quotationVersion?.taxRate ?? TAX_RATE,
@@ -538,7 +538,7 @@ const DeliveryDetail: React.FC = () => {
       projectName: project.projectName,
       amount: project.contractAmount,
       totalCost: grandActual,
-      profitRate: Math.round(actGP3 * 10000) / 100,
+      profitRate: rateToPercent(actGP3),
       gp3: actGP3,
       versionNo: ver?.versionNo || '',
       taxRate: taxRate,
@@ -561,7 +561,8 @@ const DeliveryDetail: React.FC = () => {
 
   const handleExportPlan = useCallback(() => {
     if (!project) return;
-    const statusMap = { pending: '未开始', in_progress: '进行中', completed: '已完成' };
+    // F08：节点状态文案收敛单源 constants.NODE_STATUS_META（此前与 DeliveryNodeTimeline.STATUS_LABELS 逐字重复）
+    const statusMap = NODE_STATUS_META;
     let rows = '';
     for (let i = 0; i < project.nodes.length; i++) {
       const n = project.nodes[i];
@@ -595,9 +596,9 @@ const DeliveryDetail: React.FC = () => {
       totalEst += est; totalAct += act;
       const varAmt = act - est;
       rows += '<tr><td>' + escapeHtml(grp) + '</td><td>' + escapeHtml(code) + '</td>' +
-        '<td class="amount">' + Math.round(est).toLocaleString() + '</td>' +
-        '<td class="amount">' + Math.round(act).toLocaleString() + '</td>' +
-        '<td class="amount" style="color:' + (varAmt > 0 ? 'red' : 'green') + '">' + (varAmt >= 0 ? '+' : '') + Math.round(varAmt).toLocaleString() + '</td>' +
+        '<td class="amount">' + formatMoney(est) + '</td>' +
+        '<td class="amount">' + formatMoney(act) + '</td>' +
+        '<td class="amount" style="color:' + (varAmt > 0 ? 'red' : 'green') + '">' + (varAmt >= 0 ? '+' : '') + formatMoney(varAmt) + '</td>' +
         '<td class="amount" style="color:' + (varAmt > 0 ? 'red' : 'green') + '">' + (est > 0 ? (varAmt / est * 100).toFixed(1) + '%' : '—') + '</td></tr>';
     };
     for (const line of lines) {
@@ -613,8 +614,8 @@ const DeliveryDetail: React.FC = () => {
       '<td style="border:none;padding:2px 8px"><b>客户：</b>' + escapeHtml(project.clientName) + '</td></tr></table>' +
       '<table style="width:100%;border-collapse:collapse"><thead><tr><th>组</th><th>项次</th><th>概算</th><th>实际</th><th>偏差</th><th>偏差率</th></tr></thead><tbody>' + rows + '</tbody></table>' +
       '<table style="width:100%;border-collapse:collapse;margin-top:8px">' +
-      '<tr><td style="border:none;text-align:right;font-size:13px"><b>概算总成本：</b>¥' + Math.round(totalEst).toLocaleString() + '</td></tr>' +
-      '<tr><td style="border:none;text-align:right;font-size:13px"><b>实际总成本：</b>¥' + Math.round(totalAct).toLocaleString() + '</td></tr></table>';
+      '<tr><td style="border:none;text-align:right;font-size:13px"><b>概算总成本：</b>¥' + formatMoney(totalEst) + '</td></tr>' +
+      '<tr><td style="border:none;text-align:right;font-size:13px"><b>实际总成本：</b>¥' + formatMoney(totalAct) + '</td></tr></table>';
     exportHtmlTable('成本对比_' + project.clientName, html);
   }, [project, quotationGroups, actualCosts, quotationVersion, laborRates]);
 
@@ -631,11 +632,12 @@ const DeliveryDetail: React.FC = () => {
   let estProfit = 0, actProfit = 0, estGP3 = 0, actGP3 = 0;
   if (project) {
     const ta = Object.values(actualCosts).reduce((s, v) => s + v, 0);
-    const { exTax, grandEstimated: ge, warrantyCost: wc } = computeDeliveryEstGP3(project.contractAmount, quotationGroups, quotationVersion);
+    // F08：estGP3 直接用 computeDeliveryEstGP3 已返回字段（此前用 ge 重复推导同公式，口径漂移风险）
+    const { exTax, grandEstimated: ge, warrantyCost: wc, estGP3: calcEstGP3 } = computeDeliveryEstGP3(project.contractAmount, quotationGroups, quotationVersion);
     grandActual = ta + wc;
     contractExTax = exTax; grandEstimated = ge;
     estProfit = exTax - ge; actProfit = exTax - grandActual;
-    estGP3 = exTax > 0 ? (exTax - ge) / exTax : 0;
+    estGP3 = calcEstGP3;
     actGP3 = exTax > 0 ? (exTax - grandActual) / exTax : 0;
   }
 

@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Card } from 'antd';
 import { COLORS } from '../../styles/colors';
-import { fmtK, fmtKBase, type NodeDelayInfo } from '../../utils/analysisShared';
+import { fmtK, fmtKBase, projectStatusColor, projectStatusBg, type NodeDelayInfo } from '../../utils/analysisShared';
 
 // ── 类型定义 ──
 export interface ProfitItem {
@@ -398,8 +398,8 @@ export const ProjectGantt: React.FC<{
           const cy = rowCenter(pi) - barH / 2; // 居中于行分隔线之间
           const badgeCx = 22;
           const badgeR = 14;
-          const badgeBg = proj.status === '已完成' ? '#e8f5e9' : proj.delayed ? '#ffebee' : '#e6f0fa';
-          const badgeColor = proj.status === '已完成' ? COLORS.success : proj.delayed ? COLORS.danger : COLORS.primary;
+          const badgeBg = projectStatusBg(proj.status, proj.delayed);
+          const badgeColor = projectStatusColor(proj.status, proj.delayed);
           return (
             <g key={proj.name + '-' + pi}>
               {/* 先绘矩形条（底层），再绘标签（顶层） */}
@@ -553,9 +553,9 @@ export const BubbleChart: React.FC<{
   const maxCostNeg = Math.max(1, Math.min(Y_CAP, Math.max(...data.map(d => -d.costDeviation), 0)));
   const yTotal = maxCostPos + maxCostNeg;
   const maxPressure = Math.max(...data.map(d => d.capacityPressure), 0.001);
-  /** 气泡颜色：已完成绿；未完成且延期中（派生）红；否则蓝 */
+  /** 气泡颜色：已完成绿；未完成且延期中（派生）红；否则蓝（收敛 projectStatusColor） */
   const bubbleColor = (d: BubbleDataItem): string =>
-    d.status === '已完成' ? COLORS.success : d.delayed ? COLORS.danger : COLORS.primary;
+    projectStatusColor(d.status, d.delayed);
   const step = 15;
   const maxTick = Math.ceil(maxDelay / step) * step;
   // Y轴刻度独立计算（避免与X轴共用时，在小范围内重复取值）

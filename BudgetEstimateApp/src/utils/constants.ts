@@ -30,6 +30,11 @@ export const NODE_DISPLAY_NAMES = [
   '包装\n发货', '现场\n安调', '验收\n整改', '终\n验收', '项目\n总结',
 ] as const;
 
+/** 交付节点执行状态文案映射：DeliveryNodeTimeline/DeliveryDetail 两处逐字重复收敛单源（F08，对齐 TR TASK_STATUS_META 模式） */
+export const NODE_STATUS_META: Record<string, string> = {
+  pending: '未开始', in_progress: '进行中', completed: '已完成',
+};
+
 // ── 默认业务常量 ──
 export const DEFAULT_DESIGN_HOURLY_RATE = 175;
 export const DEFAULT_ASSEMBLY_HOURLY_RATE = 85;

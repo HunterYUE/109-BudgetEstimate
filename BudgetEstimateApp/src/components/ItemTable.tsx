@@ -5,7 +5,7 @@ import type { ColumnsType } from 'antd/es/table';
 import type { GroupItem, SourcingType, GroupType, Component, ItemType } from '../types';
 import { loadCatalog } from '../services/catalogCache';
 import { parseVersionFromCode } from '../utils/codeVersion';
-import { calcDirectCost, calcItemPrices } from '../utils/calculations';
+import { calcDirectCost, calcItemPrices, formatMoney } from '../utils/calculations';
 import { COLORS } from '../styles/colors';
 import { lockCellWidth, BARE_INPUT_STYLE } from '../utils/tableUtils';
 import { CATEGORY_OPTIONS } from './material/materialConstants';
@@ -281,7 +281,7 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
     onCell: onCellLock(96),
     render: (v: number, _rec: GroupItem, idx: number) => {
       if (!editing || groupType === 'EQUIPMENT') {
-        return <span>{'¥'}{Math.round(v).toLocaleString()}</span>;
+        return <span>{'¥'}{formatMoney(v)}</span>;
       }
       return (
         <EditableNumberInput value={v} align="right" step={1}
@@ -321,7 +321,7 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
   const colDC: ColumnsType<GroupItem> = [{
     title: '直接成本', dataIndex: 'directCost', width: 96, align: 'right' as const,
     onCell: onCellLock(96),
-    render: (v: number) => <span style={{ fontWeight: 600 }}>{'¥'}{Math.round(v).toLocaleString()}</span>,
+    render: (v: number) => <span style={{ fontWeight: 600 }}>{'¥'}{formatMoney(v)}</span>,
   }];
 
   const colMargin: ColumnsType<GroupItem> = [{
@@ -335,7 +335,7 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
   const colPrice: ColumnsType<GroupItem> = [{
     title: '预期售价', dataIndex: 'accountingPrice', width: 105, align: 'right' as const,
     onCell: onCellLock(105),
-    render: (v: number) => <span style={{ fontWeight: 600, color: COLORS.primary }}>{'¥'}{Math.round(v).toLocaleString()}</span>,
+    render: (v: number) => <span style={{ fontWeight: 600, color: COLORS.primary }}>{'¥'}{formatMoney(v)}</span>,
   }];
 
 

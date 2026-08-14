@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import type { CSSProperties } from 'react';
 import { parseMoneyInput } from '../utils/tableUtils';
+import { formatMoney } from '../utils/calculations';
 
 /** 金额点击编辑组件：¥ 前缀 + 数字过滤 + 格式化 + 失焦/Enter 提交 + Escape 回退。
  *  原为 ItemCostTable ActualCostInput 单文件实现，提取共享供多处复用。 */
@@ -11,7 +12,7 @@ export const MoneyInput: React.FC<{
   align?: 'left' | 'right';
   style?: CSSProperties;
 }> = ({ value, onCommit, fontSize = 13, align = 'right', style }) => {
-  const [text, setText] = useState(() => value ? '¥' + Math.round(value).toLocaleString() : '');
+  const [text, setText] = useState(() => value ? '¥' + formatMoney(value) : '');
   const [editing, setEditing] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const committed = useRef(value);
@@ -20,7 +21,7 @@ export const MoneyInput: React.FC<{
   useEffect(() => {
     if (!editing && committed.current !== value) {
       committed.current = value;
-      setText(value ? '¥' + Math.round(value).toLocaleString() : '');
+      setText(value ? '¥' + formatMoney(value) : '');
     }
   }, [value, editing]);
 
@@ -47,7 +48,7 @@ export const MoneyInput: React.FC<{
   return (
     <input ref={inputRef} value={text} onChange={e => setText(e.target.value)}
       onBlur={commit}
-      onKeyDown={e => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') { setEditing(false); setText(committed.current ? '¥' + Math.round(committed.current).toLocaleString() : ''); } }}
+      onKeyDown={e => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') { setEditing(false); setText(committed.current ? '¥' + formatMoney(committed.current) : ''); } }}
       style={{ width: '100%', height: 28, border: 'none', padding: '2px 4px', textAlign: align, fontSize, fontWeight: 600, outline: 'none', boxSizing: 'border-box', background: 'transparent', MozAppearance: 'textfield', ...style }} />
   );
 };

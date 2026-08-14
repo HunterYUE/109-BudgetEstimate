@@ -6,7 +6,7 @@ import type { DeliveryProject } from '../types';
 import { COLORS } from '../styles/colors';
 import { NODE_DISPLAY_NAMES, LIST_LIMIT } from '../utils/constants';
 import { parseFY, FYSelector, fiscalYearLabel } from '../utils/fiscalYear';
-import { fmtK, compressNo, chartLabel, monthEndOf, getNodeBaseline, getNodeDelay, getProjectDelay, isProjectDelivered, getProjectDoneDate, quoteProfitExTax, deliverySalesProfit, buildQuoteInfoMap, deliveryExTax } from '../utils/analysisShared';
+import { fmtK, compressNo, chartLabel, monthEndOf, getNodeBaseline, getNodeDelay, getProjectDelay, isProjectDelivered, getProjectDoneDate, quoteProfitExTax, deliverySalesProfit, buildQuoteInfoMap, deliveryExTax, FY_MONTH_LABELS } from '../utils/analysisShared';
 import { ProfitChart, ProjectGantt, BubbleChart } from '../components/charts/DeliveryCharts';
 import { VerticalBarChart } from '../components/charts/VerticalBarChart';
 import type { ProfitItem, BubbleDataItem } from '../components/charts/DeliveryCharts';
@@ -312,10 +312,9 @@ const DeliveryAnalysis: React.FC = () => {
     const tlEnd = fyRange.end;
     const DAY_MS = 1000 * 60 * 60 * 24;
     const totalDays = Math.round((tlEnd.getTime() - tlStart.getTime()) / DAY_MS);
-    const months = Array.from({ length: 12 }, (_, i) => {
-      const d = new Date(tlStart.getFullYear(), tlStart.getMonth() + i, 1);
-      return d.toLocaleString('en', { month: 'short' });
-    });
+    // 财年 12 月短名（Jul…Jun）复用共享常量，与 analysisShared.FY_MONTH_LABELS 逐项一致（F08 收敛）
+    // 展开为可变数组：常量声明为 readonly tuple，而 GanttChart months prop 接受 string[]
+    const months = [...FY_MONTH_LABELS];
     const todayPos = Math.round((now.getTime() - tlStart.getTime()) / DAY_MS);
     const projectRows = fyFiltered.filter(p => {
       // 已完成项目仅在完成日期在时间线范围内时显示（统一共享完成判定）

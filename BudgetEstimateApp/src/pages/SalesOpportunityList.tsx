@@ -22,6 +22,7 @@ import { api, clearCache } from '../utils/api';
 import { calcBlueTableWinRate } from '../utils/blueTableCalculation';
 import { NODE_NAMES, STAGE_COLORS, TAX_RATE, LIST_LIMIT } from '../utils/constants';
 import { formatBeijing } from '../utils/timeFormat';
+import { rateToPercent, formatMoney } from '../utils/calculations';
 import { useAuth } from '../utils/authContext';
 import { hasPermission } from '../utils/permissions';
 import { BARE_INPUT_STYLE, tabItemStyle, parseMoneyInput } from '../utils/tableUtils';
@@ -109,7 +110,6 @@ const SalesOpportunityList: React.FC = () => {
   // ⚠️ A1 复核：写按钮按细粒度权限门控（与后端 writeGuard 同源）——无对应写权用户仅可查看
   const perms = user?.permissions || [];
   const canCreateOpp = hasPermission(perms, ['新建信息/线索/机会', '全部查看权限']);
-  const canEditOpp = hasPermission(perms, ['编辑销售机会', '全部查看权限']);
   const canConvert = hasPermission(perms, ['转线索/转机会', '编辑销售机会', '全部查看权限']);
 
   const [msg, ctx] = message.useMessage();
@@ -465,7 +465,7 @@ const SalesOpportunityList: React.FC = () => {
                 gp3 = ver.gp3ProfitRate || 0;
                 // ⚠️ 优先读存储的 gp3Amount，为 0 时从汇总值回退计算（兼容旧数据；本系统 0 表示缺失而非真实零值）
                 gp3Amount = ver.gp3Amount || Math.round((ver.discountedPrice || 0) - Math.round((ver.totalCost || 0) * (1 + (ver.taxRate || TAX_RATE))));
-                profitRate = Math.round((ver.gp3ProfitRate || 0) * 10000) / 100;
+                profitRate = rateToPercent(ver.gp3ProfitRate || 0);
               } else {
                 discountedPrice = qt.amount || 0;
                 amount = qt.amount || amount;
@@ -599,7 +599,7 @@ const SalesOpportunityList: React.FC = () => {
         expectedCloseDate: formData.expectedCloseDate || '',
         notes: formData.notes || '',
         reasons: formData.reasons || '',
-        // 创建时按创建阶段记录进入各阶段时间（信息=创建时间、中标=won_at）
+        // 创建时按创建阶段记录进入各阶段时间（信息=创建时间；中标阶段记入 negotiationAt，wonAt 转交付时才采集）
         leadAt: hasStage(['线索', '机会', '投标', '议价', '中标']) ? createdAt : undefined,
         opportunityAt: hasStage(['机会', '投标', '议价', '中标']) ? createdAt : undefined,
         bidAt: hasStage(['投标', '议价', '中标']) ? createdAt : undefined,
@@ -664,10 +664,10 @@ const SalesOpportunityList: React.FC = () => {
         const isReadOnly = hasQuote || rec.terminated || rec.promoteLocked;
         const displayVal = hasQuote ? (rec.quotationAmount ?? v) : v;
         if (isReadOnly) {
-          return <span style={{ color: COLORS.textLight, fontWeight: 600, fontSize: 13 }}>¥{Math.round(displayVal).toLocaleString()}</span>;
+          return <span style={{ color: COLORS.textLight, fontWeight: 600, fontSize: 13 }}>¥{formatMoney(displayVal)}</span>;
         }
         return (
-          <input type="text" defaultValue={'¥' + Math.round(v).toLocaleString()}
+          <input type="text" defaultValue={'¥' + formatMoney(v)}
             onBlur={e => {
               const val = parseInt(e.target.value.replace(/[^0-9-]/g, ''), 10) || 0;
               touch(rec.id, { amount: val });
@@ -853,7 +853,7 @@ const SalesOpportunityList: React.FC = () => {
     },
     { title: '操作日期', dataIndex: 'updatedAt', width: 100,
       render: (v: string) => <span style={{ fontSize: 13, color: COLORS.textLight }}>{formatBeijing(v)}</span> },
-  ], [tabFilter, touch, canCreateOpp, canEditOpp, canConvert, handlePromote, handleConfirmTerminate, handleWinDeliver, salesmanFilterOptions, closeDateFilterOptions, handleStatusAction, navigate]);
+  ], [tabFilter, touch, canConvert, handlePromote, handleConfirmTerminate, handleWinDeliver, salesmanFilterOptions, closeDateFilterOptions, handleStatusAction, navigate]);
 
 
 
@@ -1023,7 +1023,7 @@ const SalesOpportunityList: React.FC = () => {
               <td style={cellStyle2}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                   <span style={{ fontSize: 13, color: COLORS.textSecondary, fontWeight: 600 }}>¥</span>
-                  <input type="text" value={formData.amount ? Math.round(formData.amount).toLocaleString() : ''}
+                  <input type="text" value={formData.amount ? formatMoney(formData.amount) : ''}
                     onChange={e => {
                       setFormData(p => ({ ...p, amount: parseMoneyInput(e.target.value) }));
                     }}

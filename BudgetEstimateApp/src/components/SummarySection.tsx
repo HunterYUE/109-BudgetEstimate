@@ -200,7 +200,7 @@ const SummarySection: React.FC<Props> = ({ groups, version, onDiscountChange, on
             </div>
             {readOnly ? (
               <div style={{ fontWeight: 700, fontSize: 24, color: COLORS.textDark, lineHeight: 1.2 }}>
-                ¥{Math.round(displayDiscounted).toLocaleString()}
+                ¥{formatMoney(displayDiscounted)}
               </div>
             ) : (
             <input type="text" inputMode="numeric"
@@ -208,7 +208,7 @@ const SummarySection: React.FC<Props> = ({ groups, version, onDiscountChange, on
               // ⚠️ B1 修复：加 key=折后报价——折后价变化（折扣调整/版本切换）时强制重挂载刷新 defaultValue；
               //   此前无 key，React 复用旧 input，改折后价不重渲染、输入框残留旧值（与上方 com-cost 键位同款模式）
               key={'disc-' + Math.round(displayDiscounted)}
-              defaultValue={'¥' + Math.round(displayDiscounted).toLocaleString()}
+              defaultValue={'¥' + formatMoney(displayDiscounted)}
               onInput={(e) => {
                 const input = e.currentTarget;
                 input.value = moneyInputFilter(input.value);

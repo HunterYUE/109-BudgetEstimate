@@ -616,7 +616,7 @@ const SalesAnalysis: React.FC = () => {
                 <span style={{ color: COLORS.primary }}>{annualTargetInput ? `${parsedAnnualTarget.toLocaleString()}K` : '—'}</span>
                 {annualTargetInput ? (
                   <span style={{ color: monthlyCumulative.cumulative >= monthlyCumulative.expectedCumulative ? COLORS.primary : COLORS.danger, fontSize: 10 }}>
-                    {`(${Math.round(monthlyCumulative.cumulative / 1000).toLocaleString()}K)`}
+                    {`(${fmtK(monthlyCumulative.cumulative)})`}
                   </span>
                 ) : null}
               </span>
@@ -629,7 +629,7 @@ const SalesAnalysis: React.FC = () => {
               </span>
               {annualTargetInput && gp3Input ? (
                 <span style={{ color: monthlyCumulative.profitCumulative >= monthlyCumulative.expectedProfitCumulative ? COLORS.purple : COLORS.danger, fontSize: 10 }}>
-                  {`(${Math.round(monthlyCumulative.profitCumulative / 1000).toLocaleString()}K)`}
+                  {`(${fmtK(monthlyCumulative.profitCumulative)})`}
                 </span>
               ) : null}
             </span>
@@ -694,7 +694,7 @@ const SalesAnalysis: React.FC = () => {
                 <span style={{ color: COLORS.success }}>{annualSalesTarget ? `${parsedSalesTarget.toLocaleString()}K` : '—'}</span>
                 {annualSalesTarget ? (
                   <span style={{ color: salesCumulative.cumulative >= salesCumulative.expectedCumulative ? COLORS.success : COLORS.danger, fontSize: 10 }}>
-                    {`(${Math.round(salesCumulative.cumulative / 1000).toLocaleString()}K)`}
+                    {`(${fmtK(salesCumulative.cumulative)})`}
                   </span>
                 ) : null}
               </span>
@@ -707,7 +707,7 @@ const SalesAnalysis: React.FC = () => {
               </span>
               {annualSalesTarget && gp3Input ? (
                 <span style={{ color: salesCumulative.profitCumulative >= salesCumulative.expectedProfitCumulative ? COLORS.purple : COLORS.danger, fontSize: 10 }}>
-                  {`(${Math.round(salesCumulative.profitCumulative / 1000).toLocaleString()}K)`}
+                  {`(${fmtK(salesCumulative.profitCumulative)})`}
                 </span>
               ) : null}
             </span>

@@ -8,6 +8,7 @@ import { COLORS } from '../styles/colors';
 import { lockCellWidth, BARE_INPUT_STYLE } from '../utils/tableUtils';
 import { todayBeijing } from '../utils/timeFormat';
 import { uid } from '../utils/tagHelpers';
+import { formatMoney } from '../utils/calculations';
 
 interface BlueTableModalProps {
   open: boolean;
@@ -368,14 +369,14 @@ const BlueTableModal: React.FC<BlueTableModalProps> = ({ open, opportunity, onSa
                 flex: 1, padding: '7px 12px', background: '#fff', display: 'flex', gap: 4, alignItems: 'center',
               }}>
                 <span style={{ fontSize: 13, fontWeight: 600, color: COLORS.textSecondary }}>¥</span>
-                <input value={bt.budgetAmount != null ? Math.round(bt.budgetAmount).toLocaleString() : ''}
+                <input value={bt.budgetAmount != null ? formatMoney(bt.budgetAmount) : ''}
                   onChange={e => {
                     const v = e.target.value.replace(/[^0-9]/g, '');
                     setBt(prev => ({ ...prev, budgetAmount: v ? parseInt(v, 10) : undefined }));
                   }}
                   onBlur={e => {
                     const v = bt.budgetAmount;
-                    if (v != null) e.target.value = Math.round(v).toLocaleString();
+                    if (v != null) e.target.value = formatMoney(v);
                   }}
                   placeholder="0"
                   style={{
@@ -772,7 +773,7 @@ const BlueTableModal: React.FC<BlueTableModalProps> = ({ open, opportunity, onSa
               },
               {
                 icon: '📋', title: '策略计划',
-                desc: '定位 1~10（我方感受）、反应模式 G/T/EK/OC（客户变革意愿，OC ×0.8），两者不进公式供策略参考。提升目标设定支持度目标，行动计划填写具体措施。',
+                desc: '定位 1~10（我方感受，不进公式供策略参考）；反应模式 G/T/EK/OC（客户变革意愿，进入公式修正：OC ×0.8）。提升目标设定支持度目标，行动计划填写具体措施。',
               },
               {
                 icon: '📊', title: '赢率公式',
