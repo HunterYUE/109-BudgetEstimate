@@ -62,6 +62,12 @@ router.post('/', async (req, res, next) => {
         : 'delivery_id';
       const dupVal = (body as Record<string, any>)[dupCol];
       if (dupVal) {
+        // ⚠️ 审计修复 BE-4：先锁父实体行（FOR UPDATE）再查重——两并发提交同刻都查无 pending 时，
+        //   行锁串行化：后者等前者事务提交后重查必见 pending → 409，杜绝并发重复待审记录
+        const parentTable = approval_type === 'quotation' ? 'quotations'
+          : approval_type === 'promote' ? 'sales_opportunities'
+          : 'delivery_projects';
+        await client.query(`SELECT 1 FROM ${parentTable} WHERE id = $1 FOR UPDATE`, [dupVal]);
         const dup = (await client.query(
           `SELECT 1 FROM approval_requests WHERE approval_type = $1 AND ${dupCol} = $2 AND status = 'pending'`,
           [approval_type, dupVal]
@@ -104,9 +110,12 @@ router.post('/', async (req, res, next) => {
       // ⚠️ M1 修复：status/submit_time 只能经审批流程（POST /:id/records）流转，禁止直设 approved/rejected（此前可创建即 approved）。
       //   最终审计回归修正：创建即「提交审批」，必须落库为 pending——此前直接剔 status 依赖 DB 默认 draft，
       //   新建审批不进待审批列表、UI 无审批按钮，整个审批流程卡死（生产回归）。现显式强制 status='pending'。
-      const insertCols = fields.filter(f => !['id', 'created_at', 'updated_at', 'status', 'submit_time'].includes(f) && body[f] !== undefined);
+      // ⚠️ 审计修复 BE-7：submitter 不再采信客户端——服务端从登录用户 display_name 派生（防伪造提交人）。
+      //   前端本就用 displayName 提交，派生值与既有存储一致；display_name 缺省兜底 '审批申请人'。
+      const insertCols = fields.filter(f => !['id', 'created_at', 'updated_at', 'status', 'submit_time', 'submitter'].includes(f) && body[f] !== undefined);
       if (insertCols.length === 0) throw new AppError(400, '没有要插入的字段');
-      insertCols.push('status');
+      body.submitter = req.user?.display_name || '审批申请人';
+      insertCols.push('status', 'submitter');
       body.status = 'pending';
       return (await client.query(
         `INSERT INTO approval_requests (${insertCols.map(f => `"${f}"`).join(', ')}) VALUES (${insertCols.map((_, i) => `$${i + 1}`).join(', ')}) RETURNING *`,

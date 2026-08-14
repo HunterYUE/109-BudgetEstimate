@@ -118,20 +118,21 @@ async function request<T>(path: string, options?: RequestInit, noCache?: boolean
     const resourcePrefix = path.split('?')[0].split('/')[1] || '';
     if (!resourcePrefix) return result;
     clearCache('/' + resourcePrefix);
-    // ⚠️ 跨资源级联写：清相关资源缓存，避免 30s 内读到陈旧数据
-    //   project-versions/groups 改写 project 计算字段；审批记录级联改写 quotations/projects/deliveries/opportunities 状态
-    if (path.startsWith('/project-versions') || path.startsWith('/project-groups')) {
-      clearCache('/projects');
-    }
-    if (path.startsWith('/approvals/') && path.includes('/records')) {
-      clearCache('/quotations');
-      clearCache('/projects');
-      clearCache('/deliveries');
-      clearCache('/opportunities');
-    }
+    // ⚠️ 跨资源级联写：清相关资源缓存，避免 30s 内读到陈旧数据（见 getCascadePrefixes）
+    for (const p of getCascadePrefixes(path)) clearCache(p);
   }
 
   return result;
+}
+
+/** 跨资源级联清缓存前缀（纯函数，便于单测）：非 GET 写请求按路径返回需清除的缓存前缀。
+ *  ⚠️ 审计修复 BU-4：此前仅 POST /approvals/:id/records 触发级联；POST /approvals（创建审批）不触发——
+ *  plan/cost 创建即改 delivery 状态、promote 创建即 promote_locked 机会，30s 内列表读到陈旧数据。
+ *  放宽为 startsWith('/approvals') 同时覆盖创建与审批记录。 */
+export function getCascadePrefixes(path: string): string[] {
+  if (path.startsWith('/project-versions') || path.startsWith('/project-groups')) return ['/projects'];
+  if (path.startsWith('/approvals')) return ['/quotations', '/projects', '/deliveries', '/opportunities'];
+  return [];
 }
 
 /** 清除缓存（用于数据变更后强制刷新） */

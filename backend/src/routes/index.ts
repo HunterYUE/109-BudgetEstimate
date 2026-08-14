@@ -98,18 +98,17 @@ router.post('/project-versions', requireAuth, writeGuard(WRITE_GUARD['project-ve
     if (!project_id || !version_no) {
       throw new AppError(400, '缺少必填字段：project_id, version_no');
     }
-    // ⚠️ A4/A113 复核：review_status 应用层枚举校验（此前直写 DB CHECK 撞 500）。白名单放开
-    //   approved/rejected 是为「已有版本」保存时回显真实审核状态（审批流写库）；但**全新版本**不得以
-    //   approved/rejected 落库——那等于绕过审批状态机直造已审核版本。补存在性校验：新版本仅允许 draft/pending。
-    if (!['draft', 'pending', 'approved', 'rejected'].includes(review_status)) {
-      throw new AppError(400, `无效审核状态: ${review_status}`);
+    // ⚠️ A4/A113 复核 + 审计修复 BE-1：review_status 应用层枚举校验。终态 approved/rejected 一律禁直设——
+    //   审批状态只能经审批流程（POST /approvals/:id/records 直接 SQL 流转）写库，POST 仅接受 draft/pending。
+    //   此前白名单放开 approved/rejected 且仅拦「新版本」：已有 draft 版本可经下方 ON CONFLICT 的
+    //   review_status = EXCLUDED.review_status 被直接翻转成终态（绕过审批状态机），故收敛为全拦截。
+    //   前端 saveVersion 永不传终态（QuotationPage 加载时把 approved/rejected 降级为 draft 再保存），无兼容影响。
+    if (!['draft', 'pending'].includes(review_status)) {
+      throw new AppError(400, `无效审核状态: ${review_status}（审核终态只能由审批流程流转）`);
     }
     const existingVer = (await query(
       'SELECT review_status FROM project_versions WHERE project_id = $1 AND version_no = $2', [project_id, version_no]
     )).rows[0];
-    if (!existingVer && ['approved', 'rejected'].includes(review_status)) {
-      throw new AppError(400, '新版本须从草稿开始，审核状态由审批流程流转');
-    }
     // ⚠️ 审计修复：待审批（review_status='pending'）版本禁覆写——审批人基于提交时快照做决策，
     //   期间被改财务数据会让审批与机会回写口径失真（与 quotations beforeUpdate pending 守卫同口径）。
     //   但仅当存在关联审批请求时才拦截：提交链路为保存版本(pending)→sync报价(pending)→创建审批，

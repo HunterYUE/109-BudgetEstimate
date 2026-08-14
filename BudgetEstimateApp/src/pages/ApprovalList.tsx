@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, Tag, Button, Modal, Input, message, Empty } from 'antd';
 import { CheckCircleOutlined, CloseCircleOutlined, EyeOutlined, CheckOutlined, CloseOutlined } from '@ant-design/icons';
@@ -84,7 +84,9 @@ const ApprovalList: React.FC = () => {
     });
     if (filter === 'pending') return sorted.filter(r => r.status === 'pending');
     if (filter === 'done') return sorted.filter(r => r.status !== 'pending');
-    if (filter === 'mine') return sorted.filter(r => r.submitter === (user?.displayName || ''));
+    // ⚠️ 审计修复 BU-9：displayName 空时回退『审批申请人』——后端 BE-7 强制以 display_name 派生 submitter、
+    //   空时兜底『审批申请人』；此前前端回退空串永不匹配落库名，我的提交 Tab 漏显示
+    if (filter === 'mine') return sorted.filter(r => r.submitter === (user?.displayName || '审批申请人'));
     return sorted;
   }, [requests, filter, searchText, typeFilter, user]);
 
@@ -102,6 +104,9 @@ const ApprovalList: React.FC = () => {
 
   const [approvalModal, setApprovalModal] = useState<{ req: ApprovalRequest; action: 'approved' | 'rejected' } | null>(null);
   const [approvalComment, setApprovalComment] = useState('');
+  // ⚠️ 审计修复 BU-3：审批提交重入守卫——双击确认/回车会并发发两次 POST /:id/records（后端虽以
+  //   FOR UPDATE + 终态检查拦截第二次，但前端应避免重复请求与双弹错误提示）
+  const submittingRef = useRef(false);
 
   /** 打开审批详情（转机会→首页；交付→交付详情；报价→报价编制） */
   const openDetail = useCallback((item: { approvalType: string; deliveryId?: string; quotationId?: string | null }) => {
@@ -114,7 +119,8 @@ const ApprovalList: React.FC = () => {
   const tabCounts = useMemo(() => ({
     pending: requests.filter(r => r.status === 'pending').length,
     done: requests.filter(r => r.status !== 'pending').length,
-    mine: requests.filter(r => r.submitter === (user?.displayName || '')).length,
+    // ⚠️ 审计修复 BU-9：与 mine 过滤同兜底口径（见 filtered）
+    mine: requests.filter(r => r.submitter === (user?.displayName || '审批申请人')).length,
     all: requests.length,
   }), [requests, user]);
 
@@ -131,10 +137,12 @@ const ApprovalList: React.FC = () => {
   const confirmApproval = useCallback(async () => {
     const modal = approvalModal;
     if (!modal) return;
+    if (submittingRef.current) return; // ⚠️ 审计修复 BU-3：防双击并发提交
     if (modal.action === 'rejected' && !approvalComment.trim()) {
       msg.warning('驳回必须填写原因');
       return;
     }
+    submittingRef.current = true;
     try {
       // ⚠️ 后端 POST /:id/records 在事务内完成全部级联（请求状态/报价/版本/交付/机会/审批记录/plan_approval）
       // 前端只需提交审批记录，不再重复级联——避免双重应用与"后端成功但前端级联失败"的状态不一致
@@ -151,6 +159,8 @@ const ApprovalList: React.FC = () => {
       setApprovalModal(null);
     } catch {
       msg.error('审批操作失败，请重试');
+    } finally {
+      submittingRef.current = false;
     }
   }, [approvalModal, approvalComment, msg, user, loadDrafts]);
 

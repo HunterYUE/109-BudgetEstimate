@@ -644,6 +644,8 @@ CREATE TABLE IF NOT EXISTS users (
   updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
   title         VARCHAR(50) NOT NULL DEFAULT '',
   phone         VARCHAR(20) NOT NULL DEFAULT '',
+  password_changed_at TIMESTAMPTZ,   -- ⚠️ 审计修复 DB-1：改密吊销旧 JWT 依据列（auth/requireAuth 与 L3 改密流依赖，
+                                     --   此前 schema.sql 缺失导致全新部署所有 auth SELECT 500；云端已有列，本行仅补全新建库）
   permissions   TEXT[] DEFAULT '{}'::text[],
   UNIQUE(email)
 );

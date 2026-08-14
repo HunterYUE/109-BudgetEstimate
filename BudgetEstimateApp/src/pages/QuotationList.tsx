@@ -40,14 +40,14 @@ const QuotationList: React.FC = () => {
     return () => { cancelled = true; };
   }, [messageApi]);
 
-  /** 报价是否属于所选财年（创建或更新落在财年内）；表格过滤与 Tab 徽标共用，避免口径分叉 */
+  /** 报价是否属于所选财年（仅按创建时间归属；表格过滤与 Tab 徽标共用，避免口径分叉）。
+   *  ⚠️ 审计修复 BU-2：移除 updatedAt 判定——同步/版本升级/审批流转都会写 updated_at=now()，
+   *  会把 FY1 创建的报价「搬进」FY2 且从 FY1 视图消失；与销售分析/仪表盘等按创建/业务完结时间归集口径一致 */
   const inFy = useCallback((q: QuotationSummary): boolean => {
     const fyRange = parseFY(fySelect);
     if (fyRange.start > new Date()) return false; // 未来财年不显示任何数据
     const created = q.createdAt ? new Date(q.createdAt) : null;
-    const updated = new Date(q.updatedAt);
-    return (!!created && created >= fyRange.start && created <= fyRange.end)
-        || (updated >= fyRange.start && updated <= fyRange.end);
+    return !!created && created >= fyRange.start && created <= fyRange.end;
   }, [fySelect]);
 
   const filtered = useMemo(() => {

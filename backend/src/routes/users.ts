@@ -90,7 +90,8 @@ router.put('/:id', async (req, res, next) => {
 
     const existing = await query('SELECT role FROM users WHERE id = $1', [id]);
     if (existing.rows.length === 0) throw new AppError(404, '用户不存在');
-    // ⚠️ 越级保护：非 admin 不得修改同级/更高角色账号（防停用/改资料 admin·director）
+    // ⚠️ 越级保护：只能管理「角色等级 ≤ 自己」的账号（assertCanManage 依 ROLE_RANK 纯等级比较——
+    //   同级可管理、仅高等级受拒；此注释与 helpers.ts 行为对齐，勿改回"同级禁止"表述）
     assertCanManage(req.user!.role, ROLE_RANK[existing.rows[0].role] ?? 0);
 
     // 类型校验（防非法值触发 PG 类型错误 500）

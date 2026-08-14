@@ -163,6 +163,12 @@ const BlueTableModal: React.FC<BlueTableModalProps> = ({ open, opportunity, onSa
       msg.warning('请填写项目节点计划');
       return false;
     }
+    // ⚠️ 审计修复 U4：角色全删空（roles.length===0）时阻止保存——此前 emptyNameRoles 过滤不命中空数组，
+    //   空蓝表可被保存；赢率侧缺角色可显示 0% 兜底，但落库后无任何采购角色，编辑重开为空态
+    if (bt.roles.length === 0) {
+      msg.warning('请至少添加一个采购角色');
+      return false;
+    }
     const emptyNameRoles = bt.roles.filter(r => !r.name || !r.name.trim());
     if (emptyNameRoles.length > 0) {
       msg.warning('请为所有采购角色填写姓名');

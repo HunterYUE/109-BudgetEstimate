@@ -186,7 +186,8 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
     render: (v: string, _record: GroupItem, idx: number) => {
       const fontSize = 13;
       const TYPES: ItemType[] = ['COMPLETE_SET', 'COMPONENT', 'SOFTWARE', 'SERVICE', 'PART'];
-      const LABELS = { COMPLETE_SET: 'CS', COMPONENT: 'CP', SOFTWARE: 'SW', SERVICE: 'SV' } as Record<string, string>;
+      // ⚠️ 审计修复 U5：补 PART 类型标签（此前 PART 物料类型列显示原始值 'PART' 而非缩写 'PA'，与其余四种不一致）
+      const LABELS = { COMPLETE_SET: 'CS', COMPONENT: 'CP', SOFTWARE: 'SW', SERVICE: 'SV', PART: 'PA' } as Record<string, string>;
       const typeLabel = LABELS[v] || v;
       const nextType = () => { const cur = TYPES.indexOf(v as ItemType); return TYPES[(cur + 1) % TYPES.length]; };
       if (!editing) {

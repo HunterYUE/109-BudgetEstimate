@@ -37,7 +37,9 @@ function parsePayment(terms: string): number[] {
 }
 
 function formatPayment(vals: number[]): string {
-  return PAYMENT_LABELS.map((l, i) => l + vals[i] + '%').join(' ');
+  // ⚠️ 审计修复 U8：vals[i] 可能为 undefined（付款条件字符串缺某期）——此前拼出 '预付undefined%'
+  //   入库污染付款条件，且 next[i]=... 回写后该期显示为「undefined% ▾」
+  return PAYMENT_LABELS.map((l, i) => l + (vals[i] ?? 0) + '%').join(' ');
 }
 
 /** 交货期点击选择组件 */

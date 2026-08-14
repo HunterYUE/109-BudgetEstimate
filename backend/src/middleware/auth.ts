@@ -49,7 +49,7 @@ export function clearAuthCookie(res: Response, name: string): void {
 declare global {
   namespace Express {
     interface Request {
-      user?: JwtPayload & { permissions?: string[]; title?: string };
+      user?: JwtPayload & { permissions?: string[]; title?: string; display_name?: string };
     }
   }
 }
@@ -85,7 +85,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
   // DB 故障返回 500 而非误判为凭证失效（此前 catch 兜底会吞掉查询错误）
   try {
     const userRow = await pool.query(
-      `SELECT u.is_active, u.permissions, u.role, u.title, u.password_changed_at,
+      `SELECT u.is_active, u.permissions, u.role, u.title, u.display_name, u.password_changed_at,
               EXISTS(SELECT 1 FROM timerecording.profiles p WHERE p.id = u.id AND NOT p.is_active) AS tr_disabled
        FROM users u WHERE u.id = $1`,
       [decoded.userId],
@@ -109,7 +109,8 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     }
     // 角色同样从库刷新（JWT 中的 role 可能已过期），保证 role 变更即时生效
     // ⚠️ A106：title 一并加载（工时应用跨应用登录限制——销售经理禁用工时 API——须在路由层依据 title 判定）
-    req.user = { ...decoded, role: row.role, permissions: row.permissions || [], title: row.title };
+    // ⚠️ 审计修复 BE-7：display_name 一并加载（审批提交人服务端派生，防客户端伪造提交人）
+    req.user = { ...decoded, role: row.role, permissions: row.permissions || [], title: row.title, display_name: row.display_name };
     next();
   } catch {
     res.status(500).json({ error: '服务器内部错误' });

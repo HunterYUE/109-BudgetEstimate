@@ -335,14 +335,9 @@ const MaterialManagement: React.FC = () => {
       invalidateCatalogCache(); // ⚠️ B2：失效报价页编码下拉缓存（同 286 说明）
     } catch (err) {
       console.error('[Material] 保存失败:', err);
-      // API 失败，回退到本地更新
-      if (item.note?.startsWith('[删除]')) {
-        setMaterials(prev => prev.filter(c => c.id !== item.id));
-      } else {
-        setMaterials(prev => prev.map(c =>
-          c.id === item.id ? { ...c, reviewStatus: 'approved' as ReviewStatus } : c
-        ));
-      }
+      // ⚠️ 审计修复 BU-5：与 saveEdit B7 同口径——API 失败不再本地伪造状态（刷新即恢复的假状态会误导
+      //   用户以为已审核通过，列表与后端不一致）；仅提示错误，条目保持真实状态可重试
+      messageApi.error(item.note?.startsWith('[删除]') ? '删除审批失败，请重试' : '审核失败，请重试');
     }
   }, [loadMaterials, messageApi]);
 
@@ -360,16 +355,8 @@ const MaterialManagement: React.FC = () => {
       invalidateCatalogCache(); // ⚠️ B2：失效报价页编码下拉缓存（同 286 说明）
     } catch (err) {
       console.error('[Material] 保存失败:', err);
-      // API 失败，回退到本地更新
-      if (item.note?.startsWith('[删除]')) {
-        setMaterials(prev => prev.map(c =>
-          c.id === item.id ? { ...c, reviewStatus: 'approved' as ReviewStatus, note: '' } : c
-        ));
-      } else {
-        setMaterials(prev => prev.map(c =>
-          c.id === item.id ? { ...c, reviewStatus: 'rejected' as ReviewStatus } : c
-        ));
-      }
+      // ⚠️ 审计修复 BU-5：同 handleApprove——不再本地伪造状态，仅提示错误保持真实状态可重试
+      messageApi.error(item.note?.startsWith('[删除]') ? '删除申请驳回失败，请重试' : '驳回失败，请重试');
     }
   }, [loadMaterials, messageApi]);
 

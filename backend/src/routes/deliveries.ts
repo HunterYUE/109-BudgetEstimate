@@ -77,7 +77,9 @@ const crudRouter = crudRoutes('delivery_projects', fields, {
   //   ⚠️ A3 复核回归修复：quotation_id/opportunity_id 为 UUID NOT NULL 无默认值，必须由转交付流程在前端创建时传入，
   //   故创建不禁直写、更新禁改（转交付后交付与机会/报价的链路归属不可变更）。
   //   注意：显式传会覆盖默认，id/created_at/updated_at 必须一并保留。
-  excludeOnCreate: ['id', 'created_at', 'updated_at', 'plan_status', 'cost_status', 'plan_approval', 'cost_approval'],
+  //   ⚠️ 审计修复 BE-2：创建禁直写 total_actual_cost/actual_costs/terminated——实际成本只能经成本提交/审批流写入，
+  //   转交付终止标记只能经机会 terminated 流（A105）流转；防创建时伪造成本/直接标完结。status 保留直写（转交付传'进行中'）。
+  excludeOnCreate: ['id', 'created_at', 'updated_at', 'plan_status', 'cost_status', 'plan_approval', 'cost_approval', 'total_actual_cost', 'actual_costs', 'terminated'],
   excludeOnUpdate: ['id', 'created_at', 'updated_at', 'plan_status', 'cost_status', 'plan_approval', 'cost_approval', 'quotation_id', 'opportunity_id'],
   // ⚠️ A104 修复：转交付创建校验——机会与报价必须真实存在且归属一致（防伪造关联、防把交付挂到他人报价）；
   //   防重复转交付（uq_delivery_opportunity 唯一约束存在，此处给出明确 409 而非撞约束的通用报错）
@@ -140,8 +142,14 @@ const crudRouter = crudRoutes('delivery_projects', fields, {
 
         // ⚠️ A15：事务样板收敛为 withTransaction
         await withTransaction(async (client) => {
-          const dp = (await client.query('SELECT id FROM delivery_projects WHERE id = $1', [id])).rows[0];
+          const dp = (await client.query('SELECT id, plan_status FROM delivery_projects WHERE id = $1', [id])).rows[0];
           if (!dp) throw new AppError(404, '交付项目未找到');
+          // ⚠️ 审计修复 BE-8：计划已审批（plan_status='approved'）的交付，节点修改仅限「交付管理」持有者——
+          //   防仅持「销售机会管理」的销售篡改已审批计划的节点/实际日期。转交付初始化在 plan_status='draft' 阶段，
+          //   销售仍可正常建节点；审批后的计划维护归交付管理，不影响既有流程。
+          if (dp.plan_status === 'approved' && !req.user?.permissions?.includes('交付管理')) {
+            throw new AppError(403, '该交付计划已审批，节点修改需要交付管理权限');
+          }
 
           // 备份基线（基线日期一旦审批通过写入，永不被覆盖）
           const existingBaselines = (await client.query(
@@ -158,7 +166,9 @@ const crudRouter = crudRoutes('delivery_projects', fields, {
           // 整组替换节点：先删旧后插新
           await client.query('DELETE FROM delivery_nodes WHERE delivery_project_id = $1', [id]);
           for (const node of nodes) {
-            const baseline = node.baseline_planned_end_date || baselineMap[node.node_no] || null;
+            // ⚠️ 审计修复 BE-5：基线以库中已存在的审批基线优先（不可变），客户端值仅作首次无基线时的兜底——
+            //   此前客户端值优先，可在审批通过后覆盖不可变基线、篡改延期判定基准
+            const baseline = baselineMap[node.node_no] || node.baseline_planned_end_date || null;
             await client.query(
               `INSERT INTO delivery_nodes (delivery_project_id, node_no, name,
                 planned_start_date, planned_end_date, actual_date,

@@ -685,13 +685,13 @@ const QuotationPage: React.FC = () => {
     }
     const curVer = project.currentVersion;
     if (!curVer.versionNo) { messageApi.warning('版本号异常'); return; }
+    // ⚠️ 审计修复 BU-6：汇总值提前到 try 外计算，供失败回滚复用
+    const submitUntaxed = curVer.discountedPrice ? exAmount(curVer.discountedPrice, curVer.taxRate) : undefined;
+    const submitSummary = calcProjectSummary(project.groups || [], curVer, submitUntaxed);
     try {
       savingRef.current = true;
       setIsSaving(true); // ⚠️ 防止重复点击
       await projectService.update(project.id, buildProjectPayload(project));
-      // ⚠️ 必须先重新计算汇总值再保存版本，否则 curVer 中的 discountRate/gp3ProfitRate 是过期数据
-      const submitUntaxed = curVer.discountedPrice ? exAmount(curVer.discountedPrice, curVer.taxRate) : undefined;
-      const submitSummary = calcProjectSummary(project.groups || [], curVer, submitUntaxed);
       const updatedVersion = buildVersionPayload(curVer, submitSummary, { reviewStatus: 'pending' });
       const savedVer = await projectService.saveVersion(project.id, updatedVersion);
       const savedVerId = savedVer.id;
@@ -740,6 +740,21 @@ const QuotationPage: React.FC = () => {
       messageApi.success('已提交审批');
     } catch (err: unknown) {
       console.error("[SaveError]", err);
+      // ⚠️ 审计修复 BU-6：提交链路非原子（版本 pending → 报价 pending → 创建审批），最后一步失败会残留
+      //   pending 且无审批记录，刷新后 shouldLock=pending 页面锁定、无审批可操作 → 报价永久卡死。
+      //   补偿回滚：把版本与报价状态恢复为 draft，页面解锁可重试；后端 index.ts 对「pending 无审批请求」
+      //   的版本允许覆写，重提链路不受阻。BE-1 白名单仅接受 draft/pending（pending 即缺陷态），
+      //   终态 rejected 不可经此接口写回，但 rejected→draft 不影响解锁且驳回决策已留存审批记录。
+      const restoreStatus = 'draft';
+      try {
+        await projectService.saveVersion(project.id, buildVersionPayload(curVer, submitSummary, { reviewStatus: restoreStatus }));
+        await quotationService.sync({
+          projectId: project.id, versionNo: curVer.versionNo,
+          salesNo: project.salesNo, clientName: project.clientName,
+          projectName: project.projectName || project.clientName,
+          status: restoreStatus,
+        });
+      } catch { /* 回滚失败静默：保留原错误提示，用户可重试提交 */ }
       messageApi.error('提交失败：' + ((err as Error).message || '未知错误'));
     } finally {
       savingRef.current = false;

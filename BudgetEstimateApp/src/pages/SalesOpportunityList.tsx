@@ -384,7 +384,10 @@ const SalesOpportunityList: React.FC = () => {
           salesNo: newSalesNo,
           clientName: opp.clientName,
           projectName: opp.projectName,
-          contractAmount: opp.amount,
+          // ⚠️ 审计修复 BU-1'：转交付金额优先取报价折后价（quotationAmount），与列表 UI 显示口径一致；
+          //   此前用 opp.amount——报价未审批时该值为陈旧预估（后端仅在报价审批通过后同步 opp.amount←报价金额），
+          //   导致写入交付的合同金额与页面显示的 quotationAmount 不一致
+          contractAmount: opp.quotationAmount ?? opp.amount,
           quotationId: bestQuoteId,
           status: '进行中',
           planStatus: 'draft',
@@ -445,9 +448,10 @@ const SalesOpportunityList: React.FC = () => {
             // 通过项目ID获取版本财务数据
             if (qt.projectId) {
               const projectData = await projectService.getFull(qt.projectId);
-              // ⚠️ 只采用已审批版本数据，无已审批版本时阻止提交
-              const ver = projectData.versions?.find(v => v.versionNo === qt.versionNo && v.reviewStatus === 'approved')
-                || projectData.versions?.find(v => v.reviewStatus === 'approved');
+              // ⚠️ 只采用报价所指版本的已审批数据，无该版本的已审批数据时阻止提交
+              //   （审计修复 BU-7：移除「回退到任意已审批版本」兜底——后端 promote 审批按报价版本号精确取数
+              //   (approvals.ts)，前端若静默改用另一已审批版本会造成提交数据与后端自动填充不一致）
+              const ver = projectData.versions?.find(v => v.versionNo === qt.versionNo && v.reviewStatus === 'approved');
               if (ver) {
                 foundApproved = true;
                 versionNo = ver.versionNo;

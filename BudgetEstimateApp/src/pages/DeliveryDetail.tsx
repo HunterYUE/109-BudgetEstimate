@@ -78,6 +78,10 @@ const DeliveryDetail: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [actualCosts, setActualCosts] = useState<Record<string, number>>({});
   const [savingPlan, setSavingPlan] = useState(false);
+  // ⚠️ 审计修复 BU-3：提交审批重入守卫（confirmSubmitPlan/handleSubmitCost 复用）——双击确认会并发发两次
+  //   POST /approvals（后端 dedup 拦截第二次，但前端应避免重复请求）；handleSavePlan 已有 savingPlan 锁，
+  //   提交审批此前无锁
+  const [submittingApproval, setSubmittingApproval] = useState(false);
   const [submitCostOpen, setSubmitCostOpen] = useState(false);
   const [costOverride, setCostOverride] = useState(false);
   const [laborRates, setLaborRates] = useState<{ design: number; assembly: number }>({ design: DEFAULT_DESIGN_HOURLY_RATE, assembly: DEFAULT_ASSEMBLY_HOURLY_RATE });
@@ -443,7 +447,8 @@ const DeliveryDetail: React.FC = () => {
   }, [project, msg]);
 
   const confirmSubmitPlan = useCallback(async () => {
-    if (!project) return;
+    if (!project || submittingApproval) return; // ⚠️ 审计修复 BU-3：防双击并发提交
+    setSubmittingApproval(true);
     // 先保存节点数据（防止用户编辑了计划时间后未点保存直接提交，导致变更丢失）
     try {
       const flushed = flushPendingDateChanges(project);
@@ -453,6 +458,7 @@ const DeliveryDetail: React.FC = () => {
       setHasChanges(false);
     } catch {
       msg.error('保存节点数据失败，请重试');
+      setSubmittingApproval(false);
       return;
     }
     const ver = quotationVersionFull;
@@ -487,8 +493,10 @@ const DeliveryDetail: React.FC = () => {
       msg.success('实施计划已提交审批');
     }).catch((err: unknown) => {
       msg.error('提交审批失败：' + ((err instanceof Error ? err.message : '') || '未知错误'));
+    }).finally(() => {
+      setSubmittingApproval(false);
     });
-  }, [project, msg, quotationVersionFull, quotationVersion, modifierName, flushPendingDateChanges, setHasChanges]);
+  }, [project, submittingApproval, msg, quotationVersionFull, quotationVersion, modifierName, flushPendingDateChanges, setHasChanges]);
 
   const handleOpenSubmitCost = useCallback(() => {
     if (!project) return;
@@ -502,7 +510,8 @@ const DeliveryDetail: React.FC = () => {
   }, [project, actualCosts, msg]);
 
   const handleSubmitCost = useCallback(async () => {
-    if (!project) return;
+    if (!project || submittingApproval) return; // ⚠️ 审计修复 BU-3：防双击并发提交
+    setSubmittingApproval(true);
     // 先持久化当前实际成本到 delivery_projects，确保 totalActualCost 与审批数据一致
     const totalActual = Object.values(actualCosts).reduce((s, v) => s + v, 0);
     const { exTax, warrantyCost } = computeDeliveryEstGP3(project.contractAmount, quotationGroups, quotationVersion);
@@ -511,6 +520,7 @@ const DeliveryDetail: React.FC = () => {
       await deliveryService.update(project.id, { totalActualCost: grandActual, actualCosts });
     } catch {
       msg.error('成本数据保存失败，请重试');
+      setSubmittingApproval(false);
       return;
     }
     const ver = quotationVersionFull;
@@ -544,8 +554,10 @@ const DeliveryDetail: React.FC = () => {
       msg.success('成本对比已提交审批，请前往审批管理模块查看');
     }).catch((err: unknown) => {
       msg.error('提交审批失败：' + ((err instanceof Error ? err.message : '') || '未知错误'));
+    }).finally(() => {
+      setSubmittingApproval(false);
     });
-  }, [project, actualCosts, msg, quotationVersionFull, quotationVersion, quotationGroups, modifierName]);
+  }, [project, submittingApproval, actualCosts, msg, quotationVersionFull, quotationVersion, quotationGroups, modifierName]);
 
   const handleExportPlan = useCallback(() => {
     if (!project) return;
@@ -960,9 +972,9 @@ const DeliveryDetail: React.FC = () => {
         styles={{ body: { padding: '14px 32px 6px' } }}
         footer={
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-            <Button icon={<CloseOutlined />} onClick={() => setSubmitPlanOpen(false)}
+            <Button icon={<CloseOutlined />} onClick={() => setSubmitPlanOpen(false)} disabled={submittingApproval}
               style={{ borderRadius: 3, width: 36, height: 36 }} />
-            <Button type="primary" ghost icon={<CheckOutlined />} onClick={confirmSubmitPlan}
+            <Button type="primary" ghost icon={<CheckOutlined />} onClick={confirmSubmitPlan} disabled={submittingApproval}
               style={{ borderColor: COLORS.primary, color: COLORS.primary, borderRadius: 3, width: 36, height: 36 }} />
           </div>
         }
@@ -987,9 +999,9 @@ const DeliveryDetail: React.FC = () => {
         styles={{ body: { padding: '14px 32px 6px' } }}
         footer={
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-            <Button icon={<CloseOutlined />} onClick={() => setSubmitCostOpen(false)}
+            <Button icon={<CloseOutlined />} onClick={() => setSubmitCostOpen(false)} disabled={submittingApproval}
               style={{ borderRadius: 3, width: 36, height: 36 }} />
-            <Button type="primary" ghost icon={<CheckOutlined />} onClick={handleSubmitCost}
+            <Button type="primary" ghost icon={<CheckOutlined />} onClick={handleSubmitCost} disabled={submittingApproval}
               style={{ borderColor: COLORS.primary, color: COLORS.primary, borderRadius: 3, width: 36, height: 36 }} />
           </div>
         }

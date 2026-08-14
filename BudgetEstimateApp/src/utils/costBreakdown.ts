@@ -63,7 +63,7 @@ export function buildCostLines(
   for (const g of groups) {
     if (g.groupType !== 'EQUIPMENT') continue;
     for (const item of g.items) {
-      lines.push(itemLine(item, g.name, Math.round(item.unitCost * item.qtyTotal)));
+      lines.push(itemLine(item, g.name, Math.round((item.unitCost || 0) * (item.qtyTotal || 1))));
     }
   }
 
@@ -71,7 +71,7 @@ export function buildCostLines(
   const integGroup = groups.find(g => g.groupType === 'INTEGRATION');
   if (integGroup) {
     for (const item of integGroup.items) {
-      lines.push(itemLine(item, '集成开发', Math.round(item.unitCost * item.qtyTotal)));
+      lines.push(itemLine(item, '集成开发', Math.round((item.unitCost || 0) * (item.qtyTotal || 1))));
     }
   }
 
