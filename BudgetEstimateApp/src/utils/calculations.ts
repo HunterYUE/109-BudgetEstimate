@@ -10,9 +10,9 @@ export function calcDirectCost(item: {
   assemblyHours?: number;
   assemblyHourRate?: number;
 }): number {
-  const materialCost = (item.unitCost || 0) * (item.qtyTotal || 1);
+  const materialCost = (item.unitCost || 0) * (item.qtyTotal ?? 1);
   const designCost = (item.designHours || 0) * (item.designHourRate || 0);
-  const assemblyCost = (item.assemblyHours || 0) * (item.assemblyHourRate || 0) * (item.qtyTotal || 1);
+  const assemblyCost = (item.assemblyHours || 0) * (item.assemblyHourRate || 0) * (item.qtyTotal ?? 1);
   // 精确到个位（整数）
   return Math.round(materialCost + designCost + assemblyCost);
 }
@@ -103,7 +103,7 @@ export function calcProjectSummary(
   for (const group of groups) {
     for (const item of group.items) {
       totalAccountingPrice += item.accountingPrice;
-      const mat = Math.round((item.unitCost || 0) * (item.qtyTotal || 1));
+      const mat = Math.round((item.unitCost || 0) * (item.qtyTotal ?? 1));
       const lab = item.directCost - mat;
       if (group.groupType === 'PROJECT_DELIVERY') {
         laborCost += item.directCost;

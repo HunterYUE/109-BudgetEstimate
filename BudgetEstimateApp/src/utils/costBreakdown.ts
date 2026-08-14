@@ -54,7 +54,7 @@ export function buildCostLines(
     category,
     code: item.code || '—',
     detail: item.description || '—',
-    qty: Math.round(item.qtyTotal || 1),
+    qty: Math.round(item.qtyTotal ?? 1),
     estimated,
     actual: act(item.id),
   });
@@ -63,7 +63,7 @@ export function buildCostLines(
   for (const g of groups) {
     if (g.groupType !== 'EQUIPMENT') continue;
     for (const item of g.items) {
-      lines.push(itemLine(item, g.name, Math.round((item.unitCost || 0) * (item.qtyTotal || 1))));
+      lines.push(itemLine(item, g.name, Math.round((item.unitCost || 0) * (item.qtyTotal ?? 1))));
     }
   }
 
@@ -71,7 +71,7 @@ export function buildCostLines(
   const integGroup = groups.find(g => g.groupType === 'INTEGRATION');
   if (integGroup) {
     for (const item of integGroup.items) {
-      lines.push(itemLine(item, '集成开发', Math.round((item.unitCost || 0) * (item.qtyTotal || 1))));
+      lines.push(itemLine(item, '集成开发', Math.round((item.unitCost || 0) * (item.qtyTotal ?? 1))));
     }
   }
 
@@ -87,8 +87,8 @@ export function buildCostLines(
           totalDesignCost += Math.round(item.designHours * (item.designHourRate || (laborRates?.design ?? DEFAULT_DESIGN_HOURLY_RATE)));
         }
         if (item.assemblyHours) {
-          totalAssemblyHours += item.assemblyHours * (item.qtyTotal || 1);
-          totalAssemblyCost += Math.round(item.assemblyHours * (item.assemblyHourRate || (laborRates?.assembly ?? DEFAULT_ASSEMBLY_HOURLY_RATE)) * (item.qtyTotal || 1));
+          totalAssemblyHours += item.assemblyHours * (item.qtyTotal ?? 1);
+          totalAssemblyCost += Math.round(item.assemblyHours * (item.assemblyHourRate || (laborRates?.assembly ?? DEFAULT_ASSEMBLY_HOURLY_RATE)) * (item.qtyTotal ?? 1));
         }
       }
     }

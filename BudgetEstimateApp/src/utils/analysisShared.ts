@@ -148,6 +148,51 @@ export const getProjectDoneDate = (p: DeliveryProject): Date | null => {
   return null;
 };
 
+/** 交付项目节点按时率（Dashboard 用；无基线节点不判定，与 DeliveryAnalysis 节点按时率口径一致） */
+export interface ProjectOnTimeRate {
+  /** 到期（可判定）节点数 = 有基线且（已完成或已超基线事实延期） */
+  scheduled: number;
+  /** 其中延期节点数 */
+  delayedCnt: number;
+  /** 按时率（0-100）；无到期节点为 null（显示 —） */
+  rate: number | null;
+}
+
+/** ⚠️ A2 审计修复：无基线（baselinePlannedEndDate 缺失）的已完成节点无法判断按时性，
+ *  必须从分子分母剔除——原 Dashboard 内联实现 `node.actualDate || delay.delayed` 会把这类节点
+ *  计为「按时」，无审批实施计划的项目节点按时率恒 100%，与 DeliveryAnalysis 节点按时率
+ *  「无基线不判定」（refEnd 缺失 continue）口径打架。 */
+export const computeProjectOnTimeRate = (p: DeliveryProject, now: Date): ProjectOnTimeRate => {
+  const due = (p.nodes || []).map(n => ({ node: n, delay: getNodeDelay(n, now) }));
+  const scheduled = due.filter(({ node, delay }) => delay.hasBaseline && (node.actualDate || delay.delayed));
+  const delayedCnt = scheduled.filter(({ delay }) => delay.delayed).length;
+  const hasDue = scheduled.length > 0;
+  return {
+    scheduled: scheduled.length,
+    delayedCnt,
+    rate: hasDue ? Math.round(((scheduled.length - delayedCnt) / scheduled.length) * 100) : null,
+  };
+};
+
+/** ⚠️ B5 审计修复：节点15（项目总结）完成 = 成本审批通过 + 其余全部节点 completed——
+ *  原 DeliveryDetail 仅校验成本审批，成本通过后节点3 仍 pending 即可提前勾完节点15，
+ *  而分析以节点15完成日做交付完结/订单/销售归集，未完成项目会被计为已完结。
+ *  excludeNodeNo 供「正在切换节点15」时跳过其自身（按钮场景不传 = 校验全部节点）。 */
+export const projectCompletionGate = (
+  nodes: DeliveryNode[] | undefined,
+  costStatus: string | undefined,
+  opts?: { excludeNodeNo?: number },
+): { ok: boolean; reason?: string } => {
+  const all = nodes || [];
+  const target = opts?.excludeNodeNo != null ? all.filter(n => n.nodeNo !== opts.excludeNodeNo) : all;
+  const incomplete = target.filter(n => n.status !== 'completed');
+  if (costStatus !== 'approved') return { ok: false, reason: '请先完成成本对比审批' };
+  if (incomplete.length > 0) {
+    return { ok: false, reason: `尚有 ${incomplete.map(n => n.nodeNo).join('、')} 号节点未完成` };
+  }
+  return { ok: true };
+};
+
 // ── 月度订单/销售归集（销售分析月度订单/月度销售、仪表盘利润概览共用） ──
 /** 报价概算利润转未税：gp3_amount（含税）÷ (1+税率)，缺省 13%；无概算利润为 0，负值（亏损报价）如实保留 */
 export const quoteProfitExTax = (gp3Amt: number | undefined, taxRate?: number): number =>

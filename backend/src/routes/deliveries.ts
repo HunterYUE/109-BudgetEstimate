@@ -166,6 +166,16 @@ const crudRouter = crudRoutes('delivery_projects', fields, {
           // 整组替换节点：先删旧后插新
           await client.query('DELETE FROM delivery_nodes WHERE delivery_project_id = $1', [id]);
           for (const node of nodes) {
+            // ⚠️ C4 审计修复：node.status 枚举白名单（DB 列 node_status: pending/in_progress/completed）——
+            //   非法值直插触发 PG 枚举错误被 500 吞掉；显式预校验给 400（undefined 走下方 'pending' 兜底）
+            if (node.status !== undefined && !['pending', 'in_progress', 'completed'].includes(node.status)) {
+              throw new AppError(400, `节点 ${node.node_no ?? ''} 状态非法，允许值：pending, in_progress, completed`);
+            }
+            // ⚠️ C3 审计修复：history 必须为数组——非数组 JSON.stringify 后落库为畸形 JSON，
+            //   渲染时 DeliveryNodeTimeline 的 .find/.map 会崩溃；显式校验防畸形数据入库
+            if (node.history !== undefined && !Array.isArray(node.history)) {
+              throw new AppError(400, `节点 ${node.node_no ?? ''} history 必须为数组`);
+            }
             // ⚠️ 审计修复 BE-5：基线以库中已存在的审批基线优先（不可变），客户端值仅作首次无基线时的兜底——
             //   此前客户端值优先，可在审批通过后覆盖不可变基线、篡改延期判定基准
             const baseline = baselineMap[node.node_no] || node.baseline_planned_end_date || null;

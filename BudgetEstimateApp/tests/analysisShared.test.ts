@@ -7,6 +7,7 @@ import {
   isProjectDelivered, getProjectDoneDate, quoteProfitExTax, deliverySalesProfit,
   buildQuoteInfoMap, deliveryExTax, projectMonthlySales, fyMonthWindows, getProjectDelay, getNodeBaseline,
   FY_MONTH_LABELS, projectStatusColor, projectStatusBg,
+  computeProjectOnTimeRate, projectCompletionGate,
 } from '../src/utils/analysisShared';
 
 describe('fmtK / fmtKBase（含负值）', () => {
@@ -301,5 +302,64 @@ describe('projectStatusBg 项目执行状态三态背景（与 projectStatusColo
     expect(projectStatusBg('已完成', true)).toBe('#e8f5e9');
     expect(projectStatusBg('交付中', true)).toBe('#ffebee');
     expect(projectStatusBg('交付中', false)).toBe('#e6f0fa');
+  });
+});
+
+describe('computeProjectOnTimeRate 节点按时率（A2：无基线节点不判定）', () => {
+  const now = new Date('2026-08-01T00:00:00Z');
+  it('全部节点有基线 → 正常按时率（延期节点入分母分子）', () => {
+    const p = {
+      nodes: [
+        { nodeNo: 3, status: 'completed', actualDate: '2026-07-10', baselinePlannedEndDate: '2026-07-15' },
+        { nodeNo: 5, status: 'completed', actualDate: '2026-07-20', baselinePlannedEndDate: '2026-07-15' }, // 延期 5 天
+        { nodeNo: 15, status: 'completed', actualDate: '2026-07-25', baselinePlannedEndDate: '2026-07-25' },
+      ],
+    } as any;
+    const r = computeProjectOnTimeRate(p, now);
+    expect(r.scheduled).toBe(3);
+    expect(r.delayedCnt).toBe(1);
+    expect(r.rate).toBe(67); // round(2/3×100)
+  });
+  it('已完成但无基线的节点剔除——不再计为「按时」（原实现恒 100%）', () => {
+    const p = {
+      nodes: [
+        { nodeNo: 3, status: 'completed', actualDate: '2026-07-10', baselinePlannedEndDate: '2026-07-15' },
+        { nodeNo: 5, status: 'completed', actualDate: '2026-07-20' }, // 无审批基线
+        { nodeNo: 15, status: 'completed', actualDate: '2026-07-25', baselinePlannedEndDate: '2026-07-25' },
+      ],
+    } as any;
+    const r = computeProjectOnTimeRate(p, now);
+    expect(r.scheduled).toBe(2); // 无基线节点被剔除
+    expect(r.delayedCnt).toBe(0);
+    expect(r.rate).toBe(100);
+  });
+  it('无到期节点 → rate null（显示 —）', () => {
+    const r = computeProjectOnTimeRate({ nodes: [] } as any, now);
+    expect(r.scheduled).toBe(0);
+    expect(r.rate).toBeNull();
+  });
+});
+
+describe('projectCompletionGate 项目完成门禁（B5：节点15完成前提 = 成本审批 + 其余全部节点）', () => {
+  const mkNodes = (states: Record<number, string>) =>
+    Object.entries(states).map(([nodeNo, status]) => ({ nodeNo: Number(nodeNo), status })) as unknown as DeliveryNode[];
+  it('成本未审批 → 拒绝', () => {
+    const g = projectCompletionGate(mkNodes({ 1: 'completed', 15: 'completed' }), 'pending');
+    expect(g.ok).toBe(false);
+    expect(g.reason).toContain('成本');
+  });
+  it('存在未完成节点 → 拒绝（列出未完成编号）', () => {
+    const g = projectCompletionGate(mkNodes({ 1: 'completed', 3: 'pending', 15: 'completed' }), 'approved');
+    expect(g.ok).toBe(false);
+    expect(g.reason).toContain('3');
+  });
+  it('全部节点完成 + 成本通过 → 通过', () => {
+    expect(projectCompletionGate(mkNodes({ 1: 'completed', 15: 'completed' }), 'approved').ok).toBe(true);
+  });
+  it('excludeNodeNo=15：切换节点15 时只校验其余节点（自身可未完成）', () => {
+    const g = projectCompletionGate(mkNodes({ 1: 'completed', 3: 'pending', 15: 'in_progress' }), 'approved', { excludeNodeNo: 15 });
+    expect(g.ok).toBe(false); // 节点3 仍未完成
+    const g2 = projectCompletionGate(mkNodes({ 1: 'completed', 3: 'completed', 15: 'in_progress' }), 'approved', { excludeNodeNo: 15 });
+    expect(g2.ok).toBe(true); // 排除 15 后其余全部完成
   });
 });

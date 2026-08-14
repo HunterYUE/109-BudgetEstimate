@@ -1091,6 +1091,10 @@ router.post('/admin/users', ...trAuth, requireRole('director', 'admin'), async (
     if (password.length < 8) throw new AppError(400, '密码至少8个字符'); // 与主用户管理/reset-password 口径统一
     // ⚠️ 审计修复：profiles.role 撞 profiles_role_check 约束（仅 admin/employee）会返回 500，此处显式预校验给 400
     if (!['admin', 'employee'].includes(role)) throw new AppError(400, '角色不合法，仅支持 admin/employee');
+    // ⚠️ C1 审计修复：越级保护——director(2) 不得铸 admin(3) 号（与 users.ts 创建路径、本文件 reset-password 的
+    //   assertCanManage 对齐）；此前仅 requireRole('director','admin') 让 director 可创建 admin 提权账号。
+    //   'employee' 不在 ROLE_RANK（undefined→0），director/admin 均可创建，仅封顶级越级。
+    assertCanManage(req.user!.role, ROLE_RANK[role] ?? 0);
     // ⚠️ L4 修复：重复邮箱预检，避免撞唯一约束返回笼统错误（与 users.ts 口径一致）
     // ⚠️ 最终审计修正：建用户走 normalizeEmail 归一化（A17 此前未覆盖此路径）——去重与落库都用归一邮箱，
     //   与登录 LOWER(email) 口径一致，防大小写近似账号绕过去重/UNIQUE 造成登录歧义（rows[0] 不定）

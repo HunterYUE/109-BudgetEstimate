@@ -6,7 +6,7 @@ import { FiBarChart2, FiAward, FiPlusCircle, FiTruck, FiTool } from 'react-icons
 import { parseFY, fiscalYearLabel } from '../utils/fiscalYear';
 import { formatBeijing } from '../utils/timeFormat';
 import { LIST_LIMIT } from '../utils/constants';
-import { fmtK, chartLabel, oppEffectiveEnd, isRealWin, monthEndOf, exAmount, stageAsOf, getNodeDelay, getProjectDelay, isProjectDelivered, getProjectDoneDate, projectMonthlySales, FY_MONTH_LABELS, buildQuoteInfoMap, deliveryExTax } from '../utils/analysisShared';
+import { fmtK, chartLabel, oppEffectiveEnd, isRealWin, monthEndOf, exAmount, stageAsOf, getNodeDelay, getProjectDelay, isProjectDelivered, getProjectDoneDate, projectMonthlySales, FY_MONTH_LABELS, buildQuoteInfoMap, deliveryExTax, computeProjectOnTimeRate } from '../utils/analysisShared';
 import { COLORS } from '../styles/colors';
 import { OverviewCards } from '../components/shared/OverviewCards';
 import { opportunityService } from '../services/opportunityService';
@@ -396,18 +396,15 @@ const Dashboard: React.FC = () => {
       return effEnd >= fyRange.start;
     });
     const onTimeRate = [...inFyDels].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).map(p => {
-      // 到期节点 = 已完成 或 已超基线（事实延期）；与事实延期判定一致（基线口径，非当前计划）
-      // ⚠️ getNodeDelay 每节点只算一次，结果存入 due 数组复用（不在 filter 与二次 filter 中重复计算）
-      const due = (p.nodes || []).map(n => ({ node: n, delay: getNodeDelay(n, now) }));
-      const scheduled = due.filter(({ node, delay }) => node.actualDate || delay.delayed);
-      const delayedCnt = scheduled.filter(({ delay }) => delay.delayed).length;
-      const onTime = scheduled.length - delayedCnt;
-      const hasDue = scheduled.length > 0;
-      const rate = hasDue ? Math.round((onTime / scheduled.length) * 100) : 0; // 无到期节点 → 0 并显示 —
+      // ⚠️ A2 审计修复：无基线节点不判定——提取为共享纯函数 computeProjectOnTimeRate，
+      //   与 DeliveryAnalysis 节点按时率「无基线不判定」口径一致（原内联实现把无基线已完节点计为按时，
+      //   未审批实施计划的项目节点按时率恒 100%）
+      const { scheduled, rate } = computeProjectOnTimeRate(p, now);
+      const hasDue = scheduled > 0;
       return {
         label: chartLabel(p.salesNo),
-        value: rate,
-        color: !hasDue ? COLORS.textLight : (isProjectDelivered(p) ? COLORS.chartGray : (rate >= 90 ? COLORS.success : rate >= 70 ? COLORS.warning : COLORS.danger)),
+        value: rate ?? 0,
+        color: !hasDue ? COLORS.textLight : (isProjectDelivered(p) ? COLORS.chartGray : ((rate ?? 0) >= 90 ? COLORS.success : (rate ?? 0) >= 70 ? COLORS.warning : COLORS.danger)),
         displayValue: hasDue ? undefined : '—',
       };
     });

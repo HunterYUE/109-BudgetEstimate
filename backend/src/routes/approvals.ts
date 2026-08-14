@@ -53,6 +53,11 @@ router.post('/', async (req, res, next) => {
   try {
     const body = objKeysToSnake({ ...req.body });
     const { approval_type, opportunity_id, delivery_id } = body;
+    // ⚠️ C2 审计修复：approval_type 枚举白名单——DB 列为 PG 枚举（quotation/plan/cost/promote），
+    //   非法值直插会抛 PG 枚举错误被 500 兜底吞掉（泄漏内部错误语义）；显式预校验给 400
+    if (!['quotation', 'plan', 'cost', 'promote'].includes(approval_type)) {
+      throw new AppError(400, '无效审批类型，允许值：quotation, plan, cost, promote');
+    }
 
     // ⚠️ A15：事务样板收敛为 withTransaction
     const record = await withTransaction(async (client) => {

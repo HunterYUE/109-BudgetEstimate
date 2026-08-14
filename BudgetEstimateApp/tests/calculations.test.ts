@@ -27,6 +27,13 @@ describe('calcDirectCost 直接成本 = 物料×量 + 设计工时×费率 + 装
     expect(calcDirectCost({ unitCost: 100 })).toBe(100);
     expect(calcDirectCost({})).toBe(0);
   });
+  // ⚠️ B1/A1 审计修复：`qtyTotal || 1` 会吞掉合法 0（数量可输入 0、DB 无 CHECK>0）——改成 `?? 1` 后
+  //   缺省仍按 1（上一条），但显式 0 保留：物料/装配成本按 0 计，不再虚增为 ×1
+  it('qtyTotal=0 合法值不得被吞成 1（物料/装配按 0 计，设计工时费照常）', () => {
+    expect(calcDirectCost({ unitCost: 100, qtyTotal: 0 })).toBe(0);
+    expect(calcDirectCost({ unitCost: 100, qtyTotal: 0, designHours: 10, designHourRate: 80 })).toBe(800);
+    expect(calcDirectCost({ unitCost: 100, qtyTotal: 0, assemblyHours: 5, assemblyHourRate: 60 })).toBe(0);
+  });
 });
 
 describe('calcItemPrices 预期售价 = 成本 / (1 − 毛利率)', () => {

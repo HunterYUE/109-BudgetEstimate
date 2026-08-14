@@ -14,7 +14,7 @@ import ItemCostTable from '../components/ItemCostTable';
 import type { DeliveryProject, DeliveryNode, NodeChangeEntry, Group, ProjectVersion } from '../types';
 import { COLORS } from '../styles/colors';
 import { STATUS_CONFIG } from '../components/material/materialConstants';
-import { getNodeDelay, getProjectDelay } from '../utils/analysisShared';
+import { getNodeDelay, getProjectDelay, projectCompletionGate } from '../utils/analysisShared';
 import { buildCostLines } from '../utils/costBreakdown';
 import { DEFAULT_DESIGN_HOURLY_RATE, DEFAULT_ASSEMBLY_HOURLY_RATE, TAX_RATE, LIST_LIMIT, NODE_STATUS_META } from '../utils/constants';
 import { exportHtmlTable, escapeHtml } from '../utils/exportToExcel';
@@ -269,14 +269,19 @@ const DeliveryDetail: React.FC = () => {
   /** 节点状态变更：不记历史，仅更新实际日期字段 */
   const handleNodeStatusClick = useCallback((nodeId: string, newStatus?: string) => {
     if (!project) return;
-    // 节点15（项目总结）切到"已完成"需要成本对比已通过
+    // 节点15（项目总结）切到"已完成"需要成本对比已通过 + 其余全部节点 completed
+    // ⚠️ B5 审计修复：原仅校验成本审批——成本通过后节点3 仍 pending 即可提前勾完节点15，
+    //   而分析以节点15完成日做交付完结归集，会把未完成项目计为已完结；现与「完成项目」按钮共用门禁
     const targetNode = project.nodes.find(n => n.id === nodeId);
     if (!targetNode) return;
     // 目标节点唯一，nextStatus 只需计算一次（原实现在 map 内重复计算）
     const nextStatus = (newStatus || STATUS_CYCLE[(STATUS_CYCLE.indexOf(targetNode.status) + 1) % STATUS_CYCLE.length]) as DeliveryNode['status'];
-    if (nextStatus === 'completed' && targetNode.nodeNo === 15 && project.costStatus !== 'approved') {
-      msg.warning('节点15完成后项目将结束，请先完成成本对比审批');
-      return;
+    if (nextStatus === 'completed' && targetNode.nodeNo === 15) {
+      const gate = projectCompletionGate(project.nodes, project.costStatus, { excludeNodeNo: 15 });
+      if (!gate.ok) {
+        msg.warning('节点15完成后项目将结束，' + gate.reason);
+        return;
+      }
     }
     const today = todayBeijing();
     setHasChanges(true);
@@ -704,7 +709,7 @@ const DeliveryDetail: React.FC = () => {
             {project.status !== '已完成' && getProjectDelay(project).delayed && (
               <Tag color="red" style={{ margin: 0, fontSize: 12, lineHeight: '20px', borderRadius: 3, border: 'none' }}>延期中</Tag>
             )}
-            {project.status !== '已完成' && project.nodes.every(n => n.status === 'completed') && project.costStatus === 'approved' && (
+            {project.status !== '已完成' && projectCompletionGate(project.nodes, project.costStatus).ok && (
               <span onClick={() => {
                 modal.confirm({
                   title: '确认完成项目',
