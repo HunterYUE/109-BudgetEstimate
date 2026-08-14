@@ -1,11 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import type { DeliveryNode, DeliveryProject, SalesOpportunity } from '../src/types';
+import { COLORS } from '../src/styles/colors';
 import {
   fmtKBase, fmtK, compressNo, chartLabel, isRealWin, oppEffectiveEnd,
   monthEndOf, exAmount, stageAsOf, getNodeDelay,
   isProjectDelivered, getProjectDoneDate, quoteProfitExTax, deliverySalesProfit,
   buildQuoteInfoMap, deliveryExTax, projectMonthlySales, fyMonthWindows, getProjectDelay, getNodeBaseline,
-  FY_MONTH_LABELS,
+  FY_MONTH_LABELS, projectStatusColor, projectStatusBg,
 } from '../src/utils/analysisShared';
 
 describe('fmtK / fmtKBase（含负值）', () => {
@@ -283,5 +284,22 @@ describe('getProjectDelay 提前完成（负天数，delayed=false）', () => {
       nodes: [{ nodeNo: 15, status: 'completed', actualDate: '2026-06-25', baselinePlannedEndDate: '2026-06-30' }],
     } as any;
     expect(getProjectDelay(p, new Date(2026, 6, 20))).toEqual({ hasBaseline: true, delayed: false, days: -5 });
+  });
+});
+
+describe('projectStatusColor 项目执行状态三态色（DeliveryManagement/DeliveryCharts 6 处收敛单源，F08）', () => {
+  it('已完成优先绿；延期中红；否则蓝', () => {
+    expect(projectStatusColor('已完成', true)).toBe(COLORS.success);
+    expect(projectStatusColor('已完成', false)).toBe(COLORS.success);
+    expect(projectStatusColor('交付中', true)).toBe(COLORS.danger);
+    expect(projectStatusColor('交付中', false)).toBe(COLORS.primary);
+  });
+});
+
+describe('projectStatusBg 项目执行状态三态背景（与 projectStatusColor 配套收敛单源）', () => {
+  it('已完成浅绿；延期中浅红；否则浅蓝', () => {
+    expect(projectStatusBg('已完成', true)).toBe('#e8f5e9');
+    expect(projectStatusBg('交付中', true)).toBe('#ffebee');
+    expect(projectStatusBg('交付中', false)).toBe('#e6f0fa');
   });
 });

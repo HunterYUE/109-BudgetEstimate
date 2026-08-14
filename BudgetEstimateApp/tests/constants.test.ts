@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  STAGE_COLORS, NODE_NAMES, NODE_DISPLAY_NAMES,
+  STAGE_COLORS, NODE_NAMES, NODE_DISPLAY_NAMES, NODE_STATUS_META,
   DEFAULT_DESIGN_HOURLY_RATE, DEFAULT_ASSEMBLY_HOURLY_RATE, TAX_RATE, LIST_LIMIT,
 } from '../src/utils/constants';
 
@@ -30,5 +30,14 @@ describe('机会阶段颜色（B14 收敛）', () => {
     for (const c of Object.values(STAGE_COLORS)) {
       expect(typeof c).toBe('string');
     }
+  });
+});
+
+describe('NODE_STATUS_META 节点执行状态文案（DeliveryNodeTimeline/DeliveryDetail 收敛单源，F08）', () => {
+  it('三态文案与枚举 key 对齐', () => {
+    expect(NODE_STATUS_META).toEqual({ pending: '未开始', in_progress: '进行中', completed: '已完成' });
+  });
+  it('未知 key → undefined（调用方不得越界访问）', () => {
+    expect(NODE_STATUS_META['unknown' as string]).toBeUndefined();
   });
 });

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { Group } from '../src/types';
 import {
   calcDirectCost, calcItemPrices, calcGroupSummary, computeCostComponents,
-  calcProjectSummary, computeDeliveryEstGP3, formatMoney,
+  calcProjectSummary, computeDeliveryEstGP3, formatMoney, rateToPercent,
 } from '../src/utils/calculations';
 
 // ── 构造最小 Group/GroupItem 夹具（GroupItem 其余字段测试不涉及时给零值）──
@@ -151,5 +151,21 @@ describe('formatMoney 金额格式化（取整到个位 + 千分位）', () => {
     expect(formatMoney(null)).toBe('0');
     expect(formatMoney(undefined)).toBe('0');
     expect(formatMoney(0)).toBe('0');
+  });
+});
+
+describe('rateToPercent 费率→百分比（Math.round(v*10000)/100 收敛单源，F08；6 处调用锁定契约）', () => {
+  it('0.35 → 35；1 → 100；0 → 0', () => {
+    expect(rateToPercent(0.35)).toBe(35);
+    expect(rateToPercent(1)).toBe(100);
+    expect(rateToPercent(0)).toBe(0);
+  });
+  it('负费率如实保留：-0.2 → -20', () => {
+    expect(rateToPercent(-0.2)).toBe(-20);
+  });
+  it('round 2 位：0.1234 → 12.34；0.125 → 12.5；0.12999 → 13', () => {
+    expect(rateToPercent(0.1234)).toBe(12.34);
+    expect(rateToPercent(0.125)).toBe(12.5);
+    expect(rateToPercent(0.12999)).toBe(13);
   });
 });
