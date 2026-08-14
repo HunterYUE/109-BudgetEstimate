@@ -4,16 +4,6 @@
  * ⚠️ B36 修复：HTML 转义用户可控文本——客户/项目/物料名/备注等含 `& < > " '` 会破坏导出表格结构
  *   或注入多余标记；未转义即拼接还会被恶意文本利用。所有注入 HTML 的字符串必须经此函数。
  */
-/** ⚠️ 审计修复 U7：导出文件名清洗——非法字符 + Windows 保留名/尾随点空格（此前只清非法字符，
- *   `CON`/`PRN`/`COM1` 等保留名与尾随 `.`/空格在 Windows 下载失败或静默改名）。纯函数便于单测。 */
-export function sanitizeExportFilename(filename: string): string {
-  return filename
-    .replace(/[\\/:*?"<>|]/g, '_')           // 非法字符（B36 既有）
-    .replace(/[. ]+$/, '')                    // 尾随点/空格（Windows 忽略扩展名前的尾随点）
-    .replace(/^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i, '_$1') // 保留设备名（加前缀防被当设备）
-    || 'export';                              // 清洗后为空（全非法字符）兜底
-}
-
 export function escapeHtml(s: string | number | null | undefined): string {
   if (s == null) return '';
   return String(s)
@@ -22,6 +12,16 @@ export function escapeHtml(s: string | number | null | undefined): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+/** ⚠️ 审计修复 U7：导出文件名清洗——非法字符 + Windows 保留名/尾随点空格（此前只清非法字符，
+ *   `CON`/`PRN`/`COM1` 等保留名与尾随 `.`/空格在 Windows 下载失败或静默改名）。纯函数便于单测。 */
+export function sanitizeExportFilename(filename: string): string {
+  return filename
+    .replace(/[\\/:*?"<>|]/g, '_')           // 非法字符（B36 既有）
+    .replace(/[. ]+$/, '')                    // 尾随点/空格（Windows 忽略扩展名前的尾随点）
+    .replace(/^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i, '_$1') // 保留设备名（加前缀防被当设备）
+    || 'export';                              // 清洗后为空（全非法字符）兜底
 }
 
 export function exportHtmlTable(filename: string, htmlContent: string) {
