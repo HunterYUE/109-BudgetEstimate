@@ -747,12 +747,14 @@ const SalesAnalysis: React.FC = () => {
           <div style={{ flex: '0 0 calc(25% - 12px)' }}><VerticalBarChart title="取消" data={dimCancelReasons} format="num" height={220} topN={4} barWidthRatio={0.6} maxBarWidth={26} hideAvgLine contentOffset={30} padBottom={28} /></div>
           <div style={{ flex: '0 0 calc(25% - 12px)' }}><VerticalBarChart title="放弃" data={dimAbandonReasons} format="num" height={220} topN={6} barWidthRatio={0.6} maxBarWidth={26} hideAvgLine contentOffset={30} padBottom={28} /></div>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, marginTop: 15, gridAutoRows: 268 }}>
-          {/* ⚠️ 修复：卡片内容高 = contentOffset(30) + SVG(220) = 250，行高 268 给底部姓名留足显示空间（overflow:hidden 不再裁姓名） */}
-          <div style={{ overflow: 'hidden' }}><VerticalBarChart title="订单金额" data={dimOrderAmount} format="K" contentOffset={30} /></div>
-          <div style={{ overflow: 'hidden' }}><VerticalBarChart title="订单利润" data={dimProfit} format="K" contentOffset={30} /></div>
-          <div style={{ overflow: 'hidden' }}><VerticalBarChart title="转化效率" data={dimEfficiency} format="%" contentOffset={30} /></div>
-          <div style={{ overflow: 'hidden' }}><VerticalBarChart title="管道潜力" data={dimPipeline} format="K" contentOffset={30} /></div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, marginTop: 15, gridAutoRows: 233 }}>
+          {/* ⚠️ 卡片下框线上移 35px（268→233）：SVG 高度 220→203 且 padBottom 28→11 同步补偿——
+              chartH=160、zeroY=192 不变（柱体几何完全不动），X 轴标签随卡片底上移 17px 消除下方空白；
+              内容高 = contentOffset(30) + SVG(203) = 233 恰好等于行高，姓名不裁（标签下留 5px） */}
+          <div style={{ overflow: 'hidden' }}><VerticalBarChart title="订单金额" data={dimOrderAmount} format="K" contentOffset={30} height={203} padBottom={11} /></div>
+          <div style={{ overflow: 'hidden' }}><VerticalBarChart title="订单利润" data={dimProfit} format="K" contentOffset={30} height={203} padBottom={11} /></div>
+          <div style={{ overflow: 'hidden' }}><VerticalBarChart title="转化效率" data={dimEfficiency} format="%" contentOffset={30} height={203} padBottom={11} /></div>
+          <div style={{ overflow: 'hidden' }}><VerticalBarChart title="管道潜力" data={dimPipeline} format="K" contentOffset={30} height={203} padBottom={11} /></div>
         </div>
       </div>
     </div>
