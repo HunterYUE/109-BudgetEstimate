@@ -11,25 +11,30 @@ import { query } from '../db/index.js';
  */
 
 const CRON_EXPR = '30 20 * * 0'; // 每周日 20:30
-const BEIJING_OFFSET_MS = 8 * 3600 * 1000; // 中国无夏令时，固定 UTC+8
+export const BEIJING_OFFSET_MS = 8 * 3600 * 1000; // 中国无夏令时，固定 UTC+8
 
 /** 北京时间「某日 00:00」对应的 UTC 时间点（timestamptz 去重基准） */
-function beijingMidnightUtc(dateStr: string): Date {
+export function beijingMidnightUtc(dateStr: string): Date {
   const [y, m, d] = dateStr.split('-').map(Number);
   return new Date(Date.UTC(y, m - 1, d) - BEIJING_OFFSET_MS);
 }
 
-/** 当前 ISO 周（周一起）的周日（YYYY-MM-DD）：
- *   周日运行时即今天（生产 cron 行为不变）；非周日调用时锚定到本周的周日，
- *   避免周号/去重基准随调用日错位（L1：此前直接取"今天"，非周日调用会按错误周号筛选） */
+/** 从「北京时间 Date」（UTC 字段即北京墙钟时间）推导当前 ISO 周（周一起）的周日（YYYY-MM-DD）：
+ *   周日即当天（生产 cron 行为不变）；非周日锚定到本周的周日，避免周号/去重基准错位（L1）。
+ *   ⚠️ 克隆入参不 mutate（此前就地 setUTCDate 改写调用方 Date；测试与调用方可安全复用入参） */
+export function isoWeekSundayFromDate(bj: Date): string {
+  const d = new Date(bj.getTime());
+  const dayNum = d.getUTCDay() || 7; // 周日=7
+  d.setUTCDate(d.getUTCDate() + (7 - dayNum));
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(d.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${dd}`;
+}
+
+/** 当前 ISO 周（周一起）的周日（YYYY-MM-DD）：now + 北京偏移后套用 isoWeekSundayFromDate */
 function currentIsoWeekSunday(): string {
-  const bj = new Date(Date.now() + BEIJING_OFFSET_MS);
-  const dayNum = bj.getUTCDay() || 7; // 周日=7
-  bj.setUTCDate(bj.getUTCDate() + (7 - dayNum));
-  const y = bj.getUTCFullYear();
-  const m = String(bj.getUTCMonth() + 1).padStart(2, '0');
-  const d = String(bj.getUTCDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
+  return isoWeekSundayFromDate(new Date(Date.now() + BEIJING_OFFSET_MS));
 }
 
 /**

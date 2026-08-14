@@ -63,7 +63,9 @@ describe('BE-7：审批提交人服务端派生（防客户端伪造）', () => 
   const a = src('routes/approvals.ts');
 
   it('submitter 排除出客户端可写字段', () => {
-    expect(a).toMatch(/!\[[^\]]*'submitter'[^\]]*\]/);
+    // ⚠️ 2026-08-14 重构：内联 `!['id',...,'submitter']` 已收敛为命名常量 APPROVAL_INSERT_EXCLUDE（提取纯函数化），
+    //   断言改为锁定常量本身——比依赖偶然代码形态（`![...]` 框式字面量）更准，防回归到可直写 submitter
+    expect(a).toMatch(/APPROVAL_INSERT_EXCLUDE = \[[^\]]*'submitter'[^\]]*\]/);
   });
 
   it('submitter 从登录用户 display_name 派生', () => {

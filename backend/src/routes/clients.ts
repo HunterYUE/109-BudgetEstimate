@@ -10,6 +10,33 @@ const fields = [
   'created_at', 'updated_at',
 ];
 
+/** 联系人 INSERT 参数归一化（name/position/phone/email/superior 空串兜底；decision_role 默认 '使用'）。
+ *  不含 client_id，由路由前缀拼接——与 /:id/save 与 /:id/contacts 两处共用 */
+export function normalizeContact(c: Record<string, any>): {
+  name: string; position: string; phone: string; email: string; decision_role: string; superior: string;
+} {
+  return {
+    name: c.name || '',
+    position: c.position || '',
+    phone: c.phone || '',
+    email: c.email || '',
+    decision_role: c.decision_role || '使用',
+    superior: c.superior || '',
+  };
+}
+
+/** 级联变更判断：新值已提供（!== undefined）且与旧值不同——salesman 与 name 两处级联更新共用 */
+export function hasCascadeChange(newVal: unknown, oldVal: unknown): boolean {
+  return newVal !== undefined && newVal !== oldVal;
+}
+
+/** 联系人计数映射：client_id → COUNT（/stats/contacts 与列表徽标共用） */
+export function buildContactCountMap(rows: Array<{ client_id: string; cnt: number }>): Record<string, number> {
+  const map: Record<string, number> = {};
+  for (const r of rows) map[r.client_id] = r.cnt;
+  return map;
+}
+
 const router = crudRoutes('clients', fields, {
   searchFields: ['code', 'name', 'salesman'],
   orderBy: 'updated_at DESC',
@@ -76,7 +103,7 @@ const router = crudRoutes('clients', fields, {
               values
             )).rows[0];
             // 客户销售员变更 → 级联更新该客户所有机会的销售员（机会销售员由客户信息带出）
-            if (clientData.salesman !== undefined && clientData.salesman !== oldClient?.salesman) {
+            if (hasCascadeChange(clientData.salesman, oldClient?.salesman)) {
               await client.query(
                 'UPDATE sales_opportunities SET salesman = $1 WHERE client_name = $2',
                 [clientData.salesman, oldClient?.name]
@@ -84,7 +111,7 @@ const router = crudRoutes('clients', fields, {
             }
             // ⚠️ F10 修复：客户改名 → 级联更新去规范化的 client_name（机会/项目/报价/交付），
             //    否则客户详情历史（按 client_name 关联）改名后消失
-            if (clientData.name !== undefined && clientData.name !== oldClient?.name) {
+            if (hasCascadeChange(clientData.name, oldClient?.name)) {
               const oldName = oldClient?.name;
               await client.query('UPDATE sales_opportunities SET client_name = $1 WHERE client_name = $2', [clientData.name, oldName]);
               await client.query('UPDATE projects SET client_name = $1 WHERE client_name = $2', [clientData.name, oldName]);
@@ -99,12 +126,12 @@ const router = crudRoutes('clients', fields, {
           if (Array.isArray(contacts)) {
             await client.query('DELETE FROM client_contacts WHERE client_id = $1', [id]);
             for (const c of contacts) {
-              const contact = objKeysToSnake(c);
+              const contact = normalizeContact(objKeysToSnake(c));
               await client.query(
                 `INSERT INTO client_contacts (client_id, name, position, phone, email, decision_role, superior)
                  VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-                [id, contact.name || '', contact.position || '', contact.phone || '',
-                 contact.email || '', contact.decision_role || '使用', contact.superior || '']
+                [id, contact.name, contact.position, contact.phone,
+                 contact.email, contact.decision_role, contact.superior]
               );
             }
           }
@@ -129,9 +156,7 @@ const router = crudRoutes('clients', fields, {
         const rows = (await query(
           'SELECT client_id, COUNT(*)::int AS cnt FROM client_contacts GROUP BY client_id'
         )).rows;
-        const map: Record<string, number> = {};
-        for (const r of rows) map[r.client_id] = r.cnt;
-        res.json(map);
+        res.json(buildContactCountMap(rows));
       } catch (err) { next(err); }
     });
 
@@ -140,13 +165,14 @@ const router = crudRoutes('clients', fields, {
       try {
         const { id } = req.params;
         const body = objKeysToSnake(req.body);
-        const { name, position, phone, email, decision_role, superior } = body;
+        const { name } = body;
         if (!name) throw new AppError(400, '联系人姓名必填');
 
+        const { position, phone, email, decision_role, superior } = normalizeContact(body);
         const contact = (await query(
           `INSERT INTO client_contacts (client_id, name, position, phone, email, decision_role, superior)
            VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-          [id, name, position || '', phone || '', email || '', decision_role || '使用', superior || '']
+          [id, name, position, phone, email, decision_role, superior]
         )).rows[0];
 
         res.status(201).json(contact);

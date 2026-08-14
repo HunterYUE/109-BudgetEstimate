@@ -18,6 +18,34 @@ const fields = [
 const UPLOAD_DIR = path.resolve(process.cwd(), 'uploads', 'delivery');
 const MAX_SIZE = 3 * 1024 * 1024; // 3MB
 
+/** 上传文件名净化（Windows/URL 非法字符 / \ : 替换为下划线，防路径穿越/非法文件名）。
+ *  ⚠️ 2026-08-14 提取时修正：原 `/[/\:]/` 中 `\:` 是转义冒号，反斜杠从未被匹配（Windows 路径分隔符可做
+ *  `unique-..\..\x.pdf` 穿越）；改为字面反斜杠 `[/\\:]` 对齐注释宣称的三字符净化语义 */
+export function sanitizeFileName(name: string): string {
+  return name.replace(/[/\\:]/g, '_');
+}
+
+/** 节点状态枚举白名单（DB 列 node_status: pending/in_progress/completed；undefined 走下方 'pending' 兜底） */
+export const NODE_STATUS_WHITELIST = ['pending', 'in_progress', 'completed'] as const;
+export function isValidNodeStatus(status: unknown): boolean {
+  return status === undefined || (NODE_STATUS_WHITELIST as readonly string[]).includes(status as string);
+}
+
+/** 交付附件类型白名单（与前端 ATTACHMENT_TYPES 的 4 类一一对应，防未知类型写入） */
+export const FILE_TYPES = ['rfq', 'techPlan', 'techAgreement', 'contract'] as const;
+
+/** 节点 INSERT 参数归一化（空串兜底/status 默认 pending/comments 空串/history JSON.stringify 防畸形 JSON 入库；
+ *  baseline 由路由层按「审批基线优先不可变」规则（BE-5）传入）——不含 delivery_project_id，由路由前缀拼接 */
+export function normalizeNodeInsertParams(node: Record<string, any>, baseline: string | null): any[] {
+  return [
+    node.node_no, node.name,
+    node.planned_start_date || '', node.planned_end_date || '',
+    node.actual_date || null, node.actual_start_date || null, node.actual_end_date || null,
+    baseline, node.status || 'pending', node.comments || '',
+    JSON.stringify(node.history || []),
+  ];
+}
+
 if (!fs.existsSync(UPLOAD_DIR)) {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 }
@@ -26,8 +54,7 @@ const storage = multer.diskStorage({
   destination: (_req: any, _file: any, cb: (err: Error | null, dest: string) => void) => cb(null, UPLOAD_DIR),
   filename: (_req: any, file: Express.Multer.File, cb: (err: Error | null, name: string) => void) => {
     const unique = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    const safeName = file.originalname.replace(/[/\:]/g, '_');
-    cb(null, unique + '-' + safeName);
+    cb(null, unique + '-' + sanitizeFileName(file.originalname));
   },
 });
 
@@ -168,7 +195,7 @@ const crudRouter = crudRoutes('delivery_projects', fields, {
           for (const node of nodes) {
             // ⚠️ C4 审计修复：node.status 枚举白名单（DB 列 node_status: pending/in_progress/completed）——
             //   非法值直插触发 PG 枚举错误被 500 吞掉；显式预校验给 400（undefined 走下方 'pending' 兜底）
-            if (node.status !== undefined && !['pending', 'in_progress', 'completed'].includes(node.status)) {
+            if (!isValidNodeStatus(node.status)) {
               throw new AppError(400, `节点 ${node.node_no ?? ''} 状态非法，允许值：pending, in_progress, completed`);
             }
             // ⚠️ C3 审计修复：history 必须为数组——非数组 JSON.stringify 后落库为畸形 JSON，
@@ -184,12 +211,7 @@ const crudRouter = crudRoutes('delivery_projects', fields, {
                 planned_start_date, planned_end_date, actual_date,
                 actual_start_date, actual_end_date, baseline_planned_end_date, status, comments, history)
                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-              [id, node.node_no, node.name, node.planned_start_date || '',
-               node.planned_end_date || '', node.actual_date || null,
-               node.actual_start_date || null, node.actual_end_date || null,
-               baseline,
-               node.status || 'pending', node.comments || '',
-               JSON.stringify(node.history || [])]
+              [id, ...normalizeNodeInsertParams(node, baseline)]
             );
           }
         });
@@ -229,7 +251,7 @@ router.post('/:deliveryId/files', requirePermission('交付管理', '全部查�
     if (!rf.file) throw new AppError(400, '请选择文件');
     if (!file_type) throw new AppError(400, '缺少 file_type');
     // ⚠️ 白名单校验：与前端 ATTACHMENT_TYPES 的 4 类一一对应，防止未知类型写入
-    if (!['rfq', 'techPlan', 'techAgreement', 'contract'].includes(file_type)) {
+    if (!(FILE_TYPES as readonly string[]).includes(file_type)) {
       throw new AppError(400, '未知文件类型');
     }
 

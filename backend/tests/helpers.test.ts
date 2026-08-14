@@ -7,6 +7,10 @@ import {
   parsePagination,
   round2,
   buildSearchWhere,
+  camelToSnake,
+  escapeLikePattern,
+  serializeParams,
+  EMAIL_RE,
 } from '../src/routes/helpers.js';
 
 describe('ROLE_RANK 角色等级（F02 越级保护基线）', () => {
@@ -122,5 +126,71 @@ describe('buildSearchWhere ILIKE 搜索子句（F01 通配符转义 + F10 参数
     const sql = buildSearchWhere('x', ['name'], params);
     expect(sql).toBe(' WHERE "name"::text ILIKE $1');
     expect(params).toEqual(['%x%']);
+  });
+});
+
+describe('camelToSnake 单键驼峰→蛇形（objKeysToSnake 原子；导出供单测直测）', () => {
+  it('单驼峰键', () => {
+    expect(camelToSnake('userId')).toBe('user_id');
+    expect(camelToSnake('salesNo')).toBe('sales_no');
+    expect(camelToSnake('planStatus')).toBe('plan_status');
+  });
+  it('已是蛇形/纯小写原样返回（无大写字母即不命中替换）', () => {
+    expect(camelToSnake('created_at')).toBe('created_at');
+    expect(camelToSnake('plain')).toBe('plain');
+    expect(camelToSnake('')).toBe('');
+  });
+});
+
+describe('escapeLikePattern 通配符转义（auditLogs 搜索与 buildSearchWhere 共用，A10 统一口径）', () => {
+  it('% / _ / 反斜杠 前缀转义', () => {
+    expect(escapeLikePattern('50%_off\\x')).toBe('50\\%\\_off\\\\x');
+    expect(escapeLikePattern('100%')).toBe('100\\%');
+  });
+  it('无通配符（含中文）原样返回', () => {
+    expect(escapeLikePattern('测试 项目')).toBe('测试 项目');
+    expect(escapeLikePattern('')).toBe('');
+    expect(escapeLikePattern('plain')).toBe('plain');
+  });
+});
+
+describe('serializeParams JSONB/TEXT[] 参数序列化（F9：空数组按列类型区分）', () => {
+  const cols = ['id', 'tags', 'json_col'];
+  const textArraySet = new Set(['tags']);
+  it('对象数组 JSON.stringify（JSONB 列）', () => {
+    expect(serializeParams(['x', [{ a: 1 }], [{ b: 2 }]], cols, textArraySet))
+      .toEqual(['x', '[{"a":1}]', '[{"b":2}]']);
+  });
+  it('空数组：TEXT[] 列 "{}"、JSONB 列 "[]"', () => {
+    expect(serializeParams(['x', [], []], cols, textArraySet)).toEqual(['x', '{}', '[]']);
+  });
+  it('数字/布尔数组 stringify；字符串数组原样保留（TEXT[] 直接给 pg）', () => {
+    expect(serializeParams([['s1', 's2']], cols, textArraySet)).toEqual([['s1', 's2']]);
+    expect(serializeParams([[1, 2]], cols, textArraySet)).toEqual(['[1,2]']);
+    expect(serializeParams([[true]], cols, textArraySet)).toEqual(['[true]']);
+  });
+  it('null/undefined 透传', () => {
+    expect(serializeParams([null, undefined], cols, textArraySet)).toEqual([null, undefined]);
+  });
+  it('未传 textArraySet 时空数组一律 "[]"（JSONB 默认）', () => {
+    expect(serializeParams([[]], cols)).toEqual(['[]']);
+  });
+  it('不传 cols 时仅按值类型处理（无列类型上下文）', () => {
+    expect(serializeParams([[], 'x'])).toEqual(['[]', 'x']);
+  });
+});
+
+describe('EMAIL_RE 邮箱格式白名单（auth 登录与 users 创建/更新共用，防双份漂移）', () => {
+  it('合法邮箱通过', () => {
+    expect(EMAIL_RE.test('a@b.com')).toBe(true);
+    expect(EMAIL_RE.test('user.name+tag@example.co.uk')).toBe(true);
+    expect(EMAIL_RE.test('cn@test.cn')).toBe(true);
+  });
+  it('非法邮箱拒绝', () => {
+    expect(EMAIL_RE.test('no-at-sign')).toBe(false);
+    expect(EMAIL_RE.test('a@b')).toBe(false); // 缺 TLD 点
+    expect(EMAIL_RE.test('@b.com')).toBe(false);
+    expect(EMAIL_RE.test('a b@c.com')).toBe(false); // 含空格
+    expect(EMAIL_RE.test('a@b@c.com')).toBe(false);
   });
 });

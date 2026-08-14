@@ -12,6 +12,80 @@ const fields = [
   'lead_at', 'opportunity_at', 'bid_at', 'negotiation_at', 'created_at', 'updated_at',
 ];
 
+// ── 机会状态机纯逻辑（路由层取「当前状态 + 是否已转交付」后调用，测试直测锁定全状态机）──
+
+/** 阶段白名单（服务端采集各阶段时间戳的唯一依据，客户端直写被忽略）——逐级递进：线索⊂机会⊂投标⊂议价⊂中标 */
+export const STAGE_LEAD = ['线索', '机会', '投标', '议价', '中标'];
+export const STAGE_OPPORTUNITY = ['机会', '投标', '议价', '中标'];
+export const STAGE_BID = ['投标', '议价', '中标'];
+export const STAGE_NEGOTIATION = ['议价', '中标'];
+
+/** PUT 更新禁直设列（生命周期字段一律由状态机采集，客户端直写可伪造"进入某阶段时间"污染财年归集口径） */
+export const OPP_UPDATE_EXCLUDE = ['id', 'created_at', 'updated_at', 'won_at', 'lost_at', 'lead_at', 'opportunity_at', 'bid_at', 'negotiation_at'];
+
+/** 机会状态机决策：输入 body（已转 snake）+ 当前库状态 + 是否有交付，返回需追加的 SQL 片段（每段以 ', ' 开头）。
+ *  ⚠️ 纯字符串拼接（now()/COALESCE 由 DB 求值）——输单 lost_at 采集、离开输单清除、四阶段 COALESCE、
+ *    转交付三分支（赢/输/过程中）全部在此锁定。无交付的「非输」机会转交付抛 400（A105 防伪赢单）；无交付的「输」
+ *    机会仅归档（不追加子句）。路由层负责取两值传入。 */
+export function buildOppStatusClauses(body: Record<string, any>, currentStatus: string | undefined, hasDelivery: boolean): string {
+  let extra = '';
+  // 状态变"输"：lost_at 记录当次输单时间（每次输单都更新，不留存旧值）
+  if (body.status === '输') extra += `, lost_at = now()`;
+  // 状态离开"输"（恢复过程中/转赢/冻结）：清除 lost_at，避免陈旧输单时间残留导致财年归集失真
+  if (body.status && body.status !== '输') extra += `, lost_at = NULL`;
+  // 记录进入各阶段时间（首次写入后不覆盖）：线索/机会/投标/议价；信息=创建时间、中标=won_at
+  if (body.stage && STAGE_LEAD.includes(body.stage)) extra += `, lead_at = COALESCE(lead_at, now())`;
+  if (body.stage && STAGE_OPPORTUNITY.includes(body.stage)) extra += `, opportunity_at = COALESCE(opportunity_at, now())`;
+  if (body.stage && STAGE_BID.includes(body.stage)) extra += `, bid_at = COALESCE(bid_at, now())`;
+  if (body.stage && STAGE_NEGOTIATION.includes(body.stage)) extra += `, negotiation_at = COALESCE(negotiation_at, now())`;
+  // 转交付 = 赢单的终极确认：转交付时强制置"赢/中标"并记录 won_at（转交付时间）
+  if (body.terminated) {
+    if (hasDelivery) {
+      if (currentStatus === '赢') {
+        extra += `, won_at = COALESCE(won_at, now())`;
+      } else if (currentStatus === '输') {
+        // ⚠️ 最终审计修正：转交付 = 赢单终极确认——已标输的机会转入交付同样算赢单（置赢/中标 + won_at，清 lost_at）
+        extra += `, status = '赢', stage = '中标', won_at = COALESCE(won_at, now()), lost_at = NULL`;
+      } else {
+        // 过程中/冻结转交付 → 100% 确认为赢单
+        extra += `, status = '赢', stage = '中标', won_at = COALESCE(won_at, now())`;
+      }
+    } else if (currentStatus !== '输') {
+      // ⚠️ A105 修复：转交付须真实存在交付项目——防仅持写权限者伪造 terminated 直接把机会标成赢单
+      throw new AppError(400, '转交付须先创建交付项目');
+    }
+    // 无交付的"输"机会归档终止（仅置 terminated），不改状态/阶段/won_at——不追加子句
+  }
+  return extra;
+}
+
+/** 蓝表角色 INSERT 参数归一化（默认值：influence 'medium'/权重 3/支持 0/需求契合 3/关系 3；role_type/name 空串兜底） */
+export function normalizeBlueTableRole(role: Record<string, any>): {
+  role_type: string; name: string; influence: string; influence_weight: number;
+  support: number; demand_fit: number; relationship: number;
+} {
+  const rs = objKeysToSnake(role);
+  return {
+    role_type: rs.role_type || '',
+    name: rs.name || '',
+    influence: rs.influence || 'medium',
+    influence_weight: rs.influence_weight || 3,
+    support: rs.support || 0,
+    demand_fit: rs.demand_fit || 3,
+    relationship: rs.relationship || 3,
+  };
+}
+
+/** 销售编号前缀 A{YYYY}-{MM}-（取号并发用 pg_advisory_xact_lock 串行化后拼接序号） */
+export function buildSalesNoPrefix(d: Date): string {
+  return `A${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-`;
+}
+
+/** 完整销售编号 A{YYYY}-{MM}-{NNN}-S（nextSeq 为 MAX+1 取号结果） */
+export function composeSalesNo(d: Date, nextSeq: number): string {
+  return `${buildSalesNoPrefix(d)}${String(nextSeq).padStart(3, '0')}-S`;
+}
+
 // 标准 CRUD（不含 GET / 和 extra 中的自定义端点）
 const crudRouter = crudRoutes('sales_opportunities', fields, {
   searchFields: ['sales_no', 'client_name', 'project_name', 'salesman'],
@@ -151,16 +225,7 @@ router.put('/:id/blue-table', async (req, res, next) => {
       if (roles !== undefined) {
         await client.query('DELETE FROM blue_table_roles WHERE blue_table_id = $1', [blueTable.id]);
         for (const role of roles) {
-          const rs = objKeysToSnake(role);
-          const r = {
-            role_type: rs.role_type || '',
-            name: rs.name || '',
-            influence: rs.influence || 'medium',
-            influence_weight: rs.influence_weight || 3,
-            support: rs.support || 0,
-            demand_fit: rs.demand_fit || 3,
-            relationship: rs.relationship || 3,
-          };
+          const r = normalizeBlueTableRole(role);
           await client.query(
             `INSERT INTO blue_table_roles (blue_table_id, role_type, name, influence,
               influence_weight, support, demand_fit, relationship)
@@ -208,58 +273,21 @@ router.put('/:id', async (req, res, next) => {
     // ⚠️ 修复：阶段时间戳（lead_at/opportunity_at/bid_at/negotiation_at）禁直设——由下方阶段规则
     //   COALESCE 服务端采集（首次写入不覆盖），客户端直写可伪造“进入某阶段的时间”污染财年归集口径
     const updateCols = fields.filter(f =>
-      !['id', 'created_at', 'updated_at', 'won_at', 'lost_at',
-        'lead_at', 'opportunity_at', 'bid_at', 'negotiation_at'].includes(f) && body[f] !== undefined
+      !OPP_UPDATE_EXCLUDE.includes(f) && body[f] !== undefined
     );
     if (updateCols.length === 0) throw new AppError(400, '没有要更新的字段');
     let setClause = updateCols.map((f, i) => `"${f}" = $${i + 1}`).join(', ');
     const rawValues = updateCols.map(f => body[f]);
     // ⚠️ won_at 仅在转交付（terminated）时采集（69d3de6 语义，勿回归）：
-    // 手动标赢未转交付不算赢单，won_at 保持 NULL；转交付时由下方 terminated 块 COALESCE 写入
-    // 状态变"输"：lost_at 记录当次输单时间（每次输单都更新，不留存旧值）
-    if (body.status === '输') {
-      setClause += `, lost_at = now()`;
-    }
-    // 状态离开"输"（恢复过程中/转赢/冻结）：清除 lost_at，避免陈旧输单时间残留导致财年归集失真
-    if (body.status && body.status !== '输') {
-      setClause += `, lost_at = NULL`;
-    }
-    // 记录进入各阶段时间（首次写入后不覆盖）：线索/机会/投标/议价；信息=创建时间、中标=won_at
-    if (body.stage && ['线索', '机会', '投标', '议价', '中标'].includes(body.stage)) {
-      setClause += `, lead_at = COALESCE(lead_at, now())`;
-    }
-    if (body.stage && ['机会', '投标', '议价', '中标'].includes(body.stage)) {
-      setClause += `, opportunity_at = COALESCE(opportunity_at, now())`;
-    }
-    if (body.stage && ['投标', '议价', '中标'].includes(body.stage)) {
-      setClause += `, bid_at = COALESCE(bid_at, now())`;
-    }
-    if (body.stage && ['议价', '中标'].includes(body.stage)) {
-      setClause += `, negotiation_at = COALESCE(negotiation_at, now())`;
-    }
-    // 转交付 = 赢单的终极确认：转交付时强制置为"赢/中标"并记录 won_at（转交付时间）
+    // 手动标赢未转交付不算赢单，won_at 保持 NULL；转交付时由 buildOppStatusClauses 的 terminated 块 COALESCE 写入
+    // 状态机决策（纯函数 buildOppStatusClauses）：输单 lost_at 采集/离开输单清除/四阶段 COALESCE/转交付三分支。
+    // 当前状态与交付存在性仅转交付时查询（保持原实现"仅在 terminated 块内查询"的语义，顺序 delivery→cur 不变）
     if (body.terminated) {
-      // ⚠️ A105 修复：转交付须真实存在交付项目——防仅持写权限者伪造 terminated 直接把机会标成赢单
-      //   （无交付的"赢"是假赢单，会污染赢率/财年归集口径）
       const delivery = (await query('SELECT 1 FROM delivery_projects WHERE opportunity_id = $1', [id])).rows[0];
       const cur = (await query('SELECT status FROM sales_opportunities WHERE id = $1', [id])).rows[0];
-      if (delivery) {
-        if (cur?.status === '赢') {
-          setClause += `, won_at = COALESCE(won_at, now())`;
-        } else if (cur?.status === '输') {
-          // ⚠️ 最终审计修正：转交付 = 赢单终极确认——已标输的机会转入交付同样算赢单（置赢/中标 + won_at，清 lost_at）；
-          //   此前该分支只写 lost_at，不改 status/stage、won_at 恒 NULL，赢单财年归集永远丢失
-          setClause += `, status = '赢', stage = '中标', won_at = COALESCE(won_at, now()), lost_at = NULL`;
-        } else {
-          // 过程中/冻结转交付 → 100% 确认为赢单
-          setClause += `, status = '赢', stage = '中标', won_at = COALESCE(won_at, now())`;
-        }
-      } else if (cur?.status === '输') {
-        // ⚠️ 审计修复：无交付项目的"输"机会归档终止（前端终止按钮对 status='输' 的归档流）——
-        //   仅置 terminated，不改状态/阶段/won_at（输单归档=确认战败，不产生赢单）；无交付的非输机会仍 400（A105 防伪赢单回归）
-      } else {
-        throw new AppError(400, '转交付须先创建交付项目');
-      }
+      setClause += buildOppStatusClauses(body, cur?.status, !!delivery);
+    } else {
+      setClause += buildOppStatusClauses(body, undefined, false);
     }
     rawValues.push(id);
     const result = await query(
@@ -275,9 +303,7 @@ router.put('/:id', async (req, res, next) => {
 router.get('/next-sales-no', async (req, res, next) => {
   try {
     const d = new Date();
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    const prefix = `A${y}-${m}-`;
+    const prefix = buildSalesNoPrefix(d);
     // ⚠️ A107 修复：MAX+1 取号并发竞态——两用户同时点「新增」会拿到同一序号，后建者撞唯一约束。
     //   pg_advisory_xact_lock 在事务内串行化取号（同名 key 的并发调用排队），消除同刻取重号
     const nextSeq = await withTransaction(async (client) => {
@@ -289,8 +315,7 @@ router.get('/next-sales-no', async (req, res, next) => {
       )).rows[0];
       return r.next_seq;
     });
-    const seq = String(nextSeq).padStart(3, '0');
-    res.json({ sales_no: `${prefix}${seq}-S` });
+    res.json({ sales_no: composeSalesNo(d, nextSeq) });
   } catch (err) { next(err); }
 });
 

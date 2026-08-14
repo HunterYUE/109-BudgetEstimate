@@ -9,6 +9,16 @@ const fields = [
   'locked', 'created_at', 'updated_at',
 ];
 
+/** 报价 sync 可写状态白名单（H2 修复：只能写 draft/pending，禁止直接置 approved/rejected——须走审批状态机）；
+ *  undefined 视为合法（路由层 status 有默认 'draft'，仅显式传非法值才拦截） */
+export const QUOTATION_SYNC_STATUSES = ['draft', 'pending'];
+export function isValidSyncStatus(status: unknown): boolean {
+  return !status || (QUOTATION_SYNC_STATUSES as string[]).includes(status as string);
+}
+
+/** 报价财务字段（beforeUpdate 守卫：审批中 status='pending' 禁改这些字段——审批人基于提交时快照做决策） */
+export const QUOTATION_FINANCIAL = ['amount', 'total_cost', 'profit_rate', 'sales_no', 'opportunity_id'];
+
 // 自定义路由（先注册，避免被 /:id 拦截）
 const customRouter = Router();
 
@@ -42,7 +52,7 @@ customRouter.put('/sync', async (req, res, next) => {
     }
 
     // ⚠️ H2 修复：sync 只能写入 draft/pending，禁止直接置 approved/rejected（须走审批状态机）
-    if (status && !['draft', 'pending'].includes(status)) {
+    if (!isValidSyncStatus(status)) {
       throw new AppError(400, `报价状态只能为 draft 或 pending，不允许直接设为 ${status}`);
     }
 
@@ -104,8 +114,7 @@ const crudRouter = crudRoutes('quotations', fields, {
   // ⚠️ A103 修复：报价审批中（status='pending'）禁改财务字段——审批人基于提交时快照做决策，
   //   期间被改金额会让审批与机会回写口径失真（sync 端点有 409 守卫，通用 PUT 此前无）。
   beforeUpdate: async (id, snakeBody) => {
-    const FINANCIAL = ['amount', 'total_cost', 'profit_rate', 'sales_no', 'opportunity_id'];
-    if (!FINANCIAL.some(f => snakeBody[f] !== undefined)) return;
+    if (!QUOTATION_FINANCIAL.some(f => snakeBody[f] !== undefined)) return;
     const existing = (await query('SELECT status FROM quotations WHERE id = $1', [id])).rows[0];
     if (existing?.status === 'pending') {
       throw new AppError(409, '该报价待审批中，审批完成前不可修改金额/成本/毛利率/编号/关联机会');

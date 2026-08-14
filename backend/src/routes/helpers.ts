@@ -45,7 +45,8 @@ export async function logAudit(req: Request, action: string, module: string, det
 
 // ── 驼峰 ↔ 蛇形命名转换 ──
 
-function camelToSnake(str: string): string {
+/** 单键驼峰 → 蛇形（objKeysToSnake 内部；导出供单测直测） */
+export function camelToSnake(str: string): string {
   return str.replace(/[A-Z]/g, letter => '_' + letter.toLowerCase());
 }
 
@@ -86,11 +87,16 @@ export async function withTransaction<T>(fn: (client: any) => Promise<T>): Promi
   }
 }
 
+/** LIKE/ILIKE 通配符转义（%/_/\ → 前缀反斜杠）——auditLogs 搜索与 buildSearchWhere 共用（A10 统一口径） */
+export function escapeLikePattern(s: unknown): string {
+  return String(s).replace(/[%_\\]/g, '\\$&');
+}
+
 /** 构造多字段 ILIKE 搜索 WHERE 子句（含 %/_/\ 转义统一口径，防通配符注入与前后端行为不一）。
  *  params 会被追加搜索参数；tableAlias 传入时给字段加前缀（如 'so'）。返回 ' WHERE ...' 或 '' */
 export function buildSearchWhere(search: unknown, fields: string[], params: any[], tableAlias?: string): string {
   if (search === undefined || search === null || search === '') return '';
-  const escaped = String(search).replace(/[%_\\]/g, '\\$&');
+  const escaped = escapeLikePattern(search);
   const prefix = tableAlias ? tableAlias + '.' : '';
   // ⚠️ 2026-08-13 修复：逐字段递增参数索引（此前所有字段共用 $1，第 2..N 个参数是死参数——
   //   行为恰好正确因搜索值相同，但索引契约错误、潜在隐患）。map 内先 push 再取 params.length 为当前字段下标。
@@ -106,6 +112,9 @@ export function buildSearchWhere(search: unknown, fields: string[], params: any[
 export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
+
+/** 邮箱格式白名单正则（users 创建/更新与 auth 登录共用，防双份漂移） */
+export const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // ── 角色等级与越级保护（A6 复核：users.ts 与 timerecording.ts 管理员路径共用，全后端唯一来源）──
 
@@ -150,6 +159,23 @@ export function computeInsertCols(
   snakeBody: Record<string, any>,
 ): string[] {
   return fields.filter(f => !exclude.includes(f) && snakeBody[f] !== undefined);
+}
+
+/** JSONB/数组参数序列化：pg 不支持直接传对象数组给 JSONB 列（会把数组当 PG ARRAY），
+ *  但 TEXT[] 列需要保留数组原样传给 pg。只 stringify 包含对象的数组。
+ *  ⚠️ F9 修复：空数组按列类型区分——TEXT[] 列用 '{}'（PG 空数组字面量），JSONB 列用 '[]'。
+ *  textArraySet 为 TEXT[] 列名集合（crudRoutes 从 options.textArrayCols 构造传入；缺省时空数组一律 '[]'） */
+export function serializeParams(vals: unknown[], cols?: string[], textArraySet?: Set<string>): unknown[] {
+  return vals.map((v, i) => {
+    if (v === null || v === undefined) return v;
+    if (Array.isArray(v)) {
+      // 空数组：TEXT[] 列用 '{}'，否则 '[]'
+      if (v.length === 0) return cols && textArraySet?.has(cols[i]) ? '{}' : '[]';
+      // 对象数组或包含非字符串的数组需 JSON.stringify 以匹配 JSONB 列
+      if (typeof v[0] === 'object' || typeof v[0] === 'number' || typeof v[0] === 'boolean') return JSON.stringify(v);
+    }
+    return v;
+  });
 }
 
 /** 生成标准 CRUD 路由 */
@@ -217,22 +243,6 @@ export function crudRoutes(table: string, fields: string[], options?: {
     res.json(result.rows[0]);
   }));
 
-  /** JSONB/数组参数序列化：pg 不支持直接传对象数组给 JSONB 列（会把数组当 PG ARRAY），
-   *  但 TEXT[] 列需要保留数组原样传给 pg。只 stringify 包含对象的数组。
-   *  ⚠️ F9 修复：空数组按列类型区分——TEXT[] 列用 '{}'（PG 空数组字面量），JSONB 列用 '[]' */
-  function serializeParams(vals: unknown[], cols?: string[]): unknown[] {
-    return vals.map((v, i) => {
-      if (v === null || v === undefined) return v;
-      if (Array.isArray(v)) {
-        // 空数组：TEXT[] 列用 '{}'，否则 '[]'
-        if (v.length === 0) return cols && textArraySet.has(cols[i]) ? '{}' : '[]';
-        // 对象数组或包含非字符串的数组需 JSON.stringify 以匹配 JSONB 列
-        if (typeof v[0] === 'object' || typeof v[0] === 'number' || typeof v[0] === 'boolean') return JSON.stringify(v);
-      }
-      return v;
-    });
-  }
-
   // ── 创建 ──
   router.post('/', asyncHandler(async (req, res) => {
     // 自动转换请求体字段名（支持驼峰或蛇形）
@@ -251,7 +261,7 @@ export function crudRoutes(table: string, fields: string[], options?: {
     const rawValues = activeCols.map(c => snakeBody[c]);
     const result = await query(
       `INSERT INTO "${table}" (${activeNames}) VALUES (${activePlaceholders}) RETURNING ${quotedFields}`,
-      serializeParams(rawValues, activeCols)
+      serializeParams(rawValues, activeCols, textArraySet)
     );
     res.status(201).json(result.rows[0]);
   }));
@@ -272,7 +282,7 @@ export function crudRoutes(table: string, fields: string[], options?: {
     rawValues.push(req.params.id);
     const result = await query(
       `UPDATE "${table}" SET ${setClause} WHERE id = $${rawValues.length} RETURNING ${quotedFields}`,
-      serializeParams(rawValues, updateCols)
+      serializeParams(rawValues, updateCols, textArraySet)
     );
     if (result.rows.length === 0) {
       throw new AppError(404, `记录不存在`);

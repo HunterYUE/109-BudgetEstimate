@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import { query } from '../db/index.js';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { AppError } from '../middleware/index.js';
-import { logAudit, objKeysToSnake, normalizeEmail, resetUserPassword, withTransaction, assertCanManage, ROLE_RANK } from './helpers.js';
+import { logAudit, objKeysToSnake, normalizeEmail, EMAIL_RE, resetUserPassword, withTransaction, assertCanManage, ROLE_RANK } from './helpers.js';
 import { PAGE_LIMIT } from '../constants.js';
 
 const router = Router();
@@ -15,17 +15,57 @@ router.use(requirePermission('用户管理', '系统配置', '全部查看权限
 const USER_FIELDS = 'id, email, display_name, title, phone, role, is_active, created_at, permissions';
 
 // ── 用户管理安全常量与越级保护 ──
-const VALID_ROLES = ['admin', 'director', 'manager', 'user'];
+export const VALID_ROLES = ['admin', 'director', 'manager', 'user'];
 // ROLE_RANK + assertCanManage 已收敛至 helpers.ts（A6 复核：users.ts 与 timerecording.ts 管理员路径共用，防双份漂移）
 /** 服务端权限白名单（与 BudgetEstimateApp/src/pages/SystemManagement.tsx 的 ALL_PERMISSIONS 同源）：
  *  禁止写入白名单外的任意字符串，防"任意赋权/万能权限漂移" */
-const ALL_PERMISSIONS = [
+export const ALL_PERMISSIONS = [
   '仪表盘查看', '销售分析', '销售机会管理', '新建信息/线索/机会', '编辑销售机会', '转线索/转机会',
   '销售蓝表编辑', '报价列表查看', '报价编制', '审批管理', '交付管理', '交付分析',
   '成本录入', '物料管理', '新增物料', '新建标签', '客户管理', '新建客户',
   '用户管理', '系统配置', '全部查看权限',
 ];
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// EMAIL_RE 复用 helpers.ts（auth/users 登录与创建共用，防双份漂移）
+
+/** 新用户输入校验（保序：必填 → 类型 → 角色白名单 → 越级保护 → 密码长度 → 邮箱格式），
+ *  返回归一化邮箱（trim+小写）。仅供 POST /users 用（PUT 字段级校验内联不走此函数）。
+ *   ⚠️ 越级保护在内（assertCanManage）：非 admin/director 不得创建 admin/director 账号 */
+export function validateNewUserInput(input: Record<string, any>, actorRole: string): string {
+  const { display_name, email, password, role = 'user' } = input;
+  if (!email || !display_name || !password) {
+    throw new AppError(400, '缺少必填字段：email, displayName, password');
+  }
+  // 类型校验（防对象/数组入参触发 PG 类型错误 500）
+  if (typeof email !== 'string' || typeof display_name !== 'string' || typeof password !== 'string') {
+    throw new AppError(400, '邮箱/姓名/密码必须为字符串');
+  }
+  if (!VALID_ROLES.includes(role)) {
+    throw new AppError(400, `无效角色，允许值：${VALID_ROLES.join(', ')}`);
+  }
+  assertCanManage(actorRole, ROLE_RANK[role] ?? 0);
+  // 与重置路径（≥8）统一：创建时也校验弱口令
+  if (password.length < 8) {
+    throw new AppError(400, '密码至少8位');
+  }
+  // 邮箱归一化：trim + 小写（防 ' A@x ' 注册近似重复账号；重复检测/存储均用归一化值）
+  const emailNorm = normalizeEmail(email);
+  if (!EMAIL_RE.test(emailNorm)) {
+    throw new AppError(400, '邮箱格式无效');
+  }
+  return emailNorm;
+}
+
+/** 权限授予校验：① 白名单（ALL_PERMISSIONS 外或非字符串 → 400）② 委托限制——只能授予操作者自己已持有的权限（→ 403）。
+ *  防"用户管理"持有者给傀儡账号赋「全部查看权限」；permissions 为 undefined 时不做校验（更新未涉权限字段） */
+export function validatePermissionsGrant(permissions: unknown, actorPerms: string[]): void {
+  if (!Array.isArray(permissions) || !permissions.every(p => typeof p === 'string' && ALL_PERMISSIONS.includes(p))) {
+    throw new AppError(400, '权限包含无效值（白名单外或非字符串）');
+  }
+  const denied = (permissions as string[]).filter(p => !actorPerms.includes(p));
+  if (denied.length > 0) {
+    throw new AppError(403, `无权授予以下权限：${denied.join('、')}`);
+  }
+}
 
 /** GET /api/users - 获取用户列表 */
 router.get('/', async (_req, res, next) => {
@@ -41,27 +81,8 @@ router.post('/', async (req, res, next) => {
   try {
     // 统一转换为 snake_case（兼容前端 api.ts toSnake 或直接调用）
     const { display_name, email, password, title = '', phone = '', role = 'user' } = objKeysToSnake({ ...req.body });
-    if (!email || !display_name || !password) {
-      throw new AppError(400, '缺少必填字段：email, displayName, password');
-    }
-    // 类型校验（防对象/数组入参触发 PG 类型错误 500）
-    if (typeof email !== 'string' || typeof display_name !== 'string' || typeof password !== 'string') {
-      throw new AppError(400, '邮箱/姓名/密码必须为字符串');
-    }
-    if (!VALID_ROLES.includes(role)) {
-      throw new AppError(400, `无效角色，允许值：${VALID_ROLES.join(', ')}`);
-    }
-    // ⚠️ 越级保护：非 admin/director 不得创建 admin/director 账号（防「用户管理」持有者铸 admin 号）
-    assertCanManage(req.user!.role, ROLE_RANK[role] ?? 0);
-    // 与重置路径（≥8）统一：创建时也校验弱口令
-    if (password.length < 8) {
-      throw new AppError(400, '密码至少8位');
-    }
-    // 邮箱归一化：trim + 小写（防 ' A@x ' 注册近似重复账号；重复检测/存储均用归一化值）
-    const emailNorm = normalizeEmail(email);
-    if (!EMAIL_RE.test(emailNorm)) {
-      throw new AppError(400, '邮箱格式无效');
-    }
+    // ⚠️ 校验全部收敛至 validateNewUserInput（必填→类型→角色白名单→越级保护→密码长度→邮箱格式，返回归一化邮箱）
+    const emailNorm = validateNewUserInput({ display_name, email, password, role }, req.user!.role);
 
     const existing = await query('SELECT id FROM users WHERE LOWER(email) = $1', [emailNorm]);
     if (existing.rows.length > 0) {
@@ -182,14 +203,7 @@ router.put('/:id/role', async (req, res, next) => {
     // ⚠️ permissions 白名单 + 委托限制：仅允许写白名单内权限，且只能授予操作者自己已持有的权限
     //   （防"用户管理"持有者给傀儡账号赋「全部查看权限」）
     if (permissions !== undefined) {
-      if (!Array.isArray(permissions) || !permissions.every(p => typeof p === 'string' && ALL_PERMISSIONS.includes(p))) {
-        throw new AppError(400, '权限包含无效值（白名单外或非字符串）');
-      }
-      const actorPerms = req.user!.permissions || [];
-      const denied = permissions.filter(p => !actorPerms.includes(p));
-      if (denied.length > 0) {
-        throw new AppError(403, `无权授予以下权限：${denied.join('、')}`);
-      }
+      validatePermissionsGrant(permissions, req.user!.permissions || []);
     }
 
     const fields: string[] = [];

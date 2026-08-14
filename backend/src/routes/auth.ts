@@ -3,9 +3,28 @@ import bcrypt from 'bcryptjs';
 import { query } from '../db/index.js';
 import { signToken, requireAuth, setAuthCookie, clearAuthCookie, COOKIE_NAME_BUDGET } from '../middleware/auth.js';
 import { AppError } from '../middleware/index.js';
-import { logAudit, normalizeEmail, DUMMY_PASSWORD_HASH } from './helpers.js';
+import { logAudit, normalizeEmail, EMAIL_RE, DUMMY_PASSWORD_HASH } from './helpers.js';
 
 const router = Router();
+
+/** 跨应用登录限制判定：普通员工仅限任务规划和报工应用，禁止登录销售·交付应用
+ *  （login 与 /me 两处同规则共用；admin/director 例外可跨应用） */
+export function isRestrictedCrossAppUser(title: unknown, role: unknown): boolean {
+  return title === '普通员工' && role !== 'admin' && role !== 'director';
+}
+
+/** 认证用户响应归一化（DB 行 → 前端 camelCase 形状；login 默认不含 createdAt，/me 传 true 包含） */
+export function shapeAuthUser(u: Record<string, any>, includeCreatedAt = false): Record<string, any> {
+  return {
+    id: u.id,
+    email: u.email,
+    displayName: u.display_name,
+    title: u.title || '',
+    role: u.role,
+    permissions: u.permissions || [],
+    ...(includeCreatedAt ? { createdAt: u.created_at } : {}),
+  };
+}
 
 /** POST /api/auth/login */
 router.post('/login', async (req, res, next) => {
@@ -20,7 +39,7 @@ router.post('/login', async (req, res, next) => {
     }
     // 邮箱归一化：trim + 小写（与 users/timerecording 登录归一化共用 normalizeEmail；LOWER 比较兼容历史大小写存储）
     const emailNorm = normalizeEmail(email);
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailNorm)) {
+    if (!EMAIL_RE.test(emailNorm)) {
       throw new AppError(400, '邮箱格式无效');
     }
 
@@ -41,7 +60,7 @@ router.post('/login', async (req, res, next) => {
     }
 
     // ⚠️ 跨应用登录权限：普通员工仅限任务规划和报工应用，禁止登录销售·交付应用
-    if (user.title === '普通员工' && user.role !== 'admin' && user.role !== 'director') {
+    if (isRestrictedCrossAppUser(user.title, user.role)) {
       throw new AppError(403, '该账号仅限登录任务规划和报工应用，无权使用销售和交付管理');
     }
 
@@ -61,14 +80,7 @@ router.post('/login', async (req, res, next) => {
     ).catch(err => console.error('[Audit] 登录审计写入失败:', (err as Error).message));
 
     res.json({
-      user: {
-        id: user.id,
-        email: user.email,
-        displayName: user.display_name,
-        title: user.title || '',
-        role: user.role,
-        permissions: user.permissions || [],
-      },
+      user: shapeAuthUser(user),
     });
   } catch (err) { next(err); }
 });
@@ -86,18 +98,10 @@ router.get('/me', requireAuth, async (req, res, next) => {
     }
     const u = result.rows[0];
     // ⚠️ 跨应用登录权限：普通员工仅限任务规划和报工应用（已持有旧 token 也在此拦截并登出）
-    if (u.title === '普通员工' && u.role !== 'admin' && u.role !== 'director') {
+    if (isRestrictedCrossAppUser(u.title, u.role)) {
       throw new AppError(403, '该账号仅限登录任务规划和报工应用，无权使用销售和交付管理');
     }
-    res.json({
-      id: u.id,
-      email: u.email,
-      displayName: u.display_name,
-      title: u.title || '',
-      role: u.role,
-      permissions: u.permissions || [],
-      createdAt: u.created_at,
-    });
+    res.json(shapeAuthUser(u, true));
   } catch (err) { next(err); }
 });
 

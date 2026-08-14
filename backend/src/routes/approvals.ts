@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { query } from '../db/index.js';
 import { AppError } from '../middleware/index.js';
 import { requirePermission, hasPermission } from '../middleware/auth.js';
-import { crudRoutes, logAudit, objKeysToSnake, withTransaction, buildSearchWhere, parsePagination } from './helpers.js';
+import { crudRoutes, logAudit, objKeysToSnake, withTransaction, buildSearchWhere, parsePagination, round2 } from './helpers.js';
 
 const fields = [
   'id', 'approval_type', 'quotation_id', 'opportunity_id', 'delivery_id',
@@ -25,6 +25,47 @@ export function isValidApprovalAction(action: string | undefined): boolean {
 /** 是否终审状态（approved/rejected 不可再写记录、不可改财务字段、不可删除——三条守卫同口径） */
 export function isFinalApprovalStatus(status: string | undefined): boolean {
   return !!status && (FINAL_APPROVAL_STATUS as readonly string[]).includes(status);
+}
+
+/** 审批类型白名单（DB 枚举，C2 预校验：非法值直插抛 PG 枚举错误被 500 吞） */
+export const APPROVAL_TYPES = ['quotation', 'plan', 'cost', 'promote'] as const;
+
+/** 创建禁直设列（status/submit_time/submitter 只能经审批流程流转，防绕过状态机直设终态） */
+export const APPROVAL_INSERT_EXCLUDE = ['id', 'created_at', 'updated_at', 'status', 'submit_time', 'submitter'];
+
+/** 审批类型 → 同实体去重列（防同实体同类型重复 pending；plan/cost 均按 delivery_id） */
+export function approvalTypeToDupColumn(type: string): string {
+  return type === 'quotation' ? 'quotation_id'
+    : type === 'promote' ? 'opportunity_id'
+    : 'delivery_id';
+}
+
+/** 审批类型 → 父实体表名（查重 FOR UPDATE 锁父行用，BE-4 防并发重复待审） */
+export function approvalTypeToParentTable(type: string): string {
+  return type === 'quotation' ? 'quotations'
+    : type === 'promote' ? 'sales_opportunities'
+    : 'delivery_projects';
+}
+
+/** 晋升审批自动回填（??= 语义：body 已有值不覆盖；tax_rate 兜底 0.13，其余 parseFloat || 0）。
+ *  versionNo 取报价行版本号，pv 取 project_versions 行（snake_case 键） */
+export function applyPromoteDefaults(body: Record<string, any>, versionNo: unknown, pv: Record<string, any>): Record<string, any> {
+  const out = { ...body };
+  out.version_no ??= versionNo;
+  out.total_accounting_price ??= parseFloat(pv.total_accounting_price) || 0;
+  out.discounted_price ??= parseFloat(pv.discounted_price) || 0;
+  out.discount_rate ??= parseFloat(pv.discount_rate) || 0;
+  out.gp3 ??= parseFloat(pv.gp3_profit_rate) || 0;
+  out.total_cost ??= parseFloat(pv.total_cost) || 0;
+  out.tax_rate ??= parseFloat(pv.tax_rate) || 0.13;
+  out.amount ??= parseFloat(pv.discounted_price) || 0;
+  out.gp3_amount ??= parseFloat(pv.gp3_amount) || 0;
+  return out;
+}
+
+/** 审批结果 JSONB 构造（写入交付 plan_approval/cost_approval，与审批记录一致；createdAt 由调用方传 ISO 串） */
+export function buildAppraisalJson(reviewer: string, action: string, comment: string, createdAt: string): string {
+  return JSON.stringify({ reviewer, action, comment, createdAt });
 }
 
 // 标准 CRUD（不含 GET /，因为我们会自定义列表查询）
@@ -51,27 +92,23 @@ const router = Router();
 // 自定义 POST：创建审批时自动级联更新相关状态（事务保护）
 router.post('/', async (req, res, next) => {
   try {
-    const body = objKeysToSnake({ ...req.body });
+    let body = objKeysToSnake({ ...req.body });
     const { approval_type, opportunity_id, delivery_id } = body;
     // ⚠️ C2 审计修复：approval_type 枚举白名单——DB 列为 PG 枚举（quotation/plan/cost/promote），
     //   非法值直插会抛 PG 枚举错误被 500 兜底吞掉（泄漏内部错误语义）；显式预校验给 400
-    if (!['quotation', 'plan', 'cost', 'promote'].includes(approval_type)) {
+    if (!(APPROVAL_TYPES as readonly string[]).includes(approval_type)) {
       throw new AppError(400, '无效审批类型，允许值：quotation, plan, cost, promote');
     }
 
     // ⚠️ A15：事务样板收敛为 withTransaction
     const record = await withTransaction(async (client) => {
       // ⚠️ K4 修复：同一实体同一审批类型不得存在多条 pending（防直调 API 重复提交产生重复待审/级联重复）
-      const dupCol = approval_type === 'quotation' ? 'quotation_id'
-        : approval_type === 'promote' ? 'opportunity_id'
-        : 'delivery_id';
+      const dupCol = approvalTypeToDupColumn(approval_type);
       const dupVal = (body as Record<string, any>)[dupCol];
       if (dupVal) {
         // ⚠️ 审计修复 BE-4：先锁父实体行（FOR UPDATE）再查重——两并发提交同刻都查无 pending 时，
         //   行锁串行化：后者等前者事务提交后重查必见 pending → 409，杜绝并发重复待审记录
-        const parentTable = approval_type === 'quotation' ? 'quotations'
-          : approval_type === 'promote' ? 'sales_opportunities'
-          : 'delivery_projects';
+        const parentTable = approvalTypeToParentTable(approval_type);
         await client.query(`SELECT 1 FROM ${parentTable} WHERE id = $1 FOR UPDATE`, [dupVal]);
         const dup = (await client.query(
           `SELECT 1 FROM approval_requests WHERE approval_type = $1 AND ${dupCol} = $2 AND status = 'pending'`,
@@ -96,15 +133,7 @@ router.post('/', async (req, res, next) => {
               if (qtRow?.project_id) {
                 const pv = (await client.query('SELECT * FROM project_versions WHERE project_id = $1 AND version_no = $2', [qtRow.project_id, qtRow.version_no])).rows[0];
                 if (pv) {
-                  body.version_no ??= qtRow.version_no;
-                  body.total_accounting_price ??= parseFloat(pv.total_accounting_price) || 0;
-                  body.discounted_price ??= parseFloat(pv.discounted_price) || 0;
-                  body.discount_rate ??= parseFloat(pv.discount_rate) || 0;
-                  body.gp3 ??= parseFloat(pv.gp3_profit_rate) || 0;
-                  body.total_cost ??= parseFloat(pv.total_cost) || 0;
-                  body.tax_rate ??= parseFloat(pv.tax_rate) || 0.13;
-                  body.amount ??= parseFloat(pv.discounted_price) || 0;
-                  body.gp3_amount ??= parseFloat(pv.gp3_amount) || 0;
+                  body = applyPromoteDefaults(body, qtRow.version_no, pv);
                 }
               }
             }
@@ -117,7 +146,7 @@ router.post('/', async (req, res, next) => {
       //   新建审批不进待审批列表、UI 无审批按钮，整个审批流程卡死（生产回归）。现显式强制 status='pending'。
       // ⚠️ 审计修复 BE-7：submitter 不再采信客户端——服务端从登录用户 display_name 派生（防伪造提交人）。
       //   前端本就用 displayName 提交，派生值与既有存储一致；display_name 缺省兜底 '审批申请人'。
-      const insertCols = fields.filter(f => !['id', 'created_at', 'updated_at', 'status', 'submit_time', 'submitter'].includes(f) && body[f] !== undefined);
+      const insertCols = fields.filter(f => !APPROVAL_INSERT_EXCLUDE.includes(f) && body[f] !== undefined);
       if (insertCols.length === 0) throw new AppError(400, '没有要插入的字段');
       body.submitter = req.user?.display_name || '审批申请人';
       insertCols.push('status', 'submitter');
@@ -199,7 +228,7 @@ router.post('/:id/records', async (req, res, next) => {
       await client.query('UPDATE approval_requests SET status = $1, updated_at = now() WHERE id = $2', [newStatus, id]);
       // ⚠️ 审批结果 JSONB：写入交付项目的 plan_approval/cost_approval（与审批记录一致），
       //    使后端 /records 事务内完成全部级联，前端无需重复更新（避免双重应用与状态不一致）
-      const appraisal = JSON.stringify({ reviewer, action, comment: comment || '', createdAt: new Date().toISOString() });
+      const appraisal = buildAppraisalJson(reviewer, action, comment || '', new Date().toISOString());
       if (ar.approval_type === 'promote' && ar.opportunity_id) {
         await client.query('UPDATE sales_opportunities SET promote_locked = false, updated_at = now() WHERE id = $1', [ar.opportunity_id]);
         // ⚠️ L3 修复：晋升到"机会"须写 lead_at/opportunity_at（COALESCE 首次写入不覆盖，与 opportunities.ts 阶段规则一致），否则财年归集丢失
@@ -223,7 +252,7 @@ router.post('/:id/records', async (req, res, next) => {
         }
         if (newStatus === 'approved') {
           const qt = (await client.query('SELECT opportunity_id, amount FROM quotations WHERE id = $1', [ar.quotation_id])).rows[0];
-          if (qt?.opportunity_id && qt?.amount > 0) await client.query('UPDATE sales_opportunities SET amount = $1, updated_at = now() WHERE id = $2', [Math.round((parseFloat(qt.amount) || 0) * 100) / 100, qt.opportunity_id]);
+          if (qt?.opportunity_id && qt?.amount > 0) await client.query('UPDATE sales_opportunities SET amount = $1, updated_at = now() WHERE id = $2', [round2(parseFloat(qt.amount) || 0), qt.opportunity_id]);
         }
       }
       return { record, approvalType: ar.approval_type };

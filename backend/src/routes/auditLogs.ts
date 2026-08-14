@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { query } from '../db/index.js';
 import { AppError } from '../middleware/index.js';
-import { parsePagination } from './helpers.js';
+import { parsePagination, escapeLikePattern } from './helpers.js';
 
 const router = Router();
 
@@ -16,10 +16,10 @@ router.get('/', async (req, res, next) => {
       LEFT JOIN users u ON u.email = al.user_name`;
     const params: any[] = [];
     if (search) {
-      // ⚠️ A10 修复：通配符转义统一口径（%/_/\ 转义），与 buildSearchWhere 一致；u.display_name 跨表别名无法走共享构造
-      const escaped = String(search).replace(/[%_\\]/g, '\\$&');
+      // ⚠️ A10 修复：通配符转义统一口径（%/_/\ 转义），与 buildSearchWhere 一致（escapeLikePattern 复用）；
+      //   u.display_name 跨表别名无法走共享构造
       sql += ` WHERE (al.user_name::text ILIKE $1 OR al.action::text ILIKE $1 OR al.module::text ILIKE $1 OR al.detail::text ILIKE $1 OR u.display_name::text ILIKE $1)`;
-      params.push(`%${escaped}%`);
+      params.push(`%${escapeLikePattern(search)}%`);
     }
     const { limit, offset } = parsePagination(req.query);
     sql += ` ORDER BY al.time DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
