@@ -467,15 +467,15 @@ const DeliveryAnalysis: React.FC = () => {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16, flex: isNarrow ? '1 1 auto' : '0 0 calc(3 / 7 * (100% - 96px) + 32px)' }}>
               <ProfitChart data={profitChartData.items}
                 height={CARD_H} chartWidth={702} contentOffset={40} />
-              {/* ⚠️ 延期天数图：X 标签下移 10px + 柱体整体下移 10px + 卡片容器向下增高 10px（标签/柱体重叠反馈修复）
-                  ——height CARD_H+10→CARD_H+20、padTop 40→50 同步；chartH=165、padBottom=30 不变（框体几何高度不变），
-                  X 标签 y=height-5 由 230→240、柱基线 zeroY 由 205→215 同步下移，正值柱顶部留白增加 10px；卡片 275→285。
-                  取消 chartWidth={702}：组件按未传 chartWidth 自适应容器宽度（scale=1 精确渲染，
-                  标签 y=240 不再被 height:auto 缩放挤出 SVG 底部），柱宽 33→31.4 微调 */}
+              {/* ⚠️ 延期天数图：非对称轴（负区压缩、正区扩容）+ 文字缩放归一（详见 VerticalBarChart 注释）
+                  生产数据正值 max 仅 5 天、负值深至 -160 天，比例 0 线贴顶（y≈55）正值柱几乎不可见；
+                  negFloorGap=10 负柱最低点抬高 10px（长负柱缩短）、zeroYOffset=30 0 线下移 30px（正值柱扩容）
+                  → negFloor 205、zeroY 85（负区 120px、正区 35px），长负柱缩短 40px、正值柱获得 30px 空间。
+                  textScale=0.7/effectiveScale 归一后柱顶/X 轴 7px、Y 轴 6.3px，与各卡片统一 */}
               <VerticalBarChart title="延期天数" data={projectDelayDays}
                 format="num" height={CARD_H + 20} topN={15} barWidthRatio={0.75}
                 maxBarWidth={40} contentOffset={40} hideAvgLine padTop={50} padBottom={30} barLabelGap={10}
-                padLeft={36} padRight={6} hoverable centeredSvg />
+                padLeft={36} padRight={6} hoverable centeredSvg negFloorGap={10} zeroYOffset={30} />
               <VerticalBarChart title="节点分析" data={nodeBottleneck}
                 format="num" height={CARD_H} topN={15} barWidthRatio={0.75}
                 maxBarWidth={40} chartWidth={702} contentOffset={40} hideAvgLine padTop={25} padBottom={35} disableSort

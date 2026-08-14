@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useLayoutEffect, useRef } from 'react';
 import { Card } from 'antd';
 import { COLORS } from '../../styles/colors';
 import { fmtK } from '../../utils/analysisShared';
@@ -32,6 +32,10 @@ interface VerticalBarChartProps {
   targetLabel?: string;
   padTop?: number;
   padBottom?: number;
+  /** 负值柱最低点相对图底的上移量（px）；仅 hasNeg 且提供时启用（延期卡：负区压缩、柱底远离 X 标签） */
+  negFloorGap?: number;
+  /** Y 轴 0 刻度线相对比例定位的下移量（px，正值柱扩容）；仅 hasNeg 且提供时启用 */
+  zeroYOffset?: number;
   hideAvgLine?: boolean;
   cardBorder?: boolean;
   barLabelGap?: number;
@@ -48,7 +52,7 @@ interface VerticalBarChartProps {
 export const VerticalBarChart: React.FC<VerticalBarChartProps> = ({
   title, data, format = 'num', height = 220, topN = 10, contentOffset = 0,
   barWidthRatio = 0.55, maxBarWidth = 36, noCard, chartWidth, disableSort,
-  targetValue, targetLabel, padTop = 32, padBottom = 28, hideAvgLine,
+  targetValue, targetLabel, padTop = 32, padBottom = 28, hideAvgLine, negFloorGap, zeroYOffset,
   cardBorder = true, barLabelGap = 18, valueFontSize = 10, padLeft = 42, padRight = 26,
   hoverable = false, centeredSvg = false,
 }) => {
@@ -63,17 +67,21 @@ export const VerticalBarChart: React.FC<VerticalBarChartProps> = ({
   const adaptive = chartWidth === undefined;
   const svgRef = useRef<SVGSVGElement>(null);
   const [svgW, setSvgW] = useState<number | null>(null);
-  useEffect(() => {
-    if (!adaptive) return;
+  // 全图统一测量 SVG 实际渲染宽：自适应图（未传 chartWidth）用它把 viewBox 宽同步为渲染宽（scale≈1、
+  //   height 精确生效）；固定 chartWidth 的图用它算有效缩放，供文字归一（见 textScale 注释）。
+  //   useLayoutEffect 初测（getBoundingClientRect）保证首帧即用正确宽度，避免按默认 scale 渲染的闪烁。
+  useLayoutEffect(() => {
     const el = svgRef.current;
     if (!el) return;
+    const w = el.getBoundingClientRect().width;
+    if (w > 0) setSvgW(w);
     const ro = new ResizeObserver((entries) => {
-      const w = entries[0]?.contentRect?.width;
-      if (w && w > 0) setSvgW(w);
+      const cw = entries[0]?.contentRect?.width;
+      if (cw && cw > 0) setSvgW(cw);
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, [adaptive]);
+  }, []);
   const working = disableSort ? data : [...data].sort((a, b) => b.value - a.value);
   const top = working.slice(0, topN);
   const rawMax = Math.max(...top.map(d => d.value), 0);
@@ -95,6 +103,13 @@ export const VerticalBarChart: React.FC<VerticalBarChartProps> = ({
   };
 
   const W = adaptive ? (svgW ?? fixedW) : fixedW;
+  // ⚠️ 文字缩放归一：固定 chartWidth 的图 viewBox 等比缩放（scale<1）让文字随内容一起缩小，与自适应图
+  //   （scale≈1）文字大小不一致（实测同一设计字号 10px 渲染出 7~10px 之差，排行/延期卡文字显得「放大」）。
+  //   effectiveScale = 实际渲染宽 / viewBox 宽；textScale = 0.7/effectiveScale 乘到所有图内文字 fontSize，
+  //   使任意 scale 下文字渲染尺寸统一为设计字号×0.7（柱顶/X 轴 7px、Y 轴 6.3px）——与固定 chartWidth 图
+  //   既有的小字号视觉一致，且不受容器宽度变化影响。
+  const effectiveScale = (svgW ?? W) / W;
+  const textScale = 0.7 / effectiveScale;
   const pad = { top: padTop, bottom: padBottom, left: padLeft, right: padRight };
   const chartW = W - pad.left - pad.right;
   const chartH = height - pad.top - pad.bottom;
@@ -104,12 +119,28 @@ export const VerticalBarChart: React.FC<VerticalBarChartProps> = ({
   const yOf = (v: number) => hasNeg
     ? pad.top + ((rawMax - v) / effectiveMax) * chartH
     : pad.top + (1 - v / effectiveMax) * chartH;
-  const zeroY = yOf(0);
+  // 负值柱/0 线显式位移（延期卡「负区压缩、正区扩容」）：negFloorGap 抬高负柱最低点、zeroYOffset 下移 0 线。
+  //   背景：生产数据正值 max 仅 5 天、负值深至 -160 天，比例 0 线贴顶（y≈55）、正值柱几乎不可见——
+  //   各 10/30px 后负柱底 205、0 线 85（负区 120px、正区 35px），长负柱缩短 40px、正值柱获得 30px 空间。
+  //   仅 hasNeg 且提供对应 prop 时启用；负区高度钳制 ≥24px 防平衡数据退化。
+  const asymAxis = hasNeg && (negFloorGap != null || zeroYOffset != null);
+  const negFloor = pad.top + chartH - (negFloorGap ?? 0);
+  const zeroY = asymAxis
+    ? Math.min(pad.top + ((rawMax - 0) / effectiveMax) * chartH + (zeroYOffset ?? 0), negFloor - 24)
+    : yOf(0);
+  // 柱/网格线/参考线坐标：非对称轴时正负值各按所在区段比例映射（正值区 [padTop,zeroY]、负值区 [zeroY,negFloor]）
+  const yOfBar = (v: number) => asymAxis
+    ? (v >= 0
+        ? zeroY - (v / Math.max(rawMax, 1)) * Math.max(zeroY - pad.top, 1)
+        : zeroY + (Math.abs(v) / Math.max(Math.abs(rawMin), 1)) * Math.max(negFloor - zeroY, 1))
+    : yOf(v);
   const gridVals = hasNeg
     ? Array.from({ length: 5 }, (_, i) => rawMax - (i * effectiveMax) / 4)
     : (effectiveMax <= 10
       ? Array.from({ length: effectiveMax + 1 }, (_, i) => i).reverse()
       : Array.from({ length: 5 }, (_, i) => (effectiveMax * (4 - i)) / 4));
+  // 非对称轴时确保 0 刻度线可见（用户跟踪其下移位置）
+  const gridValsWithZero = asymAxis && !gridVals.includes(0) ? [...gridVals, 0] : gridVals;
 
   const chart = (
     <>
@@ -122,12 +153,12 @@ export const VerticalBarChart: React.FC<VerticalBarChartProps> = ({
           <defs><filter id="bar-shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="1" dy="2" stdDeviation="2" flood-opacity="0.15" /></filter></defs>
         )}
         {/* Y 轴网格线 + 标签 */}
-        {gridVals.map((gv, i) => {
-          const y = yOf(gv);
+        {gridValsWithZero.map((gv, i) => {
+          const y = yOfBar(gv);
           return (
             <g key={`g-${i}`}>
               <line x1={pad.left} y1={y} x2={W - pad.right} y2={y} stroke={COLORS.borderLight} strokeWidth={1} />
-              <text x={pad.left - 4} y={y + 3} textAnchor="end" fontSize={9} fill="#aaa">
+              <text x={pad.left - 4} y={y + 3} textAnchor="end" fontSize={9 * textScale} fill="#aaa">
                 {fmtAxis(gv)}
               </text>
             </g>
@@ -136,20 +167,20 @@ export const VerticalBarChart: React.FC<VerticalBarChartProps> = ({
 
         {/* 目标线 或 平均值虚线 */}
         {targetValue != null && targetValue > 0 ? (() => {
-          const tgtY = yOf(targetValue);
+          const tgtY = yOfBar(targetValue);
           return (
             <g>
               <line x1={pad.left} y1={tgtY} x2={W - pad.right} y2={tgtY}
                 stroke={COLORS.warning} strokeWidth={1} strokeDasharray="5,3" />
               {/* ⚠️ B11 复核：targetLabel 缺省时回退显示格式化目标值（原实现 targetLabel || fmtAxis(targetValue)，
                   合并时误改为仅 targetLabel 存在才渲染——传 targetValue 不传 targetLabel 会丢目标线标签） */}
-              <text x={W - pad.right - 8} y={tgtY + 3} textAnchor="start" fontSize={9} fill={COLORS.warning}>
+              <text x={W - pad.right - 8} y={tgtY + 3} textAnchor="start" fontSize={9 * textScale} fill={COLORS.warning}>
                 {targetLabel || fmtAxis(targetValue)}
               </text>
             </g>
           );
         })() : (!hideAvgLine && avg > 0 && data.some(d => d.value > 0) && (() => {
-          const avgY = yOf(avg);
+          const avgY = yOfBar(avg);
           return (
             <g>
               <line x1={pad.left} y1={avgY} x2={W - pad.right} y2={avgY}
@@ -166,7 +197,8 @@ export const VerticalBarChart: React.FC<VerticalBarChartProps> = ({
           // ⚠️ 审计修复 #13：正值自 0 基线向上、负值向下（提前交付不再是 0 高标签挤底部的误导形态）；
           //   纯正值路径 barTop 公式与既往一致（zeroY=底部 → pad.top+chartH-barH）
           const isNegBar = item.value < 0;
-          const barH = item.value === 0 ? 0 : Math.max(2, (Math.abs(item.value) / effectiveMax) * chartH);
+          const yTop = yOfBar(item.value);
+          const barH = item.value === 0 ? 0 : Math.max(2, Math.abs(yTop - zeroY));
           const color = item.color || (targetValue != null && targetValue > 0 ? (item.value >= targetValue ? COLORS.primary : COLORS.danger) : COLORS.primary);
           let label: string;
           if (item.value === 0) label = '—';
@@ -174,13 +206,13 @@ export const VerticalBarChart: React.FC<VerticalBarChartProps> = ({
           else if (format === '%') label = `${item.value.toFixed(1)}%`;
           else label = `${item.value}`;
 
-          const barTop = isNegBar ? zeroY : (zeroY - barH);
+          const barTop = Math.min(yTop, zeroY);
 
           return (
             <g key={item.name + '-' + i}
               onMouseEnter={hoverable && item.tooltip ? () => setHoveredTip({ lines: item.tooltip!.split('\n'), cx, barTop, chartW: W }) : undefined}
               onMouseLeave={hoverable ? () => setHoveredTip(null) : undefined}>
-              <text x={cx} y={isNegBar ? barTop + barH + barLabelGap : barTop - barLabelGap} textAnchor="middle" fontSize={valueFontSize}
+              <text x={cx} y={isNegBar ? barTop + barH + barLabelGap : barTop - barLabelGap} textAnchor="middle" fontSize={valueFontSize * textScale}
                 fill={color} fontWeight={600}>{label}</text>
               {item.subValue != null && item.subValue > 0 && (
                 <>
@@ -188,7 +220,7 @@ export const VerticalBarChart: React.FC<VerticalBarChartProps> = ({
                     时旧公式 -10/-6 主副值 4px 重叠；barLabelGap=18（默认，销售分析/节点分析图）下与旧位置 barTop-6
                     完全一致，无视觉回归 */}
                 <text x={cx} y={(isNegBar ? barTop + barH + barLabelGap : barTop - barLabelGap) + valueFontSize + 2}
-                  textAnchor="middle" fontSize={valueFontSize}
+                  textAnchor="middle" fontSize={valueFontSize * textScale}
                   fill={COLORS.purple} fontWeight={600}>（{format === 'K' ? fmtK(item.subValue) : item.subValue}）</text>
                 </>
               )}
@@ -196,7 +228,7 @@ export const VerticalBarChart: React.FC<VerticalBarChartProps> = ({
                 <rect x={cx - barW / 2} y={barTop} width={barW} height={barH}
                   fill="none" stroke={color} strokeWidth={centeredSvg ? 2.5 : 3} rx={0} ry={0} />
               )}
-              <text x={cx} textAnchor="middle" fontSize={10} fill="#444">
+              <text x={cx} textAnchor="middle" fontSize={10 * textScale} fill="#444">
                 {item.name.includes('\n') ? (
                   item.name.split('\n').map((part, li) =>
                     li === 0
