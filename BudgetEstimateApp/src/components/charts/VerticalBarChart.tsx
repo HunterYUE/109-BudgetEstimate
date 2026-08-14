@@ -225,8 +225,12 @@ export const VerticalBarChart: React.FC<VerticalBarChartProps> = ({
                 </>
               )}
               {barH > 0 && (
+                // ⚠️ 柱体框线厚度与文字同源：strokeWidth 是 viewBox 坐标值，渲染厚度 = strokeWidth × SVG scale。
+                //   自适应卡（scale≈1）渲染出完整 2.5/3px，固定卡（scale<1）渲染出 2.5×scale/3×scale（≈2px）——
+                //   两者不一致（延期/排行卡框线显粗）。乘 textScale 后任意缩放下渲染厚度统一为设计值×0.7
+                //   （居中卡 1.75px、默认卡 2.1px），与文字归一同一机制。
                 <rect x={cx - barW / 2} y={barTop} width={barW} height={barH}
-                  fill="none" stroke={color} strokeWidth={centeredSvg ? 2.5 : 3} rx={0} ry={0} />
+                  fill="none" stroke={color} strokeWidth={(centeredSvg ? 2.5 : 3) * textScale} rx={0} ry={0} />
               )}
               <text x={cx} textAnchor="middle" fontSize={10 * textScale} fill="#444">
                 {item.name.includes('\n') ? (
