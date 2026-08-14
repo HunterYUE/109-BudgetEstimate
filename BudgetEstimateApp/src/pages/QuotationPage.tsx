@@ -20,6 +20,7 @@ import IconButton from '../components/IconButton';
 import { COLORS } from '../styles/colors';
 import { uuid } from '../utils/uuid';
 import { todayBeijing } from '../utils/timeFormat';
+import { reviewStatusForSave } from '../utils/quotationStatus';
 import { exportHtmlTable, escapeHtml } from '../utils/exportToExcel';
 import { DEFAULT_DESIGN_HOURLY_RATE, DEFAULT_ASSEMBLY_HOURLY_RATE, TAX_RATE, LIST_LIMIT } from '../utils/constants';
 import { STATUS_CONFIG } from '../components/material/materialConstants';
@@ -597,7 +598,7 @@ const QuotationPage: React.FC = () => {
     const versionForSave = curVer.versionNo;
     // ⚠️ B61 修复：已通过/已驳回的报价被再次编辑保存时状态重置为草稿——否则内容已修改却仍保持 approved/rejected，
     //    绕过审批状态机（改过数据不经重审即显示"已通过"）。pending 保持不动（单据仍在审批中），draft 亦不动
-    const statusForSave = curVer.reviewStatus === 'approved' || curVer.reviewStatus === 'rejected' ? 'draft' : curVer.reviewStatus;
+    const statusForSave = reviewStatusForSave(curVer.reviewStatus);
     // ⚠️ UX 补（审计 B4）：降级发生即提示，不再静默——用户可预期"保存后状态降级、需重新审批"
     if (statusForSave !== curVer.reviewStatus) {
       messageApi.warning(curVer.reviewStatus === 'approved'
