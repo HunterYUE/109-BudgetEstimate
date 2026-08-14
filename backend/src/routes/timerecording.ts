@@ -90,6 +90,8 @@ export function isLeaveCostCenter(code: string | null | undefined, type?: string
 /** 请休假硬性校验（POST/PUT 共用）：
  *   - 晚班/周末/节假日（hour_type 服务端派生 overtime）拒绝；
  *   - 单日请休假合计 ≤ 8 小时（含本行工时；PUT 传 excludeId 排除本条自身）。
+ *     ⚠️ D3 核实 2026-08-14：日净工时 = 8h（上满一天计 8h，非时段跨度 9h），
+ *     全天请假 = 8h 天然落在此上限内，8h 上限为正确口径，不放宽。
  *   code/type 任一命中请休假（isLeaveCostCenter 口径）即触发校验 */
 async function assertLeaveValid(opts: {
   userId: string;
@@ -110,6 +112,7 @@ async function assertLeaveValid(opts: {
   )).rows[0].total;
   // ⚠️ 浮点纪律：dayTotal 是 SUM 累加值、opts.hours 是 2 位小数，4.1+3.9 在 float64 下=8.000000000000002
   //   会误拒合法输入；先 round2 再与上限比较（对齐 DB NUMERIC 2 位精度）
+  // ⚠️ D3 核实 2026-08-14：日净工时 8h，全天请假=8h，上限保持 8h 不放宽
   if (round2(Number(dayTotal) + opts.hours) > 8) throw new AppError(400, '请休假每天最多 8 小时');
 }
 
@@ -196,13 +199,30 @@ export function isStatutoryHoliday(d: Date): boolean {
   return list.includes(`${mm}-${dd}`);
 }
 
-/** 加班判定：晚时段(18:00-20:30)重叠 OR 周末 OR 法定节假日（与前端 isOvertime 一致） */
+/** 周末调休上班日（补班，周六/周日上班）——D2 决策 2026-08-14：补班日 = 工作日，
+ *   serverHourType 对补班日返回 normal（出勤/请假均按正常工作日计，不再判加班）。
+ *   与前端 src/utils/holidays.js MAKEUP_WORKDAYS 同一份，需人工同步（对齐 STATUTORY_HOLIDAYS 同步契约） */
+const MAKEUP_WORKDAYS: Record<number, string[]> = {
+  2025: ['01-26','02-08','04-27','09-28','10-11'],
+  2026: ['01-04','02-14','02-28','05-09','09-20','10-10'],
+};
+export function isMakeupWorkday(d: Date): boolean {
+  const list = MAKEUP_WORKDAYS[d.getFullYear()];
+  if (!list) return false;
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return list.includes(`${mm}-${dd}`);
+}
+
+/** 加班判定：晚时段(18:00-20:30)重叠 OR 周末（补班日除外）OR 法定节假日（与前端 isOvertime 一致） */
 export function serverHourType(date?: string | null, start?: string | null, end?: string | null): 'normal' | 'overtime' {
   const s = toMinutes(start), e = toMinutes(end);
   const evening = s != null && e != null && Math.max(0, Math.min(e, 1230) - Math.max(s, 1080)) > 0;
   const [y, m, d] = String(date || '').split('-').map(Number);
   const wd = (Number.isFinite(y) && Number.isFinite(m) && Number.isFinite(d)) ? new Date(y, m - 1, d).getDay() : -1;
-  return (evening || wd === 0 || wd === 6 || (wd >= 0 && isStatutoryHoliday(new Date(y, m - 1, d)))) ? 'overtime' : 'normal';
+  // ⚠️ D2 决策 2026-08-14：补班日（周末上班）= 工作日，周末加班判定豁免（出勤/请假均按 normal）
+  const weekendOvertime = (wd === 0 || wd === 6) && !(wd >= 0 && isMakeupWorkday(new Date(y, m - 1, d)));
+  return (evening || weekendOvertime || (wd >= 0 && isStatutoryHoliday(new Date(y, m - 1, d)))) ? 'overtime' : 'normal';
 }
 
 /**
@@ -217,6 +237,27 @@ function assertWeekSubmittable(dateStr: string): void {
   const dayNum = new Date(y, m - 1, d).getDay() || 7; // ISO 周一=1…周日=7
   const opensAt = new Date(y, m - 1, d + (7 - dayNum), 20, 30, 0, 0); // 该周周日 20:30（本地时区）
   if (new Date() < opensAt) throw new AppError(400, '该周还未到提交时间：周工时须等周日 20:30 提交提醒后整周一次提交');
+}
+
+/**
+ * 补录窗口起点（⚠️ D1 决策 2026-08-14）：当前周 + 前 4 周可补录，超过 4 周锁定（只读）。
+ *   截止点 = 当前 ISO 周周一 − 4 周（服务器本地时区=北京，日期粒度、落在周界）。
+ *   date 早于截止点的记录：新增/修改/删除/提交一律拒绝（前端冻结格子为 UX，此处为权威防线）。
+ *   now 由调用方注入（asOf 约定，F12 便于测试；默认服务器当前时间）
+ */
+export function backfillWindowStart(now: Date = new Date()): string {
+  const daysSinceMonday = (now.getDay() + 6) % 7; // 周一=0…周日=6
+  const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - daysSinceMonday - 28); // −4 周
+  const mm = String(monday.getMonth() + 1).padStart(2, '0');
+  const dd = String(monday.getDate()).padStart(2, '0');
+  return `${monday.getFullYear()}-${mm}-${dd}`;
+}
+
+export function assertBackfillWindow(dateStr: unknown, now: Date = new Date()): void {
+  if (typeof dateStr !== 'string' || !isValidDateStr(dateStr)) return; // 非法日期由日期校验兜底
+  if (dateStr < backfillWindowStart(now)) {
+    throw new AppError(400, '该日期已超出 4 周补录窗口（仅当前周+前 4 周可补录），不可新增/修改/删除/提交');
+  }
 }
 
 /** 校验日期为真实历法日期（格式 + 回验，拦截 2026-02-30/2026-13-01 等越界日期） */
@@ -528,6 +569,8 @@ router.post('/time-records', ...trAuth, async (req, res, next) => {
     if (!targetUserId || !isValidDateStr(date) || toMinutes(start_time) == null || toMinutes(end_time) == null) {
       throw new AppError(400, '缺少必填字段或日期/时间格式无效');
     }
+    // ⚠️ D1 决策 2026-08-14：补录窗口 = 当前周 + 前 4 周，超过 4 周锁定（早于截止点拒绝新增）
+    assertBackfillWindow(date);
     // ⚠️ S4 修复：hours/hour_type 服务端权威重算，不信任前端传入值
     const hours = serverHours(start_time, end_time);
     const hour_type = serverHourType(date, start_time, end_time);
@@ -587,6 +630,8 @@ router.put('/time-records/:id', ...trAuth, async (req, res, next) => {
     // 合并后重算：起止时间或日期任一变化都要保证 hours/hour_type 服务端权威；
     // 时间缺失（旧数据）时保留原值，不重算成 0
     const merged = { ...existing, ...req.body };
+    // ⚠️ D1 决策 2026-08-14：补录窗口校验用合并后日期（改动日期也须落在窗口内）
+    assertBackfillWindow(merged.date);
     const hasTimes = merged.start_time != null && merged.end_time != null;
     const recomputedHours = hasTimes ? serverHours(merged.start_time, merged.end_time) : existing.hours;
     const recomputedHourType = hasTimes ? serverHourType(merged.date, merged.start_time, merged.end_time) : existing.hour_type;
@@ -675,6 +720,13 @@ router.delete('/time-records/:id', ...trAuth, async (req, res, next) => {
     // ⚠️ F6 修复：归属校验，非管理员只能删自己的记录
     // ⚠️ M2 修复：状态守卫——仅 draft/rejected 可删；已提交/已审核/已锁定记录禁止删除，防破坏工时审计链
     //   （rejected 允许删除：驳回记录可修正后重交，也可整行移除，语义一致）
+    // ⚠️ D1 决策 2026-08-14：删除前取记录日期做补录窗口校验（超 4 周记录不可删，整周锁定只读）
+    const existing = (await query(
+      `SELECT date FROM timerecording.time_records WHERE id = $1${admin ? '' : ' AND user_id = $2'} AND status IN ('draft','rejected')`,
+      admin ? [req.params.id] : [req.params.id, user.userId]
+    )).rows[0];
+    if (!existing) throw new AppError(404, admin ? '记录不存在或已提交/已审核，不可删除' : '记录不存在、无权删除或已提交/已审核，不可删除');
+    assertBackfillWindow(String(existing.date).slice(0, 10));
     const r = (await query(
       `DELETE FROM timerecording.time_records WHERE id = $1${admin ? '' : ' AND user_id = $2'} AND status IN ('draft','rejected') RETURNING id`,
       admin ? [req.params.id] : [req.params.id, user.userId]
@@ -695,6 +747,8 @@ router.put('/time-records/:id/submit', ...trAuth, async (req, res, next) => {
       [req.params.id, req.user!.userId]
     )).rows[0];
     if (rec) assertWeekSubmittable(String(rec.date).slice(0, 10));
+    // ⚠️ D1 决策 2026-08-14：补录窗口外（超 4 周）不可提交——整周锁定只读，禁把过期未提交周强行提交
+    if (rec) assertBackfillWindow(String(rec.date).slice(0, 10));
     const r = (await query(
       `UPDATE timerecording.time_records SET status = 'submitted', submitted_at = now()
        WHERE id = $1 AND status = 'draft' AND user_id = $2 RETURNING *`,
@@ -722,6 +776,8 @@ router.post('/time-records/submit-batch', ...trAuth, async (req, res, next) => {
     const weekKeys = new Set(drafts.map((d: any) => `${d.year}-${d.week_number}`));
     if (weekKeys.size > 1) throw new AppError(400, '批量提交的记录须属于同一周');
     for (const d of drafts) assertWeekSubmittable(String(d.date).slice(0, 10));
+    // ⚠️ D1 决策 2026-08-14：补录窗口外（超 4 周）不可提交——整周锁定只读，禁把过期未提交周强行提交
+    for (const d of drafts) assertBackfillWindow(String(d.date).slice(0, 10));
     const rows = (await query(
       `UPDATE timerecording.time_records SET status = 'submitted', submitted_at = now()
        WHERE id = ANY($1::uuid[]) AND status = 'draft' AND user_id = $2 RETURNING *`,

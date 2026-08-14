@@ -11,6 +11,9 @@ import {
   isManager,
   isValidUuidArray,
   isStatutoryHoliday,
+  isMakeupWorkday,
+  backfillWindowStart,
+  assertBackfillWindow,
 } from '../src/routes/timerecording.js';
 
 // 服务端权威计算（S4 修复）：hours/hour_type 一律由后端按起止时间与日期重算，不信任前端传入值。
@@ -90,6 +93,56 @@ describe('isStatutoryHoliday 法定节假日（与前端 src/utils/holidays.js �
   it('平日与无列表年份非假', () => {
     expect(isStatutoryHoliday(new Date(2026, 7, 14))).toBe(false); // 2026-08-14
     expect(isStatutoryHoliday(new Date(2027, 0, 1))).toBe(false); // 2027 无配置
+  });
+});
+
+describe('isMakeupWorkday 补班日判定（D2 决策：补班日=工作日，与前端 MAKEUP_WORKDAYS 同步）', () => {
+  it('补班日为真（2026-05-09 周日 / 2026-10-10 周六 / 2025-01-26 周日）', () => {
+    expect(isMakeupWorkday(new Date(2026, 4, 9))).toBe(true);
+    expect(isMakeupWorkday(new Date(2026, 9, 10))).toBe(true);
+    expect(isMakeupWorkday(new Date(2025, 0, 26))).toBe(true);
+  });
+  it('普通周末/平日/无列表年份为假', () => {
+    expect(isMakeupWorkday(new Date(2026, 7, 15))).toBe(false); // 2026-08-15 周六（非补班）
+    expect(isMakeupWorkday(new Date(2026, 7, 14))).toBe(false); // 2026-08-14 周五
+    expect(isMakeupWorkday(new Date(2027, 0, 1))).toBe(false); // 2027 无配置
+  });
+});
+
+describe('serverHourType 补班日豁免（D2 决策 2026-08-14：补班日=工作日，不再判加班）', () => {
+  it('补班日（周末上班）白天 → normal（周末豁免）', () => {
+    expect(serverHourType('2026-05-09', '09:00', '12:00')).toBe('normal'); // 2026-05-09 补班周日
+    expect(serverHourType('2026-10-10', '09:00', '12:00')).toBe('normal'); // 2026-10-10 补班周六
+  });
+  it('补班日晚时段仍判加班（晚 18:00-20:30 独立判定）', () => {
+    expect(serverHourType('2026-05-09', '18:00', '20:30')).toBe('overtime');
+  });
+});
+
+describe('backfillWindowStart 补录窗口截止点（D1 决策 2026-08-14：当前周周一 − 4 周）', () => {
+  it('2026-08-14（周五）→ 截止 2026-07-13（周一）', () => {
+    expect(backfillWindowStart(new Date(2026, 7, 14))).toBe('2026-07-13');
+  });
+  it('2026-10-01（周四）→ 截止 2026-08-31（周一）', () => {
+    expect(backfillWindowStart(new Date(2026, 9, 1))).toBe('2026-08-31');
+  });
+  it('跨年窗口：2026-01-01（周四）→ 截止 2025-12-01（周一）', () => {
+    expect(backfillWindowStart(new Date(2026, 0, 1))).toBe('2025-12-01');
+  });
+});
+
+describe('assertBackfillWindow 窗口硬性校验（早于截止点拒绝，asOf 注入 now）', () => {
+  const now = new Date(2026, 7, 14); // 2026-08-14 周五
+  it('截止点当天/之后放行（未来日期仅限过去超窗）', () => {
+    expect(() => assertBackfillWindow('2026-07-13', now)).not.toThrow(); // 边界当天
+    expect(() => assertBackfillWindow('2026-08-20', now)).not.toThrow(); // 未来
+  });
+  it('早于截止点拒绝', () => {
+    expect(() => assertBackfillWindow('2026-07-12', now)).toThrow();
+  });
+  it('非法日期静默放行（由日期格式校验兜底）', () => {
+    expect(() => assertBackfillWindow('2026-02-30', now)).not.toThrow();
+    expect(() => assertBackfillWindow(undefined, now)).not.toThrow();
   });
 });
 
