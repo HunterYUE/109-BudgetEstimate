@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useLayoutEffect } from 'react';
 import { Card } from 'antd';
 import { COLORS } from '../../styles/colors';
 import { fmtK, fmtKBase, projectStatusColor, projectStatusBg, type NodeDelayInfo } from '../../utils/analysisShared';
@@ -72,6 +72,27 @@ export const ProfitChart: React.FC<{
   contentOffset?: number;
 }> = ({ data, height = 300, chartWidth = 780, contentOffset = 30 }) => {
   const W = chartWidth;
+  // ⚠️ 柱体框线厚度与其他页 VerticalBarChart 同源归一：本图是固定 viewBox（780）按容器宽缩放的固定卡，
+  //    strokeWidth 为 viewBox 坐标值，渲染厚度 = strokeWidth × SVG scale——容器宽变化时 2.5px 随之浮动，
+  //    与 VerticalBarChart「textScale 归一、任意宽度恒为设计值×0.7」不一致（默认卡 2.1px/居中卡 1.75px）。
+  //    此处同样测渲染宽算 effectiveScale：strokeWidth=2.5×textScale → 任意宽度恒渲染 1.75px，
+  //    与左列 延期天数/节点分析 两张居中卡框线一致。
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [svgW, setSvgW] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const el = svgRef.current;
+    if (!el) return;
+    const w = el.getBoundingClientRect().width;
+    if (w > 0) setSvgW(w);
+    const ro = new ResizeObserver((entries) => {
+      const cw = entries[0]?.contentRect?.width;
+      if (cw && cw > 0) setSvgW(cw);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const effectiveScale = (svgW ?? W) / W;
+  const textScale = 0.7 / effectiveScale;
   const pad = { top: 25, bottom: 35, left: 36, right: 8 };
   const chartH = height - pad.top - pad.bottom;
   const slots = data.slice(0, 15);
@@ -103,7 +124,7 @@ export const ProfitChart: React.FC<{
       styles={{ body: { padding: `${contentOffset}px 0 0`, height: '100%' } }}
     >
       <span style={{ position: 'absolute', top: 6, right: 10, fontSize: 11, color: COLORS.chartGray, zIndex: 1 }}>利润分析</span>
-      <svg width="calc(100% - 30px)" height={height} viewBox={`0 0 ${W} ${height}`} style={{ display: 'block', margin: '0 auto' }}>
+      <svg ref={svgRef} width="calc(100% - 30px)" height={height} viewBox={`0 0 ${W} ${height}`} style={{ display: 'block', margin: '0 auto' }}>
         {gridVals.map((gv, i) => {
           const y = yOf(gv);
           return (
@@ -129,7 +150,7 @@ export const ProfitChart: React.FC<{
             <g key={item.name + '-' + i}>
               {/* 概算柱（蓝色虚线框） */}
               <rect x={cx - barW / 2} y={estTop} width={barW} height={estH}
-                fill="none" stroke={COLORS.primary} strokeWidth={2.5} strokeDasharray="4,3" rx={0} ry={0} />
+                fill="none" stroke={COLORS.primary} strokeWidth={2.5 * textScale} strokeDasharray="4,3" rx={0} ry={0} />
 
               {/* 概算标签：高柱外侧/低柱内侧 */}
               {estH >= actH ? (
@@ -152,7 +173,7 @@ export const ProfitChart: React.FC<{
               {hasAct && (
                 <>
                   <rect x={cx - barW / 2} y={actTop} width={barW} height={actH}
-                    fill="none" stroke={COLORS.purple} strokeWidth={2.5} rx={0} ry={0} />
+                    fill="none" stroke={COLORS.purple} strokeWidth={2.5 * textScale} rx={0} ry={0} />
                   {/* 实际标签：高柱外侧/低柱内侧 */}
                   {actH >= estH ? (
                     <>

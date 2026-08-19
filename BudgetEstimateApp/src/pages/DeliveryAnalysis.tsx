@@ -470,16 +470,20 @@ const DeliveryAnalysis: React.FC = () => {
               {/* ⚠️ 延期天数图：非对称轴（负区压缩、正区扩容）+ 文字缩放归一（详见 VerticalBarChart 注释）
                   生产数据正值 max 仅 5 天、负值深至 -160 天，比例 0 线贴顶（y≈55）正值柱几乎不可见；
                   negFloorGap=10 负柱最低点抬高 10px（长负柱缩短）、zeroYOffset=30 0 线下移 30px（正值柱扩容）
-                  → negFloor 205、zeroY 85（负区 120px、正区 35px），长负柱缩短 40px、正值柱获得 30px 空间。
-                  textScale=0.7/effectiveScale 归一后柱顶/X 轴 7px、Y 轴 6.3px，与各卡片统一 */}
+                  → padTop 50→45、padBottom 30→35（chartH 不变）：柱/网格/Y 轴/柱顶数值整体上移 5px，
+                    X 轴标签（y=height-5=240）位置保持不动 → negFloor 205→200、zeroY 85→80（负区 120px、正区 35px 不变）。
+                  textScale=0.7/effectiveScale 归一后柱顶/X 轴 7px、Y 轴 6.3px；延期卡字体各增大一号：
+                    X 轴 10→11（7.7px）、Y 轴 9→10（7px）、柱顶数值 10→11（7.7px） */}
               <VerticalBarChart title="延期天数" data={projectDelayDays}
                 format="num" height={CARD_H + 20} topN={15} barWidthRatio={0.75}
-                maxBarWidth={40} contentOffset={40} hideAvgLine padTop={50} padBottom={30} barLabelGap={10}
-                padLeft={36} padRight={6} hoverable centeredSvg negFloorGap={10} zeroYOffset={30} />
+                maxBarWidth={40} contentOffset={40} hideAvgLine padTop={45} padBottom={35} barLabelGap={10}
+                padLeft={36} padRight={6} hoverable centeredSvg negFloorGap={10} zeroYOffset={30}
+                valueFontSize={11} xLabelFontSize={11} yLabelFontSize={10} />
+              {/* ⚠️ 节点分析卡字体各增大一号：X 轴 10→11（7.7px）、Y 轴 9→10（7px）、柱顶主/副值 10→11（7.7px） */}
               <VerticalBarChart title="节点分析" data={nodeBottleneck}
                 format="num" height={CARD_H} topN={15} barWidthRatio={0.75}
                 maxBarWidth={40} chartWidth={702} contentOffset={40} hideAvgLine padTop={25} padBottom={35} disableSort
-                padLeft={36} padRight={6} hoverable centeredSvg />
+                padLeft={36} padRight={6} hoverable centeredSvg valueFontSize={11} xLabelFontSize={11} yLabelFontSize={10} />
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16, flex: 1, minWidth: 0 }}>
               <BubbleChart data={bubbleData} height={BUBBLE_SVG_H} canvasHeight={BUBBLE_CANVAS_H} bodyPadTop={37} bodyPadBottom={25} />

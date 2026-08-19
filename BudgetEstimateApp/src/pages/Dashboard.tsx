@@ -101,7 +101,9 @@ const VerticalBars: React.FC<{
                       //    柱体按槽宽比例自动收缩，杜绝相邻柱体重合（19寸正常、25寸重叠即源于固定柱宽 vs 弹性槽位）
                       width: `min(${barWidth}px, 80%)`,
                       height: `${Math.max((item.value / max) * 100, 4)}%`, minHeight: 4,
-                      border: `3px solid ${item.color}`,
+                      // ⚠️ 柱体框线与其他页 VerticalBarChart 对齐：SVG 版经 textScale 归一渲染 2.1px（默认卡），
+                      //   本组件 CSS border 无缩放、固定 3px 显粗；统一为 2.1px
+                      border: `2.1px solid ${item.color}`,
                       background: 'transparent',
                     }} />
                   )}

@@ -41,6 +41,10 @@ interface VerticalBarChartProps {
   barLabelGap?: number;
   /** 柱顶数值标签字号（B11 复核：合并前为 10，收敛后误降为 9，恢复默认 10） */
   valueFontSize?: number;
+  /** X 轴标签字号（默认 10；延期天数卡增大一号用 11） */
+  xLabelFontSize?: number;
+  /** Y 轴刻度/目标线标签字号（默认 9；延期天数卡增大一号用 10） */
+  yLabelFontSize?: number;
   padLeft?: number;
   padRight?: number;
   /** 悬浮显示 item.tooltip（Delivery 用）；Sales 场景数据无 tooltip，保持关闭 */
@@ -53,7 +57,8 @@ export const VerticalBarChart: React.FC<VerticalBarChartProps> = ({
   title, data, format = 'num', height = 220, topN = 10, contentOffset = 0,
   barWidthRatio = 0.55, maxBarWidth = 36, noCard, chartWidth, disableSort,
   targetValue, targetLabel, padTop = 32, padBottom = 28, hideAvgLine, negFloorGap, zeroYOffset,
-  cardBorder = true, barLabelGap = 18, valueFontSize = 10, padLeft = 42, padRight = 26,
+  cardBorder = true, barLabelGap = 18, valueFontSize = 10, xLabelFontSize = 10, yLabelFontSize = 9,
+  padLeft = 42, padRight = 26,
   hoverable = false, centeredSvg = false,
 }) => {
   const [hoveredTip, setHoveredTip] = useState<{ lines: string[]; cx: number; barTop: number; chartW?: number } | null>(null);
@@ -158,7 +163,7 @@ export const VerticalBarChart: React.FC<VerticalBarChartProps> = ({
           return (
             <g key={`g-${i}`}>
               <line x1={pad.left} y1={y} x2={W - pad.right} y2={y} stroke={COLORS.borderLight} strokeWidth={1} />
-              <text x={pad.left - 4} y={y + 3} textAnchor="end" fontSize={9 * textScale} fill="#aaa">
+              <text x={pad.left - 4} y={y + 3} textAnchor="end" fontSize={yLabelFontSize * textScale} fill="#aaa">
                 {fmtAxis(gv)}
               </text>
             </g>
@@ -174,7 +179,7 @@ export const VerticalBarChart: React.FC<VerticalBarChartProps> = ({
                 stroke={COLORS.warning} strokeWidth={1} strokeDasharray="5,3" />
               {/* ⚠️ B11 复核：targetLabel 缺省时回退显示格式化目标值（原实现 targetLabel || fmtAxis(targetValue)，
                   合并时误改为仅 targetLabel 存在才渲染——传 targetValue 不传 targetLabel 会丢目标线标签） */}
-              <text x={W - pad.right - 8} y={tgtY + 3} textAnchor="start" fontSize={9 * textScale} fill={COLORS.warning}>
+              <text x={W - pad.right - 8} y={tgtY + 3} textAnchor="start" fontSize={yLabelFontSize * textScale} fill={COLORS.warning}>
                 {targetLabel || fmtAxis(targetValue)}
               </text>
             </g>
@@ -232,7 +237,7 @@ export const VerticalBarChart: React.FC<VerticalBarChartProps> = ({
                 <rect x={cx - barW / 2} y={barTop} width={barW} height={barH}
                   fill="none" stroke={color} strokeWidth={(centeredSvg ? 2.5 : 3) * textScale} rx={0} ry={0} />
               )}
-              <text x={cx} textAnchor="middle" fontSize={10 * textScale} fill="#444">
+              <text x={cx} textAnchor="middle" fontSize={xLabelFontSize * textScale} fill="#444">
                 {item.name.includes('\n') ? (
                   item.name.split('\n').map((part, li) =>
                     li === 0
