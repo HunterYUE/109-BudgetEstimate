@@ -102,9 +102,10 @@ const VerticalBars: React.FC<{
                       //    柱体按槽宽比例自动收缩，杜绝相邻柱体重合（19寸正常、25寸重叠即源于固定柱宽 vs 弹性槽位）
                       width: `min(${barWidth}px, 80%)`,
                       height: `${Math.max((item.value / max) * 100, 4)}%`, minHeight: 4,
-                      // ⚠️ 柱体框线与其他页 VerticalBarChart 对齐：SVG 版经 textScale 归一渲染 1.75px（全应用统一），
-                      //   本组件 CSS border 无缩放、固定 3px 显粗；统一为 1.75px
-                      border: `1.75px solid ${item.color}`,
+                      // ⚠️ 柱体框线与其他页 VerticalBarChart 视觉对齐：SVG 版 layout 1.75px，但下缩放光栅化使描边
+                      //   外溢到 ~2 设备像素（1 实心 + 1 淡 AA 尾）；CSS border 小数宽度被设备像素吸附只渲染 ~1 像素
+                      //   （Edge 实测 DPR1：1.75px→1px、2px→2px）——故本组件 CSS 取 2px 才能在像素足迹上与其他页一致。
+                      border: `2px solid ${item.color}`,
                       background: 'transparent',
                     }} />
                   )}
