@@ -469,7 +469,7 @@ const Dashboard: React.FC = () => {
             <div style={{ flex: '0 1 calc(42.434% - 38px)', display: 'flex', flexDirection: 'column' }}>
               <div style={{ fontSize: 10, color: COLORS.textLight, fontWeight: 500, textAlign: 'right', marginBottom: 2, paddingRight: 2 }}>节点准时率</div>
               <VerticalBarChart title="" data={deliveryStats.onTimeRate} format="num" height={236} topN={18} disableSort noCard
-  barWidthRatio={0.8} maxBarWidth={22.5} unit="%" skipNonPositive yTickCount={3} padTop={13} padBottom={13} padLeft={36} padRight={6} barLabelGap={13}
+  barWidthRatio={0.8} maxBarWidth={22.5} unit="%" skipNonPositive xLabelAlignFirstLine yTickCount={3} padTop={13} padBottom={13} padLeft={36} padRight={6} barLabelGap={13}
   hideAvgLine xLabelColor={COLORS.textSecondary} minBarH={4} />
             </div>
             <div style={{ width: 1, background: COLORS.borderLight, flexShrink: 0 }} />

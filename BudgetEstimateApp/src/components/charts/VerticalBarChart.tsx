@@ -62,6 +62,8 @@ interface VerticalBarChartProps {
   skipNonPositive?: boolean;
   /** X 轴标签颜色（默认 #444；Dashboard 原为 textSecondary #666） */
   xLabelColor?: string;
+  /** 多行 X 轴标签第一行锚定到单行标签位置（height-5）实现水平对齐；默认 false 保持 height-19（两行块整体位于 SVG 内） */
+  xLabelAlignFirstLine?: boolean;
   /** 柱体最小高度（默认 2；Dashboard 原 CSS 4px） */
   minBarH?: number;
   padLeft?: number;
@@ -79,7 +81,7 @@ export const VerticalBarChart: React.FC<VerticalBarChartProps> = ({
   cardBorder = true, barLabelGap = 18, valueFontSize = CHART_FONT.VALUE, xLabelFontSize = CHART_FONT.X, yLabelFontSize = CHART_FONT.Y,
   padLeft = 42, padRight = 26,
   hoverable = false, centeredSvg = false,
-  groupGaps, gapSize, baseGap, unit, yTickCount, skipNonPositive, xLabelColor = '#444', minBarH = 2,
+  groupGaps, gapSize, baseGap, unit, yTickCount, skipNonPositive, xLabelColor = '#444', minBarH = 2, xLabelAlignFirstLine,
 }) => {
   const [hoveredTip, setHoveredTip] = useState<{ lines: string[]; cx: number; barTop: number; chartW?: number } | null>(null);
   // ⚠️ 根因修复：App.css `.app-content svg { max-width: 100%; height: auto }` 使 SVG 渲染高 = 容器宽 x vbH / vbW，
@@ -187,7 +189,7 @@ export const VerticalBarChart: React.FC<VerticalBarChartProps> = ({
     <>
       {title && <span style={{ position: 'absolute', top: 6, right: 10, fontSize: 11, color: COLORS.chartGray, zIndex: 1 }}>{title}</span>}
       <svg ref={svgRef} width={centeredSvg ? 'calc(100% - 30px)' : '100%'} height={height} viewBox={`0 0 ${W} ${height}`}
-        style={{ display: 'block', ...(adaptive ? { height } : {}), ...(centeredSvg ? { margin: '0 auto' } : {}) }}>
+        style={{ display: 'block', overflow: 'visible', ...(adaptive ? { height } : {}), ...(centeredSvg ? { margin: '0 auto' } : {}) }}>
         {/* ⚠️ B11 复核：bar-shadow 唯一消费者是 tooltip（hoverable），原耦合到 centeredSvg——
             若 hoverable 与 centeredSvg 分离则引用缺失；改按 hoverable 定义 */}
         {hoverable && (
@@ -286,7 +288,7 @@ export const VerticalBarChart: React.FC<VerticalBarChartProps> = ({
                 {item.name.includes('\n') ? (
                   item.name.split('\n').map((part, li) =>
                     li === 0
-                      ? <tspan key={li} x={cx} y={height - 19}>{part}</tspan>
+                      ? <tspan key={li} x={cx} y={xLabelAlignFirstLine ? height - 5 : height - 19}>{part}</tspan>
                       : <tspan key={li} x={cx} dy={13}>{part}</tspan>
                   )
                 ) : (
