@@ -403,7 +403,6 @@ const Dashboard: React.FC = () => {
     return sorted.map(([label, value], i) => ({ label, value, color: colors[i] || COLORS.chartGray }));
   }, [clients, opportunities, now]);
 
-  // 交付中 = monthlyKpi[0]/[1]/[2]（与其他卡片同口径：主值=上一个完整月，副值=前两月/前三月）
   return (
     <div className="dashboard-container">
       {/* ── 标题 ── */}
@@ -454,28 +453,28 @@ const Dashboard: React.FC = () => {
           <div style={{ display: 'flex', gap: 8, alignItems: 'stretch', minHeight: 150, marginTop: -18 }}>
             <div style={{ flex: '0 1 21.382%', display: 'flex', flexDirection: 'column', marginLeft: -20 }}>
               <div style={{ fontSize: 10, color: COLORS.textLight, fontWeight: 500, textAlign: 'right', marginBottom: 2, paddingRight: 2 }}>项目状态</div>
-              <VerticalBarChart title="" data={deliveryStats.projectStatus} format="num" height={236} topN={9} disableSort noCard
+              <VerticalBarChart data={deliveryStats.projectStatus} format="num" height={236} topN={9} disableSort noCard
   barWidthRatio={0.8} maxBarWidth={22.5} groupGaps={[2, 5]} gapSize={4} baseGap={2} yTickCount={3} padTop={13} padBottom={13} padLeft={36} padRight={6} barLabelGap={13}
   hideAvgLine xLabelColor={COLORS.textSecondary} minBarH={4} />
             </div>
             <div style={{ width: 1, background: COLORS.borderLight, flexShrink: 0 }} />
             <div style={{ flex: '0 1 21.382%', display: 'flex', flexDirection: 'column', marginLeft: -10 }}>
               <div style={{ fontSize: 10, color: COLORS.textLight, fontWeight: 500, textAlign: 'right', marginBottom: 2, paddingRight: 2 }}>节点执行</div>
-              <VerticalBarChart title="" data={deliveryStats.nodeStatus} format="num" height={236} topN={9} disableSort noCard
+              <VerticalBarChart data={deliveryStats.nodeStatus} format="num" height={236} topN={9} disableSort noCard
   barWidthRatio={0.8} maxBarWidth={22.5} groupGaps={[2, 5]} gapSize={5} baseGap={2} yTickCount={3} padTop={13} padBottom={13} padLeft={36} padRight={6} barLabelGap={13}
   hideAvgLine xLabelColor={COLORS.textSecondary} minBarH={4} />
             </div>
             <div style={{ width: 1, background: COLORS.borderLight, flexShrink: 0 }} />
             <div style={{ flex: '0 1 calc(42.434% - 38px)', display: 'flex', flexDirection: 'column' }}>
               <div style={{ fontSize: 10, color: COLORS.textLight, fontWeight: 500, textAlign: 'right', marginBottom: 2, paddingRight: 2 }}>节点准时率</div>
-              <VerticalBarChart title="" data={deliveryStats.onTimeRate} format="num" height={236} topN={18} disableSort noCard
+              <VerticalBarChart data={deliveryStats.onTimeRate} format="num" height={236} topN={18} disableSort noCard
   barWidthRatio={0.8} maxBarWidth={22.5} unit="%" skipNonPositive xLabelAlignFirstLine yTickCount={3} padTop={13} padBottom={13} padLeft={36} padRight={6} barLabelGap={13}
   hideAvgLine xLabelColor={COLORS.textSecondary} minBarH={4} />
             </div>
             <div style={{ width: 1, background: COLORS.borderLight, flexShrink: 0 }} />
             <div style={{ flex: '0 1 calc(14.803% + 38px)', display: 'flex', flexDirection: 'column' }}>
               <div style={{ fontSize: 10, color: COLORS.textLight, fontWeight: 500, textAlign: 'right', marginBottom: 2, paddingRight: 2 }}>利润概览</div>
-              <VerticalBarChart title="" data={deliveryStats.profitOverview} format="num" height={236} topN={6} disableSort noCard
+              <VerticalBarChart data={deliveryStats.profitOverview} format="num" height={236} topN={6} disableSort noCard
   barWidthRatio={0.8} maxBarWidth={22.5} unit="K" groupGaps={[2]} gapSize={14} baseGap={2} skipNonPositive yTickCount={3} padTop={13} padBottom={13} padLeft={36} padRight={6} barLabelGap={13}
   hideAvgLine xLabelColor={COLORS.textSecondary} minBarH={4} />
             </div>
@@ -490,7 +489,7 @@ const Dashboard: React.FC = () => {
           styles={{ body: { padding: '16px 0 16px 18px' } }}>
           <SectionTitle title="管道节点" />
           <div style={{ marginTop: 50, marginLeft: -20 }}>
-            <VerticalBarChart title="" data={stageDist} format="num" height={226} topN={15} disableSort noCard
+            <VerticalBarChart data={stageDist} format="num" height={226} topN={15} disableSort noCard
   barWidthRatio={0.8} maxBarWidth={26.5} groupGaps={[2, 5, 8, 11]} gapSize={14} baseGap={2} yTickCount={3} padTop={13} padBottom={13} padLeft={36} padRight={6} barLabelGap={13}
   hideAvgLine xLabelColor={COLORS.textSecondary} minBarH={4} />
           </div>
@@ -527,7 +526,7 @@ const Dashboard: React.FC = () => {
             <div style={{ padding: 24, textAlign: 'center', color: COLORS.textLight, fontSize: 13 }}>当前财年暂无新增</div>
           ) : (
             <div style={{ marginTop: 50 }}>
-              <VerticalBarChart title="" data={fyTrend} format="num" height={226} topN={12} disableSort noCard
+              <VerticalBarChart data={fyTrend} format="num" height={226} topN={12} disableSort noCard
   barWidthRatio={0.8} maxBarWidth={26.5} unit="K" yTickCount={3} padTop={13} padBottom={13} padLeft={36} padRight={6} barLabelGap={13}
   hideAvgLine xLabelColor={COLORS.textSecondary} minBarH={4} />
             </div>

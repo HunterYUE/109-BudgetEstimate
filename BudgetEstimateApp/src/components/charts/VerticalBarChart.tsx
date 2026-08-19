@@ -22,7 +22,7 @@ export interface BarItem {
 }
 
 interface VerticalBarChartProps {
-  title: string;
+  title?: string;
   data: BarItem[];
   format?: 'K' | '%' | 'num';
   height?: number;
@@ -141,11 +141,11 @@ export const VerticalBarChart: React.FC<VerticalBarChartProps> = ({
   const chartW = W - pad.left - pad.right;
   const chartH = height - pad.top - pad.bottom;
   // 分组间隙：groupGaps 中下标对应槽位之后插入 gapSize 额外间隙，baseGap 为所有相邻槽位基础间隙（Dashboard 分组卡）
-  const gaps = groupGaps ?? [];
+  const gaps = (groupGaps ?? []).filter(k => k < topN - 1); // ⚠️ 越界间隙不计入（防 totalGap 多扣槽宽）
   const baseG = baseGap ?? 0;
   const extraG = gapSize ?? 0;
   const totalGap = baseG * (topN - 1) + extraG * gaps.length;
-  const slotW = (chartW - totalGap) / topN;
+  const slotW = Math.max((chartW - totalGap) / topN, 0); // ⚠️ 防 totalGap>chartW 时负槽宽
   const barW = Math.min(slotW * barWidthRatio, maxBarWidth);
   /** 槽位中心 x（含其前所有累积间隙） */
   const cxOf = (i: number): number => {
@@ -176,8 +176,8 @@ export const VerticalBarChart: React.FC<VerticalBarChartProps> = ({
         : zeroY + (Math.abs(v) / Math.max(Math.abs(rawMin), 1)) * Math.max(negFloor - zeroY, 1))
     : yOf(v);
   const gridVals = hasNeg
-    ? Array.from({ length: 5 }, (_, i) => rawMax - (i * effectiveMax) / 4)
-    : (yTickCount != null
+    ? Array.from({ length: 5 }, (_, i) => rawMax - (i * effectiveMax) / 4) // ⚠️ 含负值时固定 5 档铺开量程（yTickCount 不生效，设计使然）
+    : (yTickCount != null && yTickCount >= 2  // ⚠️ 防除零：yTickCount<2 时回退默认刻度（(yTickCount-1)=0 会得 NaN）
       ? Array.from({ length: yTickCount }, (_, i) => (effectiveMax * (yTickCount - 1 - i)) / (yTickCount - 1))
       : (effectiveMax <= 10
         ? Array.from({ length: effectiveMax + 1 }, (_, i) => i).reverse()
@@ -279,8 +279,8 @@ export const VerticalBarChart: React.FC<VerticalBarChartProps> = ({
               )}
               {showBar && (
                 // ⚠️ 柱体框线厚度与文字同源：strokeWidth 是 viewBox 坐标值，渲染厚度 = strokeWidth × SVG scale。
-                //   全应用统一渲染 1.75px（设计值 2.5×0.7）：居中/自适应/固定卡不再区分默认 2.1px，
-                //   与 Dashboard CSS 柱框（1.75px）、利润卡（2.5×textScale）一致。乘 textScale 后任意缩放下恒定。
+                //   全应用统一渲染 1.75px（设计值 CHART_FRAME.STROKE×0.7）：居中/自适应/固定卡不再区分默认 2.1px，
+                //   与利润卡（CHART_FRAME.STROKE×textScale）同源一致。乘 textScale 后任意缩放下恒定。
                 <rect x={cx - barW / 2} y={barTop} width={barW} height={barH}
                   fill="none" stroke={color} strokeWidth={CHART_FRAME.STROKE * textScale} rx={0} ry={0} />
               )}
@@ -289,7 +289,7 @@ export const VerticalBarChart: React.FC<VerticalBarChartProps> = ({
                   item.name.split('\n').map((part, li) =>
                     li === 0
                       ? <tspan key={li} x={cx} y={xLabelAlignFirstLine ? height - 5 : height - 19}>{part}</tspan>
-                      : <tspan key={li} x={cx} dy={13}>{part}</tspan>
+                      : <tspan key={li} x={cx} dy={13 * textScale}>{part}</tspan> // 行距×textScale 归一（渲染恒 13×0.7≈9.1px，与数值多行行距一致）
                   )
                 ) : (
                   <tspan x={cx} y={height - 5}>{item.name}</tspan>

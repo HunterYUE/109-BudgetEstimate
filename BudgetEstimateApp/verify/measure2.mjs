@@ -1,6 +1,6 @@
 import puppeteer from 'puppeteer-core';
 const EDGE = 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
-const url = 'http://localhost:5179/budget/verify/index.html';
+const url = 'http://localhost:5173/budget/verify/index.html';
 const browser = await puppeteer.launch({ executablePath: EDGE, headless: 'new', args: ['--no-sandbox', '--disable-gpu'] });
 const page = await browser.newPage();
 await page.setViewport({ width: 1600, height: 2200 });

@@ -656,7 +656,7 @@ const SalesAnalysis: React.FC = () => {
               ({orderWeightedGP3 > 0 ? orderWeightedGP3.toFixed(1) : '—'})
             </span>
           </div>
-          <VerticalBarChart title="" data={monthlyOrderData} format="K" height={260} topN={12} barWidthRatio={0.6} maxBarWidth={120} contentOffset={0} chartWidth={620} disableSort padTop={30} cardBorder={false}
+          <VerticalBarChart data={monthlyOrderData} format="K" height={260} topN={12} barWidthRatio={0.6} maxBarWidth={120} contentOffset={0} chartWidth={620} disableSort padTop={30} cardBorder={false}
             targetValue={annualTargetInput ? Math.round(parsedAnnualTarget * 1000 / 12) : undefined}
           />
         </Card>
@@ -734,7 +734,7 @@ const SalesAnalysis: React.FC = () => {
               ({deliveredActualGP3 > 0 ? deliveredActualGP3.toFixed(1) : '—'})
             </span>
           </div>
-          <VerticalBarChart title="" data={monthlySalesData} format="K" height={260} topN={12} barWidthRatio={0.6} maxBarWidth={120} contentOffset={0} chartWidth={620} disableSort padTop={30} cardBorder={false}
+          <VerticalBarChart data={monthlySalesData} format="K" height={260} topN={12} barWidthRatio={0.6} maxBarWidth={120} contentOffset={0} chartWidth={620} disableSort padTop={30} cardBorder={false}
             targetValue={annualSalesTarget ? Math.round(parsedSalesTarget * 1000 / 12) : undefined}
           />
         </Card>

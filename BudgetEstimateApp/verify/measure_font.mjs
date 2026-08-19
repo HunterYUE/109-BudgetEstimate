@@ -3,7 +3,7 @@ const EDGE = 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
 const browser = await puppeteer.launch({ executablePath: EDGE, headless: 'new', args: ['--no-sandbox','--disable-gpu'] });
 const page = await browser.newPage();
 await page.setViewport({ width: 1440, height: 3000 });
-await page.goto('http://localhost:5179/budget/verify/index.html', { waitUntil: 'networkidle2', timeout: 30000 });
+await page.goto('http://localhost:5173/budget/verify/index.html', { waitUntil: 'networkidle2', timeout: 30000 });
 await new Promise(r => setTimeout(r, 1800));
 
 const out = await page.evaluate(() => {
