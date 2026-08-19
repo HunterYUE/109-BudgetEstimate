@@ -8,7 +8,7 @@ import { formatBeijing } from '../utils/timeFormat';
 import { LIST_LIMIT } from '../utils/constants';
 import { fmtK, chartLabel, oppEffectiveEnd, isRealWin, monthEndOf, exAmount, stageAsOf, getNodeDelay, getProjectDelay, isProjectDelivered, getProjectDoneDate, projectMonthlySales, FY_MONTH_LABELS, buildQuoteInfoMap, deliveryExTax, computeProjectOnTimeRate } from '../utils/analysisShared';
 import { COLORS } from '../styles/colors';
-import { CHART_FONT } from '../utils/chartFonts';
+import { VerticalBarChart } from '../components/charts/VerticalBarChart';
 import { OverviewCards } from '../components/shared/OverviewCards';
 import { opportunityService } from '../services/opportunityService';
 import { deliveryService } from '../services/deliveryService';
@@ -46,96 +46,6 @@ const SectionTitle: React.FC<{ title: string; count?: number }> = ({ title, coun
     )}
   </div>
 );
-
-// ── 框体柱状图（与销售分析风格一致） ──
-const VerticalBars: React.FC<{
-  items: { label: string; value: number; color: string; displayValue?: string }[];
-  height?: number;
-  unit?: string;
-  maxSlots?: number;
-  groupGaps?: number[];
-  gapSize?: number;
-  barWidth?: number;
-  /** 柱顶数值/展示文案字号（默认取共享常量 CHART_FONT.VALUE_RENDERED=7.7；窄卡可显式传小号） */
-  valueFontSize?: number;
-}> = ({ items, height = 120, unit, maxSlots, groupGaps, gapSize = 14, barWidth = 25, valueFontSize = CHART_FONT.VALUE_RENDERED }) => {
-  const slotCount = maxSlots || items.length;
-  const maxVal = items.reduce((m, i) => Math.max(m, i.value), 0);
-  const max = maxVal > 0 ? maxVal : 1;
-  const ticks = [0, Math.round(max / 2), max].filter((v, i, a) => i === 0 || v !== a[i - 1]);
-  const slots = Array.from({ length: slotCount }, (_, i) => items[i] || null);
-  return (
-    <div style={{ flex: 1 }}>
-      <div style={{ display: 'flex', gap: 4 }}>
-        <div style={{ width: 28, flexShrink: 0, height, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-          {[...ticks].reverse().map(t => (
-            <span key={t} style={{ fontSize: CHART_FONT.Y_RENDERED, color: '#aaa', textAlign: 'right', lineHeight: 1 }}>{t}{unit}</span>
-          ))}
-        </div>
-        <div style={{ flex: 1, height, position: 'relative', display: 'flex', alignItems: 'flex-end', gap: 2 }}>
-          {ticks.map(t => (
-            <div key={t} style={{ position: 'absolute', left: 0, right: 0, top: `${(1 - t / max) * 100}%`, borderTop: `1px solid ${COLORS.borderLight}`, pointerEvents: 'none' }} />
-          ))}
-          {slots.map((item, i) => (
-            <div key={i} style={{
-              display: 'flex', flexDirection: 'column', alignItems: 'center',
-              flex: 1, justifyContent: 'flex-end', alignSelf: 'stretch',
-              minWidth: 0,  // ⚠️ 允许槽位收缩到 flex 均分宽度，防止 displayValue/柱体按内容撑宽导致与标签错位
-              marginLeft: groupGaps?.includes(i - 1) ? gapSize : 0,
-              position: 'relative', zIndex: 1,
-            }}>
-              {item ? (
-                <>
-                  {item.displayValue ? (
-                    <div style={{ fontSize: valueFontSize, fontWeight: CHART_FONT.VALUE_WEIGHT, color: item.color, marginBottom: 3, textAlign: 'center', lineHeight: 1.2 }}>
-                      {item.displayValue.split('\n').map((line, li) => (
-                        <div key={li}>{line}</div>
-                      ))}
-                    </div>
-                  ) : (
-                    <span style={{ fontSize: valueFontSize, fontWeight: CHART_FONT.VALUE_WEIGHT, color: item.color, marginBottom: 3, textAlign: 'center', lineHeight: 1.2 }}>{item.value}{unit || ''}</span>
-                  )}
-                  {/* 0 值（含负值）不渲染柱条，仅保留数值标签，避免 4% 兜底产生误导性 stub */}
-                  {item.value > 0 && (
-                    <div style={{
-                      // ⚠️ 柱宽随槽位自适应：min(barWidth, 80% 槽宽)——大屏高 DPI 下有效视口变窄、槽位随之变窄时
-                      //    柱体按槽宽比例自动收缩，杜绝相邻柱体重合（19寸正常、25寸重叠即源于固定柱宽 vs 弹性槽位）
-                      width: `min(${barWidth}px, 80%)`,
-                      height: `${Math.max((item.value / max) * 100, 4)}%`, minHeight: 4,
-                      // ⚠️ 柱体框线与其他页 VerticalBarChart 视觉对齐：SVG 版 layout 1.75px，但下缩放光栅化使描边
-                      //   外溢到 ~2 设备像素（1 实心 + 1 淡 AA 尾）；CSS border 小数宽度被设备像素吸附只渲染 ~1 像素
-                      //   （Edge 实测 DPR1：1.75px→1px、2px→2px）——故本组件 CSS 取 2px 才能在像素足迹上与其他页一致。
-                      border: `2px solid ${item.color}`,
-                      background: 'transparent',
-                    }} />
-                  )}
-                </>
-              ) : (
-                <div style={{ width: barWidth, height: 0 }} />
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
-      {/* 标签行：与柱状图区镜像结构（[Y轴28占位][gap4][标签区flex gap2]），确保逐柱对齐 */}
-      <div style={{ display: 'flex', marginTop: 6, gap: 4 }}>
-        <div style={{ width: 28, flexShrink: 0 }} />
-        <div style={{ flex: 1, display: 'flex', gap: 2 }}>
-          {slots.map((item, i) => (
-            <span key={i} style={{
-              flex: 1, textAlign: 'center', fontSize: CHART_FONT.X_RENDERED, color: COLORS.textSecondary,
-              lineHeight: 1.3, opacity: item ? 1 : 0,
-              minWidth: 0,  // 与立柱槽位同构，确保逐柱对齐
-              marginLeft: groupGaps?.includes(i - 1) ? gapSize : 0,
-            }}>
-              {item ? item.label.split('\n').map((l, j) => <span key={j} style={{ display: 'block' }}>{l}</span>) : ''}
-            </span>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-};
 
 // ── 饼图（引出线沿圆周分布） ──
 const PieChart: React.FC<{
@@ -297,12 +207,12 @@ const Dashboard: React.FC = () => {
       // ⚠️ 用阶段推进时间还原该月月底的历史阶段（与销售分析漏斗 stageAsOf 同口径），而非当前阶段
       return stageAsOf(o, monthEnd);
     };
-    const result: { label: string; value: number; color: string }[] = [];
+    const result: { name: string; value: number; color: string }[] = [];
     stages.forEach((stage, ci) => {
       for (let mi = 3; mi >= 1; mi--) {
         const { end: monthEnd } = last3Months[3 - mi];
         const count = opportunities.filter(o => getPipelineStage(o, monthEnd) === stage).length;
-        result.push({ label: last3Labels[3 - mi], value: count, color: colors[ci] });
+        result.push({ name: last3Labels[3 - mi], value: count, color: colors[ci] });
       }
     });
     return result;
@@ -346,12 +256,12 @@ const Dashboard: React.FC = () => {
     };
     const statusNames = ['已完成', '进行中', '已延期'] as const;
     const statusColors = [COLORS.success, COLORS.primary, COLORS.danger] as const;
-    const projectStatus: { label: string; value: number; color: string }[] = [];
+    const projectStatus: { name: string; value: number; color: string }[] = [];
     for (let si = 0; si < 3; si++) {
       for (let mi = 3; mi >= 1; mi--) {
         const { end: monthEnd } = last3Months[3 - mi];
         const count = deliveries.filter(p => getStatusInMonth(p, monthEnd) === statusNames[si]).length;
-        projectStatus.push({ label: last3Labels[3 - mi], value: count, color: statusColors[si] });
+        projectStatus.push({ name: last3Labels[3 - mi], value: count, color: statusColors[si] });
       }
     }
     // 节点在月内的各桶（当月口径，不含未开始）：已完成=当月完成；进行中=当月执行过（含当月完成者）；
@@ -381,13 +291,13 @@ const Dashboard: React.FC = () => {
     };
     const nodeStNames = ['completed', 'in_progress', 'delayed'] as const;
     const nodeStColors = [COLORS.success, COLORS.primary, COLORS.danger];
-    const nodeStatus: { label: string; value: number; color: string }[] = [];
+    const nodeStatus: { name: string; value: number; color: string }[] = [];
     const allNodes = deliveries.flatMap(p => p.nodes || []);
     for (let si = 0; si < 3; si++) {
       for (let mi = 3; mi >= 1; mi--) {
         const { end: monthEnd } = last3Months[3 - mi];
         const count = allNodes.filter(n => getNodeBucketsInMonth(n, monthEnd).includes(nodeStNames[si])).length;
-        nodeStatus.push({ label: last3Labels[3 - mi], value: count, color: nodeStColors[si] });
+        nodeStatus.push({ name: last3Labels[3 - mi], value: count, color: nodeStColors[si] });
       }
     }
     const fyRange = parseFY(currentFy);
@@ -406,13 +316,13 @@ const Dashboard: React.FC = () => {
       const { scheduled, rate } = computeProjectOnTimeRate(p, now);
       const hasDue = scheduled > 0;
       return {
-        label: chartLabel(p.salesNo),
+        name: chartLabel(p.salesNo),
         value: rate ?? 0,
         color: !hasDue ? COLORS.textLight : (isProjectDelivered(p) ? COLORS.chartGray : ((rate ?? 0) >= 90 ? COLORS.success : (rate ?? 0) >= 70 ? COLORS.warning : COLORS.danger)),
         displayValue: hasDue ? undefined : '—',
       };
     });
-    const profitOverview: { label: string; value: number; color: string; displayValue?: string }[] = [];
+    const profitOverview: { name: string; value: number; color: string; displayValue?: string }[] = [];
     // 利润概览（与销售分析月度订单/月度销售同源，共享 projectMonthlySales）：
     //   概算 = 每月转交付项目的订单利润（报价概算利润未税）→ 观察近3月订单利润
     //   实际 = 每月完成交付项目的销售利润（未税 − 实际成本）→ 观察近3月销售利润
@@ -442,7 +352,7 @@ const Dashboard: React.FC = () => {
           }
         });
         profitOverview.push({
-          label: last3Labels[3 - mi],
+          name: last3Labels[3 - mi],
           value: incomplete ? 0 : Math.round(totalProfit / 1000),
           color: prefix === '概算' ? COLORS.primary : COLORS.success,
           displayValue: incomplete ? '—' : (totalProfit > 0 ? `${fmtK(totalProfit)}\n（${fmtK(totalAmt)}）` : undefined),
@@ -466,7 +376,7 @@ const Dashboard: React.FC = () => {
       const count = monthOpps.length;
       const amount = monthOpps.reduce((s, o) => s + exAmount(o.amount, o.taxRate), 0);
       return {
-        label: FY_MONTH_LABELS[i],
+        name: FY_MONTH_LABELS[i],
         count, // 机会数（空判断用）；value 是 K 金额（徽标累加用）——两者用途不同
         value: count > 0 ? Math.round(amount / 1000) : 0,
         color: COLORS.primary,
@@ -544,22 +454,30 @@ const Dashboard: React.FC = () => {
           <div style={{ display: 'flex', gap: 8, alignItems: 'stretch', minHeight: 150, marginTop: -18 }}>
             <div style={{ flex: '0 1 21.382%', display: 'flex', flexDirection: 'column', marginLeft: -20 }}>
               <div style={{ fontSize: 10, color: COLORS.textLight, fontWeight: 500, textAlign: 'right', marginBottom: 2, paddingRight: 2 }}>项目状态</div>
-              <VerticalBars items={deliveryStats.projectStatus} height={210} groupGaps={[2, 5]} gapSize={4} barWidth={22.5} />
+              <VerticalBarChart title="" data={deliveryStats.projectStatus} format="num" height={236} topN={9} disableSort noCard
+  barWidthRatio={0.8} maxBarWidth={22.5} groupGaps={[2, 5]} gapSize={4} baseGap={2} yTickCount={3} padTop={13} padBottom={13} padLeft={36} padRight={6} barLabelGap={13}
+  hideAvgLine xLabelColor={COLORS.textSecondary} minBarH={4} />
             </div>
             <div style={{ width: 1, background: COLORS.borderLight, flexShrink: 0 }} />
             <div style={{ flex: '0 1 21.382%', display: 'flex', flexDirection: 'column', marginLeft: -10 }}>
               <div style={{ fontSize: 10, color: COLORS.textLight, fontWeight: 500, textAlign: 'right', marginBottom: 2, paddingRight: 2 }}>节点执行</div>
-              <VerticalBars items={deliveryStats.nodeStatus} height={210} groupGaps={[2, 5]} gapSize={5} barWidth={22.5} />
+              <VerticalBarChart title="" data={deliveryStats.nodeStatus} format="num" height={236} topN={9} disableSort noCard
+  barWidthRatio={0.8} maxBarWidth={22.5} groupGaps={[2, 5]} gapSize={5} baseGap={2} yTickCount={3} padTop={13} padBottom={13} padLeft={36} padRight={6} barLabelGap={13}
+  hideAvgLine xLabelColor={COLORS.textSecondary} minBarH={4} />
             </div>
             <div style={{ width: 1, background: COLORS.borderLight, flexShrink: 0 }} />
             <div style={{ flex: '0 1 calc(42.434% - 38px)', display: 'flex', flexDirection: 'column' }}>
               <div style={{ fontSize: 10, color: COLORS.textLight, fontWeight: 500, textAlign: 'right', marginBottom: 2, paddingRight: 2 }}>节点准时率</div>
-              <VerticalBars items={deliveryStats.onTimeRate} height={210} unit="%" maxSlots={18} barWidth={22.5} />
+              <VerticalBarChart title="" data={deliveryStats.onTimeRate} format="num" height={236} topN={18} disableSort noCard
+  barWidthRatio={0.8} maxBarWidth={22.5} unit="%" skipNonPositive yTickCount={3} padTop={13} padBottom={13} padLeft={36} padRight={6} barLabelGap={13}
+  hideAvgLine xLabelColor={COLORS.textSecondary} minBarH={4} />
             </div>
             <div style={{ width: 1, background: COLORS.borderLight, flexShrink: 0 }} />
             <div style={{ flex: '0 1 calc(14.803% + 38px)', display: 'flex', flexDirection: 'column' }}>
               <div style={{ fontSize: 10, color: COLORS.textLight, fontWeight: 500, textAlign: 'right', marginBottom: 2, paddingRight: 2 }}>利润概览</div>
-              <VerticalBars items={deliveryStats.profitOverview} height={210} unit="K" groupGaps={[2]} barWidth={22.5} />
+              <VerticalBarChart title="" data={deliveryStats.profitOverview} format="num" height={236} topN={6} disableSort noCard
+  barWidthRatio={0.8} maxBarWidth={22.5} unit="K" groupGaps={[2]} gapSize={14} baseGap={2} skipNonPositive yTickCount={3} padTop={13} padBottom={13} padLeft={36} padRight={6} barLabelGap={13}
+  hideAvgLine xLabelColor={COLORS.textSecondary} minBarH={4} />
             </div>
           </div>
         </Card>
@@ -572,7 +490,9 @@ const Dashboard: React.FC = () => {
           styles={{ body: { padding: '16px 0 16px 18px' } }}>
           <SectionTitle title="管道节点" />
           <div style={{ marginTop: 50, marginLeft: -20 }}>
-            <VerticalBars items={stageDist} height={200} groupGaps={[2, 5, 8, 11]} barWidth={26.5} />
+            <VerticalBarChart title="" data={stageDist} format="num" height={226} topN={15} disableSort noCard
+  barWidthRatio={0.8} maxBarWidth={26.5} groupGaps={[2, 5, 8, 11]} gapSize={14} baseGap={2} yTickCount={3} padTop={13} padBottom={13} padLeft={36} padRight={6} barLabelGap={13}
+  hideAvgLine xLabelColor={COLORS.textSecondary} minBarH={4} />
           </div>
         </Card>
 
@@ -607,7 +527,9 @@ const Dashboard: React.FC = () => {
             <div style={{ padding: 24, textAlign: 'center', color: COLORS.textLight, fontSize: 13 }}>当前财年暂无新增</div>
           ) : (
             <div style={{ marginTop: 50 }}>
-              <VerticalBars items={fyTrend} height={200} unit="K" />
+              <VerticalBarChart title="" data={fyTrend} format="num" height={226} topN={12} disableSort noCard
+  barWidthRatio={0.8} maxBarWidth={26.5} unit="K" yTickCount={3} padTop={13} padBottom={13} padLeft={36} padRight={6} barLabelGap={13}
+  hideAvgLine xLabelColor={COLORS.textSecondary} minBarH={4} />
             </div>
           )}
         </Card>

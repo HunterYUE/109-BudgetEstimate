@@ -15,6 +15,9 @@ export interface BarItem {
   subValue?: number;
   color?: string;
   tooltip?: string;
+  /** 柱顶自定义多行文案（按 
+ 分行，替代格式化数值；值仍驱动柱高）——Dashboard 利润概览/新增机会/无数据态用 */
+  displayValue?: string;
 }
 
 interface VerticalBarChartProps {
@@ -46,6 +49,20 @@ interface VerticalBarChartProps {
   xLabelFontSize?: number;
   /** Y 轴刻度/目标线标签字号（默认取共享常量 CHART_FONT.Y=10） */
   yLabelFontSize?: number;
+  /** 分组间隔：groupGaps 中下标对应槽位之后插入 gapSize 额外间隙；baseGap 为所有相邻槽位基础间隙（Dashboard 分组卡用） */
+  groupGaps?: number[];
+  gapSize?: number;
+  baseGap?: number;
+  /** 数值字面后缀（追加到柱顶数值与 Y 刻度，如 %、K；配合 format='num' 使用） */
+  unit?: string;
+  /** Y 轴刻度数（默认 5 现有逻辑；Dashboard 用 3 = [max, max/2, 0]，中间刻度几何中点、标签取整） */
+  yTickCount?: number;
+  /** 值 ≤ 0 时不渲染柱体（仅保留数值/displayValue 标签）——Dashboard 原 CSS 柱体行为 */
+  skipNonPositive?: boolean;
+  /** X 轴标签颜色（默认 #444；Dashboard 原为 textSecondary #666） */
+  xLabelColor?: string;
+  /** 柱体最小高度（默认 2；Dashboard 原 CSS 4px） */
+  minBarH?: number;
   padLeft?: number;
   padRight?: number;
   /** 悬浮显示 item.tooltip（Delivery 用）；Sales 场景数据无 tooltip，保持关闭 */
@@ -61,6 +78,7 @@ export const VerticalBarChart: React.FC<VerticalBarChartProps> = ({
   cardBorder = true, barLabelGap = 18, valueFontSize = CHART_FONT.VALUE, xLabelFontSize = CHART_FONT.X, yLabelFontSize = CHART_FONT.Y,
   padLeft = 42, padRight = 26,
   hoverable = false, centeredSvg = false,
+  groupGaps, gapSize, baseGap, unit, yTickCount, skipNonPositive, xLabelColor = '#444', minBarH = 2,
 }) => {
   const [hoveredTip, setHoveredTip] = useState<{ lines: string[]; cx: number; barTop: number; chartW?: number } | null>(null);
   // ⚠️ 根因修复：App.css `.app-content svg { max-width: 100%; height: auto }` 使 SVG 渲染高 = 容器宽 x vbH / vbW，
@@ -105,7 +123,7 @@ export const VerticalBarChart: React.FC<VerticalBarChartProps> = ({
   const fmtAxis = (v: number): string => {
     if (format === 'K') return fmtK(v);
     if (format === '%') return v.toFixed(1) + '%';
-    return String(Math.round(v));
+    return String(Math.round(v)) + (unit ?? '');
   };
 
   const W = adaptive ? (svgW ?? fixedW) : fixedW;
@@ -119,8 +137,22 @@ export const VerticalBarChart: React.FC<VerticalBarChartProps> = ({
   const pad = { top: padTop, bottom: padBottom, left: padLeft, right: padRight };
   const chartW = W - pad.left - pad.right;
   const chartH = height - pad.top - pad.bottom;
-  const slotW = chartW / topN;
+  // 分组间隙：groupGaps 中下标对应槽位之后插入 gapSize 额外间隙，baseGap 为所有相邻槽位基础间隙（Dashboard 分组卡）
+  const gaps = groupGaps ?? [];
+  const baseG = baseGap ?? 0;
+  const extraG = gapSize ?? 0;
+  const totalGap = baseG * (topN - 1) + extraG * gaps.length;
+  const slotW = (chartW - totalGap) / topN;
   const barW = Math.min(slotW * barWidthRatio, maxBarWidth);
+  /** 槽位中心 x（含其前所有累积间隙） */
+  const cxOf = (i: number): number => {
+    let x = pad.left + i * slotW + slotW / 2;
+    for (let k = 0; k < i; k++) {
+      x += baseG;
+      if (gaps.includes(k)) x += extraG;
+    }
+    return x;
+  };
   /** 数值 → Y 坐标（含负值时 rawMax 在顶、rawMin 在底；纯正值时 0 在底、effectiveMax 在顶） */
   const yOf = (v: number) => hasNeg
     ? pad.top + ((rawMax - v) / effectiveMax) * chartH
@@ -142,9 +174,11 @@ export const VerticalBarChart: React.FC<VerticalBarChartProps> = ({
     : yOf(v);
   const gridVals = hasNeg
     ? Array.from({ length: 5 }, (_, i) => rawMax - (i * effectiveMax) / 4)
-    : (effectiveMax <= 10
-      ? Array.from({ length: effectiveMax + 1 }, (_, i) => i).reverse()
-      : Array.from({ length: 5 }, (_, i) => (effectiveMax * (4 - i)) / 4));
+    : (yTickCount != null
+      ? Array.from({ length: yTickCount }, (_, i) => (effectiveMax * (yTickCount - 1 - i)) / (yTickCount - 1))
+      : (effectiveMax <= 10
+        ? Array.from({ length: effectiveMax + 1 }, (_, i) => i).reverse()
+        : Array.from({ length: 5 }, (_, i) => (effectiveMax * (4 - i)) / 4)));
   // 非对称轴时确保 0 刻度线可见（用户跟踪其下移位置）
   const gridValsWithZero = asymAxis && !gridVals.includes(0) ? [...gridVals, 0] : gridVals;
 
@@ -197,20 +231,23 @@ export const VerticalBarChart: React.FC<VerticalBarChartProps> = ({
 
         {/* 柱子 */}
         {slots.map((item, i) => {
-          const cx = pad.left + i * slotW + slotW / 2;
+          const cx = cxOf(i);
           if (!item) return <g key={`e-${i}`} />;
 
           // ⚠️ 审计修复 #13：正值自 0 基线向上、负值向下（提前交付不再是 0 高标签挤底部的误导形态）；
           //   纯正值路径 barTop 公式与既往一致（zeroY=底部 → pad.top+chartH-barH）
           const isNegBar = item.value < 0;
           const yTop = yOfBar(item.value);
-          const barH = item.value === 0 ? 0 : Math.max(2, Math.abs(yTop - zeroY));
+          const barH = item.value === 0 ? 0 : Math.max(minBarH, Math.abs(yTop - zeroY));
           const color = item.color || (targetValue != null && targetValue > 0 ? (item.value >= targetValue ? COLORS.primary : COLORS.danger) : COLORS.primary);
+          const showBar = barH > 0 && (!skipNonPositive || item.value > 0);
+          const displayLines = item.displayValue != null ? item.displayValue.split('\n') : null;
           let label: string;
-          if (item.value === 0) label = '—';
+          if (displayLines) label = '';
+          else if (item.value === 0) label = '—';
           else if (format === 'K') label = fmtK(item.value);
           else if (format === '%') label = `${item.value.toFixed(1)}%`;
-          else label = `${item.value}`;
+          else label = `${item.value}${unit ?? ''}`;
 
           const barTop = Math.min(yTop, zeroY);
 
@@ -218,8 +255,15 @@ export const VerticalBarChart: React.FC<VerticalBarChartProps> = ({
             <g key={item.name + '-' + i}
               onMouseEnter={hoverable && item.tooltip ? () => setHoveredTip({ lines: item.tooltip!.split('\n'), cx, barTop, chartW: W }) : undefined}
               onMouseLeave={hoverable ? () => setHoveredTip(null) : undefined}>
-              <text x={cx} y={isNegBar ? barTop + barH + barLabelGap : barTop - barLabelGap} textAnchor="middle" fontSize={valueFontSize * textScale}
-                fill={color} fontWeight={CHART_FONT.VALUE_WEIGHT}>{label}</text>
+              {displayLines ? (
+                displayLines.map((ln, li) => (
+                  <text key={li} x={cx} y={(isNegBar ? barTop + barH + barLabelGap : barTop - barLabelGap) - (displayLines.length - 1 - li) * valueFontSize * 1.2 * textScale}
+                    textAnchor="middle" fontSize={valueFontSize * textScale} fill={color} fontWeight={CHART_FONT.VALUE_WEIGHT}>{ln}</text>
+                ))
+              ) : (
+                <text x={cx} y={isNegBar ? barTop + barH + barLabelGap : barTop - barLabelGap} textAnchor="middle" fontSize={valueFontSize * textScale}
+                  fill={color} fontWeight={CHART_FONT.VALUE_WEIGHT}>{label}</text>
+              )}
               {item.subValue != null && item.subValue > 0 && (
                 <>
                 {/* ⚠️ B8 修复：副值标签改为相对主值标签基线 +valueFontSize+2 定位——barLabelGap=10（延期天数图）
@@ -230,14 +274,14 @@ export const VerticalBarChart: React.FC<VerticalBarChartProps> = ({
                   fill={COLORS.purple} fontWeight={CHART_FONT.VALUE_WEIGHT}>（{format === 'K' ? fmtK(item.subValue) : item.subValue}）</text>
                 </>
               )}
-              {barH > 0 && (
+              {showBar && (
                 // ⚠️ 柱体框线厚度与文字同源：strokeWidth 是 viewBox 坐标值，渲染厚度 = strokeWidth × SVG scale。
                 //   全应用统一渲染 1.75px（设计值 2.5×0.7）：居中/自适应/固定卡不再区分默认 2.1px，
                 //   与 Dashboard CSS 柱框（1.75px）、利润卡（2.5×textScale）一致。乘 textScale 后任意缩放下恒定。
                 <rect x={cx - barW / 2} y={barTop} width={barW} height={barH}
                   fill="none" stroke={color} strokeWidth={2.5 * textScale} rx={0} ry={0} />
               )}
-              <text x={cx} textAnchor="middle" fontSize={xLabelFontSize * textScale} fill="#444">
+              <text x={cx} textAnchor="middle" fontSize={xLabelFontSize * textScale} fill={xLabelColor}>
                 {item.name.includes('\n') ? (
                   item.name.split('\n').map((part, li) =>
                     li === 0
