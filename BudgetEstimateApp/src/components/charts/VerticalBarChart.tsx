@@ -3,6 +3,7 @@ import { Card } from 'antd';
 import { COLORS } from '../../styles/colors';
 import { fmtK } from '../../utils/analysisShared';
 import { CHART_FONT } from '../../utils/chartFonts';
+import { CHART_FRAME } from '../../utils/chartFrame';
 
 /**
  * 竖状柱状图（SVG 绘制，显示前 N 名）
@@ -279,7 +280,7 @@ export const VerticalBarChart: React.FC<VerticalBarChartProps> = ({
                 //   全应用统一渲染 1.75px（设计值 2.5×0.7）：居中/自适应/固定卡不再区分默认 2.1px，
                 //   与 Dashboard CSS 柱框（1.75px）、利润卡（2.5×textScale）一致。乘 textScale 后任意缩放下恒定。
                 <rect x={cx - barW / 2} y={barTop} width={barW} height={barH}
-                  fill="none" stroke={color} strokeWidth={2.5 * textScale} rx={0} ry={0} />
+                  fill="none" stroke={color} strokeWidth={CHART_FRAME.STROKE * textScale} rx={0} ry={0} />
               )}
               <text x={cx} textAnchor="middle" fontSize={xLabelFontSize * textScale} fill={xLabelColor}>
                 {item.name.includes('\n') ? (

@@ -3,6 +3,7 @@ import { Card } from 'antd';
 import { COLORS } from '../../styles/colors';
 import { fmtK, fmtKBase, projectStatusColor, projectStatusBg, type NodeDelayInfo } from '../../utils/analysisShared';
 import { CHART_FONT } from '../../utils/chartFonts';
+import { CHART_FRAME } from '../../utils/chartFrame';
 
 // ── 类型定义 ──
 export interface ProfitItem {
@@ -152,7 +153,7 @@ export const ProfitChart: React.FC<{
             <g key={item.name + '-' + i}>
               {/* 概算柱（蓝色虚线框） */}
               <rect x={cx - barW / 2} y={estTop} width={barW} height={estH}
-                fill="none" stroke={COLORS.primary} strokeWidth={2.5 * textScale} strokeDasharray="4,3" rx={0} ry={0} />
+                fill="none" stroke={COLORS.primary} strokeWidth={CHART_FRAME.STROKE * textScale} strokeDasharray="4,3" rx={0} ry={0} />
 
               {/* 概算标签：高柱外侧/低柱内侧 */}
               {estH >= actH ? (
@@ -175,7 +176,7 @@ export const ProfitChart: React.FC<{
               {hasAct && (
                 <>
                   <rect x={cx - barW / 2} y={actTop} width={barW} height={actH}
-                    fill="none" stroke={COLORS.purple} strokeWidth={2.5 * textScale} rx={0} ry={0} />
+                    fill="none" stroke={COLORS.purple} strokeWidth={CHART_FRAME.STROKE * textScale} rx={0} ry={0} />
                   {/* 实际标签：高柱外侧/低柱内侧 */}
                   {actH >= estH ? (
                     <>
