@@ -8,6 +8,7 @@ import { formatBeijing } from '../utils/timeFormat';
 import { LIST_LIMIT } from '../utils/constants';
 import { fmtK, chartLabel, oppEffectiveEnd, isRealWin, monthEndOf, exAmount, stageAsOf, getNodeDelay, getProjectDelay, isProjectDelivered, getProjectDoneDate, projectMonthlySales, FY_MONTH_LABELS, buildQuoteInfoMap, deliveryExTax, computeProjectOnTimeRate } from '../utils/analysisShared';
 import { COLORS } from '../styles/colors';
+import { CHART_FONT } from '../utils/chartFonts';
 import { OverviewCards } from '../components/shared/OverviewCards';
 import { opportunityService } from '../services/opportunityService';
 import { deliveryService } from '../services/deliveryService';
@@ -55,9 +56,9 @@ const VerticalBars: React.FC<{
   groupGaps?: number[];
   gapSize?: number;
   barWidth?: number;
-  /** 柱顶数值/展示文案字号（默认 9；利润概览/新增机会等窄卡可传 8 缩小一号） */
+  /** 柱顶数值/展示文案字号（默认取共享常量 CHART_FONT.VALUE_RENDERED=7.7；窄卡可显式传小号） */
   valueFontSize?: number;
-}> = ({ items, height = 120, unit, maxSlots, groupGaps, gapSize = 14, barWidth = 25, valueFontSize = 9 }) => {
+}> = ({ items, height = 120, unit, maxSlots, groupGaps, gapSize = 14, barWidth = 25, valueFontSize = CHART_FONT.VALUE_RENDERED }) => {
   const slotCount = maxSlots || items.length;
   const maxVal = items.reduce((m, i) => Math.max(m, i.value), 0);
   const max = maxVal > 0 ? maxVal : 1;
@@ -68,7 +69,7 @@ const VerticalBars: React.FC<{
       <div style={{ display: 'flex', gap: 4 }}>
         <div style={{ width: 28, flexShrink: 0, height, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
           {[...ticks].reverse().map(t => (
-            <span key={t} style={{ fontSize: 9, color: '#aaa', textAlign: 'right', lineHeight: 1 }}>{t}{unit}</span>
+            <span key={t} style={{ fontSize: CHART_FONT.Y_RENDERED, color: '#aaa', textAlign: 'right', lineHeight: 1 }}>{t}{unit}</span>
           ))}
         </div>
         <div style={{ flex: 1, height, position: 'relative', display: 'flex', alignItems: 'flex-end', gap: 2 }}>
@@ -86,13 +87,13 @@ const VerticalBars: React.FC<{
               {item ? (
                 <>
                   {item.displayValue ? (
-                    <div style={{ fontSize: valueFontSize, fontWeight: 600, color: item.color, marginBottom: 3, textAlign: 'center', lineHeight: 1.2 }}>
+                    <div style={{ fontSize: valueFontSize, fontWeight: CHART_FONT.VALUE_WEIGHT, color: item.color, marginBottom: 3, textAlign: 'center', lineHeight: 1.2 }}>
                       {item.displayValue.split('\n').map((line, li) => (
                         <div key={li}>{line}</div>
                       ))}
                     </div>
                   ) : (
-                    <span style={{ fontSize: valueFontSize, fontWeight: 600, color: item.color, marginBottom: 3, textAlign: 'center', lineHeight: 1.2 }}>{item.value}{unit || ''}</span>
+                    <span style={{ fontSize: valueFontSize, fontWeight: CHART_FONT.VALUE_WEIGHT, color: item.color, marginBottom: 3, textAlign: 'center', lineHeight: 1.2 }}>{item.value}{unit || ''}</span>
                   )}
                   {/* 0 值（含负值）不渲染柱条，仅保留数值标签，避免 4% 兜底产生误导性 stub */}
                   {item.value > 0 && (
@@ -101,9 +102,9 @@ const VerticalBars: React.FC<{
                       //    柱体按槽宽比例自动收缩，杜绝相邻柱体重合（19寸正常、25寸重叠即源于固定柱宽 vs 弹性槽位）
                       width: `min(${barWidth}px, 80%)`,
                       height: `${Math.max((item.value / max) * 100, 4)}%`, minHeight: 4,
-                      // ⚠️ 柱体框线与其他页 VerticalBarChart 对齐：SVG 版经 textScale 归一渲染 2.1px（默认卡），
-                      //   本组件 CSS border 无缩放、固定 3px 显粗；统一为 2.1px
-                      border: `2.1px solid ${item.color}`,
+                      // ⚠️ 柱体框线与其他页 VerticalBarChart 对齐：SVG 版经 textScale 归一渲染 1.75px（全应用统一），
+                      //   本组件 CSS border 无缩放、固定 3px 显粗；统一为 1.75px
+                      border: `1.75px solid ${item.color}`,
                       background: 'transparent',
                     }} />
                   )}
@@ -121,7 +122,7 @@ const VerticalBars: React.FC<{
         <div style={{ flex: 1, display: 'flex', gap: 2 }}>
           {slots.map((item, i) => (
             <span key={i} style={{
-              flex: 1, textAlign: 'center', fontSize: 9, color: COLORS.textSecondary,
+              flex: 1, textAlign: 'center', fontSize: CHART_FONT.X_RENDERED, color: COLORS.textSecondary,
               lineHeight: 1.3, opacity: item ? 1 : 0,
               minWidth: 0,  // 与立柱槽位同构，确保逐柱对齐
               marginLeft: groupGaps?.includes(i - 1) ? gapSize : 0,
@@ -557,7 +558,7 @@ const Dashboard: React.FC = () => {
             <div style={{ width: 1, background: COLORS.borderLight, flexShrink: 0 }} />
             <div style={{ flex: '0 1 calc(14.803% + 38px)', display: 'flex', flexDirection: 'column' }}>
               <div style={{ fontSize: 10, color: COLORS.textLight, fontWeight: 500, textAlign: 'right', marginBottom: 2, paddingRight: 2 }}>利润概览</div>
-              <VerticalBars items={deliveryStats.profitOverview} height={210} unit="K" groupGaps={[2]} barWidth={22.5} valueFontSize={7} />
+              <VerticalBars items={deliveryStats.profitOverview} height={210} unit="K" groupGaps={[2]} barWidth={22.5} />
             </div>
           </div>
         </Card>
@@ -605,7 +606,7 @@ const Dashboard: React.FC = () => {
             <div style={{ padding: 24, textAlign: 'center', color: COLORS.textLight, fontSize: 13 }}>当前财年暂无新增</div>
           ) : (
             <div style={{ marginTop: 50 }}>
-              <VerticalBars items={fyTrend} height={200} unit="K" valueFontSize={7} />
+              <VerticalBars items={fyTrend} height={200} unit="K" />
             </div>
           )}
         </Card>

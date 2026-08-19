@@ -2,6 +2,7 @@ import React, { useState, useMemo, useRef, useLayoutEffect } from 'react';
 import { Card } from 'antd';
 import { COLORS } from '../../styles/colors';
 import { fmtK, fmtKBase, projectStatusColor, projectStatusBg, type NodeDelayInfo } from '../../utils/analysisShared';
+import { CHART_FONT } from '../../utils/chartFonts';
 
 // ── 类型定义 ──
 export interface ProfitItem {
@@ -72,11 +73,12 @@ export const ProfitChart: React.FC<{
   contentOffset?: number;
 }> = ({ data, height = 300, chartWidth = 780, contentOffset = 30 }) => {
   const W = chartWidth;
-  // ⚠️ 柱体框线厚度与其他页 VerticalBarChart 同源归一：本图是固定 viewBox（780）按容器宽缩放的固定卡，
-  //    strokeWidth 为 viewBox 坐标值，渲染厚度 = strokeWidth × SVG scale——容器宽变化时 2.5px 随之浮动，
+  // ⚠️ 框线/文字与其他页 VerticalBarChart 同源归一：本图是固定 viewBox（780）按容器宽缩放的固定卡，
+  //    viewBox 坐标值渲染厚度 = 值 × SVG scale——容器宽变化时 2.5px 框线、9/10px 文字随之浮动，
   //    与 VerticalBarChart「textScale 归一、任意宽度恒为设计值×0.7」不一致（默认卡 2.1px/居中卡 1.75px）。
-  //    此处同样测渲染宽算 effectiveScale：strokeWidth=2.5×textScale → 任意宽度恒渲染 1.75px，
-  //    与左列 延期天数/节点分析 两张居中卡框线一致。
+  //    此处同样测渲染宽算 effectiveScale，textScale=0.7/effectiveScale：
+  //    框线 strokeWidth=2.5×textScale → 恒 1.75px；文字（X 11/Y 10/柱顶主副值 11）×textScale →
+  //    恒 7.7/7/7.7px，与左列 延期天数/节点分析 完全一致。两行柱顶标签间距 ±10/±24×textScale 防重叠。
   const svgRef = useRef<SVGSVGElement>(null);
   const [svgW, setSvgW] = useState<number | null>(null);
   useLayoutEffect(() => {
@@ -130,7 +132,7 @@ export const ProfitChart: React.FC<{
           return (
             <g key={`g-${i}`}>
               <line x1={pad.left} y1={y} x2={W - pad.right} y2={y} stroke={COLORS.borderLight} strokeWidth={1} />
-              <text x={pad.left - 4} y={y + 3} textAnchor="end" fontSize={9} fill="#aaa">{fmtK(gv)}</text>
+              <text x={pad.left - 4} y={y + 3} textAnchor="end" fontSize={CHART_FONT.Y * textScale} fill="#aaa">{fmtK(gv)}</text>
             </g>
           );
         })}
@@ -155,16 +157,16 @@ export const ProfitChart: React.FC<{
               {/* 概算标签：高柱外侧/低柱内侧 */}
               {estH >= actH ? (
                 <>
-                  <text x={cx} y={estTop - 7} textAnchor="middle" fontSize={9}
-                    fill={COLORS.primary} fontWeight={600}>{fmtKBase(item.estProfit)}</text>
-                  <text x={cx} y={estTop - 17} textAnchor="middle" fontSize={9}
+                  <text x={cx} y={estTop - 10 * textScale} textAnchor="middle" fontSize={CHART_FONT.VALUE * textScale}
+                    fill={COLORS.primary} fontWeight={CHART_FONT.VALUE_WEIGHT}>{fmtKBase(item.estProfit)}</text>
+                  <text x={cx} y={estTop - 24 * textScale} textAnchor="middle" fontSize={CHART_FONT.VALUE * textScale}
                     fill={COLORS.primary}>{fmtPct(item.estGP3)}</text>
                 </>
               ) : (
                 <>
-                  <text x={cx} y={estTop + 14} textAnchor="middle" fontSize={9}
-                    fill={COLORS.primary} fontWeight={600}>{fmtKBase(item.estProfit)}</text>
-                  <text x={cx} y={estTop + 23} textAnchor="middle" fontSize={9}
+                  <text x={cx} y={estTop + 10 * textScale} textAnchor="middle" fontSize={CHART_FONT.VALUE * textScale}
+                    fill={COLORS.primary} fontWeight={CHART_FONT.VALUE_WEIGHT}>{fmtKBase(item.estProfit)}</text>
+                  <text x={cx} y={estTop + 24 * textScale} textAnchor="middle" fontSize={CHART_FONT.VALUE * textScale}
                     fill={COLORS.primary}>{fmtPct(item.estGP3)}</text>
                 </>
               )}
@@ -177,16 +179,16 @@ export const ProfitChart: React.FC<{
                   {/* 实际标签：高柱外侧/低柱内侧 */}
                   {actH >= estH ? (
                     <>
-                      <text x={cx} y={(actTop) - 7} textAnchor="middle" fontSize={9}
-                        fill={COLORS.purple} fontWeight={600}>{fmtKBase(item.actProfit!)}</text>
-                      <text x={cx} y={(actTop) - 17} textAnchor="middle" fontSize={9}
+                      <text x={cx} y={(actTop) - 10 * textScale} textAnchor="middle" fontSize={CHART_FONT.VALUE * textScale}
+                        fill={COLORS.purple} fontWeight={CHART_FONT.VALUE_WEIGHT}>{fmtKBase(item.actProfit!)}</text>
+                      <text x={cx} y={(actTop) - 24 * textScale} textAnchor="middle" fontSize={CHART_FONT.VALUE * textScale}
                         fill={COLORS.purple}>{fmtPct(item.actGP3!)}</text>
                     </>
                   ) : (
                     <>
-                      <text x={cx} y={(actTop) + 14} textAnchor="middle" fontSize={9}
-                        fill={COLORS.purple} fontWeight={600}>{fmtKBase(item.actProfit!)}</text>
-                      <text x={cx} y={(actTop) + 23} textAnchor="middle" fontSize={9}
+                      <text x={cx} y={(actTop) + 10 * textScale} textAnchor="middle" fontSize={CHART_FONT.VALUE * textScale}
+                        fill={COLORS.purple} fontWeight={CHART_FONT.VALUE_WEIGHT}>{fmtKBase(item.actProfit!)}</text>
+                      <text x={cx} y={(actTop) + 24 * textScale} textAnchor="middle" fontSize={CHART_FONT.VALUE * textScale}
                         fill={COLORS.purple}>{fmtPct(item.actGP3!)}</text>
                     </>
                   )}
@@ -194,7 +196,7 @@ export const ProfitChart: React.FC<{
               )}
 
               {/* X 轴标签 */}
-              <text x={cx} textAnchor="middle" fontSize={10} fill="#444">
+              <text x={cx} textAnchor="middle" fontSize={CHART_FONT.X * textScale} fill="#444">
                 {item.name.includes('\n') ? (
                   item.name.split('\n').map((part, li) =>
                     li === 0

@@ -2,6 +2,7 @@ import React, { useState, useLayoutEffect, useRef } from 'react';
 import { Card } from 'antd';
 import { COLORS } from '../../styles/colors';
 import { fmtK } from '../../utils/analysisShared';
+import { CHART_FONT } from '../../utils/chartFonts';
 
 /**
  * 竖状柱状图（SVG 绘制，显示前 N 名）
@@ -39,11 +40,11 @@ interface VerticalBarChartProps {
   hideAvgLine?: boolean;
   cardBorder?: boolean;
   barLabelGap?: number;
-  /** 柱顶数值标签字号（B11 复核：合并前为 10，收敛后误降为 9，恢复默认 10） */
+  /** 柱顶数值标签字号（默认取共享常量 CHART_FONT.VALUE=11） */
   valueFontSize?: number;
-  /** X 轴标签字号（默认 10；延期天数卡增大一号用 11） */
+  /** X 轴标签字号（默认取共享常量 CHART_FONT.X=11） */
   xLabelFontSize?: number;
-  /** Y 轴刻度/目标线标签字号（默认 9；延期天数卡增大一号用 10） */
+  /** Y 轴刻度/目标线标签字号（默认取共享常量 CHART_FONT.Y=10） */
   yLabelFontSize?: number;
   padLeft?: number;
   padRight?: number;
@@ -57,7 +58,7 @@ export const VerticalBarChart: React.FC<VerticalBarChartProps> = ({
   title, data, format = 'num', height = 220, topN = 10, contentOffset = 0,
   barWidthRatio = 0.55, maxBarWidth = 36, noCard, chartWidth, disableSort,
   targetValue, targetLabel, padTop = 32, padBottom = 28, hideAvgLine, negFloorGap, zeroYOffset,
-  cardBorder = true, barLabelGap = 18, valueFontSize = 10, xLabelFontSize = 10, yLabelFontSize = 9,
+  cardBorder = true, barLabelGap = 18, valueFontSize = CHART_FONT.VALUE, xLabelFontSize = CHART_FONT.X, yLabelFontSize = CHART_FONT.Y,
   padLeft = 42, padRight = 26,
   hoverable = false, centeredSvg = false,
 }) => {
@@ -218,7 +219,7 @@ export const VerticalBarChart: React.FC<VerticalBarChartProps> = ({
               onMouseEnter={hoverable && item.tooltip ? () => setHoveredTip({ lines: item.tooltip!.split('\n'), cx, barTop, chartW: W }) : undefined}
               onMouseLeave={hoverable ? () => setHoveredTip(null) : undefined}>
               <text x={cx} y={isNegBar ? barTop + barH + barLabelGap : barTop - barLabelGap} textAnchor="middle" fontSize={valueFontSize * textScale}
-                fill={color} fontWeight={600}>{label}</text>
+                fill={color} fontWeight={CHART_FONT.VALUE_WEIGHT}>{label}</text>
               {item.subValue != null && item.subValue > 0 && (
                 <>
                 {/* ⚠️ B8 修复：副值标签改为相对主值标签基线 +valueFontSize+2 定位——barLabelGap=10（延期天数图）
@@ -226,16 +227,15 @@ export const VerticalBarChart: React.FC<VerticalBarChartProps> = ({
                     完全一致，无视觉回归 */}
                 <text x={cx} y={(isNegBar ? barTop + barH + barLabelGap : barTop - barLabelGap) + valueFontSize + 2}
                   textAnchor="middle" fontSize={valueFontSize * textScale}
-                  fill={COLORS.purple} fontWeight={600}>（{format === 'K' ? fmtK(item.subValue) : item.subValue}）</text>
+                  fill={COLORS.purple} fontWeight={CHART_FONT.VALUE_WEIGHT}>（{format === 'K' ? fmtK(item.subValue) : item.subValue}）</text>
                 </>
               )}
               {barH > 0 && (
                 // ⚠️ 柱体框线厚度与文字同源：strokeWidth 是 viewBox 坐标值，渲染厚度 = strokeWidth × SVG scale。
-                //   自适应卡（scale≈1）渲染出完整 2.5/3px，固定卡（scale<1）渲染出 2.5×scale/3×scale（≈2px）——
-                //   两者不一致（延期/排行卡框线显粗）。乘 textScale 后任意缩放下渲染厚度统一为设计值×0.7
-                //   （居中卡 1.75px、默认卡 2.1px），与文字归一同一机制。
+                //   全应用统一渲染 1.75px（设计值 2.5×0.7）：居中/自适应/固定卡不再区分默认 2.1px，
+                //   与 Dashboard CSS 柱框（1.75px）、利润卡（2.5×textScale）一致。乘 textScale 后任意缩放下恒定。
                 <rect x={cx - barW / 2} y={barTop} width={barW} height={barH}
-                  fill="none" stroke={color} strokeWidth={(centeredSvg ? 2.5 : 3) * textScale} rx={0} ry={0} />
+                  fill="none" stroke={color} strokeWidth={2.5 * textScale} rx={0} ry={0} />
               )}
               <text x={cx} textAnchor="middle" fontSize={xLabelFontSize * textScale} fill="#444">
                 {item.name.includes('\n') ? (
