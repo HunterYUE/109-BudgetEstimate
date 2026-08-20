@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { ConfigProvider } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
 import { VerticalBarChart, BarItem } from '../src/components/charts/VerticalBarChart';
+import { ProfitChart, ProfitItem } from '../src/components/charts/DeliveryCharts';
 import '../src/index.css';
 import '../src/App.css';
 
@@ -56,6 +57,14 @@ const pctData: BarItem[] = [
   { name: '刘洋', value: 21.0 }, { name: '陈静', value: 18.5 }, { name: '杨帆', value: 15.0 },
 ];
 
+// ══ 利润分析卡数据：名称沿用 chartLabel（4字符+换行+剩余，与交付分析生产形状一致） ══
+const profitData: ProfitItem[] = [
+  { name: '2607\n003S', estProfit: 85, estGP3: 0.32, actProfit: 70, actGP3: 0.28, deviation: -0.04 },
+  { name: '2606\n101S', estProfit: 60, estGP3: 0.25, actProfit: 66, actGP3: 0.29, deviation: 0.04 },
+  { name: '2607\n005S', estProfit: 40, estGP3: 0.20, actProfit: 32, actGP3: 0.16, deviation: -0.04 },
+  { name: '2605\n022S', estProfit: 28, estGP3: 0.18, actProfit: undefined, actGP3: undefined, deviation: 0 },
+];
+
 // ══ 精确复现生产布局 ══
 // Row1: DeliveryAnalysis 主行（flex, gap16, alignItems stretch）
 //   child1: flex '0 0 calc(3/7 * (100% - 96px) + 32px)'（延期卡 + 节点分析 上下 gap16）
@@ -67,6 +76,7 @@ const App = () => (
     {/* ══ Row1：交付分析主行 ══ */}
     <div style={{ display: 'flex', gap: 16, marginTop: 16, alignItems: 'stretch', flexDirection: 'row' }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16, flex: '0 0 calc(3 / 7 * (100% - 96px) + 32px)' }}>
+        <ProfitChart data={profitData} height={225} chartWidth={702} contentOffset={40} />
         <VerticalBarChart title="延期天数" data={delayData} format="num" height={245} topN={15} barWidthRatio={0.75}
           maxBarWidth={40} contentOffset={40} hideAvgLine padTop={50} padBottom={30} barLabelGap={10}
           padLeft={36} padRight={6} hoverable centeredSvg negFloorGap={10} zeroYOffset={30} />

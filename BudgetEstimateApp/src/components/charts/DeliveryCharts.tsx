@@ -4,6 +4,7 @@ import { COLORS } from '../../styles/colors';
 import { fmtK, fmtKBase, projectStatusColor, projectStatusBg, type NodeDelayInfo } from '../../utils/analysisShared';
 import { CHART_FONT } from '../../utils/chartFonts';
 import { CHART_FRAME } from '../../utils/chartFrame';
+import { XAxisLabel } from './XAxisLabel';
 
 // ── 类型定义 ──
 export interface ProfitItem {
@@ -196,18 +197,8 @@ export const ProfitChart: React.FC<{
                 </>
               )}
 
-              {/* X 轴标签 */}
-              <text x={cx} textAnchor="middle" fontSize={CHART_FONT.X * textScale} fill="#444">
-                {item.name.includes('\n') ? (
-                  item.name.split('\n').map((part, li) =>
-                    li === 0
-                      ? <tspan key={li} x={cx} y={height - 19}>{part}</tspan>
-                      : <tspan key={li} x={cx} dy={13}>{part}</tspan>
-                  )
-                ) : (
-                  <tspan x={cx} y={height - 5}>{item.name}</tspan>
-                )}
-              </text>
+              {/* X 轴标签（多行行距与 VerticalBarChart 同源，见 XAxisLabel 注释） */}
+              <XAxisLabel cx={cx} height={height} name={item.name} textScale={textScale} />
             </g>
           );
         })}

@@ -4,6 +4,7 @@ import { COLORS } from '../../styles/colors';
 import { fmtK } from '../../utils/analysisShared';
 import { CHART_FONT } from '../../utils/chartFonts';
 import { CHART_FRAME } from '../../utils/chartFrame';
+import { XAxisLabel } from './XAxisLabel';
 
 /**
  * 竖状柱状图（SVG 绘制，显示前 N 名）
@@ -284,17 +285,8 @@ export const VerticalBarChart: React.FC<VerticalBarChartProps> = ({
                 <rect x={cx - barW / 2} y={barTop} width={barW} height={barH}
                   fill="none" stroke={color} strokeWidth={CHART_FRAME.STROKE * textScale} rx={0} ry={0} />
               )}
-              <text x={cx} textAnchor="middle" fontSize={xLabelFontSize * textScale} fill={xLabelColor}>
-                {item.name.includes('\n') ? (
-                  item.name.split('\n').map((part, li) =>
-                    li === 0
-                      ? <tspan key={li} x={cx} y={xLabelAlignFirstLine ? height - 5 : height - 19}>{part}</tspan>
-                      : <tspan key={li} x={cx} dy={13 * textScale}>{part}</tspan> // 行距×textScale 归一（渲染恒 13×0.7≈9.1px，与数值多行行距一致）
-                  )
-                ) : (
-                  <tspan x={cx} y={height - 5}>{item.name}</tspan>
-                )}
-              </text>
+              <XAxisLabel cx={cx} height={height} name={item.name} textScale={textScale}
+                fontSize={xLabelFontSize} fill={xLabelColor} alignFirstLine={xLabelAlignFirstLine} />
             </g>
           );
         })}
