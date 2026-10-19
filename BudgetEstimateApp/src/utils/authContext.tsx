@@ -59,6 +59,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     const data = await res.json();
     // ⚠️ L6：token 由后端 Set-Cookie（HttpOnly），login 响应体不再含 token，只用 user
+    // 换账号登录时清空上一账号的 GET 缓存，防止前 30 秒读到他人的用户/设置数据
+    clearCache();
     setUser(data.user);
   }, []);
 

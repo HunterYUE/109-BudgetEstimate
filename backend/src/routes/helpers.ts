@@ -137,9 +137,16 @@ export const DUMMY_PASSWORD_HASH = bcrypt.hashSync('timing-equalizer-dummy', 10)
 
 /** 重置用户密码（含长度校验 + password_changed_at 吊销旧 JWT）。调用方自行完成鉴权/越级保护。
  *   users.ts 与 timerecording.ts 管理员重置路径共用 */
+/** 密码最大长度（防超长请求放大 bcrypt 计算开销；bcrypt 只消费前 72 字节，
+ *  128 字符上限覆盖正常口令，让异常长输入在进入哈希前被拒绝） */
+export const PASSWORD_MAX = 128;
+
 export async function resetUserPassword(userId: string, password: string): Promise<void> {
   if (typeof password !== 'string' || !password || password.length < PASSWORD_MIN) {
     throw new AppError(400, `密码至少${PASSWORD_MIN}位`);
+  }
+  if (password.length > PASSWORD_MAX) {
+    throw new AppError(400, `密码不能超过${PASSWORD_MAX}位`);
   }
   const passwordHash = await bcrypt.hash(password, 10);
   // ⚠️ L3：改密同步记录 password_changed_at = now()，使该用户已签发的旧 JWT 立即失效（requireAuth 比对 iat）
@@ -190,12 +197,15 @@ export function crudRoutes(table: string, fields: string[], options?: {
   excludeOnUpdate?: string[];
   /** 额外路由 */
   extra?: (router: Router) => void;
-  /** 删除前钩子：抛错则阻止删除（用于业务引用检查，如删除含报价/交付的项目） */
-  beforeDelete?: (id: string) => Promise<void>;
+  /** 删除前钩子：抛错则阻止删除（用于业务引用检查，如删除含报价/交付的项目）；
+   *  返回值会原样传给 afterDelete（如附件路径快照——行删除后已无法再查到） */
+  beforeDelete?: (id: string) => Promise<unknown>;
+  /** 删除成功后钩子：数据库行已确认删除再执行副作用（如清理磁盘附件），避免删除失败却丢了文件 */
+  afterDelete?: (id: string, context: unknown) => Promise<void>;
   /** 创建前钩子：抛错则阻止创建（用于业务不变量校验，如转交付校验机会状态/报价归属） */
   beforeCreate?: (snakeBody: Record<string, any>) => Promise<void>;
-  /** 更新前钩子：抛错则阻止更新（用于状态机守卫，如报价审批中禁改财务字段） */
-  beforeUpdate?: (id: string, snakeBody: Record<string, any>) => Promise<void>;
+  /** 更新前钩子：抛错则阻止更新（用于状态机/权限守卫，如报价审批中禁改财务字段） */
+  beforeUpdate?: (req: Request, id: string, snakeBody: Record<string, any>) => Promise<void>;
   /** 更新后钩子：更新成功且返回行后调用（用于审计留痕等非阻塞后处理，如已审批交付成本被覆盖时记审计）。
    *  收到 req 以便 logAudit；抛错会使本次更新请求返回 500（调用方应内部吞错，参考 logAudit 的 try/catch） */
   afterUpdate?: (req: Request, id: string, snakeBody: Record<string, any>, updatedRow: Record<string, any>) => Promise<void>;
@@ -271,7 +281,7 @@ export function crudRoutes(table: string, fields: string[], options?: {
     const snakeBody = objKeysToSnake({ ...req.body });
     // ⚠️ A103：更新前状态机守卫（如报价审批中禁改财务字段）
     if (options?.beforeUpdate) {
-      await options.beforeUpdate(req.params.id, snakeBody);
+      await options.beforeUpdate(req, req.params.id, snakeBody);
     }
     const updateCols = computeInsertCols(fields, excludeOnUpdate, snakeBody);
     if (updateCols.length === 0) {
@@ -297,15 +307,20 @@ export function crudRoutes(table: string, fields: string[], options?: {
   // ── 删除 ──
   router.delete('/:id', asyncHandler(async (req, res) => {
     // ⚠️ F3/F4 修复：删除前业务引用检查（抛错则阻止并给出明确提示，而非撞外键返回通用 400）
-    if (options?.beforeDelete) {
-      await options.beforeDelete(req.params.id);
-    }
+    const deleteContext = options?.beforeDelete
+      ? await options.beforeDelete(req.params.id)
+      : undefined;
     const result = await query(
       `DELETE FROM "${table}" WHERE id = $1 RETURNING id`,
       [req.params.id]
     );
     if (result.rows.length === 0) {
       throw new AppError(404, `记录不存在`);
+    }
+    // ⚠️ A119：副作用放到删除成功之后（此前 deliveries 在 beforeDelete 里先删磁盘附件，
+    //   一旦 DELETE 失败，记录还在、文件已不可恢复）
+    if (options?.afterDelete) {
+      await options.afterDelete(req.params.id, deleteContext);
     }
     res.json({ deleted: true, id: req.params.id });
   }));

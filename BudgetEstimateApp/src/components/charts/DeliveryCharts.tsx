@@ -26,7 +26,7 @@ interface GanttSlot {
   plannedEndDate: Date;
   actualDate?: Date;
   baselineDate?: Date;
-  /** 共享延期判定结果（由数据方用 getNodeDelay 计算） */
+  /** 共享延期判定结果，由数据方用 getNodeDelay 计算 */
   delay: NodeDelayInfo;
 }
 
@@ -37,7 +37,7 @@ export interface BubbleDataItem {
   costDeviation: number;
   status: string;
   capacityPressure: number;
-  /** 派生延期维度（getProjectDelay） */
+  /** 派生延期维度 getProjectDelay */
   delayed: boolean;
 }
 
@@ -58,16 +58,16 @@ interface BubbleHoverInfo {
 /** 格式化日期为短格式 "YY-MM-DD" */
 const fmtShort = (d: Date) => `${String(d.getFullYear()).slice(2)}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 
-/** 节点状态条颜色：未开始/进行中(含延期)/已完成 */
+/** 节点状态条颜色：未开始/进行中含，延期/已完成 */
 const GANTT_STATUS_COLOR: Record<string, string> = {
   pending: '#1a4f83', in_progress: '#593b73', completed: '#275d3e',
 };
 
 /**
- * ⚠️ B11：通用竖状柱状图已收敛至 components/charts/VerticalBarChart.tsx 单源
- * （SalesAnalysis 与 DeliveryAnalysis 共用）；此处仅保留利润分组柱状图特殊变体。
+ * 通用竖状柱状图已收敛至 components/charts/VerticalBarChart.tsx 单源
+ * SalesAnalysis 与 DeliveryAnalysis 共用，此处仅保留利润分组柱状图特殊变体
  */
-// ── 利润分组柱状图（概算 vs 实际） ──
+// ── 利润分组柱状图，概算 vs 实际 ──
 export const ProfitChart: React.FC<{
   data: ProfitItem[];
   height?: number;
@@ -75,12 +75,12 @@ export const ProfitChart: React.FC<{
   contentOffset?: number;
 }> = ({ data, height = 300, chartWidth = 780, contentOffset = 30 }) => {
   const W = chartWidth;
-  // ⚠️ 框线/文字与其他页 VerticalBarChart 同源归一：本图是固定 viewBox（780）按容器宽缩放的固定卡，
-  //    viewBox 坐标值渲染厚度 = 值 × SVG scale——容器宽变化时 2.5px 框线、9/10px 文字随之浮动，
-  //    与 VerticalBarChart「textScale 归一、任意宽度恒为设计值×0.7」不一致（默认卡 2.1px/居中卡 1.75px）。
-  //    此处同样测渲染宽算 effectiveScale，textScale=0.7/effectiveScale：
-  //    框线 strokeWidth=2.5×textScale → 恒 1.75px；文字（X 11/Y 10/柱顶主副值 11）×textScale →
-  //    恒 7.7/7/7.7px，与左列 延期天数/节点分析 完全一致。两行柱顶标签间距 ±10/±24×textScale 防重叠。
+  // 框线/文字与其他页 VerticalBarChart 同源归一：本图是固定 viewBox（780）按容器宽缩放的固定卡，
+  // viewBox 坐标值渲染厚度 = 值 × SVG scale——容器宽变化时 2.5px 框线、9/10px 文字随之浮动，
+  // 与 VerticalBarChart「textScale 归一、任意宽度恒为设计值×0.7」不一致，默认卡 2.1px/居中卡 1.75px
+  // 此处同样测渲染宽算 effectiveScale，textScale=0.7/effectiveScale：
+  // 框线 strokeWidth=2.5×textScale → 恒 1.75px；文字（X 11/Y 10/柱顶主副值 11）×textScale →
+  // 恒 7.7/7/7.7px，与左列 延期天数/节点分析 完全一致。两行柱顶标签间距 ±10/±24×textScale 防重叠
   const svgRef = useRef<SVGSVGElement>(null);
   const [svgW, setSvgW] = useState<number | null>(null);
   useLayoutEffect(() => {
@@ -105,11 +105,11 @@ export const ProfitChart: React.FC<{
   const allValues = slots.flatMap(s => [s.estProfit, s.actProfit ?? 0]);
   const rawMax = Math.max(...allValues, 0);
   const rawMin = Math.min(...allValues, 0);
-  // ⚠️ B3 修复：移植 VerticalBarChart #13 负数刻度算法——存在亏损（负利润）时按真实量程 [rawMin, rawMax] 铺开、
-  //   0 基线按比例定位、负值柱向下探；纯正值路径与旧公式（zeroY=底部）完全一致，无视觉回归
+  // 移植 VerticalBarChart #13 负数刻度算法——存在亏损（负利润）时按真实量程 [rawMin, rawMax] 铺开、
+  // 0 基线按比例定位、负值柱向下探，纯正值路径与旧公式（zeroY=底部）完全一致，无视觉回归
   const hasNeg = rawMin < 0;
   const effectiveMax = hasNeg ? Math.max(rawMax - rawMin, 1) : Math.max(1, rawMax);
-  /** 数值 → Y 坐标（含负值时 rawMax 在顶、rawMin 在底；纯正值时 0 在底） */
+  /** 数值 → Y 坐标，含负值时 rawMax 在顶、rawMin 在底；纯正值时 0 在底 */
   const yOf = (v: number) => hasNeg
     ? pad.top + ((rawMax - v) / effectiveMax) * chartH
     : pad.top + (1 - v / effectiveMax) * chartH;
@@ -142,8 +142,8 @@ export const ProfitChart: React.FC<{
         {slots.map((item, i) => {
           const cx = pad.left + i * slotW + slotW / 2;
           const barW = Math.min(slotW * 0.75, 40);
-          // ⚠️ B3 修复：负利润柱自 0 基线向下探（正值 barTop=zeroY-estH、负值 barTop=zeroY）——
-          //   此前负值被当正值从底部上探，亏损项目表现为 0 高矮柱误导分析
+          // 负利润柱自 0 基线向下探（正值 barTop=zeroY-estH、负值 barTop=zeroY）——
+          // 此前负值被当正值从底部上探，亏损项目表现为 0 高矮柱误导分析
           const estH = Math.max(2, (Math.abs(item.estProfit) / effectiveMax) * chartH);
           const estTop = item.estProfit >= 0 ? zeroY - estH : zeroY;
           const hasAct = item.actProfit != null;
@@ -152,7 +152,7 @@ export const ProfitChart: React.FC<{
 
           return (
             <g key={item.name + '-' + i}>
-              {/* 概算柱（蓝色虚线框） */}
+              {/* 概算柱，蓝色虚线框 */}
               <rect x={cx - barW / 2} y={estTop} width={barW} height={estH}
                 fill="none" stroke={COLORS.primary} strokeWidth={CHART_FRAME.STROKE * textScale} strokeDasharray="4,3" rx={0} ry={0} />
 
@@ -173,7 +173,7 @@ export const ProfitChart: React.FC<{
                 </>
               )}
 
-              {/* 实际柱（紫色实线框，与概算柱重叠） */}
+              {/* 实际柱，紫色实线框，与概算柱重叠 */}
               {hasAct && (
                 <>
                   <rect x={cx - barW / 2} y={actTop} width={barW} height={actH}
@@ -197,7 +197,7 @@ export const ProfitChart: React.FC<{
                 </>
               )}
 
-              {/* X 轴标签（多行行距与 VerticalBarChart 同源，见 XAxisLabel 注释） */}
+              {/* X 轴标签，多行行距与 VerticalBarChart 同源，见 XAxisLabel 注释 */}
               <XAxisLabel cx={cx} height={height} name={item.name} textScale={textScale} />
             </g>
           );
@@ -208,7 +208,7 @@ export const ProfitChart: React.FC<{
 };
 
 // ── 甘特子组件 ──
-/** 单条甘特节点条（hover 提升到父组件） */
+/** 单条甘特节点条，hover 提升到父组件 */
 const GanttNode: React.FC<{
   slot: GanttSlot;
   projectKey: string;
@@ -227,7 +227,7 @@ const GanttNode: React.FC<{
     <g style={{ cursor: 'pointer' }}
       onMouseEnter={() => onHover({ slot, projectKey, sx, ex, w, cy, barH, color })}
       onMouseLeave={() => onHover(null)}>
-      {/* 透明热区（完整覆盖 bar 区域，确保鼠标捕获） */}
+      {/* 透明热区，完整覆盖 bar 区域，确保鼠标捕获 */}
       <rect x={sx} y={cy - 4} width={w} height={barH + 8} fill="transparent" stroke="none"
         pointerEvents="all" />
       {/* 可见条 */}
@@ -248,7 +248,7 @@ const GanttNode: React.FC<{
   );
 };
 
-/** 甘特 tooltip（单独渲染到 SVG 末尾，确保在最上层） */
+/** 甘特 tooltip，单独渲染到 SVG 末尾，确保在最上层 */
 const GanttTooltip: React.FC<{
   hovered: GanttHoverInfo | null;
   W: number;
@@ -271,7 +271,7 @@ const GanttTooltip: React.FC<{
         fill="#fff" stroke={COLORS.border} strokeWidth={1} />
       <text x={ttx + 12} y={tty + 20} fontSize={12} fontWeight={700} fill={COLORS.textDark}>{slot.name.replace('\n', '')}</text>
       <line x1={ttx + 12} y1={tty + 27} x2={ttx + tooltipW - 12} y2={tty + 27} stroke={COLORS.borderLight} strokeWidth={1} />
-      {/* 已完成节点→实际时间；未完成→最新计划；超期未完成→至今 */}
+      {/* 已完成节点→实际时间，未完成→最新计划，超期未完成→至今 */}
       {slot.status === 'completed' && slot.actualDate ? (
         <>
           <text x={ttx + 12} y={tty + 46} fontSize={11} fill={COLORS.textLight}>实际时间</text>
@@ -310,7 +310,7 @@ const GanttTooltip: React.FC<{
   );
 };
 
-// ── 项目时间节点分布（甘特图） ──
+// ── 项目时间节点分布，甘特图 ──
 /** 甘特图项目行数据 */
 interface GanttProject {
   name: string;
@@ -318,7 +318,7 @@ interface GanttProject {
   doneCount: number;
   totalCount: number;
   status: string;
-  /** 派生延期维度（getProjectDelay） */
+  /** 派生延期维度，getProjectDelay */
   delayed: boolean;
 }
 
@@ -343,7 +343,7 @@ export const ProjectGantt: React.FC<{
   const projH = barH + rowGap; // =48
   const baseH = 100;
   const H = Math.max(height, baseH + projCount * projH);
-  /** 内容中心位置（行分隔线间的中点） */
+  /** 内容中心位置，行分隔线间的中点 */
   const rowCenter = (pi: number) => 73 +pi * projH + projH / 2;
   const posX = (d: Date) => {
     const ms = d.getTime() - tlStart.getTime();
@@ -438,7 +438,7 @@ export const ProjectGantt: React.FC<{
                   {proj.doneCount}/{proj.totalCount}
                 </text>
               </g>
-              {/* 项目编号（右对齐） */}
+              {/* 项目编号，右对齐 */}
               <text fontSize={11} fill="#444" textAnchor="end">
                 {proj.name.length > 8 ? (
                   <><tspan x={labelW - 8} y={rowCenter(pi) - 4}>{proj.name.slice(0, 4)}</tspan><tspan x={labelW - 8} y={rowCenter(pi) + 10}>{proj.name.slice(4)}</tspan></>
@@ -451,7 +451,7 @@ export const ProjectGantt: React.FC<{
         })}
         {/* tooltip 末尾渲染 = 最上层 */}
         <GanttTooltip hovered={hoveredGantt} W={W} />
-        {/* ── 交付负荷虚线（最上层，无背景） ── */}
+        {/* ── 交付负荷虚线，最上层，无背景 ── */}
         {lineX != null && (
           <g>
             <line x1={lineX} y1={67} x2={lineX} y2={H - 4}
@@ -468,7 +468,7 @@ export const ProjectGantt: React.FC<{
 };
 
 // ── 气泡子组件 ──
-/** 单个气泡（hover 提升到父组件） */
+/** 单个气泡，hover 提升到父组件 */
 const BubbleNode: React.FC<{
   item: BubbleDataItem;
   cx: number; cy: number; r: number;
@@ -495,7 +495,7 @@ const BubbleNode: React.FC<{
   );
 };
 
-/** 气泡 tooltip（单独渲染到 SVG 末尾，确保在最上层） */
+/** 气泡 tooltip，单独渲染到 SVG 末尾，确保在最上层 */
 const BubbleTooltip: React.FC<{
   hovered: BubbleHoverInfo | null;
   W: number; CH: number;
@@ -545,11 +545,11 @@ const BubbleTooltip: React.FC<{
   );
 };
 
-// ── 健康矩阵（气泡图） ──
+// ── 健康矩阵，气泡图 ──
 export const BubbleChart: React.FC<{
   data: BubbleDataItem[];
   height?: number;
-  /** 画布（viewBox）高度，默认与 height 相同。设大则 SVG 缩放显示，不裁剪边缘项目 */
+  /** 画布（viewBox）高度，默认与 height 相同，设大则 SVG 缩放显示，不裁剪边缘项目 */
   canvasHeight?: number;
   bodyPadTop?: number;
   bodyPadBottom?: number;
@@ -568,12 +568,12 @@ export const BubbleChart: React.FC<{
   const maxCostNeg = Math.max(1, Math.min(Y_CAP, Math.max(...data.map(d => -d.costDeviation), 0)));
   const yTotal = maxCostPos + maxCostNeg;
   const maxPressure = Math.max(...data.map(d => d.capacityPressure), 0.001);
-  /** 气泡颜色：已完成绿；未完成且延期中（派生）红；否则蓝（收敛 projectStatusColor） */
+  /** 气泡颜色：已完成绿，未完成且延期中（派生）红，否则蓝（收敛 projectStatusColor） */
   const bubbleColor = (d: BubbleDataItem): string =>
     projectStatusColor(d.status, d.delayed);
   const step = 15;
   const maxTick = Math.ceil(maxDelay / step) * step;
-  // Y轴刻度独立计算（避免与X轴共用时，在小范围内重复取值）
+  // Y轴刻度独立计算，避免与X轴共用时，在小范围内重复取值
   const yStep = (() => {
     const rough = Math.max(maxCostPos, maxCostNeg) / 3;
     if (rough <= 0.15) return 0.1;

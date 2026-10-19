@@ -12,7 +12,8 @@ const ROUTE_REQUIRED_PERMS: Record<string, string[]> = {
   '/delivery':        ['交付管理', '全部查看权限'],
   '/approval':        ['审批管理', '全部查看权限'],
   '/tags':            ['新建标签', '全部查看权限'],
-  '/materials':       ['物料管理', '全部查看权限'],
+  // 审批管理：仅负责物料审核的角色也能进入页面（页面内按 canReview 显示审核按钮、隐藏编辑）
+  '/materials':       ['物料管理', '审批管理', '全部查看权限'],
   '/clients':         ['客户管理', '全部查看权限'],
   '/settings':        ['用户管理', '系统配置', '全部查看权限'],
 };
@@ -35,8 +36,8 @@ export function canAccessRoute(permissions: string[] | undefined, path: string):
   const prefix = '/' + path.split('/')[1];
   const required = ROUTE_REQUIRED_PERMS[prefix];
   if (required) return required.some(p => permissions.includes(p));
-  // 兜底：未知路径默认放行
-  return true;
+  // 兜底：未知路径默认拒绝（新增页面须显式配置权限，防漏配后静默放行）
+  return false;
 }
 
 /** 路由访问顺序（第一个可访问的路由作为无权限重定向目标——优先级越靠前越先进入） */
@@ -65,7 +66,7 @@ export function firstAccessiblePath(permissions: string[] | undefined): string |
 export function canSeeMenu(permissions: string[] | undefined, menuKey: string): boolean {
   if (!permissions || permissions.length === 0) return false;
   const required = MENU_REQUIRED_PERMS[menuKey];
-  if (!required) return true;
+  if (!required) return false; // 与 canAccessRoute 同口径：未配置权限的菜单默认不可见
   return required.some(p => permissions.includes(p));
 }
 

@@ -16,8 +16,8 @@ describe('canAccessRoute 路由访问判定（满足其一即可）', () => {
     expect(canAccessRoute(undefined, '/')).toBe(false);
     expect(canAccessRoute([], '/')).toBe(false);
   });
-  it('未知路径默认放行（兜底）', () => {
-    expect(canAccessRoute(['任意'], '/unknown/xyz')).toBe(true);
+  it('未知路径默认拒绝（新页面须显式配置权限）', () => {
+    expect(canAccessRoute(['任意'], '/unknown/xyz')).toBe(false);
   });
 });
 
@@ -39,8 +39,8 @@ describe('canSeeMenu 菜单可见性', () => {
     expect(canSeeMenu(['交付管理'], '/delivery')).toBe(true);
     expect(canSeeMenu(['全部查看权限'], '/materials')).toBe(true);
   });
-  it('未定义菜单项 → 放行（权限非空才走到兜底分支）', () => {
-    expect(canSeeMenu(['仪表盘查看'], '/no-such-menu')).toBe(true);
+  it('未定义菜单项 → 不可见（与路由守卫同口径）', () => {
+    expect(canSeeMenu(['仪表盘查看'], '/no-such-menu')).toBe(false);
   });
 });
 

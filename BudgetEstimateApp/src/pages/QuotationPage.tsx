@@ -1,5 +1,4 @@
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { exAmount } from '../utils/analysisShared';
 import { Button, message, Modal, ConfigProvider, Spin } from 'antd';
 import { PlusOutlined, DownloadOutlined, SaveOutlined, SendOutlined, CheckOutlined, CloseOutlined, ArrowLeftOutlined } from '@ant-design/icons';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
@@ -40,16 +39,11 @@ function generateSalesNo(): string {
 }
 
 
-/** 重新编号：所有设备组按顺序重排 group_no */
-function renumberEquipGroups(groups: Group[]): Group[] {
-  let no = 0;
-  return groups.map(g => {
-    if (g.groupType === 'EQUIPMENT') {
-      no++;
-      return { ...g, groupNo: no };
-    }
-    return g;
-  });
+/** 重新编号：按界面顺序（设备组在前、固定组顺延）重排全部组的 group_no。
+ *  ⚠️ A133：原实现只重排 EQUIPMENT，新增第二个设备组后与其后固定组编号重复
+ *  （导出序号出现两个 2/3…，同号组刷新后顺序不稳定）。 */
+function renumberGroups(groups: Group[]): Group[] {
+  return groups.map((g, i) => ({ ...g, groupNo: i + 1 }));
 }
 
 /** 判断是否为前端临时组 id（未持久化）：以 grp- / proj- / - 前缀开头 */
@@ -81,22 +75,26 @@ function buildVersionPayload(
   };
 }
 
+/** 含税折后价 → 未税（不做取整）：calcProjectSummary 内部按未税计算、输出时再 ×(1+税率) 取整，
+ *  若这里先 round，100 元会变成 88 → 99（每次保存漂移 ±1 元）。保留小数可由输出侧精确还原输入值。 */
+const toUntaxedDiscounted = (v: ProjectVersion): number | undefined =>
+  v.discountedPrice ? v.discountedPrice / (1 + (v.taxRate ?? TAX_RATE)) : undefined;
+
 /** 归属 currentVersion 的字段（handleProjectUpdate 写入版本而非项目） */
 const VERSION_FIELDS: string[] = ['versionNo', 'eurRate', 'taxRate', 'warrantyRate', 'riskRate', 'commercialCost'];
 
-/** 提取项目基础字段：create 时含销售元数据，update 时仅业务字段（统一三处 projectService 载荷） */
-function buildProjectPayload(p: Project, opts: { withSalesMeta?: boolean } = {}) {
-  const base = {
+/** 提取项目字段（create/update 共用；projects 表有 sales_no 列，更新时也必须携带，
+ *  否则表头修改销售编号后只改了报价行、项目行仍是旧编号）。
+ *  ⚠️ M7 修复：不发送 versionNo（后端 projects 无该列），版本信息存于 currentVersion/版本保存 */
+function buildProjectPayload(p: Project) {
+  return {
+    salesNo: p.salesNo,
     clientName: p.clientName, clientCode: p.clientCode,
     projectScope: p.projectScope, projectName: p.projectName || '', projectStage: p.projectStage,
     expectedAwardDate: p.expectedAwardDate, projectLayout: p.projectLayout,
     deliveryPeriod: p.deliveryPeriod, paymentTerms: p.paymentTerms,
     postfix: p.postfix, note: p.note,
   };
-  // ⚠️ M7 修复：不再发送 versionNo（后端 projects 无该列），版本信息存于 currentVersion/版本保存
-  return opts.withSalesMeta
-    ? { salesNo: p.salesNo, ...base }
-    : base;
 }
 
 /** 通用删除确认弹窗（统一删除组/删除物料两个 Modal 结构） */
@@ -225,6 +223,8 @@ const FALLBACK_VERSION: ProjectVersion = {
 const QuotationPage: React.FC = () => {
   const [project, setProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
+  /** 加载失败原因（区分「数据不存在」与「版本不匹配/网络/权限」，避免统一误报） */
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [quotationLocked, setQuotationLocked] = useState(false);
   const [deleteGroupId, setDeleteGroupId] = useState<string | null>(null);
   const [deleteItemId, setDeleteItemId] = useState<{ groupId: string; itemId: string } | null>(null);
@@ -247,6 +247,26 @@ const QuotationPage: React.FC = () => {
   // ⚠️ B62 修复：记录「数据库中确有组数据」的版本集合——deleteGroupsByVersion 仅对既有版本执行
   //   （版本回切需清旧组防重复），新建版本本就无组，跳过无谓 DELETE；集合由加载/保存/删除三处维护
   const versionsWithGroupsRef = useRef<Set<string>>(new Set());
+  /** 待删除的已持久化组 id（删除组与其他编辑一样「保存才落库」，避免误删/失败静默）
+   *  保存成功后统一清理；失败的 id 保留到下次保存重试。 */
+  const deletedGroupIdsRef = useRef<Set<string>>(new Set());
+
+  /** 刷新待删除组：数据库删除成功才移除，失败保留并提示（不阻断主保存流程） */
+  const flushDeletedGroups = useCallback(async () => {
+    const pending = Array.from(deletedGroupIdsRef.current);
+    if (pending.length === 0) return;
+    deletedGroupIdsRef.current.clear();
+    for (const gid of pending) {
+      try {
+        await projectService.deleteGroup(gid);
+      } catch (err) {
+        // 404 = 组已在按版本重建时被删除，无需重试；其余错误保留待下次保存重试
+        if ((err as { status?: number })?.status === 404) continue;
+        deletedGroupIdsRef.current.add(gid);
+        console.warn('[Quotation] 删除设备组失败，将在下次保存时重试', (err as Error).message);
+      }
+    }
+  }, []);
 
   /** 物料编码→组件 索引：用 Map 替代 componentDB.find/some 全表扫描（填充 effect/编码校验/添加条目） */
   const componentMap = useMemo(
@@ -266,13 +286,21 @@ const QuotationPage: React.FC = () => {
           oppIdRef.current = quotation.opportunityId || null;
           const data = await projectService.getFull(pid);
           if (!cancelled) {
-            // 取与报价版本号匹配的版本（若无匹配则用最新版）
+            // 取与报价版本号匹配的版本。⚠️ A134：不再静默回退最新版——
+            //   版本号不一致时回退会让页面按错误版本加载，保存时又会把财务数据写到另一条版本上。
             const quoteVerNo = quotation.versionNo || '';
-            const lv = data.versions?.find(v => v.versionNo === quoteVerNo) || data.versions?.[0];
+            const matchedVersion = quoteVerNo
+              ? data.versions?.find(v => v.versionNo === quoteVerNo)
+              : data.versions?.[0];
+            if (quoteVerNo && !matchedVersion) {
+              throw new Error(`报价版本 ${quoteVerNo} 在项目版本中不存在，请先修复版本数据`);
+            }
+            const lv = matchedVersion;
             // ⚠️ 锁定规则：先根据 DB 字段和版本状态判断，最后检查机会签单状态（全覆盖）
             let shouldLock = quotation.locked === true;
-            // 版本状态规则：待审批锁定，审批通过/驳回后解锁
-            if (lv?.reviewStatus === 'pending') shouldLock = true;
+            // 版本状态规则：待审批锁定，审批通过/驳回后解锁。
+            // ⚠️ A135：待审批但不存在真实审批请求 = 提交中断残留（后端允许覆写重提），不得锁死页面
+            if (lv?.reviewStatus === 'pending' && quotation.hasPendingApproval !== false) shouldLock = true;
             if (lv?.reviewStatus === 'approved') shouldLock = false;
             if (lv?.reviewStatus === 'rejected') shouldLock = false;
             // ⚠️ 报价表自身状态兜底（兼容历史数据中版本状态未同步的情况）
@@ -284,14 +312,17 @@ const QuotationPage: React.FC = () => {
                 const checkOpp = await opportunityService.get(oppIdRef.current);
                 if (checkOpp.stage === '中标' && checkOpp.status === '赢') shouldLock = true;
                 if (checkOpp.terminated) shouldLock = true;
-              } catch { /* 静默忽略，使用回退值 */ }
+              } catch {
+                // 无法确认签单状态时按锁定处理（fail-closed）：权限/网络错误不得让已签单报价变成可编辑
+                if (!cancelled) shouldLock = true;
+              }
             }
             setQuotationLocked(shouldLock);
             // ⚠️ 按版本过滤组数据；无匹配时检查是否为无版本隔离的旧数据（此时回退全量组），
             // 否则视为新版本尚无组，保持空（避免加载全量组后保存导致版本内组重复）
-            let versionGroups = data.groups?.filter((g: Group) => (g as unknown as Record<string, unknown>).versionId === lv?.id) || [];
+            let versionGroups = data.groups?.filter((g: Group) => g.versionId === lv?.id) || [];
             if (versionGroups.length === 0) {
-              const hasVersionedGroups = data.groups?.some((g: Group) => (g as unknown as Record<string, unknown>).versionId);
+              const hasVersionedGroups = data.groups?.some((g: Group) => g.versionId);
               if (!hasVersionedGroups) {
                 versionGroups = data.groups || [];
               }
@@ -300,7 +331,7 @@ const QuotationPage: React.FC = () => {
             // ⚠️ B62：从全量组（含各版本）建立「有组版本」集合，供保存时判断目标版本是否既有
             versionsWithGroupsRef.current = new Set(
               (data.groups || [])
-                .map((g: Group) => String((g as unknown as Record<string, unknown>).versionId || ''))
+                .map((g: Group) => String(g.versionId || ''))
                 .filter(Boolean),
             );
             setProject({ ...data, currentVersion: lv || { ...FALLBACK_VERSION }, groups: versionGroups });
@@ -334,7 +365,9 @@ const QuotationPage: React.FC = () => {
             setHasChanges(true);
           }
         }
-      } catch (err) { console.error(err);
+      } catch (err) {
+        console.error(err);
+        if (!cancelled) setLoadError((err as Error)?.message || '报价加载失败');
       } finally { if (!cancelled) setLoading(false); }
     }
     load();
@@ -387,7 +420,12 @@ const QuotationPage: React.FC = () => {
         return item;
       }),
     }));
-    if (changed) setProject(prev => prev ? { ...prev, groups: newGroups } : prev);
+    if (changed) {
+      setProject(prev => prev ? { ...prev, groups: newGroups } : prev);
+      // ⚠️ A132：回填改变了成本/售价却不标脏，Save 按钮保持禁用，用户无法主动落盘；
+      //   已通过与未保存的回填数据还会被导出。回填即视为未保存修改。
+      setHasChanges(true);
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [componentMap, project?.id, project?.groups]);
 
@@ -464,13 +502,12 @@ const QuotationPage: React.FC = () => {
     if (!deleteGroupId) return;
     setProject(prev => {
       if (!prev) return prev;
-      const groups = renumberEquipGroups(prev.groups.filter(g => g.id !== deleteGroupId));
+      const groups = renumberGroups(prev.groups.filter(g => g.id !== deleteGroupId));
       return { ...prev, groups };
     });
-    // 同步从数据库删除组记录（前端临时 id 未持久化，无需删除）
-    if (!isTempGroupId(deleteGroupId)) {
-      projectService.deleteGroup(deleteGroupId).catch(() => {});
-    }
+    // 只改本地状态：持久化组的数据库删除延后到「保存成功」后统一执行——
+    // 原实现立即 DELETE 且吞错，用户以为未保存、失败也无提示，返回后数据已不可恢复。
+    if (!isTempGroupId(deleteGroupId)) deletedGroupIdsRef.current.add(deleteGroupId);
     setDeleteGroupId(null);
     setHasChanges(true);
     messageApi.success('设备组已删除并重新编号');
@@ -493,7 +530,7 @@ const QuotationPage: React.FC = () => {
       const idx = prev.groups.findIndex(g => g.groupType === 'INTEGRATION');
       const groups = [...prev.groups];
       groups.splice(idx >= 0 ? idx : groups.length, 0, newGroup);
-      return { ...prev, groups: renumberEquipGroups(groups) };
+      return { ...prev, groups: renumberGroups(groups) };
     });
     setHasChanges(true);
     messageApi.success('已添加新设备组');
@@ -506,6 +543,22 @@ const QuotationPage: React.FC = () => {
     });
     setHasChanges(true);
   }, []);
+
+  // 未保存修改的离开保护：关闭/刷新标签页触发浏览器确认；站内返回按钮单独确认
+  useEffect(() => {
+    if (!hasChanges || isLocked) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [hasChanges, isLocked]);
+
+  const handleBack = useCallback(() => {
+    if (hasChanges && !isLocked && !window.confirm('有未保存的修改，确定离开吗？')) return;
+    navigate('/quotations');
+  }, [hasChanges, isLocked, navigate]);
 
   const handleProjectUpdate = useCallback((field: string, value: string | number) => {
     setProject(prev => {
@@ -545,7 +598,7 @@ const QuotationPage: React.FC = () => {
     if (!project) return undefined;
     const p = project.currentVersion;
     const pid = overrideProjectId || project.id;
-    const syncUntaxed = p.discountedPrice ? exAmount(p.discountedPrice, p.taxRate) : undefined;
+    const syncUntaxed = toUntaxedDiscounted(p);
     const summary = calcProjectSummary(project.groups || [], p, syncUntaxed);
     const result = await quotationService.sync({
       projectId: pid,
@@ -570,13 +623,25 @@ const QuotationPage: React.FC = () => {
    */
   const saveGroups = useCallback(async (pid: string, vid: string, groups: Group[]) => {
     const idMap = new Map<string, string>();
-    for (const g of groups) {
-      // 前端临时 id 不传给后端（让其生成真实 id）；真实 id 传过去以支持版本隔离
-      const gid = isTempGroupId(g.id) ? undefined : g.id;
-      const saved = await projectService.saveGroup(pid, vid, { ...g, id: gid, items: g.items });
-      idMap.set(g.id, saved.id);
+    try {
+      for (const g of groups) {
+        // 前端临时 id 不传给后端（让其生成真实 id）；真实 id 传过去以支持版本隔离
+        const gid = isTempGroupId(g.id) ? undefined : g.id;
+        const saved = await projectService.saveGroup(pid, vid, { ...g, id: gid, items: g.items });
+        idMap.set(g.id, saved.id);
+      }
+      return idMap;
+    } catch (err) {
+      // ⚠️ A129：逐组 POST 非原子。中途失败时已写入的组会残留，重试再次 INSERT 会产生重复组。
+      //   失败即清空目标版本的全部组（本地 state 才是完整来源，重试会整组重建），保证保存幂等。
+      try {
+        await projectService.deleteGroupsByVersion(vid, pid);
+        versionsWithGroupsRef.current.delete(vid);
+      } catch (cleanupErr) {
+        console.warn('[Quotation] 保存失败后清理组数据失败', (cleanupErr as Error).message);
+      }
+      throw err;
     }
-    return idMap;
   }, []);
 
   const handleSave = useCallback(async () => {
@@ -610,16 +675,19 @@ const QuotationPage: React.FC = () => {
       setIsSaving(true); // ⚠️ 防止重复点击
       const isNew = project.id.startsWith('proj-');
       if (isNew) {
-        const created = await projectService.create(buildProjectPayload(project, { withSalesMeta: true }));
+        const created = await projectService.create(buildProjectPayload(project));
         const newId = created.id;
-        const newVerUntaxed = curVer.discountedPrice ? exAmount(curVer.discountedPrice, curVer.taxRate) : undefined;
+        // ⚠️ A130：项目创建成功立即回写 id——后续 saveVersion/sync 失败时重试不会再次 create，
+        //   避免产生重复项目 + 无报价孤儿（原实现只在全部成功后才回写）。
+        setProject(prev => prev ? { ...prev, id: newId } : prev);
+        const newVerUntaxed = toUntaxedDiscounted(curVer);
         const newVerSummary = calcProjectSummary(project.groups || [], curVer, newVerUntaxed);
         const sv = await projectService.saveVersion(newId, buildVersionPayload(curVer, newVerSummary, { versionNo: versionForSave, reviewStatus: statusForSave }));
         const svId = sv.id;
         // ⚠️ 版本切换时按版本清理目标版本旧组再重建（新项目 ref 为空跳过，避免重复组/回切重复；
         //   B62：仅对确有旧组的既有版本删除，新建版本跳过）
         if (groupsVersionRef.current && groupsVersionRef.current !== svId && versionsWithGroupsRef.current.has(svId)) {
-          await projectService.deleteGroupsByVersion(svId);
+          await projectService.deleteGroupsByVersion(svId, newId);
           versionsWithGroupsRef.current.delete(svId);
         }
         const idMap = await saveGroups(newId, svId, project.groups);
@@ -642,7 +710,7 @@ const QuotationPage: React.FC = () => {
         if (qid && quoteId === 'new') navigate('/quotations/' + qid, { replace: true });
       } else {
         await projectService.update(project.id, buildProjectPayload(project));
-        const versionUntaxed = curVer.discountedPrice ? exAmount(curVer.discountedPrice, curVer.taxRate) : undefined;
+        const versionUntaxed = toUntaxedDiscounted(curVer);
         const versionSummary = calcProjectSummary(project.groups || [], curVer, versionUntaxed);
         const versionPayload = buildVersionPayload(curVer, versionSummary, { versionNo: versionForSave, reviewStatus: statusForSave });
         const savedVersion = await projectService.saveVersion(project.id, versionPayload);
@@ -651,7 +719,7 @@ const QuotationPage: React.FC = () => {
         //   - 版本号变更 → 后端对旧组 id 会 INSERT 新组（新 id），必须把新 id 同步回 state，否则下次保存再 INSERT → 重复组
         //   - 若目标版本已存在旧组（版本回切 V1→V2→V1），需先按版本清理再重建，否则旧组+新副本并存 → 重复组
         if (groupsVersionRef.current && groupsVersionRef.current !== savedVersionId && versionsWithGroupsRef.current.has(savedVersionId)) {
-          await projectService.deleteGroupsByVersion(savedVersionId);
+          await projectService.deleteGroupsByVersion(savedVersionId, project.id);
           versionsWithGroupsRef.current.delete(savedVersionId);
         }
         const idMap = await saveGroups(project.id, savedVersionId, project.groups);
@@ -669,6 +737,7 @@ const QuotationPage: React.FC = () => {
         } : prev);
       }
       clearCache('/projects');
+      await flushDeletedGroups();
       setHasChanges(false);
       messageApi.success('概算表已保存');
     } catch (err: unknown) {
@@ -678,13 +747,20 @@ const QuotationPage: React.FC = () => {
       setIsSaving(false);
       savingRef.current = false;
     }
-  }, [validateCodes, messageApi, project, isLocked, syncQuotation, quoteId, navigate, saveGroups]);
+  }, [validateCodes, messageApi, project, isLocked, syncQuotation, quoteId, navigate, saveGroups, flushDeletedGroups]);
 
   const handleSubmit = useCallback(async () => {
     if (savingRef.current) return; // ⚠️ 同步防重入锁
     if (isLocked) { messageApi.warning('此报价已锁定，无法提交'); return; }
     if (!project) return;
     if (project.id.startsWith('proj-')) { messageApi.warning('请先保存报价，再提交审批'); return; }
+    // ⚠️ A131：提交复用保存的完整性校验，防空客户/空项目/零明细的历史单据进入审批
+    if (!project.clientName.trim()) { messageApi.warning('请输入客户名称'); return; }
+    if (!project.projectName.trim()) { messageApi.warning('请输入项目名称'); return; }
+    if (!project.projectScope.trim()) { messageApi.warning('请输入项目范围'); return; }
+    if (project.groups.reduce((s, g) => s + g.items.length, 0) === 0) {
+      messageApi.warning('请至少添加一个物料条目'); return;
+    }
     const badCodes = validateCodes();
     if (badCodes.length > 0) {
       messageApi.warning('以下编码不在组件数据库中，请先注册再提交：' + badCodes.join(', '));
@@ -692,8 +768,11 @@ const QuotationPage: React.FC = () => {
     }
     const curVer = project.currentVersion;
     if (!curVer.versionNo) { messageApi.warning('版本号异常'); return; }
+    // 已通过/审批中的单据无变更时不得重复提交（会无意义地重置状态并新建审批）
+    if (curVer.reviewStatus === 'approved') { messageApi.warning('该报价已审批通过，无需重复提交'); return; }
+    if (curVer.reviewStatus === 'pending') { messageApi.warning('该报价正在审批中，请勿重复提交'); return; }
     // ⚠️ 审计修复 BU-6：汇总值提前到 try 外计算，供失败回滚复用
-    const submitUntaxed = curVer.discountedPrice ? exAmount(curVer.discountedPrice, curVer.taxRate) : undefined;
+    const submitUntaxed = toUntaxedDiscounted(curVer);
     const submitSummary = calcProjectSummary(project.groups || [], curVer, submitUntaxed);
     try {
       savingRef.current = true;
@@ -705,7 +784,7 @@ const QuotationPage: React.FC = () => {
       // 保存组数据（与 handleSave 逻辑一致），确保审批时组数据是最新的
       // ⚠️ 版本隔离/回切防护：同步新组 id 回 state；版本切换时先按版本清理目标版本旧组再重建，防止重复组
       if (groupsVersionRef.current && groupsVersionRef.current !== savedVerId && versionsWithGroupsRef.current.has(savedVerId)) {
-        await projectService.deleteGroupsByVersion(savedVerId);
+        await projectService.deleteGroupsByVersion(savedVerId, project.id);
         versionsWithGroupsRef.current.delete(savedVerId);
       }
       const idMap = await saveGroups(project.id, savedVerId, project.groups);
@@ -742,6 +821,7 @@ const QuotationPage: React.FC = () => {
         groups: prev.groups.map(g => ({ ...g, id: idMap.get(g.id) || g.id })),
       } : prev);
       clearCache('/projects');
+      await flushDeletedGroups();
       setQuotationLocked(true);
       setHasChanges(false);
       messageApi.success('已提交审批');
@@ -760,6 +840,11 @@ const QuotationPage: React.FC = () => {
           salesNo: project.salesNo, clientName: project.clientName,
           projectName: project.projectName || project.clientName,
           status: restoreStatus,
+          // 补偿回滚必须带完整财务快照：后端 sync 现已按显式字段更新，
+          // 但显式携带可保证回滚后金额/成本/利润率与版本一致（防历史半态）
+          amount: submitSummary.discountedPrice || 0,
+          totalCost: submitSummary.totalCost || 0,
+          profitRate: rateToPercent(submitSummary.gp3 || 0),
         });
       } catch { /* 回滚失败静默：保留原错误提示，用户可重试提交 */ }
       messageApi.error('提交失败：' + ((err as Error).message || '未知错误'));
@@ -767,20 +852,23 @@ const QuotationPage: React.FC = () => {
       savingRef.current = false;
       setIsSaving(false);
     }
-  }, [validateCodes, messageApi, project, isLocked, submitterName, saveGroups]);
+  }, [validateCodes, messageApi, project, isLocked, submitterName, saveGroups, flushDeletedGroups]);
 
   // ⚠️ 所有 calcProjectSummary 调用必须传入未税 discountedPrice（已含税存储的 ÷(1+taxRate) 转换）
   const summary = useMemo(() => {
     if (!project || !project.currentVersion) return null;
-    const memoUntaxed = project.currentVersion.discountedPrice
-      ? exAmount(project.currentVersion.discountedPrice, project.currentVersion.taxRate)
-      : undefined;
+    const memoUntaxed = toUntaxedDiscounted(project.currentVersion);
     return calcProjectSummary(project.groups, project.currentVersion, memoUntaxed);
   }, [project]);
 
   const handleExport = useCallback(() => {
     if (!project || !project.currentVersion || project.currentVersion.reviewStatus !== 'approved') {
       messageApi.warning('报价需审批通过后方可导出');
+      return;
+    }
+    // 已通过版本可能有未保存修改（审批后解锁编辑）：导出必须与审批快照一致
+    if (hasChanges) {
+      messageApi.warning('存在未保存的修改，请先保存（保存后将重置为草稿并需重新审批）再导出');
       return;
     }
     if (!summary) return;
@@ -799,7 +887,7 @@ const QuotationPage: React.FC = () => {
         '<td class="amount">¥' + formatMoney(groupTotal) + '</td></tr>';
       for (let ii = 0; ii < g.items.length; ii++) {
         const item = g.items[ii];
-        if (item.accountingPrice <= 0) continue;
+        // 零价/赠品项也要导出：跳过会让组小计（含全部项）与明细行之和无法核对
         groupsHtml += '<tr><td style="text-align:center">' + g.groupNo + '.' + item.itemNo + '</td>' +
           '<td>' + escapeHtml(item.code || item.description || '—') + '</td>' +
           '<td style="text-align:center">' + item.qtyTotal + '</td>' +
@@ -821,7 +909,7 @@ const QuotationPage: React.FC = () => {
     html += '<p style="font-size:11px;color:#999;margin-top:16px">明细项/单价为不含税价格，预期总价/折后报价为含税价格</p>';
 
     exportHtmlTable('报价表_' + project.clientName + '_' + project.salesNo, html);
-  }, [project, summary, messageApi]);
+  }, [project, summary, messageApi, hasChanges]);
 
   if (loading) {
     return (
@@ -843,13 +931,13 @@ const QuotationPage: React.FC = () => {
       {contextHolder}
       {invalidQuote && <div style={{ padding: 60, textAlign: 'center', color: COLORS.textLight }}>
         <div style={{ fontSize: 40, marginBottom: 12 }}>📄</div>
-        <div style={{ fontSize: 14, marginBottom: 20 }}>报价不存在或已被删除</div>
-        <Button onClick={() => navigate('/quotations')}>返回报价列表</Button>
+        <div style={{ fontSize: 14, marginBottom: 20 }}>{loadError || '报价不存在或已被删除'}</div>
+        <Button onClick={handleBack}>返回报价列表</Button>
       </div>}
       {!invalidQuote && project && <div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <ArrowLeftOutlined style={{ fontSize: 18, color: COLORS.primary, cursor: 'pointer' }} onClick={() => navigate('/quotations')} />
+            <ArrowLeftOutlined style={{ fontSize: 18, color: COLORS.primary, cursor: 'pointer' }} onClick={handleBack} />
             <span style={{ fontSize: 17, fontWeight: 700, color: COLORS.textDark }}>报价编制</span>
             <span style={{
               fontSize: 12, fontWeight: 600, padding: '2px 10px', borderRadius: 4,
@@ -868,7 +956,7 @@ const QuotationPage: React.FC = () => {
           <div style={{ fontSize: 13, color: COLORS.textLight }}>Pre-Sales Calculation</div>
         </div>
 
-        <ProjectHeader project={project} onUpdate={handleProjectUpdate} readOnly={isLocked} />
+        <ProjectHeader project={project} onUpdate={handleProjectUpdate} readOnly={isLocked || isSaving} />
 
         <div style={{
           marginBottom: 12, fontSize: 12, fontWeight: 600, color: '#3a4a6a', lineHeight: 1.8
@@ -891,12 +979,12 @@ const QuotationPage: React.FC = () => {
               onDeleteItem={handleDeleteItem}
               onDeleteGroup={group.groupType === 'EQUIPMENT' ? handleDeleteGroup : undefined}
               onGroupNameChange={group.groupType === 'EQUIPMENT' ? handleGroupNameChange : undefined}
-              editable={!isLocked}
+              editable={!isLocked && !isSaving}
             />
           ))}
         </div>
 
-        {!isLocked && <Button type="default" ghost
+        {!isLocked && !isSaving && <Button type="default" ghost
           onClick={handleAddGroup}
           style={{
             width: '100%', height: 48, marginTop: 16,
@@ -915,7 +1003,7 @@ const QuotationPage: React.FC = () => {
           version={project.currentVersion}
           onDiscountChange={handleDiscountChange}
           onVersionUpdate={handleProjectUpdate}
-          readOnly={isLocked}
+          readOnly={isLocked || isSaving}
         />
 
         {/* 删除设备组/删除物料 确认弹窗 */}

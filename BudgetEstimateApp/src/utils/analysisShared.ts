@@ -3,7 +3,8 @@ import { TAX_RATE } from './constants';
 import { COLORS } from '../styles/colors';
 
 /** 千单位数字（不带 K 后缀）：1234 → "1"（⚠️ B18：DeliveryCharts 旧 fmtKNum 与本函数重复，收敛共用） */
-export const fmtKBase = (v: number) => Math.round(v / 1000).toLocaleString();
+// Math.round(-500/1000) 得到 -0，toLocaleString 输出 "-0"（与 +500 → "1K" 不对称）；统一归一为 0
+export const fmtKBase = (v: number) => (Math.round(v / 1000) || 0).toLocaleString();
 /** 格式化数字为千单位显示（如 1234 → "1K"） */
 export const fmtK = (v: number) => fmtKBase(v) + 'K';
 /** 压缩销售编号：A2026-07-003-S → 2607003S */
@@ -97,10 +98,23 @@ export interface NodeDelayInfo {
  * - 实际完成日 ≤ 判定时点 → 用实际完成日（结果永久）
  * - 否则 → 判定时点（未完成，仅已超期判延期，结果临时）
  */
+/** 统一归一到「本地日历日 00:00」：
+ *  - 'YYYY-MM-DD'（基线/实际完成日）必须按本地日期解析——`new Date('2026-07-01')` 按 UTC 零点，
+ *    在东八区等于当地 08:00，与月末 23:59:59.999 比较会凭空多出约 0.67 天（Math.round → +1 天误判延期）。
+ *  - ISO 时间戳按其本地日历日取值（跨时区写入的实际日期保持一致）。 */
+const toLocalDayStart = (v: string | Date): Date => {
+  if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)) {
+    const [y, m, d] = v.split('-').map(Number);
+    return new Date(y, m - 1, d);
+  }
+  const d = v instanceof Date ? v : new Date(v);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+};
+
 const delayOf = (baseline: string, actualEnd: Date | null, asOf: Date): { delayed: boolean; days: number } => {
-  const baselineD = new Date(baseline);
-  // 参考完成日：已完成→实际完成日；未完成→判定时点
-  const end = actualEnd ?? asOf;
+  const baselineD = toLocalDayStart(baseline);
+  // 参考完成日：已完成→实际完成日；未完成→判定时点（两侧均按本地日历日比较）
+  const end = toLocalDayStart(actualEnd ?? asOf);
   const days = Math.round((end.getTime() - baselineD.getTime()) / DAY_MS);
   return { delayed: days > 0, days };
 };
@@ -118,8 +132,8 @@ export const getNodeDelay = (node: DeliveryNode | undefined, asOf?: Date): NodeD
   const t = asOf ?? new Date();
   // 实际完成日期（actualDate 优先，兼容旧数据 actualEndDate）
   const actualEnd = node.actualDate || node.actualEndDate;
-  // 判定时点的完成状态：completed 且实际完成日 ≤ 时点 → 用实际完成日，否则用判定时点
-  const doneByAsOf = node.status === 'completed' && !!actualEnd && new Date(actualEnd) <= t;
+  // 判定时点的完成状态：completed 且实际完成日 ≤ 时点（按日历日比较）→ 用实际完成日，否则用判定时点
+  const doneByAsOf = node.status === 'completed' && !!actualEnd && toLocalDayStart(actualEnd) <= toLocalDayStart(t);
   const { delayed, days } = delayOf(baseline, doneByAsOf ? new Date(actualEnd!) : null, t);
   return { hasBaseline: true, delayed, days };
 };
@@ -164,7 +178,9 @@ export interface ProjectOnTimeRate {
  *  「无基线不判定」（refEnd 缺失 continue）口径打架。 */
 export const computeProjectOnTimeRate = (p: DeliveryProject, now: Date): ProjectOnTimeRate => {
   const due = (p.nodes || []).map(n => ({ node: n, delay: getNodeDelay(n, now) }));
-  const scheduled = due.filter(({ node, delay }) => delay.hasBaseline && (node.actualDate || delay.delayed));
+  // 完成日字段与 getNodeDelay 同源：actualDate 优先，兼容旧数据 actualEndDate
+  const scheduled = due.filter(({ node, delay }) =>
+    delay.hasBaseline && (node.actualDate || node.actualEndDate || delay.delayed));
   const delayedCnt = scheduled.filter(({ delay }) => delay.delayed).length;
   const hasDue = scheduled.length > 0;
   return {

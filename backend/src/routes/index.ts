@@ -1,5 +1,5 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
-import { requireAuth, requirePermission } from '../middleware/auth.js';
+import { requireAuth, requireBudgetAuth, requirePermission } from '../middleware/auth.js';
 import auth from './auth.js';
 import users from './users.js';
 import components from './components.js';
@@ -16,7 +16,7 @@ import settings from './settings.js';
 import { query } from '../db/index.js';
 import { AppError } from '../middleware/index.js';
 import { logAudit, objKeysToSnake, withTransaction } from './helpers.js';
-import { WRITE_GUARD, READ_GUARD, selectApprovalPerms, selectDeliveryPerms } from '../permissions.js';
+import { WRITE_GUARD, READ_GUARD, selectApprovalPerms, selectDeliveryPerms, selectOpportunityPerms, selectComponentPerms } from '../permissions.js';
 import { DEFAULT_EUR_RATE, DEFAULT_TAX_RATE, DEFAULT_WARRANTY_RATE, DEFAULT_RISK_RATE } from '../constants.js';
 
 const router = Router();
@@ -47,19 +47,31 @@ const readGuard = (perms: string[]) => (req: Request, res: Response, next: NextF
 // 单测 tests/permissions.test.ts 锁定 A1 类配置漂移。
 // ⚠️ A1 修复：writeGuard 列表只含「写动作」权限——剔除纯只读页面权限（物料管理/销售机会管理/客户管理），
 //   否则 hasPermission 的任一命中（OR）会让仅持页面查看权的用户也能增删改（越权写）。读权限集 readGuard 不变。
-router.use('/components', requireAuth, writeGuard(WRITE_GUARD.components), readGuard(READ_GUARD.components), components);
-router.use('/projects', requireAuth, writeGuard(WRITE_GUARD.projects), readGuard(READ_GUARD.projects), projects);
-router.use('/opportunities', requireAuth, writeGuard(WRITE_GUARD.opportunities), readGuard(READ_GUARD.opportunities), opportunities);
-router.use('/quotations', requireAuth, writeGuard(WRITE_GUARD.quotations), readGuard(READ_GUARD.quotations), quotations);
+// 审核决策（POST /:id/review）走「审批管理」，与新增物料的写权分离
+router.use('/components', requireBudgetAuth, (req: Request, res: Response, next: NextFunction) => {
+  if (req.method === 'GET') return next();
+  return requirePermission(...selectComponentPerms(req.method, req.path))(req, res, next);
+}, readGuard(READ_GUARD.components), components);
+router.use('/projects', requireBudgetAuth, writeGuard(WRITE_GUARD.projects), readGuard(READ_GUARD.projects), projects);
+router.use('/opportunities', requireBudgetAuth,
+  (req: Request, res: Response, next: NextFunction) => {
+    if (req.method === 'GET') return next();
+    return requirePermission(...selectOpportunityPerms(req.method, req.path))(req, res, next);
+  },
+  readGuard(READ_GUARD.opportunities), opportunities);
+router.use('/quotations', requireBudgetAuth, writeGuard(WRITE_GUARD.quotations), readGuard(READ_GUARD.quotations), quotations);
 // 审批：创建（各业务模块提交）与处理（审批管理）均需对应权限；列表读取仅审批管理/万能权限
 // ⚠️ 审计修复：审批写守卫按 approval_type 拆分——此前 blanket writeGuard OR-set 让仅持单一模块权限者
 //   （如仅"报价编制"）也能创建 plan/cost/promote 审批、仅持"交付管理"者也能创建 quotation 审批。
 //   创建方须持对应模块写权限：quotation→报价编制、plan/cost→交付管理（cost 兼容成本录入）、promote→转线索/转机会；
 //   无 approval_type 的请求（审批处理 POST /:id/records、通用 PUT/DELETE）→ 审批管理兜底（与 approvals.ts 内部守卫口径一致）。
-router.use('/approvals', requireAuth,
+router.use('/approvals', requireBudgetAuth,
   (req: Request, res: Response, next: NextFunction) => {
     if (req.method === 'GET') return next(); // 交给 readGuard
-    const type = (req.body?.approval_type as string | undefined) || (req.body?.approvalType as string | undefined);
+    // ⚠️ A110 修复：守卫必须与处理器使用同一次键名归一化。此前直接读原始 body 的
+    //   approval_type || approvalType——同时传两个键时 objKeysToSnake 的后者覆盖前者，
+    //   守卫按 quotation 放行、处理器按 promote 落库，可越权创建他人机会的晋升审批。
+    const type = objKeysToSnake({ ...(req.body || {}) }).approval_type as string | undefined;
     return requirePermission(...selectApprovalPerms(type))(req, res, next);
   },
   readGuard(READ_GUARD.approvals), approvals);
@@ -67,24 +79,25 @@ router.use('/approvals', requireAuth,
 //   修改实际成本/删除交付/附件管理等其余写操作须「交付管理」。此前 blanket writeGuard OR 让仅持
 //   「销售机会管理」的用户可对任意交付改 total_actual_cost、DELETE 整条交付（还会清磁盘附件）。
 //   读取权限 readGuard(DELIVERY_READ) 不变。
-router.use('/deliveries', requireAuth,
+router.use('/deliveries', requireBudgetAuth,
   (req: Request, res: Response, next: NextFunction) => {
     if (req.method === 'GET') return next(); // 交给 readGuard
     return requirePermission(...selectDeliveryPerms(req.method, req.path))(req, res, next);
   },
   readGuard(READ_GUARD.deliveries), deliveries);
 // ⚠️ H1 修复：/clients 列表读取与 /clients/:id/detail 同权限集（此前列表 GET 未加 readGuard，任意登录用户可读全部客户）
-router.use('/clients', requireAuth, writeGuard(WRITE_GUARD.clients), readGuard(READ_GUARD.clients), clients);
+router.use('/clients', requireBudgetAuth, writeGuard(WRITE_GUARD.clients), readGuard(READ_GUARD.clients), clients);
 // 标签写操作需 新建标签（读取开放给物料打标）
-router.use('/tags', requireAuth, writeGuard(WRITE_GUARD.tags), tags);
+router.use('/tags', requireBudgetAuth, writeGuard(WRITE_GUARD.tags), tags);
 // 审计日志：与前端 /settings 同口径（用户管理/系统配置）
-router.use('/audit-logs', requireAuth, requirePermission(...READ_GUARD['audit-logs']), auditLogs);
+router.use('/audit-logs', requireBudgetAuth, requirePermission(...READ_GUARD['audit-logs']), auditLogs);
 
-// 用户设置
+// 个人设置按用户隔离，任意登录用户可读写自己的设置（含工时应用用户）；
+// 输入边界（键/值长度、条数）在 settings.ts 内限制
 router.use('/settings', requireAuth, settings);
 
 // ── 项目版本保存（报价编制写操作）──
-router.post('/project-versions', requireAuth, writeGuard(WRITE_GUARD['project-versions']), async (req, res, next) => {
+router.post('/project-versions', requireBudgetAuth, writeGuard(WRITE_GUARD['project-versions']), async (req, res, next) => {
   try {
     const snakeBody = objKeysToSnake(req.body);
     const { project_id, version_no, eur_rate = DEFAULT_EUR_RATE, tax_rate = DEFAULT_TAX_RATE,
@@ -117,7 +130,7 @@ router.post('/project-versions', requireAuth, writeGuard(WRITE_GUARD['project-ve
       const pendingReq = (await query(
         `SELECT 1 FROM approval_requests ar
          JOIN quotations q ON q.id = ar.quotation_id
-         WHERE q.project_id = $1 AND q.version_no = $2`,
+         WHERE q.project_id = $1 AND q.version_no = $2 AND ar.status = 'pending'`,
         [project_id, version_no]
       )).rows[0];
       if (pendingReq) {
@@ -168,7 +181,7 @@ router.post('/project-versions', requireAuth, writeGuard(WRITE_GUARD['project-ve
 });
 
 // ── 项目组和明细保存（事务保护，报价编制写操作）──
-router.post('/project-groups', requireAuth, writeGuard(WRITE_GUARD['project-groups']), async (req, res, next) => {
+router.post('/project-groups', requireBudgetAuth, writeGuard(WRITE_GUARD['project-groups']), async (req, res, next) => {
   try {
     const body = objKeysToSnake(req.body);
     const { project_id, version_id, group_no, group_type, name,
@@ -180,6 +193,13 @@ router.post('/project-groups', requireAuth, writeGuard(WRITE_GUARD['project-grou
 
     // ⚠️ A15：事务样板收敛为 withTransaction
     const group = await withTransaction(async (client) => {
+      // ⚠️ A111 修复：版本必须属于本项目——project_groups 的 project_id/version_id 是两个独立外键，
+      //   不校验时可将 A 项目的组挂到 B 项目的版本，形成读取不到的孤儿组（还会污染版本隔离判断）。
+      const versionRow = (await client.query(
+        'SELECT 1 FROM project_versions WHERE id = $1 AND project_id = $2',
+        [version_id, project_id]
+      )).rows[0];
+      if (!versionRow) throw new AppError(400, '版本不属于该项目');
       const groupId = req.body.id || undefined;
       const existing = groupId
         ? (await client.query('SELECT id, version_id, project_id FROM project_groups WHERE id = $1', [groupId])).rows[0]
@@ -255,12 +275,19 @@ router.post('/project-groups', requireAuth, writeGuard(WRITE_GUARD['project-grou
 });
 
 // 删除指定版本的所有组和明细（必须在 /:id 之前注册，否则 by-version 被 :id 捕获）
-router.delete('/project-groups/by-version/:versionId', requireAuth, writeGuard(WRITE_GUARD['project-groups']), async (req, res, next) => {
+router.delete('/project-groups/by-version/:versionId', requireBudgetAuth, writeGuard(WRITE_GUARD['project-groups']), async (req, res, next) => {
   try {
     const { versionId } = req.params;
+    // ⚠️ A111 修复：按版本删除必须带项目归属，防凭版本 UUID 删除其他项目的全部组
+    const projectId = String(req.query.project_id || '');
+    if (!projectId) throw new AppError(400, '缺少 project_id');
+    const versionRow = (await query(
+      'SELECT 1 FROM project_versions WHERE id = $1 AND project_id = $2', [versionId, projectId]
+    )).rows[0];
+    if (!versionRow) throw new AppError(404, '版本不属于该项目');
     // group_items 通过外键 ON DELETE CASCADE 自动删除
     // ⚠️ L1 修复：检查实际删除行数，删除不存在版本返回 404（此前无行检查恒返 deleted:true）
-    const result = await query('DELETE FROM project_groups WHERE version_id = $1 RETURNING id', [versionId]);
+    const result = await query('DELETE FROM project_groups WHERE version_id = $1 AND project_id = $2 RETURNING id', [versionId, projectId]);
     if (result.rows.length === 0) throw new AppError(404, '未找到该版本的项目组');
     logAudit(req, '删除组', 'project', '版本 ' + versionId.slice(0,8) + ' 的所有组已删除');
     res.json({ deleted: true, count: result.rows.length });
@@ -268,7 +295,7 @@ router.delete('/project-groups/by-version/:versionId', requireAuth, writeGuard(W
 });
 
 // 删除单个项目组
-router.delete('/project-groups/:id', requireAuth, writeGuard(WRITE_GUARD['project-groups']), async (req, res, next) => {
+router.delete('/project-groups/:id', requireBudgetAuth, writeGuard(WRITE_GUARD['project-groups']), async (req, res, next) => {
   try {
     const { id } = req.params;
     // ⚠️ L1 修复：检查实际删除行数，删除不存在的组返回 404

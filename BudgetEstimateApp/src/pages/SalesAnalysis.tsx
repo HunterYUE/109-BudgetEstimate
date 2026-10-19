@@ -65,18 +65,24 @@ function useDimReasons(fyLostByTime: SalesOpportunity[], groupLabel: string): Ba
     }
     const countMap = new Map<string, number>();
     for (const name of allReasons) countMap.set(name, 0);
+    // 父类只勾选父项（detailItems 为空）时，父类标签不在子项桶里——单独成桶，避免被静默丢弃
+    const parentBuckets = new Map<string, number>();
     for (const opp of fyLostByTime) {
       if (!opp.reasons) continue;
       for (const r of parseReasons(opp.reasons)) {
         if (r.groupLabel !== groupLabel) continue;
         if (r.detailItems.length > 0) {
           for (const item of r.detailItems) { if (countMap.has(item)) countMap.set(item, countMap.get(item)! + 1); }
+        } else if (countMap.has(r.subLabel)) {
+          countMap.set(r.subLabel, countMap.get(r.subLabel)! + 1);
         } else {
-          if (countMap.has(r.subLabel)) countMap.set(r.subLabel, countMap.get(r.subLabel)! + 1);
+          parentBuckets.set(r.subLabel, (parentBuckets.get(r.subLabel) || 0) + 1);
         }
       }
     }
-    return allReasons.map((name, i) => ({ name, value: countMap.get(name) || 0, color: i % 2 === 0 ? COLORS.primary : COLORS.purple }));
+    const base = allReasons.map((name, i) => ({ name, value: countMap.get(name) || 0, color: i % 2 === 0 ? COLORS.primary : COLORS.purple }));
+    for (const [name, value] of parentBuckets) base.push({ name, value, color: COLORS.purple });
+    return base;
   }, [fyLostByTime, groupLabel]);
 }
 
@@ -157,7 +163,9 @@ const SalesAnalysis: React.FC = () => {
     const serverVal = (key: string) => serverTargets[key] ?? '';
     const read = (base: string, legacy: string): string => {
       const local = (() => { try { return localStorage.getItem(fyTargetKey(base)) ?? localStorage.getItem(legacy) ?? ''; } catch { return ''; } })();
-      return serverVal(fyTargetKey(base)) || serverVal(legacy) || local;
+      // 本地值在每次输入时立即写入，优先于服务端（服务端有 3 秒防抖窗口，且在途响应可能回传旧值）；
+      // 本机无本地值时再读服务端（跨设备同步场景）
+      return local || serverVal(fyTargetKey(base)) || serverVal(legacy);
     };
     setAnnualTargetInput(read('saAnnualTarget', LEGACY_TARGET_KEYS.order));
     setGp3Input(read('saTargetGP3', LEGACY_TARGET_KEYS.gp3));
@@ -181,6 +189,7 @@ const SalesAnalysis: React.FC = () => {
     if (settingsTimerRef.current) clearTimeout(settingsTimerRef.current);
     settingsTimerRef.current = setTimeout(flushServerSave, 3000);
   };
+
 
   // 三个目标保存器：写 state + 本地持久化（按财年键）+ 服务端防抖提交（直接函数，避免工厂模式触发 react-hooks/refs）
   const saveSalesTarget = (v: string) => {
@@ -235,7 +244,7 @@ const SalesAnalysis: React.FC = () => {
         if (pt.salesProfit !== undefined) profit += pt.salesProfit;
         else incomplete = true;
       }
-      return { name: FY_MONTH_LABELS[i], value: amount, subValue: incomplete ? undefined : profit || undefined };
+      return { name: FY_MONTH_LABELS[i], value: amount, subValue: incomplete ? undefined : profit || undefined, incomplete };
     });
   }, [fyRange, deliveryQuoteInfo, deliveryProjects]);
 
@@ -251,13 +260,15 @@ const SalesAnalysis: React.FC = () => {
   // ── 销售累计 ──
   const salesCumulative = useMemo(() => {
     const cumulative = monthlySalesData.slice(0, elapsedMonths).reduce((s, m) => s + m.value, 0);
-    const profitCumulative = monthlySalesData.slice(0, elapsedMonths).reduce((s, m) => s + (m.subValue || 0), 0);
+    const elapsed = monthlySalesData.slice(0, elapsedMonths);
+    const profitIncomplete = elapsed.some(m => m.incomplete);
+    const profitCumulative = elapsed.reduce((s, m) => s + (m.subValue || 0), 0);
     const avgMonthly = parsedSalesTarget ? Math.round(parsedSalesTarget * 1000 / 12) : 0;
     const expectedCumulative = avgMonthly * elapsedMonths;
     const annualProfitTarget = parsedSalesTarget && parsedGp3 ? Math.round(parsedSalesTarget * parsedGp3 / 100) : 0;
     const avgMonthlyProfit = annualProfitTarget ? Math.round(annualProfitTarget * 1000 / 12) : 0;
     const expectedProfitCumulative = avgMonthlyProfit * elapsedMonths;
-    return { cumulative, expectedCumulative, profitCumulative, expectedProfitCumulative, annualProfitTarget };
+    return { cumulative, expectedCumulative, profitCumulative, profitIncomplete, expectedProfitCumulative, annualProfitTarget };
   }, [monthlySalesData, parsedSalesTarget, parsedGp3, elapsedMonths]);
 
   // ── 月度订单累计 + 利润累计 ──
@@ -315,7 +326,7 @@ const SalesAnalysis: React.FC = () => {
       const created = new Date(p.createdAt);
       return created >= fyRange.start && created <= fyRange.end;
     });
-    if (inFy.length === 0) return 0;
+    if (inFy.length === 0) return null;
     let totalAmt = 0, weighted = 0;
     for (const p of inFy) {
       const oppProfit = deliveryQuoteInfo.get(p.id);
@@ -325,7 +336,7 @@ const SalesAnalysis: React.FC = () => {
       totalAmt += ex;
       weighted += ex * oppProfit.rate;
     }
-    return totalAmt > 0 ? (weighted / totalAmt * 100) : 0;
+    return totalAmt > 0 ? (weighted / totalAmt * 100) : null;
   }, [fyRange, deliveryQuoteInfo, deliveryProjects]);
 
   // ── 已交付项目实际 GP3（已完成项目总结且成本审批通过的项目的加权平均实际 GP3）──
@@ -339,7 +350,7 @@ const SalesAnalysis: React.FC = () => {
       if (p.costStatus !== 'approved' || p.totalActualCost == null) return false;
       return true;
     });
-    if (delivered.length === 0) return 0;
+    if (delivered.length === 0) return null;
     let totalAmt = 0, weighted = 0;
     for (const p of delivered) {
       const exTax = deliveryExTax(p, deliveryQuoteInfo);
@@ -349,7 +360,7 @@ const SalesAnalysis: React.FC = () => {
       const actGP3 = exTax > 0 && actProfit != null ? actProfit / exTax : 0;
       weighted += exTax * actGP3;
     }
-    return totalAmt > 0 ? (weighted / totalAmt * 100) : 0;
+    return totalAmt > 0 ? (weighted / totalAmt * 100) : null;
   }, [fyRange, deliveryQuoteInfo, deliveryProjects]);
 
   // ── 漏斗右侧 FY 累计用 ──
@@ -653,7 +664,7 @@ const SalesAnalysis: React.FC = () => {
               </span>
             )}
             <span style={{ fontSize: 10, color: COLORS.purple, fontWeight: 700, marginLeft: 4 }}>
-              ({orderWeightedGP3 > 0 ? orderWeightedGP3.toFixed(1) : '—'})
+              ({orderWeightedGP3 != null ? orderWeightedGP3.toFixed(1) : '—'})
             </span>
           </div>
           <VerticalBarChart data={monthlyOrderData} format="K" height={260} topN={12} barWidthRatio={0.6} maxBarWidth={120} contentOffset={0} chartWidth={620} disableSort padTop={30} cardBorder={false}
@@ -706,9 +717,15 @@ const SalesAnalysis: React.FC = () => {
                 {annualSalesTarget && gp3Input ? `${salesCumulative.annualProfitTarget.toLocaleString()}K` : '—'}
               </span>
               {annualSalesTarget && gp3Input ? (
-                <span style={{ color: salesCumulative.profitCumulative >= salesCumulative.expectedProfitCumulative ? COLORS.purple : COLORS.danger, fontSize: 10 }}>
-                  {`(${fmtK(salesCumulative.profitCumulative)})`}
-                </span>
+                salesCumulative.profitIncomplete ? (
+                  <span style={{ color: COLORS.danger, fontSize: 10 }} title="部分已交付项目缺少实际成本，累计利润不完整">
+                    (成本缺失)
+                  </span>
+                ) : (
+                  <span style={{ color: salesCumulative.profitCumulative >= salesCumulative.expectedProfitCumulative ? COLORS.purple : COLORS.danger, fontSize: 10 }}>
+                    {`(${fmtK(salesCumulative.profitCumulative)})`}
+                  </span>
+                )
               ) : null}
             </span>
           </div>
@@ -731,7 +748,7 @@ const SalesAnalysis: React.FC = () => {
               </span>
             )}
             <span style={{ fontSize: 10, color: COLORS.danger, fontWeight: 700, marginLeft: 4 }}>
-              ({deliveredActualGP3 > 0 ? deliveredActualGP3.toFixed(1) : '—'})
+              ({deliveredActualGP3 != null ? deliveredActualGP3.toFixed(1) : '—'})
             </span>
           </div>
           <VerticalBarChart data={monthlySalesData} format="K" height={260} topN={12} barWidthRatio={0.6} maxBarWidth={120} contentOffset={0} chartWidth={620} disableSort padTop={30} cardBorder={false}

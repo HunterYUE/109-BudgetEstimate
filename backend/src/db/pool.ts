@@ -7,9 +7,9 @@ pg.types.setTypeParser(701, (val: string) => parseFloat(val));
 pg.types.setTypeParser(700, (val: string) => parseFloat(val));
 
 // date 类型（OID 1082）默认会被 node-postgres 转成 JS Date → res.json() 序列化为 UTC ISO
-// 字符串（如 "2026-07-30T16:00:00.000Z"，中国时区下比库内日期少一天），前端无法还原为
-// "YYYY-MM-DD"。本项目唯一 date 列是 timerecording.time_records.date，前端一律按字符串使用，
-// 因此直接返回原始 "YYYY-MM-DD"，消除日偏移。
+// 字符串，如 "2026-07-30T16:00:00.000Z"，中国时区下比库内日期少一天，前端无法还原为
+// "YYYY-MM-DD"，本项目唯一 date 列是 timerecording.time_records.date，前端一律按字符串使用，
+// 因此直接返回原始 "YYYY-MM-DD"，消除日偏移
 pg.types.setTypeParser(1082, (val: string) => val);
 
 const {
@@ -25,12 +25,16 @@ if (!DB_PASSWORD) {
   process.exit(1);
 }
 
-// ⚠️ L5 修复：DB_PORT 显式校验（此前直接 parseInt 传给 pg，非法值静默回退默认端口，难排查）
+// L5 修复：DB_PORT 显式校验，此前直接 parseInt 传给 pg，非法值静默回退默认端口，难排查 
 const dbPort = Number(DB_PORT);
 if (!Number.isInteger(dbPort) || dbPort < 1 || dbPort > 65535) {
   console.error('[DB] FATAL: 无效的 DB_PORT 配置:', DB_PORT);
   process.exit(1);
 }
+
+// 单条语句/查询上限（默认 30s）：慢查询或锁等待长期占用连接会把 20 个连接耗尽，
+// 进而拖垮全部 API；超时让请求快速失败并释放连接。可用环境变量覆盖（如大批量运维查询）。
+const STATEMENT_TIMEOUT_MS = Number(process.env.DB_STATEMENT_TIMEOUT_MS) || 30000;
 
 const pool = new pg.Pool({
   host: DB_HOST,
@@ -41,6 +45,8 @@ const pool = new pg.Pool({
   max: 20,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 5000,
+  statement_timeout: STATEMENT_TIMEOUT_MS,
+  query_timeout: STATEMENT_TIMEOUT_MS,
 });
 
 pool.on('error', (err) => {

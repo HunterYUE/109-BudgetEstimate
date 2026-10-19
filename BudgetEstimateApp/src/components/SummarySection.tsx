@@ -155,7 +155,9 @@ const SummarySection: React.FC<Props> = ({ groups, version, onDiscountChange, on
               input.value = moneyInputFilter(input.value);
             }}
             onBlur={(e) => {
-              onVersionUpdate?.('commercialCost', parseMoneyInput(e.target.value));
+              const v = parseMoneyInput(e.target.value);
+              // 值未变化不回调：否则点进输入框再失焦就会标记未保存（与 MoneyInput commit 同口径）
+              if (v !== Math.round(version.commercialCost)) onVersionUpdate?.('commercialCost', v);
             }}
             onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
             style={{
@@ -214,7 +216,9 @@ const SummarySection: React.FC<Props> = ({ groups, version, onDiscountChange, on
                 input.value = moneyInputFilter(input.value);
               }}
               onBlur={(e) => {
-                onDiscountChange(parseMoneyInput(e.target.value));  // 直接存含税值，不再除以 (1+taxRate)
+                const v = parseMoneyInput(e.target.value);
+                // 直接存含税值；未变化不回调（防「点进再移开」产生假未保存）
+                if (v !== Math.round(displayDiscounted)) onDiscountChange(v);
               }}
               onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
               style={{ fontWeight: 700, fontSize: 24, color: COLORS.textDark, lineHeight: 1.2,

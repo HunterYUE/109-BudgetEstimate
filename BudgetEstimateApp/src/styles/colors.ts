@@ -1,7 +1,7 @@
 /** 主题色常量 —— React 内联样式中引用，与 App.css CSS 变量同步 */
 
 export const COLORS = {
-  /** 主色 — 蓝色（品牌色） */
+  /** 主色 — 蓝色 */
   primary: '#00509e',
   /** 主色悬浮 */
   primaryHover: '#0066cc',
@@ -39,7 +39,7 @@ export const COLORS = {
   borderInput: '#d9d9d9',
   /** 浅色背景 */
   bgLight: '#fafafa',
-  /** 选中/悬停背景（蓝色调） */
+  /** 选中/悬停背景 */
   bgSelected: '#f0f6ff',
   /** 详情卡片背景 */
   bgCard: '#fafcff',
@@ -55,7 +55,7 @@ export const COLORS = {
   barPending: '#bbb',
 } as const;
 
-/** 标签背景色候选项（15 色深色系） */
+/** 标签背景色候选项 */
 export const TAG_COLORS = [
   '#c0392b', '#d35400', '#e67e22', '#d4ac0d', '#27ae60',
   '#1abc9c', '#2980b9', '#2c3e50', '#7d3c98', '#a04000',

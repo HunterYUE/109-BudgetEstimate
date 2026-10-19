@@ -26,7 +26,7 @@ export const projectService = {
   deleteGroup: (id: string) =>
     api.delete(`/project-groups/${id}`),
 
-  /** 删除指定版本的所有组和明细（保存时清理不存在的数据） */
-  deleteGroupsByVersion: (versionId: string) =>
-    api.delete(`/project-groups/by-version/${versionId}`),
+  /** 删除指定版本的所有组和明细（保存时清理不存在的数据；后端要求带 projectId 校验版本归属） */
+  deleteGroupsByVersion: (versionId: string, projectId: string) =>
+    api.delete(`/project-groups/by-version/${versionId}?project_id=${encodeURIComponent(projectId)}`),
 };

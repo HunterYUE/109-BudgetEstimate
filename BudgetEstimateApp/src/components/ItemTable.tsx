@@ -75,18 +75,22 @@ const MarginInput: React.FC<{ value: number; onCommit: (val: number) => void }> 
   const [text, setText] = React.useState(String(Math.round(value * 100)));
 
   const commit = () => {
-    const cleaned = text.replace(/\D/g, '');
-    const val = parseInt(cleaned, 10);
-    if (!isNaN(val)) {
-      onCommit(val / 100);
+    // 允许一位小数（12.5%）；原 `\D` 过滤会吞掉小数点（15.5 → 155%）
+    const cleaned = text.replace(/[^\d.]/g, '');
+    const val = Number.parseFloat(cleaned);
+    if (Number.isFinite(val)) {
+      // 毛利率必须 <100%，否则售价回退为成本价、利润被静默吞掉
+      const clamped = Math.min(99.9, Math.max(0, val));
+      setText(String(clamped));
+      onCommit(clamped / 100);
     } else {
       setText(String(Math.round(value * 100)));
     }
   };
 
   return (
-    <input type="text" inputMode="numeric" value={text}
-      onChange={(e) => setText(e.target.value)}
+    <input type="text" inputMode="decimal" value={text}
+      onChange={(e) => setText(e.target.value.replace(/[^\d.]/g, ''))}
       onBlur={commit}
       onKeyDown={(e) => { if (e.key === 'Enter') commit(); }}
       style={{ width: 60, textAlign: 'center', ...BARE_INPUT_STYLE, fontSize: 13, MozAppearance: 'textfield' }}
@@ -169,7 +173,12 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
     onItemsChange(newItems);
   };
 
-  const isInDB = (code: string) => catalog.length > 0 ? catalog.some(c => c.code === code) : null;
+  // 编码存在性判定：Set 索引 O(1)，避免每行每次渲染对全量物料库做线性扫描
+  const catalogCodes = React.useMemo(
+    () => new Set(catalog.map((c: Component) => c.code)),
+    [catalog]
+  );
+  const isInDB = (code: string) => catalog.length > 0 ? catalogCodes.has(code) : null;
 
   // 定义锁定列宽的列
   const onCellLock = (w: number) => lockCellWidth(w);
@@ -386,7 +395,8 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
     <>
       <Table
       style={{ borderRadius: 8 }}
-      dataSource={items.map((item) => ({ ...item, key: item.id }))}
+      dataSource={items}
+      rowKey="id"
       columns={columns}
       pagination={false}
       size="small"

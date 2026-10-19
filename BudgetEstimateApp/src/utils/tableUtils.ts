@@ -11,14 +11,20 @@ export const BARE_INPUT_STYLE: CSSProperties = {
   border: 'none', background: 'transparent', outline: 'none',
 };
 
-/** 金额输入过滤：仅保留数字，格式化为 ¥N,N 显示（多表单共用，消除 4+ 处重复内联） */
+/** 金额输入过滤：解析为整元后格式化为 ¥N,N 显示（多表单共用，消除 4+ 处重复内联） */
 export const moneyInputFilter = (raw: string): string => {
-  const num = raw.replace(/[^0-9]/g, '');
-  return num ? '¥' + parseInt(num, 10).toLocaleString() : '¥';
+  const num = parseMoneyInput(raw);
+  return num ? '¥' + num.toLocaleString() : '¥';
 };
 
-/** 金额输入解析：去非数字 → 整数（0 视为空） */
-export const parseMoneyInput = (text: string): number => parseInt(text.replace(/[^0-9]/g, ''), 10) || 0;
+/** 金额输入解析：按数值字面量解析后取整元（0 视为空）。
+ *  ⚠️ 不能直接删除所有非数字字符——`1,234.56` 会被拼成 123456（放大 100 倍），
+ *  `-100` 会被改成正数。此处保留符号/小数点/千分位，再按整数元截断。 */
+export const parseMoneyInput = (text: string): number => {
+  const cleaned = String(text ?? '').replace(/[^\d.-]/g, '');
+  const n = Number.parseFloat(cleaned);
+  return Number.isFinite(n) ? (Math.trunc(n) || 0) : 0;
+};
 
 /** Tab 栏项样式（active 高亮色可配，inactive 默认 textSecondary，可覆盖）——多页共用，消除 Tab 内联样式重复 */
 export const tabItemStyle = (active: boolean, activeColor: string, inactiveColor?: string): CSSProperties => ({

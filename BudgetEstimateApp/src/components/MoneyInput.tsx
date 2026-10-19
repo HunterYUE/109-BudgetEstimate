@@ -38,7 +38,7 @@ export const MoneyInput: React.FC<{
 
   if (!editing) {
     return (
-      <span onClick={() => { setEditing(true); setText(text.replace(/[^0-9]/g, '')); setTimeout(() => inputRef.current?.focus(), 0); }}
+      <span onClick={() => { setEditing(true); setText(value ? String(value) : ''); setTimeout(() => inputRef.current?.focus(), 0); }}
         style={{ cursor: 'text', fontWeight: 600, fontSize, color: '#000', display: 'block', textAlign: align, padding: '2px 4px', minHeight: 28, lineHeight: '24px', ...style }}>
         {text || '¥0'}
       </span>

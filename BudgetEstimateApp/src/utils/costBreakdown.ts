@@ -67,10 +67,10 @@ export function buildCostLines(
     }
   }
 
-  // ── 2. INTEGRATION 材料部分 ──
-  const integGroup = groups.find(g => g.groupType === 'INTEGRATION');
-  if (integGroup) {
-    for (const item of integGroup.items) {
+  // ── 2. INTEGRATION 材料部分（同类型多组全部计入，防与 calcProjectSummary 汇总口径分叉）──
+  for (const g of groups) {
+    if (g.groupType !== 'INTEGRATION') continue;
+    for (const item of g.items) {
       lines.push(itemLine(item, '集成开发', Math.round((item.unitCost || 0) * (item.qtyTotal ?? 1))));
     }
   }
@@ -84,11 +84,13 @@ export function buildCostLines(
       for (const item of g.items) {
         if (item.designHours) {
           totalDesignHours += item.designHours;
-          totalDesignCost += Math.round(item.designHours * (item.designHourRate || (laborRates?.design ?? DEFAULT_DESIGN_HOURLY_RATE)));
+          // ?? 而非 ||：费率 0 是合法值（免费工时），与 calcDirectCost 的 `|| 0` 语义对齐；
+          // 仅 undefined/null 才回退默认费率
+          totalDesignCost += Math.round(item.designHours * (item.designHourRate ?? laborRates?.design ?? DEFAULT_DESIGN_HOURLY_RATE));
         }
         if (item.assemblyHours) {
           totalAssemblyHours += item.assemblyHours * (item.qtyTotal ?? 1);
-          totalAssemblyCost += Math.round(item.assemblyHours * (item.assemblyHourRate || (laborRates?.assembly ?? DEFAULT_ASSEMBLY_HOURLY_RATE)) * (item.qtyTotal ?? 1));
+          totalAssemblyCost += Math.round(item.assemblyHours * (item.assemblyHourRate ?? laborRates?.assembly ?? DEFAULT_ASSEMBLY_HOURLY_RATE) * (item.qtyTotal ?? 1));
         }
       }
     }
@@ -112,10 +114,10 @@ export function buildCostLines(
     lines.push({ key: '_assy_debug', category: '人工成本', code: 'SV-INSASS-000000-V1.0', detail: '装配调试', qty: Math.round(totalAssemblyHours), estimated: totalAssemblyCost, actual: act('_assy_debug') });
   }
 
-  // ── 4. PROJECT_DELIVERY 其他服务项（排除已汇总到设计/装配的项） ──
-  const deliveryGroup = groups.find(g => g.groupType === 'PROJECT_DELIVERY');
-  if (deliveryGroup) {
-    for (const item of deliveryGroup.items) {
+  // ── 4. PROJECT_DELIVERY 其他服务项（同类型多组全部计入；排除已汇总到设计/装配的项）──
+  for (const g of groups) {
+    if (g.groupType !== 'PROJECT_DELIVERY') continue;
+    for (const item of g.items) {
       if (item.code === 'SV-DESIGN-000000-V1.0' || item.code === 'SV-INSASS-000000-V1.0') continue;
       lines.push(itemLine(item, '人工成本', item.directCost));
     }

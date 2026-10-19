@@ -30,7 +30,9 @@ export const AREA_CODES: Record<string, string> = { 东区: 'EA', 南区: 'SO', 
 /** 生成客户编号：保留等级字段在编号中，但流水号基于区域+城市迭代（同区同城共用水位） */
 export function generateClientCode(grade: string, areaCode: string, cityCode: string, existingCodes: string[]): string {
   // 匹配区域+城市（忽略等级）："A-EA-NT-0001"、"B-EA-NT-0001" 均匹配 EA-NT-\d{4}
-  const pattern = new RegExp(`${areaCode}-${cityCode}-(\\d{4})$`);
+  // 城市代码是用户输入：必须转义正则元字符，否则输入 "(" 等字符会让 new RegExp 抛错、页面崩溃
+  const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pattern = new RegExp(`${esc(areaCode)}-${esc(cityCode)}-(\\d{4})$`);
   let maxSeq = 0;
   for (const c of existingCodes) {
     const m = c.match(pattern);

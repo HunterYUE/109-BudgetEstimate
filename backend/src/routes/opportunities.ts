@@ -23,6 +23,36 @@ export const STAGE_NEGOTIATION = ['议价', '中标'];
 /** PUT 更新禁直设列（生命周期字段一律由状态机采集，客户端直写可伪造"进入某阶段时间"污染财年归集口径） */
 export const OPP_UPDATE_EXCLUDE = ['id', 'created_at', 'updated_at', 'won_at', 'lost_at', 'lead_at', 'opportunity_at', 'bid_at', 'negotiation_at'];
 
+/** 阶段/状态枚举（创建时应用层预校验，防非法值直插 DB 触发 500） */
+export const OPP_STAGES = ['信息', '线索', '机会', '投标', '议价', '中标'] as const;
+export const OPP_STATUSES = ['过程中', '赢', '输', '冻结'] as const;
+
+/** 创建时的生命周期字段服务端归一化：忽略客户端传入的时间戳，按创建阶段用服务器时刻采集。
+ *  ⚠️ A118：此前 POST 未排除四个阶段时间列，客户端可直写任意历史时间伪造财年归集；
+ *  同时与 PUT 的 COALESCE 语义保持一致（创建即首次进入，阶段时间 = 创建时刻）。 */
+export function applyOppCreateLifecycle(body: Record<string, any>, nowIso: string): void {
+  if (body.stage !== undefined && !(OPP_STAGES as readonly string[]).includes(body.stage)) {
+    throw new AppError(400, `无效阶段，允许值：${OPP_STAGES.join('、')}`);
+  }
+  if (body.status !== undefined && !(OPP_STATUSES as readonly string[]).includes(body.status)) {
+    throw new AppError(400, `无效状态，允许值：${OPP_STATUSES.join('、')}`);
+  }
+  const stage = body.stage as string | undefined;
+  const stageStamps: Array<[string, readonly string[]]> = [
+    ['lead_at', STAGE_LEAD],
+    ['opportunity_at', STAGE_OPPORTUNITY],
+    ['bid_at', STAGE_BID],
+    ['negotiation_at', STAGE_NEGOTIATION],
+  ];
+  for (const [col, stages] of stageStamps) {
+    if (stage && stages.includes(stage)) body[col] = nowIso;
+    else delete body[col];
+  }
+  // 输单时间同样由服务端采集；非输单不带陈旧值
+  if (body.status === '输') body.lost_at = nowIso;
+  else delete body.lost_at;
+}
+
 /** 机会状态机决策：输入 body（已转 snake）+ 当前库状态 + 是否有交付，返回需追加的 SQL 片段（每段以 ', ' 开头）。
  *  ⚠️ 纯字符串拼接（now()/COALESCE 由 DB 求值）——输单 lost_at 采集、离开输单清除、四阶段 COALESCE、
  *    转交付三分支（赢/输/过程中）全部在此锁定。无交付的「非输」机会转交付抛 400（A105 防伪赢单）；无交付的「输」
@@ -97,6 +127,8 @@ const crudRouter = crudRoutes('sales_opportunities', fields, {
   // ⚠️ A108 修复：创建禁直设生命周期字段——won_at/lost_at 由 PUT 状态机采集、promote_locked 需特权（PUT 有
   //   全部查看权限 校验、POST 此前无）、terminated 仅转交付流程置位。POST 直设可伪造赢单时间/绕过转交付标记。
   excludeOnCreate: ['id', 'created_at', 'updated_at', 'won_at', 'lost_at', 'promote_locked', 'terminated'],
+  // ⚠️ A118：阶段/状态枚举校验 + 阶段时间戳服务端采集（客户端传入的时间一律被覆盖）
+  beforeCreate: async (snakeBody) => applyOppCreateLifecycle(snakeBody, new Date().toISOString()),
   // ⚠️ F3 修复：机会已转交付时删除会撞 NO ACTION 外键（delivery_projects.opportunity_id），明确提示
   beforeDelete: async (id) => {
     const delivery = (await query('SELECT id FROM delivery_projects WHERE opportunity_id = $1', [id])).rows[0];
@@ -196,15 +228,19 @@ router.put('/:id/blue-table', async (req, res, next) => {
     if (!oppRow) throw new AppError(404, '机会未找到');
     const body = objKeysToSnake({ ...req.body });
     const { veto_budget, budget_amount, timeline_plan, timeline_option,
-            pricing, positioning, reaction_mode, strategy, targets, roles } = body;
+            pricing, positioning, reaction_mode, strategy, targets, roles, win_rate } = body;
 
-    // ⚠️ A15：事务样板收敛为 withTransaction（BEGIN/COMMIT/ROLLBACK/release 统一封装）
+    // ⚠️ A117：蓝表保存改为单事务完整闭环——
+    //   ① 临时角色 id（前端 uid('role')）与重插后的 UUID 不一致，targets 引用会永久失效；
+    //     现在保留库中已有角色 id，新角色记录「临时 id → UUID」映射，并回写 targets 后再落库。
+    //   ② 赢率原本由前端第二个请求写入，第二步失败会让蓝表与 win_rate 长期分叉；
+    //     现在 win_rate 与蓝表同事务写入。
     const bt = await withTransaction(async (client) => {
-      // Upsert 蓝表
+      // Upsert 蓝表（targets 先留空，待角色 id 映射后再更新）
       const blueTable = (await client.query(
         `INSERT INTO blue_tables (opportunity_id, veto_budget, budget_amount, timeline_plan,
           timeline_option, pricing, positioning, reaction_mode, strategy, targets)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'[]'::jsonb)
          ON CONFLICT (opportunity_id) DO UPDATE SET
           veto_budget = EXCLUDED.veto_budget,
           budget_amount = EXCLUDED.budget_amount,
@@ -214,26 +250,71 @@ router.put('/:id/blue-table', async (req, res, next) => {
           positioning = EXCLUDED.positioning,
           reaction_mode = EXCLUDED.reaction_mode,
           strategy = EXCLUDED.strategy,
-          targets = EXCLUDED.targets,
           updated_at = now()
          RETURNING *`,
         [id, veto_budget, budget_amount, timeline_plan, timeline_option,
-         pricing, positioning, reaction_mode, strategy, JSON.stringify(targets || [])]
+         pricing, positioning, reaction_mode, strategy]
       )).rows[0];
 
       // 整组替换角色：先删旧后插新（与蓝表同一事务）
+      const idMap = new Map<string, string>();
       if (roles !== undefined) {
+        if (!Array.isArray(roles)) throw new AppError(400, '角色数据必须为数组');
+        const knownIds = new Set(
+          (await client.query('SELECT id FROM blue_table_roles WHERE blue_table_id = $1', [blueTable.id]))
+            .rows.map((r: { id: string }) => r.id)
+        );
         await client.query('DELETE FROM blue_table_roles WHERE blue_table_id = $1', [blueTable.id]);
         for (const role of roles) {
+          if (!role || typeof role !== 'object') throw new AppError(400, '角色数据格式非法');
           const r = normalizeBlueTableRole(role);
-          await client.query(
-            `INSERT INTO blue_table_roles (blue_table_id, role_type, name, influence,
-              influence_weight, support, demand_fit, relationship)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-            [blueTable.id, r.role_type, r.name, r.influence,
-             r.influence_weight, r.support, r.demand_fit, r.relationship]
-          );
+          const clientId = typeof (role as any).id === 'string' ? (role as any).id : '';
+          // 只保留「原本就属于本蓝表」的 id（客户端新建的临时 id 一律换发 UUID）
+          const keepId = clientId && knownIds.has(clientId);
+          const inserted = keepId
+            ? (await client.query(
+                `INSERT INTO blue_table_roles (id, blue_table_id, role_type, name, influence,
+                  influence_weight, support, demand_fit, relationship)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
+                [clientId, blueTable.id, r.role_type, r.name, r.influence,
+                 r.influence_weight, r.support, r.demand_fit, r.relationship]
+              )).rows[0]
+            : (await client.query(
+                `INSERT INTO blue_table_roles (blue_table_id, role_type, name, influence,
+                  influence_weight, support, demand_fit, relationship)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+                [blueTable.id, r.role_type, r.name, r.influence,
+                 r.influence_weight, r.support, r.demand_fit, r.relationship]
+              )).rows[0];
+          if (clientId) idMap.set(clientId, inserted.id);
         }
+      }
+
+      // 提升目标中的 roleId 重映射到真实角色 id（未命中则原样保留，便于前端发现脏引用）
+      let remappedTargets = targets;
+      if (Array.isArray(targets)) {
+        // 前端 toSnake 会递归把 target.roleId 转成 role_id（历史数据可能是 camelCase）
+        remappedTargets = targets.map((t: any) => {
+          if (!t || typeof t !== 'object') return t;
+          const key = typeof t.roleId === 'string' ? 'roleId' : (typeof t.role_id === 'string' ? 'role_id' : null);
+          if (!key) return t;
+          const mapped = idMap.get(t[key]);
+          return mapped ? { ...t, [key]: mapped } : t;
+        });
+      }
+      if (remappedTargets !== undefined) {
+        await client.query('UPDATE blue_tables SET targets = $1 WHERE id = $2', [
+          JSON.stringify(remappedTargets), blueTable.id,
+        ]);
+        blueTable.targets = remappedTargets;
+      }
+
+      // 赢率与蓝表同事务落库（0–100，缺省不改）
+      if (win_rate !== undefined) {
+        const wr = Number(win_rate);
+        if (!Number.isFinite(wr) || wr < 0 || wr > 100) throw new AppError(400, '赢率必须在 0–100 之间');
+        await client.query('UPDATE sales_opportunities SET win_rate = $1, updated_at = now() WHERE id = $2', [wr, id]);
+        blueTable.win_rate = wr;
       }
       return blueTable;
     });
@@ -246,7 +327,8 @@ router.put('/:id/blue-table', async (req, res, next) => {
 
     logAudit(req, '保存蓝表', 'opportunity', `机会 ${oppRow?.sales_no || id.slice(0,8)} 蓝表已更新`);
 
-    res.json({ ...savedBt, roles: savedRoles });
+    // win_rate 与蓝表同事务写入；回传让前端无需再发第二个请求（消除蓝表/赢率分叉窗口）
+    res.json({ ...savedBt, roles: savedRoles, win_rate: bt.win_rate ?? null });
   } catch (e) {
     next(e);
   }

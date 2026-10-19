@@ -94,6 +94,8 @@ const DeliveryAnalysis: React.FC = () => {
   const [deliveryProjects, setDeliveryProjects] = useState<DeliveryProject[]>([]);
   // 报价编制表持久化数据（税率/折后报价/概算利润含税），经交付 quotationId 关联
   const [quoteMap, setQuoteMap] = useState<Record<string, { taxRate?: number; discountedPrice?: number; gp3Amount?: number }>>({});
+  /** 部分数据加载失败：页面仍渲染，但明确提示统计可能不完整（而非静默显示 0/—） */
+  const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -104,6 +106,7 @@ const DeliveryAnalysis: React.FC = () => {
       quotationService.list({ limit: LIST_LIMIT }, { noCache: true }),
     ]).then(([dps, quotes]) => {
       if (cancelled) return;
+      if (dps.status !== 'fulfilled' || quotes.status !== 'fulfilled') setLoadError(true);
       if (dps.status === 'fulfilled') setDeliveryProjects(dps.value.map(p => ({ ...p, nodes: p.nodes || [] })));
       if (quotes.status === 'fulfilled') {
         const m: Record<string, { taxRate?: number; discountedPrice?: number; gp3Amount?: number }> = {};
@@ -251,6 +254,10 @@ const DeliveryAnalysis: React.FC = () => {
         if (n15done) {
           if (pd > 0) { delayed++; dAmt += ex; }
           tDelay += pd; // 提前完成记负值、按时完成记 0，全部计入分子
+        } else if (pd > 0) {
+          // 未完成但截至月末已超基线：与交付列表「延期中」标签同口径，计入延期项目 KPI
+          delayed++;
+          dAmt += ex;
         }
         for (const n of p.nodes) {
           // 节点按时率：仅统计已完成节点（完成日 ∈ [财年起点, 截止月]），
@@ -327,7 +334,11 @@ const DeliveryAnalysis: React.FC = () => {
       // 仅保留计划时间与 12 月时间线有交集的节点，超出范围的节点不绘制
       const slots = p.nodes.filter(n => {
         // 已完成节点用实际完成日判断，其余用计划时间判断
-        if (n.status === 'completed' && n.actualDate) return new Date(n.actualDate) >= tlStart;
+        if (n.status === 'completed' && n.actualDate) {
+          // 完成日必须落在时间线窗口内——财年后完成的节点不得被钳到时间线末端（虚假节点条/虚假负荷）
+          const actual = new Date(n.actualDate);
+          return actual >= tlStart && actual <= tlEnd;
+        }
         return new Date(n.plannedEndDate) >= tlStart && new Date(n.plannedStartDate) <= tlEnd;
       }).map(n => {
         let start: Date, end: Date;
@@ -453,6 +464,11 @@ const DeliveryAnalysis: React.FC = () => {
         <span style={{ fontSize: 17, fontWeight: 700, color: COLORS.textDark }}>交付分析</span>
         <FYSelector value={fySelect} onChange={setFySelect} />
       </div>
+      {loadError && (
+        <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 4, background: '#fff2f0', color: COLORS.danger, fontSize: 12 }}>
+          部分数据加载失败，以下统计可能不完整；请刷新页面重试。
+        </div>
+      )}
 
 
       <OverviewCards items={overviewItems.map((item, i) => ({

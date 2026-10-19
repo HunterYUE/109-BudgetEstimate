@@ -6,7 +6,11 @@
  */
 export function escapeHtml(s: string | number | null | undefined): string {
   if (s == null) return '';
-  return String(s)
+  let str = String(s);
+  // Excel 公式注入：以 = + - @ 开头的单元格文本会被 Excel 当公式执行（如 HYPERLINK/DDE）。
+  // 前缀单引号强制按文本处理；仅影响这些首字符的字符串（正常中文/数字不受影响）。
+  if (/^[=+\-@]/.test(str)) str = "'" + str;
+  return str
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
@@ -20,7 +24,8 @@ export function sanitizeExportFilename(filename: string): string {
   return filename
     .replace(/[\\/:*?"<>|]/g, '_')           // 非法字符（B36 既有）
     .replace(/[. ]+$/, '')                    // 尾随点/空格（Windows 忽略扩展名前的尾随点）
-    .replace(/^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i, '_$1') // 保留设备名（加前缀防被当设备）
+    // 保留设备名（允许 "CON.2026" 这类带后缀形式；Windows 按第一个点前的基名判定）
+    .replace(/^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\..*)?$/i, '_$1$2')
     || 'export';                              // 清洗后为空（全非法字符）兜底
 }
 

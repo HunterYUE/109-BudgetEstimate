@@ -24,6 +24,9 @@ describe('QUOTATION_SYNC_STATUSES / isValidSyncStatus 报价 sync 状态白名�
 
 describe('QUOTATION_FINANCIAL 财务字段（beforeUpdate：审批中禁改——审批人基于提交时快照决策）', () => {
   it('金额/成本/毛利率/编号/关联机会全锁定', () => {
-    expect(QUOTATION_FINANCIAL).toEqual(['amount', 'total_cost', 'profit_rate', 'sales_no', 'opportunity_id']);
+    expect(QUOTATION_FINANCIAL).toEqual([
+      'amount', 'total_cost', 'profit_rate', 'sales_no', 'opportunity_id',
+      'project_id', 'version_no', 'client_name', 'project_name',
+    ]);
   });
 });

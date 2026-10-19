@@ -1,17 +1,18 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { query } from '../db/index.js';
-import { signToken, requireAuth, setAuthCookie, clearAuthCookie, COOKIE_NAME_BUDGET } from '../middleware/auth.js';
+import {
+  signToken, requireAuth, setAuthCookie, clearAuthCookie,
+  COOKIE_NAME_BUDGET, COOKIE_NAME_TR, isRestrictedCrossAppUser,
+} from '../middleware/auth.js';
 import { AppError } from '../middleware/index.js';
-import { logAudit, normalizeEmail, EMAIL_RE, DUMMY_PASSWORD_HASH } from './helpers.js';
+import { normalizeEmail, EMAIL_RE, DUMMY_PASSWORD_HASH, PASSWORD_MAX } from './helpers.js';
 
 const router = Router();
 
-/** 跨应用登录限制判定：普通员工仅限任务规划和报工应用，禁止登录销售·交付应用
- *  （login 与 /me 两处同规则共用；admin/director 例外可跨应用） */
-export function isRestrictedCrossAppUser(title: unknown, role: unknown): boolean {
-  return title === '普通员工' && role !== 'admin' && role !== 'director';
-}
+// 跨应用判定已收敛至 middleware/auth.ts（requireBudgetAuth 复用同一规则）；
+// 此处重新导出保持既有测试/调用方导入路径不变。
+export { isRestrictedCrossAppUser };
 
 /** 认证用户响应归一化（DB 行 → 前端 camelCase 形状；login 默认不含 createdAt，/me 传 true 包含） */
 export function shapeAuthUser(u: Record<string, any>, includeCreatedAt = false): Record<string, any> {
@@ -36,6 +37,10 @@ router.post('/login', async (req, res, next) => {
     // 类型校验（防对象/数组入参触发 PG 类型错误 500）
     if (typeof email !== 'string' || typeof password !== 'string') {
       throw new AppError(400, '邮箱/密码必须为字符串');
+    }
+    // 超长密码直接拒绝：避免 bcrypt 对异常长输入做无谓计算（正常口令远低于上限）
+    if (password.length > PASSWORD_MAX) {
+      throw new AppError(400, `密码不能超过${PASSWORD_MAX}位`);
     }
     // 邮箱归一化：trim + 小写（与 users/timerecording 登录归一化共用 normalizeEmail；LOWER 比较兼容历史大小写存储）
     const emailNorm = normalizeEmail(email);
@@ -105,9 +110,12 @@ router.get('/me', requireAuth, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-/** POST /api/auth/logout - 清除认证 cookie（幂等；无需鉴权，HttpOnly cookie 只有服务端能清） */
+/** POST /api/auth/logout - 清除认证 cookie（幂等；无需鉴权，HttpOnly cookie 只有服务端能清）。
+ *  requireAuth 认任一应用 cookie，只清本应用那个等于没登出：另一应用的 cookie 仍可访问本应用 API。
+ *  因此登出按「全局登出」处理，两个 cookie 一并清除。 */
 router.post('/logout', (_req, res) => {
   clearAuthCookie(res, COOKIE_NAME_BUDGET);
+  clearAuthCookie(res, COOKIE_NAME_TR);
   res.json({ ok: true });
 });
 

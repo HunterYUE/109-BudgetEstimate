@@ -4,7 +4,7 @@ import { PlusOutlined, DeleteOutlined, ArrowUpOutlined, ArrowDownOutlined, Check
 
 import type { TagNode } from '../types';
 import { COLORS } from '../styles/colors';
-import { cloneTree, findPath, getNodeByPath, uid, flattenTree } from '../utils/tagHelpers';
+import { cloneTree, findPath, getNodeByPath, flattenTree } from '../utils/tagHelpers';
 import { tagService } from '../services/tagService';
 import { tabItemStyle } from '../utils/tableUtils';
 
@@ -50,7 +50,8 @@ const TagManagement: React.FC = () => {
   const loadTree = useCallback(async () => {
     try {
       const data = await tagService.getTree();
-      if (data && data.length > 0) setTree(data);
+      // 空数组也是有效结果（删除最后一个标签后必须清空本地树，否则回滚/重试保留陈旧节点）
+      if (data) setTree(data);
     } catch {
       msg.warning('标签数据加载失败');
     }
@@ -154,10 +155,8 @@ const TagManagement: React.FC = () => {
         msg.success('已添加标签');
       },
       () => {
-        setTree(prev => insertNode(cloneTree(prev), addModalParentId, { id: uid(), name }));
-        if (addModalParentId) setExpandedIds(prev => new Set(prev).add(addModalParentId!));
-        setAddModalOpen(false);
-        msg.warning('已添加（本地模式，刷新后丢失）');
+        // 失败不伪造本地节点：刷新即消失的「假标签」会被物料引用，误导用户
+        msg.error('添加标签失败，请重试');
       }
     );
   };
@@ -462,7 +461,7 @@ const TagManagement: React.FC = () => {
         {deleteTarget && (
           <div style={{ textAlign: 'center', padding: '4px 0 0' }}>
             <div style={{ fontSize: 14, color: COLORS.textDark, fontWeight: 600, marginBottom: 6 }}>
-              确定删除"{deleteTarget.name}"？
+              确定删除"{deleteTarget.name}"？其下所有子标签也将一并删除（不可恢复）。
             </div>
             <div style={{ fontSize: 13, color: COLORS.textMuted }}>物料上引用该标签的信息不会自动清除。</div>
           </div>

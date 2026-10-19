@@ -110,8 +110,10 @@ export const ClientEditModal: React.FC<ClientEditModalProps> = ({
   onAddContact, onUpdateContact, onRemoveContact, onSave,
   onAddSubsidiary, onEditClient, onDeleteSubsidiary,
 }) => {
-  // 当前编辑客户的子公司列表（一次性计算，避免在 JSX 中重复 filter）
-  const subs = clients.filter(c => c.parentId === editingId);
+  // 当前编辑客户的子公司列表（一次性计算，避免在 JSX 中重复 filter）。
+  // ⚠️ A141：editingId 为空表示「新增客户」，此时 parentId === null 是所有一级企业客户，
+  //   原实现把它们全部列为新客户的子公司，还允许点删除直接删真实企业。
+  const subs = editingId ? clients.filter(c => c.parentId === editingId) : [];
   return (
     <Modal
       title={
@@ -341,8 +343,8 @@ export const ClientEditModal: React.FC<ClientEditModalProps> = ({
         </Button>
       </div>
 
-      {/* ── 子公司卡片（仅企业类型） ── */}
-      {editForm.type === 'enterprise' && (
+      {/* ── 子公司卡片（仅编辑已存在的企业客户；新建时尚未有归属） ── */}
+      {editForm.type === 'enterprise' && editingId && (
         <div style={{
           background: COLORS.bgCard, border: `1px solid ${COLORS.borderCard}`, borderRadius: 5,
           padding: '20px 24px', marginBottom: 4,

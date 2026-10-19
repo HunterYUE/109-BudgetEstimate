@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import { query } from '../db/index.js';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { AppError } from '../middleware/index.js';
-import { logAudit, objKeysToSnake, normalizeEmail, EMAIL_RE, resetUserPassword, withTransaction, assertCanManage, ROLE_RANK } from './helpers.js';
+import { logAudit, objKeysToSnake, normalizeEmail, EMAIL_RE, resetUserPassword, withTransaction, assertCanManage, ROLE_RANK, PASSWORD_MAX } from './helpers.js';
 import { PAGE_LIMIT } from '../constants.js';
 
 const router = Router();
@@ -46,6 +46,9 @@ export function validateNewUserInput(input: Record<string, any>, actorRole: stri
   // 与重置路径（≥8）统一：创建时也校验弱口令
   if (password.length < 8) {
     throw new AppError(400, '密码至少8位');
+  }
+  if (password.length > PASSWORD_MAX) {
+    throw new AppError(400, `密码不能超过${PASSWORD_MAX}位`);
   }
   // 邮箱归一化：trim + 小写（防 ' A@x ' 注册近似重复账号；重复检测/存储均用归一化值）
   const emailNorm = normalizeEmail(email);
@@ -156,7 +159,16 @@ router.put('/:id', async (req, res, next) => {
       if (sc?.p) await query('UPDATE timerecording.profiles SET email = $1 WHERE id = $2', [emailNorm, id]);
     }
 
-    res.json(result.rows[0]);
+    // 用户编辑/停用属敏感操作，必须留痕（此前该端点完全无审计）
+    const updated = result.rows[0];
+    logAudit(
+      req,
+      is_active === false ? '停用用户' : is_active === true ? '启用用户' : '更新用户',
+      'user',
+      `${updated.email} ${is_active === false ? '已停用' : is_active === true ? '已启用' : '信息已更新'}`
+    );
+
+    res.json(updated);
   } catch (err) { next(err); }
 });
 

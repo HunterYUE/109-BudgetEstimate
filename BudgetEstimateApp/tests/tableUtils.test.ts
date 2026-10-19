@@ -5,7 +5,7 @@ import { moneyInputFilter, parseMoneyInput, lockCellWidth, tabItemStyle } from '
 describe('moneyInputFilter 输入过滤显示', () => {
   it('去非数字 + ¥千分位；纯非数字 → "¥"', () => {
     expect(moneyInputFilter('abc1234')).toBe('¥1,234');
-    expect(moneyInputFilter('1,234.56')).toBe('¥123,456'); // 全非数字剥除（含逗号/小数点）后千分位
+    expect(moneyInputFilter('1,234.56')).toBe('¥1,234'); // 按数值解析后截断到整元（不得拼接成 123456）
     expect(moneyInputFilter('')).toBe('¥');
     expect(moneyInputFilter('abc')).toBe('¥');
   });
@@ -15,6 +15,8 @@ describe('parseMoneyInput 解析（0 视为空）', () => {
   it('去非数字 → 整数；全非数字/空 → 0', () => {
     expect(parseMoneyInput('1,234')).toBe(1234);
     expect(parseMoneyInput('¥500')).toBe(500);
+    expect(parseMoneyInput('1,234.56')).toBe(1234);
+    expect(parseMoneyInput('-1,234.56')).toBe(-1234);
     expect(parseMoneyInput('abc')).toBe(0);
     expect(parseMoneyInput('')).toBe(0);
   });

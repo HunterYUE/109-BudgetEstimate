@@ -6,6 +6,7 @@ import {
   APPROVAL_WRITE_FALLBACK,
   DELIVERY_CREATE_WRITE,
   DELIVERY_OTHER_WRITE,
+  COMPONENT_REVIEW_WRITE,
   PAGE_VIEW_ONLY_PERMS,
   findPageViewLeaks,
 } from '../src/permissions.js';
@@ -18,6 +19,7 @@ describe('F02 权限配置级回归（A1：只读页面权限不得越权写）'
     ['approval-fallback', APPROVAL_WRITE_FALLBACK],
     ['delivery-create', DELIVERY_CREATE_WRITE],
     ['delivery-other', DELIVERY_OTHER_WRITE],
+    ['component-review', COMPONENT_REVIEW_WRITE],
   ];
 
   it('所有写守卫列表不含纯只读页面权限（配置漂移回归）', () => {

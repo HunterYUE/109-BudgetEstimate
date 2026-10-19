@@ -191,7 +191,13 @@ const Dashboard: React.FC = () => {
   const recentLosses = useMemo(() => {
     // 近 2 个月窗口：前两个月首日（避免 setMonth 月末溢出）
     const cutoff = monthsAgoStart(now, 2);
-    return opportunities.filter(o => o.status === '输' && o.lostAt && new Date(o.lostAt) >= cutoff).sort((a, b) => new Date(b.lostAt!).getTime() - new Date(a.lostAt!).getTime()).slice(0, 5);
+    // ⚠️ A137：与销售分析同口径——缺 lostAt 的历史输单回退 updatedAt（共享 oppEffectiveEnd），
+    //   否则这些输单永远不会出现在「近期输单」且仍留在历史管道里。
+    const lossDate = (o: SalesOpportunity) => oppEffectiveEnd(o);
+    return opportunities
+      .filter(o => o.status === '输' && lossDate(o) >= cutoff)
+      .sort((a, b) => lossDate(b).getTime() - lossDate(a).getTime())
+      .slice(0, 5);
   }, [opportunities, now]);
 
 
@@ -203,7 +209,8 @@ const Dashboard: React.FC = () => {
       // 冻结机会排除在管道之外（全页面统一口径）
       if (o.status === '冻结') return null;
       if (isRealWin(o) && o.wonAt && new Date(o.wonAt) <= monthEnd) return null;
-      if (o.status === '输' && o.lostAt && new Date(o.lostAt) <= monthEnd) return null;
+      // 输单结束时间走共享回退（缺 lostAt 用 updatedAt），与销售分析一致
+      if (o.status === '输' && oppEffectiveEnd(o) <= monthEnd) return null;
       // ⚠️ 用阶段推进时间还原该月月底的历史阶段（与销售分析漏斗 stageAsOf 同口径），而非当前阶段
       return stageAsOf(o, monthEnd);
     };
@@ -276,8 +283,9 @@ const Dashboard: React.FC = () => {
       if (new Date(node.plannedStartDate) > monthEnd) return [];
       const delay = getNodeDelay(node, monthEnd);
       // 当月执行过：开始 ≤ 月末（含当月完成者）
-      const executedInM = (node.actualStartDate && new Date(node.actualStartDate) <= monthEnd)
-        || node.status === 'in_progress';
+      // ⚠️ A138：只用「实际开始日 ≤ 月末」判定当月是否执行过。
+      //   原实现 OR 了当前 status==='in_progress'，会让现在仍在进行的节点被计入所有历史月份。
+      const executedInM = !!node.actualStartDate && new Date(node.actualStartDate) <= monthEnd;
       const buckets: string[] = [];
       if (executedInM) buckets.push('in_progress');
       // 当月完成：延期完成 → delayed；按时完成 → completed
@@ -319,7 +327,8 @@ const Dashboard: React.FC = () => {
         name: chartLabel(p.salesNo),
         value: rate ?? 0,
         color: !hasDue ? COLORS.textLight : (isProjectDelivered(p) ? COLORS.chartGray : ((rate ?? 0) >= 90 ? COLORS.success : (rate ?? 0) >= 70 ? COLORS.warning : COLORS.danger)),
-        displayValue: hasDue ? undefined : '—',
+        // 有到期节点但全部延期（rate=0）时不能走图表默认的 0 → "—"，否则与「无数据」混淆
+        displayValue: hasDue ? (rate === 0 ? '0%' : undefined) : '—',
       };
     });
     const profitOverview: { name: string; value: number; color: string; displayValue?: string }[] = [];
@@ -521,7 +530,8 @@ const Dashboard: React.FC = () => {
         <Card size="small"
           style={{ flex: '1 1 calc((100% - 40px) / 3)', borderRadius: 8, border: `1px solid ${COLORS.borderLight}` }}
           styles={{ body: { padding: '16px 18px' } }}>
-          <SectionTitle title="新增机会" count={fyTrend.reduce((s, m) => s + m.value, 0)} />
+          {/* 徽标显示机会「数量」：m.value 是千元金额，数量在 m.count */}
+          <SectionTitle title="新增机会" count={fyTrend.reduce((s, m) => s + m.count, 0)} />
           {fyTrend.every(m => m.count === 0) ? (
             <div style={{ padding: 24, textAlign: 'center', color: COLORS.textLight, fontSize: 13 }}>当前财年暂无新增</div>
           ) : (

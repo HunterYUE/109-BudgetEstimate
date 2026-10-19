@@ -77,6 +77,9 @@ const DeliveryDetail: React.FC = () => {
   const [project, setProject] = useState<DeliveryProject | null>(null);
   const [loading, setLoading] = useState(true);
   const [actualCosts, setActualCosts] = useState<Record<string, number>>({});
+  /** 报价/版本数据加载状态：加载中或失败时禁止提交审批，防快照写成 0 成本/空版本号 */
+  const [quoteLoading, setQuoteLoading] = useState(false);
+  const [quoteError, setQuoteError] = useState<string | null>(null);
   const [savingPlan, setSavingPlan] = useState(false);
   // ⚠️ 审计修复 BU-3：提交审批重入守卫（confirmSubmitPlan/handleSubmitCost 复用）——双击确认会并发发两次
   //   POST /approvals（后端 dedup 拦截第二次，但前端应避免重复请求）；handleSavePlan 已有 savingPlan 锁，
@@ -110,6 +113,14 @@ const DeliveryDetail: React.FC = () => {
     initialCostsLoaded.current = false;
     setActualCosts({});
     setLoading(true);
+    // 切换项目时清空上一项目的报价/附件/编辑态，防串项目显示与提交（路由复用组件不卸载）
+    setQuotationProject(null);
+    setCostDirty(false);
+    setHasChanges(false);
+    setCostOverride(false);
+    pendingDateChangesRef.current.clear();
+    setQuoteLoading(false);
+    setQuoteError(null);
     deliveryService.getFull(id).then(data => {
       if (cancelled) return;
       setProject(data);
@@ -118,32 +129,41 @@ const DeliveryDetail: React.FC = () => {
         initialCostsLoaded.current = true;
       }
       if (data.quotationId) {
+        setQuoteLoading(true);
         // 通过 api.get 加载报价数据（使用统一转换/缓存/错误处理）
         api.get<Record<string, unknown>>(`/quotations/${data.quotationId}`).then(quote => {
           const pid = quote.projectId;
           const qvn = quote.versionNo || '';
-          if (!pid) return;
+          if (!pid) throw new Error('报价缺少关联项目');
           projectService.getFull(pid as string).then(proj => {
             // ⚠️ B63 修复：严格按报价版本号匹配版本，不再回退 versions[0]——交付成本对比必须对齐报价审批时
             //   的那个版本（组/金额）；versions[0] 可能是其它版本，错配版本会让成本对比得出错误结论。
             //   无匹配时 ver 为 undefined → 走下方 legacy 全量组回退（旧数据组无 versionId 的场景）
             const ver = (proj.versions || []).find((v: ProjectVersion) => v.versionNo === qvn);
             const vid = ver?.id || '';
-            const filtered = (proj.groups || []).filter((g: Group) => (g as unknown as Record<string, unknown>).versionId === vid);
+            const filtered = (proj.groups || []).filter((g: Group) => g.versionId === vid);
             // ⚠️ 最终审计修正：版本匹配成功（ver 存在）时只保留该版本组——该版本确实无组（filtered 空）且
             //   存在已带版本号的组时保持空，不再错误回退全量组把其它版本混进成本对比；
             //   兼容 legacy 旧数据（组均无 versionId）仍回退全量组（对齐 QuotationPage 同款 hasVersionedGroups 判定）
-            const hasVersionedGroups = (proj.groups || []).some((g: Group) => (g as unknown as Record<string, unknown>).versionId);
+            const hasVersionedGroups = (proj.groups || []).some((g: Group) => g.versionId);
             if (!cancelled) setQuotationProject({
               ...proj,
               // ⚠️ 审计修复 #8：groups 已按匹配版本 ver 过滤，但报价财务参数（warranty/risk/tax/commercial）
               //   此前仍取 currentVersion（最新版）导致成本对比用错版本——统一覆写为匹配版本，
               //   无匹配时回退项目当前/首个版本（兼容 legacy 无版本号数据）
               currentVersion: ver || proj.currentVersion || proj.versions?.[0],
-              groups: ver ? (filtered.length > 0 || hasVersionedGroups ? filtered : proj.groups) : proj.groups,
+              // legacy 数据（所有组都没有 versionId）回退全量；已有版本隔离时只保留匹配版本，
+              // 版本号匹配失败则保持空组（不得把其它版本混入成本对比）
+              groups: !hasVersionedGroups ? proj.groups : (ver ? filtered : []),
             });
-          });
-        }).catch(() => {/* empty */});
+          }).catch(err => {
+            console.warn('[DeliveryDetail] 报价项目数据加载失败', err);
+            if (!cancelled) setQuoteError('报价项目数据加载失败');
+          }).finally(() => { if (!cancelled) setQuoteLoading(false); });
+        }).catch(err => {
+          console.warn('[DeliveryDetail] 报价数据加载失败', err);
+          if (!cancelled) { setQuoteError('报价数据加载失败'); setQuoteLoading(false); }
+        });
       }
       // 加载物料费率（设计会签/装配调试）
       Promise.all([
@@ -166,6 +186,7 @@ const DeliveryDetail: React.FC = () => {
 
   const loadFiles = useCallback(async () => {
     if (!id) return;
+    setDeliveryFiles([]); // 切换项目先清空，防旧项目附件短暂串显
     try {
       const data = await deliveryFileService.list(id);
       setDeliveryFiles(data);
@@ -265,6 +286,18 @@ const DeliveryDetail: React.FC = () => {
   const costCanEdit = project?.costStatus !== 'pending' && (project?.costStatus !== 'approved' || costOverride);
   const isDirector = user?.role === 'director';
 
+  /** 逐项实际成本行（与成本对比表/导出同一来源）：孤儿键（历史组项已删）不计入合计 */
+  const costLines = useMemo(
+    () => buildCostLines(quotationGroups, actualCosts, quotationVersion, laborRates),
+    [quotationGroups, actualCosts, quotationVersion, laborRates],
+  );
+  // 质保行（_warranty）的 actual 是自动按质保基数算出的值，提交/展示时由 computeDeliveryEstGP3
+  // 单独加回，不能在此重复计入（否则质保成本双算）
+  const actualTotal = useMemo(
+    () => costLines.filter(l => l.key !== '_warranty').reduce((s, l) => s + l.actual, 0),
+    [costLines],
+  );
+
   // ── 节点操作 ──
   /** 节点状态变更：不记历史，仅更新实际日期字段 */
   const handleNodeStatusClick = useCallback((nodeId: string, newStatus?: string) => {
@@ -292,7 +325,8 @@ const DeliveryDetail: React.FC = () => {
         const updated: DeliveryNode = { ...n, status: nextStatus };
         // 状态变更不记录历史（仅当审批通过后的日期变更才记历史）
         if (nextStatus === 'in_progress') {
-          updated.actualStartDate = today;
+          // 回退已完成节点时保留原始实际开始日（原实现无条件改成今天，静默缩短实际工期）
+          updated.actualStartDate = n.actualStartDate || today;
           if (n.status === 'completed') {
             updated.actualDate = undefined;
             updated.actualEndDate = undefined;
@@ -453,6 +487,11 @@ const DeliveryDetail: React.FC = () => {
 
   const confirmSubmitPlan = useCallback(async () => {
     if (!project || submittingApproval) return; // ⚠️ 审计修复 BU-3：防双击并发提交
+    // ⚠️ A139：报价/版本数据未就绪时提交会把快照写成 0 成本/空版本号
+    if (quoteLoading || quoteError || !quotationVersionFull) {
+      msg.warning(quoteLoading ? '报价数据加载中，请稍后再提交' : '报价数据加载失败，无法提交审批');
+      return;
+    }
     setSubmittingApproval(true);
     // 先保存节点数据（防止用户编辑了计划时间后未点保存直接提交，导致变更丢失）
     try {
@@ -501,24 +540,29 @@ const DeliveryDetail: React.FC = () => {
     }).finally(() => {
       setSubmittingApproval(false);
     });
-  }, [project, submittingApproval, msg, quotationVersionFull, quotationVersion, modifierName, flushPendingDateChanges, setHasChanges]);
+  }, [project, submittingApproval, msg, quoteLoading, quoteError, quotationVersionFull, quotationVersion, modifierName, flushPendingDateChanges, setHasChanges]);
 
   const handleOpenSubmitCost = useCallback(() => {
     if (!project) return;
     // ⚠️ 最终审计修正：校验改为「至少一项 >0 的实际成本」——此前只看 key 数量，
     //   录入后全清空（0 值）也算有数据，可提交 0 成本审批，违背提交语义
-    if (Object.values(actualCosts).every(v => !(v > 0))) {
+    if (!costLines.some(l => l.key !== '_warranty' && l.actual > 0)) {
       msg.warning('请至少录入一项实际成本再提交');
       return;
     }
     setSubmitCostOpen(true);
-  }, [project, actualCosts, msg]);
+  }, [project, costLines, msg]);
 
   const handleSubmitCost = useCallback(async () => {
     if (!project || submittingApproval) return; // ⚠️ 审计修复 BU-3：防双击并发提交
+    if (quoteLoading || quoteError || !quotationVersionFull) {
+      msg.warning(quoteLoading ? '报价数据加载中，请稍后再提交' : '报价数据加载失败，无法提交审批');
+      return;
+    }
     setSubmittingApproval(true);
-    // 先持久化当前实际成本到 delivery_projects，确保 totalActualCost 与审批数据一致
-    const totalActual = Object.values(actualCosts).reduce((s, v) => s + v, 0);
+    // 先持久化当前实际成本到 delivery_projects，确保 totalActualCost 与审批数据一致；
+    // 合计只用 costLines（当前报价组项），孤儿键不计入（与表格/导出口径一致）
+    const totalActual = actualTotal;
     const { exTax, warrantyCost } = computeDeliveryEstGP3(project.contractAmount, quotationGroups, quotationVersion);
     const grandActual = totalActual + warrantyCost;
     try {
@@ -562,7 +606,7 @@ const DeliveryDetail: React.FC = () => {
     }).finally(() => {
       setSubmittingApproval(false);
     });
-  }, [project, submittingApproval, actualCosts, msg, quotationVersionFull, quotationVersion, quotationGroups, modifierName]);
+  }, [project, submittingApproval, actualCosts, actualTotal, msg, quoteLoading, quoteError, quotationVersionFull, quotationVersion, quotationGroups, modifierName]);
 
   const handleExportPlan = useCallback(() => {
     if (!project) return;
@@ -594,7 +638,7 @@ const DeliveryDetail: React.FC = () => {
   const handleExportCost = useCallback(() => {
     if (!project) return;
     // ⚠️ 成本分解单一来源 buildCostLines（与 ItemCostTable 共享），消除重复聚合逻辑
-    const lines = buildCostLines(quotationGroups, actualCosts, quotationVersion, laborRates);
+    const lines = costLines;
     let totalEst = 0, totalAct = 0;
     let rows = '';
     const addRow = (grp: string, code: string, est: number, act: number) => {
@@ -622,7 +666,7 @@ const DeliveryDetail: React.FC = () => {
       '<tr><td style="border:none;text-align:right;font-size:13px"><b>概算总成本：</b>¥' + formatMoney(totalEst) + '</td></tr>' +
       '<tr><td style="border:none;text-align:right;font-size:13px"><b>实际总成本：</b>¥' + formatMoney(totalAct) + '</td></tr></table>';
     exportHtmlTable('成本对比_' + project.clientName, html);
-  }, [project, quotationGroups, actualCosts, quotationVersion, laborRates]);
+  }, [project, costLines]);
 
   if (loading) {
     return (
@@ -636,7 +680,7 @@ const DeliveryDetail: React.FC = () => {
   let contractExTax = 0, grandEstimated = 0, grandActual = 0;
   let estProfit = 0, actProfit = 0, estGP3 = 0, actGP3 = 0;
   if (project) {
-    const ta = Object.values(actualCosts).reduce((s, v) => s + v, 0);
+    const ta = actualTotal;
     // F08：estGP3 直接用 computeDeliveryEstGP3 已返回字段（此前用 ge 重复推导同公式，口径漂移风险）
     const { exTax, grandEstimated: ge, warrantyCost: wc, estGP3: calcEstGP3 } = computeDeliveryEstGP3(project.contractAmount, quotationGroups, quotationVersion);
     grandActual = ta + wc;
@@ -717,16 +761,21 @@ const DeliveryDetail: React.FC = () => {
                   okText: '确认完成',
                   cancelText: '取消',
                   okButtonProps: { style: { background: COLORS.success, borderColor: COLORS.success } },
-                  onOk: () => {
-                    deliveryService.update(project.id, { status: '已完成' }).then(() => {
-                      setProject(prev => {
-                        if (!prev) return prev;
-                        return { ...prev, status: '已完成' as const };
-                      });
+                  onOk: async () => {
+                    try {
+                      // ⚠️ A140：完成门禁按「本地未保存节点」判定，但原实现只写 status——
+                      //   未点保存就完成项目会让 DB 节点15仍 pending，刷新后回退，且完成日口径漂移。
+                      //   完成前先把节点（含待处理日期变更）落库，再切状态。
+                      const flushed = flushPendingDateChanges(project);
+                      await deliveryService.saveNodes(project.id, flushed.nodes);
+                      pendingDateChangesRef.current.clear();
+                      await deliveryService.update(project.id, { status: '已完成' });
+                      setProject(prev => prev ? { ...flushed, status: '已完成' as const } : prev);
+                      setHasChanges(false);
                       msg.success('项目已标记为已完成');
-                    }).catch((err: unknown) => {
+                    } catch (err: unknown) {
                       msg.error('项目完成操作失败：' + ((err instanceof Error ? err.message : '') || '未知错误'));
-                    });
+                    }
                   },
                 });
               }}
@@ -952,7 +1001,7 @@ const DeliveryDetail: React.FC = () => {
           {costCanEdit && (
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 16, marginTop: 16 }}>
             <IconButton icon={<SaveOutlined style={{ fontWeight: 700 }} />}
-              onClick={async () => { if (!project) return; const ta = Object.values(actualCosts).reduce((s, v) => s + v, 0); const { warrantyCost } = computeDeliveryEstGP3(project.contractAmount, quotationGroups, quotationVersion); try { await deliveryService.update(project.id, { totalActualCost: ta + warrantyCost, actualCosts }); setCostDirty(false); msg.success('成本对比已保存'); } catch { msg.error('保存失败，请重试'); } }}
+              onClick={async () => { if (!project) return; const ta = actualTotal; const { warrantyCost } = computeDeliveryEstGP3(project.contractAmount, quotationGroups, quotationVersion); try { await deliveryService.update(project.id, { totalActualCost: ta + warrantyCost, actualCosts }); setCostDirty(false); msg.success('成本对比已保存'); } catch { msg.error('保存失败，请重试'); } }}
               color={COLORS.amber} hoverBg="#fff7e6" title="保存"
               disabled={!costDirty} />
             {project.costStatus !== 'approved' && (

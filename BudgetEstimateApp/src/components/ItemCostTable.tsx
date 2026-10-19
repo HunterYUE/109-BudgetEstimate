@@ -55,7 +55,8 @@ const ItemCostTable: React.FC<Props> = ({ groups, actualCosts, onActualCostChang
       const est = group.reduce((s, l) => s + l.estimated, 0);
       const act = group.reduce((s, l) => s + l.actual, 0);
       result.push({
-        key: 'h-' + category,
+        // 类别名可能重复（两个设备组同名/命名为标准类别），补序号保证 rowKey 唯一
+        key: `h-${category}-${result.length}`,
         _type: 'header',
         category,
         code: '', detail: '', qty: 0,

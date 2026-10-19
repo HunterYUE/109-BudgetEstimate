@@ -16,6 +16,7 @@ describe('fmtK / fmtKBase（含负值）', () => {
     expect(fmtK(1234)).toBe('1K');
     expect(fmtK(-1234)).toBe('-1K');
     expect(fmtKBase(999)).toBe('1'); // 四舍五入
+    expect(fmtKBase(-200)).toBe('0'); // 负零归一（原实现输出 "-0"）
   });
 });
 
@@ -117,6 +118,19 @@ describe('getNodeDelay 统一节点延期判定（事实延期，asOf 注入避�
     const pending = node({ status: 'pending', baselinePlannedEndDate: '2026-06-30' });
     expect(getNodeDelay(pending, new Date(2026, 6, 10))).toEqual({ hasBaseline: true, delayed: true, days: 10 });
     expect(getNodeDelay(pending, new Date(2026, 5, 25))).toEqual({ hasBaseline: true, delayed: false, days: -5 });
+  });
+  it('月末边界：基线=当月最后一天，判定时点 23:59 不延期；次日 0 点起延期 1 天', () => {
+    // 回归：`new Date('2026-07-31')` 按 UTC 零点解析（北京 08:00），与月末 23:59:59.999 比较
+    // 会多出约 0.67 天 → Math.round 误判 +1 天
+    const pending = node({ status: 'pending', baselinePlannedEndDate: '2026-07-31' });
+    expect(getNodeDelay(pending, new Date(2026, 6, 31, 23, 59, 59, 999)))
+      .toEqual({ hasBaseline: true, delayed: false, days: 0 });
+    expect(getNodeDelay(pending, new Date(2026, 7, 1, 0, 0, 0, 1)))
+      .toEqual({ hasBaseline: true, delayed: true, days: 1 });
+  });
+  it('旧数据兼容：无 actualDate 但 actualEndDate 已完成 → 按实际完成日判定', () => {
+    const legacy = node({ status: 'completed', actualEndDate: '2026-06-25', baselinePlannedEndDate: '2026-06-30' });
+    expect(getNodeDelay(legacy, new Date(2026, 6, 20))).toEqual({ hasBaseline: true, delayed: false, days: -5 });
   });
 });
 
@@ -337,6 +351,17 @@ describe('computeProjectOnTimeRate 节点按时率（A2：无基线节点不判�
     const r = computeProjectOnTimeRate({ nodes: [] } as any, now);
     expect(r.scheduled).toBe(0);
     expect(r.rate).toBeNull();
+  });
+  it('旧数据 actualEndDate 完成节点也计入按时率（与 getNodeDelay 同源）', () => {
+    const p = {
+      nodes: [
+        { nodeNo: 3, status: 'completed', actualEndDate: '2026-07-10', baselinePlannedEndDate: '2026-07-15' },
+      ],
+    } as any;
+    const r = computeProjectOnTimeRate(p, now);
+    expect(r.scheduled).toBe(1);
+    expect(r.delayedCnt).toBe(0);
+    expect(r.rate).toBe(100);
   });
 });
 

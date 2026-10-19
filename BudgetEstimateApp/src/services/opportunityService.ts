@@ -14,6 +14,8 @@ export const opportunityService = {
   update: (id: string, data: Partial<SalesOpportunity>) =>
     api.put<SalesOpportunity>(`/opportunities/${id}`, data),
 
-  saveBlueTable: (id: string, data: BlueTable) =>
-    api.put<BlueTable & { roles: BlueTableRole[] }>(`/opportunities/${id}/blue-table`, data),
+  /** 保存蓝表：winRate 一并提交，后端与蓝表同事务写入（避免两次请求导致赢率与蓝表分叉） */
+  saveBlueTable: (id: string, data: BlueTable, winRate?: number) =>
+    api.put<BlueTable & { roles: BlueTableRole[]; winRate?: number }>(
+      `/opportunities/${id}/blue-table`, { ...data, winRate }),
 };

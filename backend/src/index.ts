@@ -9,15 +9,15 @@ import { startWeeklyReminder } from './jobs/weeklyReminder.js';
 import { startNotificationsCleanup } from './jobs/notificationsCleanup.js';
 import { ensureCostCenters, startCostCenterSync } from './jobs/costCenterSync.js';
 
-// ⚠️ 业务时刻依赖服务器时区（北京时间）：提交闸门 assertWeekSubmittable（周日 20:30）、财年窗口
-//   availableCostCenterFys / fiscalYearLabel（6/7 月切换）都用本地 Date 判定。显式固定为北京时间，
-//   防止主机时区漂移（如迁移到 UTC 机器）让这些时刻/窗口静默偏移 8 小时。须在首次 Date 调用前设置，
-//   各模块仅在运行时调用 Date（无 import 期调用），置于文件体顶部即可。
+// 业务时刻依赖服务器时区（北京时间）：提交闸门 assertWeekSubmittable（周日 20:30）、财年窗口
+// availableCostCenterFys / fiscalYearLabel（6/7 月切换）都用本地 Date 判定。显式固定为北京时间，
+// 防止主机时区漂移（如迁移到 UTC 机器）让这些时刻/窗口静默偏移 8 小时。须在首次 Date 调用前设置，
+// 各模块仅在运行时调用 Date（无 import 期调用），置于文件体顶部即可。
 process.env.TZ = 'Asia/Shanghai';
 
 const app = express();
-// ⚠️ 部署在 nginx 反代之后（nginx 已转发 X-Forwarded-For）：trust proxy 让 express-rate-limit
-//   以真实客户端 IP 限速，否则所有请求都被视为 127.0.0.1，登录限速形同虚设
+// 部署在 nginx 反代之后（nginx 已转发 X-Forwarded-For）：trust proxy 让 express-rate-limit
+// 以真实客户端 IP 限速，否则所有请求都被视为 127.0.0.1，登录限速形同虚设
 app.set('trust proxy', 1);
 const PORT = parseInt(process.env.PORT || '3001', 10);
 if (isNaN(PORT) || PORT < 1 || PORT > 65535) {
@@ -34,6 +34,7 @@ if (!corsOrigin) {
 app.use(cors({
   origin: corsOrigin.split(',').map(s => s.trim()),
 }));
+
 app.use(helmet());
 // 登录接口限速：每IP每15分钟最多20次尝试
 const loginLimiter = rateLimit({
@@ -91,24 +92,39 @@ ensureCostCenters()
 startCostCenterSync();
 
 // 优雅关闭
-async function gracefulShutdown(signal: string) {
-  console.log(`\n[API] 收到 ${signal}，开始优雅关闭...`);
-  server.close(() => {
-    console.log('[API] HTTP 服务器已关闭');
+let shuttingDown = false;
+/** 等待 HTTP 连接排空（最多 10s），超时后强制继续关闭流程 */
+function closeHttpServer(): Promise<void> {
+  return new Promise(resolve => {
+    const timer = setTimeout(resolve, 10_000);
+    timer.unref();
+    server.close(() => {
+      clearTimeout(timer);
+      resolve();
+    });
   });
+}
+async function gracefulShutdown(signal: string) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`\n[API] 收到 ${signal}，开始优雅关闭...`);
   try {
+    // ⚠️ A122：先等 HTTP 连接排空，再释放连接池——原实现不等待 close 回调，
+    //   pool.end() 立即返回后 process.exit 会掐断仍在写响应的请求/文件流。
+    await closeHttpServer();
+    console.log('[API] HTTP 服务器已关闭');
     await pool.end();
     console.log('[API] 数据库连接池已释放');
     process.exit(0);
   } catch (err) {
-    console.error('[API] 关闭数据库连接失败:', err);
+    console.error('[API] 关闭失败:', err);
     process.exit(1);
   }
 }
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
-// 未捕获的 Promise 拒绝兜底：记录日志而非让进程默认退出（有 logAudit 等未 await 的调用，防未来遗漏）
+// 未捕获的 Promise 拒绝兜底：记录日志而非让进程默认退出，有 logAudit 等未 await 的调用，防未来遗漏
 process.on('unhandledRejection', (reason) => {
   console.error('[FATAL] Unhandled Rejection:', reason);
 });

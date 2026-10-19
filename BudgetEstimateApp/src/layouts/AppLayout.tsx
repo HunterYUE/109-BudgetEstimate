@@ -178,7 +178,8 @@ const AppLayout: React.FC = () => {
 
         {/* 内容区 */}
         <Content className="app-content" style={{ background: '#fff', padding: '20px 24px', flex: 1, overflow: 'auto' }}>
-          <ErrorBoundary><Outlet /></ErrorBoundary>
+          {/* key=路由：某个页面崩溃后切换到其它菜单可重建边界，不必整页刷新 */}
+          <ErrorBoundary key={location.pathname}><Outlet /></ErrorBoundary>
         </Content>
       </div>
     </div>

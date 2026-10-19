@@ -28,9 +28,13 @@ const infoRow = (label: string, value: React.ReactNode) => (
 );
 
 const renderDrawerContent = (item: Component, tagPathMap: { id: string; path: string[] }[]) => {
+  // 审核动作来自独立列 review_action；兼容未迁移的旧数据（note 前缀）
+  const action = item.reviewAction
+    || (item.note?.startsWith('[删除]') ? 'delete' : item.note?.startsWith('[新建]') ? 'create' : '');
+  const actionLabel = action === 'create' ? '新建' : action === 'update' ? '编辑' : action === 'delete' ? '删除' : '';
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-      {item.reviewStatus === 'pending' && item.note && (
+      {item.reviewStatus === 'pending' && action && (
         <div style={{
           background: '#fff8e1', border: '1px solid #ffe082', borderRadius: 5,
           padding: '14px 20px',
@@ -38,21 +42,17 @@ const renderDrawerContent = (item: Component, tagPathMap: { id: string; path: st
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
             <span style={{ fontSize: 14, fontWeight: 600, color: COLORS.warning }}>⏳ 待审核</span>
             <Tag color="orange" style={{ borderRadius: 1, margin: 0, fontSize: 11 }}>
-              {item.note.startsWith('[新建]') ? '新建' : item.note.startsWith('[编辑]') ? '编辑' : '删除'}
+              {actionLabel}
             </Tag>
           </div>
-          {item.note.startsWith('[编辑]') && (
-            <div style={{ fontSize: 12, color: '#555', lineHeight: 1.7 }}>
-              {item.note.replace('[编辑] ', '').split(' | ').map((change, i) => (
-                <div key={i} style={{ padding: '2px 0' }}>• {change}</div>
-              ))}
-            </div>
+          {action === 'create' && (
+            <div style={{ fontSize: 12, color: '#555' }}>此物料为新注册，等待审核通过后生效。</div>
           )}
-          {item.note.startsWith('[新建]') && (
-            <div style={{ fontSize: 12, color: '#555' }}>此物料为新注册，等待总监审核通过后生效。</div>
+          {action === 'update' && (
+            <div style={{ fontSize: 12, color: '#555' }}>此物料的信息更新等待审核通过后生效。</div>
           )}
-          {item.note.startsWith('[删除]') && (
-            <div style={{ fontSize: 12, color: COLORS.danger }}>此物料提交了删除申请，总监通过后将永久移除。</div>
+          {action === 'delete' && (
+            <div style={{ fontSize: 12, color: COLORS.danger }}>此物料提交了删除申请，审核通过后将永久移除。</div>
           )}
         </div>
       )}

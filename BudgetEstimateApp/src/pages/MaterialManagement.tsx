@@ -65,7 +65,7 @@ function buildCreateFields(form: Partial<Component>, parsedVersion: string, now:
     brand: form.brand || '',
     model: form.model || '',
     specification: form.specification || '',
-    note: '[新建]',
+    note: form.note || '',
     supplier: form.supplier || '',
     unit: form.unit || '套',
     sourcingType: form.sourcingType || 'SELF_MANUFACTURED',
@@ -74,6 +74,8 @@ function buildCreateFields(form: Partial<Component>, parsedVersion: string, now:
     assemblyHours: form.assemblyHours || 0,
     hasWarranty: form.hasWarranty ?? true,
     reviewStatus: 'pending',
+    // 工作流标记与业务备注分离（note 只存用户备注）
+    reviewAction: 'create',
     tags: form.tags || [],
     version: parsedVersion || 'V0.1',
     createdAt: now,
@@ -105,6 +107,8 @@ const MaterialManagement: React.FC = () => {
   const { user } = useAuth();
   // ⚠️ A1 复核：写动作需「新增物料」权限（与后端 writeGuard 同源）；无写权用户隐藏增/改/删/审核按钮，仅可查看
   const canWrite = hasPermission(user?.permissions, ['新增物料', '全部查看权限']);
+  // 审核动作独立权限：不能「自己提交、自己审批」（尤其删除申请）
+  const canReview = hasPermission(user?.permissions, ['审批管理', '全部查看权限']);
 
   // ── 数据加载 ──
 
@@ -276,6 +280,7 @@ const MaterialManagement: React.FC = () => {
           updatedAt: now,
           changeLog: [...target.changeLog, logEntry],
           reviewStatus: 'pending',
+          reviewAction: 'update',
         });
       } else {
         const parsed = parseVersionFromCode(editForm.code || '');
@@ -301,12 +306,15 @@ const MaterialManagement: React.FC = () => {
     if (!deleteModalItem) return;
     const item = deleteModalItem;
     try {
-      if (item.note?.startsWith('[删除]')) {
-        await componentService.delete(item.id);
-        messageApi.success('物料已永久删除');
+      if (item.reviewAction === 'delete') {
+        // 已提交删除申请：等待审核，不允许提交人自行绕过审批永久删除
+        messageApi.warning('该物料的删除申请已在审核中');
       } else {
-        await componentService.update(item.id, { reviewStatus: 'pending' as ReviewStatus, note: '[删除]' } as Partial<Component>);
-        messageApi.success('删除申请已提交，待总监审批');
+        await componentService.update(item.id, {
+          reviewStatus: 'pending' as ReviewStatus,
+          reviewAction: 'delete',
+        } as Partial<Component>);
+        messageApi.success('删除申请已提交，待审核');
       }
       await loadMaterials();
       invalidateCatalogCache(); // ⚠️ B2：失效报价页编码下拉缓存（同 286 说明）
@@ -314,7 +322,7 @@ const MaterialManagement: React.FC = () => {
       console.error('[Material] 删除失败:', err);
       // ⚠️ B7 修复：API 失败不再本地移除/本地标记（刷新后恢复的假状态误导用户，且列表与后端不一致），
       //   仅提示错误；条目保持真实状态，用户可重试
-      messageApi.error(item.note?.startsWith('[删除]') ? '永久删除失败，请重试' : '删除申请提交失败，请重试');
+      messageApi.error('删除申请提交失败，请重试');
     }
     setDeleteModalItem(null);
   };
@@ -324,39 +332,26 @@ const MaterialManagement: React.FC = () => {
   const handleApprove = useCallback(async (item: Component) => {
     if (item.reviewStatus !== 'pending') { messageApi.warning('仅待审核状态的物料可审核'); return; }
     try {
-      if (item.note?.startsWith('[删除]')) {
-        await componentService.delete(item.id);
-        messageApi.success('删除申请已通过，物料已移除');
-      } else {
-        await componentService.update(item.id, { reviewStatus: 'approved' as ReviewStatus } as Partial<Component>);
-        messageApi.success('物料已通过审核');
-      }
+      const result = await componentService.review(item.id, 'approved');
+      messageApi.success(result.deleted ? '删除申请已通过，物料已移除' : '物料已通过审核');
       await loadMaterials();
       invalidateCatalogCache(); // ⚠️ B2：失效报价页编码下拉缓存（同 286 说明）
     } catch (err) {
       console.error('[Material] 保存失败:', err);
-      // ⚠️ 审计修复 BU-5：与 saveEdit B7 同口径——API 失败不再本地伪造状态（刷新即恢复的假状态会误导
-      //   用户以为已审核通过，列表与后端不一致）；仅提示错误，条目保持真实状态可重试
-      messageApi.error(item.note?.startsWith('[删除]') ? '删除审批失败，请重试' : '审核失败，请重试');
+      messageApi.error(item.reviewAction === 'delete' ? '删除审批失败，请重试' : '审核失败，请重试');
     }
   }, [loadMaterials, messageApi]);
 
   const handleReject = useCallback(async (item: Component) => {
     if (item.reviewStatus !== 'pending') { messageApi.warning('仅待审核状态的物料可审核'); return; }
     try {
-      if (item.note?.startsWith('[删除]')) {
-        await componentService.update(item.id, { reviewStatus: 'approved' as ReviewStatus, note: '' } as Partial<Component>);
-        messageApi.warning('删除申请已驳回');
-      } else {
-        await componentService.update(item.id, { reviewStatus: 'rejected' as ReviewStatus } as Partial<Component>);
-        messageApi.warning('物料已驳回');
-      }
+      await componentService.review(item.id, 'rejected');
+      messageApi.warning(item.reviewAction === 'delete' ? '删除申请已驳回' : '物料已驳回');
       await loadMaterials();
       invalidateCatalogCache(); // ⚠️ B2：失效报价页编码下拉缓存（同 286 说明）
     } catch (err) {
       console.error('[Material] 保存失败:', err);
-      // ⚠️ 审计修复 BU-5：同 handleApprove——不再本地伪造状态，仅提示错误保持真实状态可重试
-      messageApi.error(item.note?.startsWith('[删除]') ? '删除申请驳回失败，请重试' : '驳回失败，请重试');
+      messageApi.error(item.reviewAction === 'delete' ? '删除申请驳回失败，请重试' : '驳回失败，请重试');
     }
   }, [loadMaterials, messageApi]);
 
@@ -478,14 +473,16 @@ const MaterialManagement: React.FC = () => {
                 onClick={() => openEdit(rec)}
                 style={{ color: rec.reviewStatus === 'pending' ? COLORS.borderInput : COLORS.primary, fontSize: 14 }}
                 disabled={rec.reviewStatus === 'pending'} />
-              {rec.reviewStatus === 'pending' && (
+              {rec.reviewStatus === 'pending' && canReview && (
                 <>
                   <Button type="text" size="small" icon={<CheckOutlined />}
                     onClick={() => handleApprove(rec)}
-                    style={{ color: COLORS.success, fontSize: 16 }} />
+                    style={{ color: COLORS.success, fontSize: 16 }}
+                    title={rec.reviewAction === 'delete' ? '通过删除申请' : '审核通过'} />
                   <Button type="text" size="small" icon={<CloseOutlined />}
                     onClick={() => handleReject(rec)}
-                    style={{ color: COLORS.danger, fontSize: 16 }} />
+                    style={{ color: COLORS.danger, fontSize: 16 }}
+                    title="驳回" />
                 </>
               )}
               <Button type="text" size="small" icon={<DeleteOutlined />}
@@ -497,7 +494,7 @@ const MaterialManagement: React.FC = () => {
         </Space>
       ),
     },
-  ], [materials, tagTree, tagPathMap, brandFilterOptions, canWrite, openEdit, deleteItem, handleApprove, handleReject]);
+  ], [materials, tagTree, tagPathMap, brandFilterOptions, canWrite, canReview, openEdit, deleteItem, handleApprove, handleReject]);
 
   // ── 统计 ──
 

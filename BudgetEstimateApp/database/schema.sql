@@ -151,6 +151,8 @@ CREATE TABLE IF NOT EXISTS components (
   has_warranty    BOOLEAN NOT NULL DEFAULT false,
   unit            VARCHAR(20) NOT NULL DEFAULT '个',
   review_status   review_status NOT NULL DEFAULT 'draft',
+  -- 待审核请求类型：create/update/delete；空串 = 普通状态。不得复用 note 存工作流标记
+  review_action   VARCHAR(20) NOT NULL DEFAULT '' CHECK (review_action = ANY (ARRAY['', 'create', 'update', 'delete'])),
   version         VARCHAR(50) NOT NULL DEFAULT 'V1.0',
   tags            TEXT[] DEFAULT '{}',
   change_log      JSONB NOT NULL DEFAULT '[]'::JSONB,
@@ -418,6 +420,8 @@ ALTER TABLE approval_requests ADD COLUMN IF NOT EXISTS gp3_amount NUMERIC(12,2) 
 
 CREATE INDEX IF NOT EXISTS idx_approval_requests_status ON approval_requests(status);
 CREATE INDEX IF NOT EXISTS idx_approval_requests_type ON approval_requests(approval_type);
+-- 审批列表按 updated_at DESC 排序（大表避免全表外部排序）
+CREATE INDEX IF NOT EXISTS idx_approval_requests_updated_at ON approval_requests(updated_at DESC);
 
 -- ============================================================
 -- 12. 审批记录（ReviewRecord）
@@ -457,6 +461,8 @@ CREATE TABLE IF NOT EXISTS delivery_projects (
 
 CREATE INDEX IF NOT EXISTS idx_delivery_projects_status ON delivery_projects(status);
 CREATE INDEX IF NOT EXISTS idx_delivery_projects_opportunity_id ON delivery_projects(opportunity_id);
+-- 交付列表按 updated_at DESC 排序
+CREATE INDEX IF NOT EXISTS idx_delivery_projects_updated_at ON delivery_projects(updated_at DESC);
 -- ⚠️ A12：sales_no 高频等值/LIKE 查询（成本中心校验、质保同步）索引
 CREATE INDEX IF NOT EXISTS idx_delivery_projects_sales_no ON delivery_projects(sales_no);
 
@@ -896,4 +902,5 @@ CREATE INDEX IF NOT EXISTS idx_tr_time_records_review ON timerecording.time_reco
 CREATE INDEX IF NOT EXISTS idx_tr_time_records_cost_type ON timerecording.time_records (cost_center_type, cost_center);
 CREATE INDEX IF NOT EXISTS idx_tr_time_records_status ON timerecording.time_records (status);
 CREATE INDEX IF NOT EXISTS idx_tr_time_records_user_id ON timerecording.time_records (user_id);
+CREATE INDEX IF NOT EXISTS idx_tr_time_records_user_date ON timerecording.time_records (user_id, date DESC);
 CREATE INDEX IF NOT EXISTS idx_tr_time_records_week ON timerecording.time_records (year, week_number);

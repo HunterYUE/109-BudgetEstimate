@@ -16,8 +16,12 @@ export function isValidSyncStatus(status: unknown): boolean {
   return !status || (QUOTATION_SYNC_STATUSES as string[]).includes(status as string);
 }
 
-/** 报价财务字段（beforeUpdate 守卫：审批中 status='pending' 禁改这些字段——审批人基于提交时快照做决策） */
-export const QUOTATION_FINANCIAL = ['amount', 'total_cost', 'profit_rate', 'sales_no', 'opportunity_id'];
+/** 审批中（status='pending'）禁改的字段：财务口径 + 行归属。
+ *  归属字段（project_id/version_no）此前可改，会让审批结果回写到未送审版本或其它项目。 */
+export const QUOTATION_FINANCIAL = [
+  'amount', 'total_cost', 'profit_rate', 'sales_no', 'opportunity_id',
+  'project_id', 'version_no', 'client_name', 'project_name',
+];
 
 // 自定义路由（先注册，避免被 /:id 拦截）
 const customRouter = Router();
@@ -39,13 +43,25 @@ customRouter.get('/', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// 单条读取：附带「是否存在真实待审批请求」——前端据此区分「审批中」与「提交中断残留 pending」
+customRouter.get('/:id', async (req, res, next) => {
+  try {
+    const row = (await query(
+      `SELECT q.*,
+        EXISTS(SELECT 1 FROM approval_requests ar WHERE ar.quotation_id = q.id AND ar.status = 'pending') AS has_pending_approval
+       FROM quotations q WHERE q.id = $1`,
+      [req.params.id]
+    )).rows[0];
+    if (!row) throw new AppError(404, '记录不存在');
+    res.json(row);
+  } catch (err) { next(err); }
+});
+
 // 同步报价摘要：根据 project_id + version_no upsert
 customRouter.put('/sync', async (req, res, next) => {
   try {
     const body = objKeysToSnake(req.body);
-    const { project_id, version_no, sales_no, client_name, project_name,
-      status = 'draft', amount = 0, total_cost = 0, profit_rate = 0,
-      opportunity_id = null } = body;
+    const { project_id, version_no, status } = body;
 
     if (!project_id || !version_no) {
       throw new AppError(400, '缺少必填字段：project_id, version_no');
@@ -59,47 +75,56 @@ customRouter.put('/sync', async (req, res, next) => {
     // ⚠️ F18 修复：待审批（status='pending'）的报价不允许被 sync 覆盖。
     //    此前检查 locked 字段但全库无任何路径置 true（死守卫），改为检查真实信号 status='pending'
     const existing = (await query(
-      'SELECT id, status FROM quotations WHERE project_id = $1 AND version_no = $2',
+      'SELECT * FROM quotations WHERE project_id = $1 AND version_no = $2',
       [project_id, version_no]
     )).rows[0];
     if (existing?.status === 'pending') {
       // ⚠️ 审计修复：status='pending' 须结合是否存在关联审批请求判定——提交审批链路为
       //   保存版本(pending) → sync 报价(pending) → 创建审批请求；若审批创建失败（无权限/网络/参数错），
       //   报价会残留 status='pending' 但无审批请求，此前的 409 会永久锁死该报价无法再保存。
-      //   仅当存在真实审批请求时拦截（审批中不可改财务字段）。
+      //   仅当存在真实「待审批」请求时拦截（历史 approved/rejected 记录不应阻断恢复）。
       const hasApproval = (await query(
-        'SELECT 1 FROM approval_requests WHERE quotation_id = $1', [existing.id]
+        "SELECT 1 FROM approval_requests WHERE quotation_id = $1 AND status = 'pending'", [existing.id]
       )).rows[0];
       if (hasApproval) {
         throw new AppError(409, '该报价待审批中，无法同步保存');
       }
     }
-    // ⚠️ 终审复核：approved 报价不做 sync 拦截——已审批报价在未签单（未中标/赢）时本就可编辑（QuotationPage
-    //   shouldLock=false），编辑保存经 B61 重置为 draft 再重新走审批；若在此拦截 sync 会 409 阻断该正常变更流程。
-    //   真实锁定信号是「已签单」（中标+赢 → quotationLocked=true），由前端只读守卫 + 机会锁定共同承担。
-    const result = await query(
-      `INSERT INTO quotations (project_id, version_no, sales_no, client_name,
-        project_name, status, amount, total_cost, profit_rate, opportunity_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-       ON CONFLICT (project_id, version_no) DO UPDATE SET
-        sales_no = EXCLUDED.sales_no,
-        client_name = EXCLUDED.client_name,
-        project_name = EXCLUDED.project_name,
-        status = EXCLUDED.status,
-        amount = EXCLUDED.amount,
-        total_cost = EXCLUDED.total_cost,
-        profit_rate = EXCLUDED.profit_rate,
-        opportunity_id = EXCLUDED.opportunity_id,
-        updated_at = now()
-       RETURNING *`,
-      [project_id, version_no, sales_no, client_name, project_name,
-       status, amount, total_cost, profit_rate, opportunity_id]
-    );
+    // ⚠️ A112 修复：sync 改为「只更新请求体显式出现的列」。
+    //   原实现给缺失字段填默认值 0/null 并全量覆盖，提交失败补偿回滚（只传状态）会把
+    //   amount/total_cost/profit_rate 清零、opportunity_id 置 NULL，财务数据被静默破坏。
+    const SYNC_COLS = ['sales_no', 'client_name', 'project_name', 'status', 'amount', 'total_cost', 'profit_rate', 'opportunity_id'];
+    let result;
+    if (existing) {
+      const cols = SYNC_COLS.filter(c => body[c] !== undefined);
+      if (cols.length === 0) {
+        res.json(existing);
+        return;
+      }
+      const setClause = cols.map((c, i) => `"${c}" = $${i + 1}`).join(', ');
+      result = await query(
+        `UPDATE quotations SET ${setClause}, updated_at = now()
+         WHERE project_id = $${cols.length + 1} AND version_no = $${cols.length + 2}
+         RETURNING *`,
+        [...cols.map(c => body[c]), project_id, version_no]
+      );
+    } else {
+      result = await query(
+        `INSERT INTO quotations (project_id, version_no, sales_no, client_name,
+          project_name, status, amount, total_cost, profit_rate, opportunity_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+         RETURNING *`,
+        [project_id, version_no, body.sales_no ?? '', body.client_name ?? '',
+         body.project_name ?? '', status ?? 'draft', body.amount ?? 0,
+         body.total_cost ?? 0, body.profit_rate ?? 0, body.opportunity_id ?? null]
+      );
+    }
 
+    const saved = result.rows[0];
     logAudit(req, '保存报价', 'quotation',
-      `${sales_no} ${version_no} ¥${amount} ${status}`);
+      `${body.sales_no ?? saved.sales_no} ${version_no} ¥${saved.amount} ${saved.status}`);
 
-    res.json(result.rows[0]);
+    res.json(saved);
   } catch (err) { next(err); }
 });
 
@@ -113,12 +138,20 @@ const crudRouter = crudRoutes('quotations', fields, {
   excludeOnUpdate: ['id', 'created_at', 'updated_at', 'status', 'locked'],
   // ⚠️ A103 修复：报价审批中（status='pending'）禁改财务字段——审批人基于提交时快照做决策，
   //   期间被改金额会让审批与机会回写口径失真（sync 端点有 409 守卫，通用 PUT 此前无）。
-  beforeUpdate: async (id, snakeBody) => {
+  beforeUpdate: async (_req, id, snakeBody) => {
     if (!QUOTATION_FINANCIAL.some(f => snakeBody[f] !== undefined)) return;
     const existing = (await query('SELECT status FROM quotations WHERE id = $1', [id])).rows[0];
     if (existing?.status === 'pending') {
-      throw new AppError(409, '该报价待审批中，审批完成前不可修改金额/成本/毛利率/编号/关联机会');
+      throw new AppError(409, '该报价待审批中，审批完成前不可修改金额/成本/毛利率/编号/归属/关联机会');
     }
+  },
+  // ⚠️ A113：存在待审批请求时禁止删除——FK 为 ON DELETE SET NULL，删除后审批成为孤儿，
+  //   审批通过时级联分支静默空操作，审批历史与业务对象断链。
+  beforeDelete: async (id) => {
+    const pending = (await query(
+      "SELECT 1 FROM approval_requests WHERE quotation_id = $1 AND status = 'pending'", [id]
+    )).rows[0];
+    if (pending) throw new AppError(409, '该报价存在待审批请求，请先取消审批');
   },
 });
 

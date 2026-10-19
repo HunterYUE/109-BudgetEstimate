@@ -1,7 +1,7 @@
 import { Router, type Request } from 'express';
 import { query } from '../db/index.js';
 import { AppError } from '../middleware/index.js';
-import { requirePermission } from '../middleware/auth.js';
+import { requirePermission, hasPermission } from '../middleware/auth.js';
 import multer, { type FileFilterCallback } from 'multer';
 import path from 'path';
 import fs from 'fs';
@@ -23,6 +23,12 @@ const MAX_SIZE = 3 * 1024 * 1024; // 3MB
  *  `unique-..\..\x.pdf` 穿越）；改为字面反斜杠 `[/\\:]` 对齐注释宣称的三字符净化语义 */
 export function sanitizeFileName(name: string): string {
   return name.replace(/[/\\:]/g, '_');
+}
+
+/** 交付项目状态枚举（DB enum delivery_status；应用层预校验给 400，避免非法值撞 PG 枚举报 500） */
+export const DELIVERY_STATUSES = ['未开始', '进行中', '已完成'] as const;
+export function isValidDeliveryStatus(status: unknown): boolean {
+  return status === undefined || (DELIVERY_STATUSES as readonly string[]).includes(status as string);
 }
 
 /** 节点状态枚举白名单（DB 列 node_status: pending/in_progress/completed；undefined 走下方 'pending' 兜底） */
@@ -113,6 +119,11 @@ const crudRouter = crudRoutes('delivery_projects', fields, {
   beforeCreate: async (snakeBody) => {
     const { opportunity_id, quotation_id } = snakeBody;
     if (!opportunity_id || !quotation_id) throw new AppError(400, '创建交付项目必须提供机会与报价');
+    if (!isValidDeliveryStatus(snakeBody.status)) {
+      throw new AppError(400, `无效交付状态，允许值：${DELIVERY_STATUSES.join('、')}`);
+    }
+    // 完成门禁只能经「节点全部完成 + 成本审批通过」后由更新路径触发，创建即完成会绕过全部门禁
+    if (snakeBody.status === '已完成') throw new AppError(400, '新建交付项目不能直接标记为已完成');
     const opp = (await query('SELECT 1 FROM sales_opportunities WHERE id = $1', [opportunity_id])).rows[0];
     if (!opp) throw new AppError(400, '关联的销售机会不存在');
     const quote = (await query('SELECT opportunity_id FROM quotations WHERE id = $1', [quotation_id])).rows[0];
@@ -120,6 +131,30 @@ const crudRouter = crudRoutes('delivery_projects', fields, {
     if (quote.opportunity_id !== opportunity_id) throw new AppError(400, '报价不属于该销售机会，无法转交付');
     const existing = (await query('SELECT 1 FROM delivery_projects WHERE opportunity_id = $1', [opportunity_id])).rows[0];
     if (existing) throw new AppError(409, '该机会已转交付，请勿重复创建交付项目');
+  },
+  // ⚠️ A120：完成门禁/审批中成本锁从「仅前端」下沉到服务端。
+  //   status 此前可直接 PUT 为已完成（分析按完成日归集订单/销售），绕过节点与成本审批；
+  //   cost_status='pending' 时实际成本也可被覆盖，审批快照与落库值分叉。
+  beforeUpdate: async (_req, id, snakeBody) => {
+    if (!isValidDeliveryStatus(snakeBody.status)) {
+      throw new AppError(400, `无效交付状态，允许值：${DELIVERY_STATUSES.join('、')}`);
+    }
+    if (snakeBody.status === '已完成') {
+      const dp = (await query('SELECT cost_status FROM delivery_projects WHERE id = $1', [id])).rows[0];
+      if (!dp) throw new AppError(404, '交付项目未找到');
+      if (dp.cost_status !== 'approved') throw new AppError(409, '成本对比审批通过后才能完成项目');
+      const nodes = (await query(
+        'SELECT node_no, status FROM delivery_nodes WHERE delivery_project_id = $1', [id]
+      )).rows as { node_no: number; status: string }[];
+      if (nodes.length === 0) throw new AppError(409, '交付项目尚无节点，不能完成');
+      const incomplete = nodes.filter(n => n.status !== 'completed').map(n => n.node_no);
+      if (incomplete.length > 0) throw new AppError(409, `尚有 ${incomplete.join('、')} 号节点未完成`);
+    }
+    const touchesCost = snakeBody.total_actual_cost !== undefined || snakeBody.actual_costs !== undefined;
+    if (touchesCost) {
+      const dp = (await query('SELECT cost_status FROM delivery_projects WHERE id = $1', [id])).rows[0];
+      if (dp?.cost_status === 'pending') throw new AppError(409, '成本对比审批中，不可修改实际成本');
+    }
   },
   // ⚠️ 审计修复 #12：已审批交付的成本被覆盖修改须审计留痕（DeliveryDetail 总监解锁覆盖成本场景）——
   //   覆盖成本 = 直接修改已批准的成本对比，是敏感操作；记录操作者与修改后的总实际成本。
@@ -134,11 +169,23 @@ const crudRouter = crudRoutes('delivery_projects', fields, {
         .catch(err => console.warn('[deliveries] 成本修改审计写入失败', (err as Error).message));
     }
   },
-  // ⚠️ F15 修复：删除交付项目时清理磁盘上的附件文件（DB 行靠 delivery_files CASCADE 删，物理文件不会随删）
+  // ⚠️ A121：存在待审批请求时禁止删除——FK 为 SET NULL，删除后审批失去目标，通过时静默空操作
   beforeDelete: async (id) => {
-    const files = (await query('SELECT file_path FROM delivery_files WHERE delivery_project_id = $1', [id])).rows as { file_path: string }[];
-    for (const f of files) {
-      try { if (f.file_path && fs.existsSync(f.file_path)) fs.unlinkSync(f.file_path); } catch { /* 文件可能已移动 */ }
+    const pending = (await query(
+      "SELECT 1 FROM approval_requests WHERE delivery_id = $1 AND status = 'pending'", [id]
+    )).rows[0];
+    if (pending) throw new AppError(409, '该交付存在待审批请求，请先取消审批');
+    // 附件行会随交付 CASCADE 删除，路径必须先快照（afterDelete 时已查不到）
+    return (await query(
+      'SELECT file_path FROM delivery_files WHERE delivery_project_id = $1', [id]
+    )).rows.map((f: { file_path: string }) => f.file_path).filter(Boolean) as string[];
+  },
+  // ⚠️ F15/A119 修复：删除交付项目时清理磁盘附件——放到 DB 删除成功之后（afterDelete），
+  //   避免 DELETE 失败（外键/DB 抖动）时文件已丢失而记录仍在。
+  afterDelete: async (_id, context) => {
+    const paths = Array.isArray(context) ? context as string[] : [];
+    for (const filePath of paths) {
+      try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch { /* 文件可能已移动 */ }
     }
   },
   extra: (r) => {
@@ -164,18 +211,52 @@ const crudRouter = crudRoutes('delivery_projects', fields, {
         const { id } = req.params;
         // ⚠️ 节点字段必须转 snake_case（前端发 camelCase nodeNo → node_no）
         const rawNodes = (req.body.nodes || req.body);
-        const nodes = Array.isArray(rawNodes) ? rawNodes.map((n: any) => objKeysToSnake(n)) : rawNodes;
-        if (!Array.isArray(nodes)) throw new AppError(400, '节点数据必须为数组');
+        if (!Array.isArray(rawNodes)) throw new AppError(400, '节点数据必须为数组');
+        if (rawNodes.some((n: unknown) => !n || typeof n !== 'object' || Array.isArray(n))) {
+          throw new AppError(400, '节点数据包含非法元素');
+        }
+        const nodes = rawNodes.map((n: any) => objKeysToSnake(n));
+
+        // 节点号是业务主键（节点15/分析/延期判定直接依赖），同一次请求内必须唯一
+        const seenNodeNos = new Set<number>();
+        for (const node of nodes) {
+          if (seenNodeNos.has(node.node_no)) throw new AppError(400, `节点号重复：${node.node_no}`);
+          seenNodeNos.add(node.node_no);
+          // 计划起止顺序（仅校验标准日期串，历史空串/其他格式由前端展示逻辑兜底）
+          const ps = String(node.planned_start_date || '');
+          const pe = String(node.planned_end_date || '');
+          if (/^\d{4}-\d{2}-\d{2}$/.test(ps) && /^\d{4}-\d{2}-\d{2}$/.test(pe) && pe < ps) {
+            throw new AppError(400, `节点 ${node.node_no} 计划结束日期早于开始日期`);
+          }
+        }
 
         // ⚠️ A15：事务样板收敛为 withTransaction
         await withTransaction(async (client) => {
-          const dp = (await client.query('SELECT id, plan_status FROM delivery_projects WHERE id = $1', [id])).rows[0];
+          // 行锁：与审批事务串行化，防「检查 plan_status 后、写入前」被审批改状态
+          const dp = (await client.query(
+            'SELECT id, plan_status, cost_status FROM delivery_projects WHERE id = $1 FOR UPDATE', [id]
+          )).rows[0];
           if (!dp) throw new AppError(404, '交付项目未找到');
-          // ⚠️ 审计修复 BE-8：计划已审批（plan_status='approved'）的交付，节点修改仅限「交付管理」持有者——
-          //   防仅持「销售机会管理」的销售篡改已审批计划的节点/实际日期。转交付初始化在 plan_status='draft' 阶段，
-          //   销售仍可正常建节点；审批后的计划维护归交付管理，不影响既有流程。
-          if (dp.plan_status === 'approved' && !req.user?.permissions?.includes('交付管理')) {
+          // ⚠️ 审批中一律冻结节点（提交后审批对象不得变化）；已审批后仅「交付管理/万能权限」可维护
+          if (dp.plan_status === 'pending') {
+            throw new AppError(409, '实施计划审批中，不可修改节点');
+          }
+          if (dp.plan_status === 'approved' && !hasPermission(req.user?.permissions, '交付管理', '全部查看权限')) {
             throw new AppError(403, '该交付计划已审批，节点修改需要交付管理权限');
+          }
+          // ⚠️ A120：节点15完成 = 项目完结信号——必须成本审批通过且其余节点全部完成（与前端 projectCompletionGate 同口径）。
+          //   仅对「本次新完成」的迁移校验；历史已完成的节点15 不因后续编辑其它节点而被反向卡住。
+          const n15 = nodes.find((n: any) => n.node_no === 15);
+          if (n15 && n15.status === 'completed') {
+            const prev15 = (await client.query(
+              'SELECT status FROM delivery_nodes WHERE delivery_project_id = $1 AND node_no = 15',
+              [id]
+            )).rows[0];
+            if (prev15?.status !== 'completed') {
+              if (dp.cost_status !== 'approved') throw new AppError(409, '成本对比审批通过后才能完成节点15');
+              const incomplete = nodes.filter((n: any) => n.node_no !== 15 && n.status !== 'completed').map((n: any) => n.node_no);
+              if (incomplete.length > 0) throw new AppError(409, `尚有 ${incomplete.join('、')} 号节点未完成`);
+            }
           }
 
           // 备份基线（基线日期一旦审批通过写入，永不被覆盖）
@@ -244,15 +325,26 @@ router.get('/:deliveryId/files', async (req, res, next) => {
 
 // ⚠️ K1 修复：附件上传须「交付管理」——「销售机会管理」仅限转交付创建/初始化节点，不能对任意交付上传附件
 router.post('/:deliveryId/files', requirePermission('交付管理', '全部查看权限'), fileUpload.single('file'), async (req, res, next) => {
+  const rf = req as any;
+  const cleanupUpload = () => {
+    try { if (rf.file?.path && fs.existsSync(rf.file.path)) fs.unlinkSync(rf.file.path); } catch { /* 清理失败不影响主错误 */ }
+  };
   try {
     const { deliveryId } = req.params;
     const { file_type } = req.body;
-    const rf = req as any;
     if (!rf.file) throw new AppError(400, '请选择文件');
     if (!file_type) throw new AppError(400, '缺少 file_type');
     // ⚠️ 白名单校验：与前端 ATTACHMENT_TYPES 的 4 类一一对应，防止未知类型写入
     if (!(FILE_TYPES as readonly string[]).includes(file_type)) {
       throw new AppError(400, '未知文件类型');
+    }
+    // multer 先落盘，业务校验失败必须清理，否则可用非法请求无限堆积文件。
+    // mimetype 由客户端提供可伪造，再校验 PDF 魔数（%PDF-）兜底。
+    const head = Buffer.alloc(5);
+    const fd = fs.openSync(rf.file.path, 'r');
+    try { fs.readSync(fd, head, 0, 5, 0); } finally { fs.closeSync(fd); }
+    if (head.toString('latin1') !== '%PDF-') {
+      throw new AppError(400, '文件内容不是有效的 PDF');
     }
 
     const result = await query(
@@ -261,7 +353,10 @@ router.post('/:deliveryId/files', requirePermission('交付管理', '全部查�
       [deliveryId, file_type, Buffer.from(rf.file.originalname, 'latin1').toString('utf8'), rf.file.size, rf.file.path]
     );
     res.status(201).json(result.rows[0]);
-  } catch (err) { next(err); }
+  } catch (err) {
+    cleanupUpload();
+    next(err);
+  }
 });
 
 // ⚠️ F19 修复：附件下载需 交付管理 权限（与交付详情页访问权限一致，GET 不被 writeGuard 拦，故单独加权限校验）
@@ -282,6 +377,9 @@ router.get('/:deliveryId/files/:fileId/download', requirePermission('交付管�
       if (!res.headersSent) {
         res.removeHeader('Content-Disposition');
         res.status(500).json({ error: '文件读取失败' });
+      } else {
+        // 响应头已发出时无法再写错误体，必须主动断开，否则客户端会挂到超时
+        res.destroy();
       }
     });
     stream.pipe(res);
@@ -297,8 +395,10 @@ router.delete('/:deliveryId/files/:fileId', async (req, res, next) => {
     )).rows[0];
     if (!file) throw new AppError(404, '文件未找到');
 
+    // 先删数据库行，成功后再删物理文件：反序会在 DB 失败时留下指向缺失文件的记录
+    const deleted = await query('DELETE FROM delivery_files WHERE id = $1 RETURNING id', [fileId]);
+    if (deleted.rows.length === 0) throw new AppError(404, '文件未找到');
     try { if (fs.existsSync(file.file_path)) fs.unlinkSync(file.file_path); } catch { /* 物理文件可能已被移动或删除 */ }
-    await query('DELETE FROM delivery_files WHERE id = $1', [fileId]);
     res.json({ deleted: true, id: fileId });
   } catch (err) { next(err); }
 });

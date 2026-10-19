@@ -3,7 +3,6 @@ import { Table, Button, Modal, message, Switch } from 'antd';
 import { PlusOutlined, EditOutlined, KeyOutlined, CheckOutlined, CloseOutlined, SettingOutlined, DeleteOutlined } from '@ant-design/icons';
 import { COLORS, LABEL_CELL_STYLE } from '../styles/colors';
 import { formatBeijing } from '../utils/timeFormat';
-import { LIST_LIMIT } from '../utils/constants';
 import { userService, type UserRecord } from '../services/userService';
 import { auditLogService, type AuditLog } from '../services/auditLogService';
 import { useAuth } from '../utils/authContext';
@@ -139,8 +138,8 @@ const SystemManagement: React.FC = () => {
   const loadLogs = useCallback(async () => {
     setLogLoading(true);
     try {
-      // ⚠️ 传 limit: LIST_LIMIT，避免后端默认 limit=100 导致日志截断
-      const data = await auditLogService.list({ limit: LIST_LIMIT });
+      // 日志只增不减，首屏取最近 5000 条足够排障（避免一次拉 10 万条拖慢页面/内存）
+      const data = await auditLogService.list({ limit: '5000' });
       setLogs(data);
     } catch {
       messageApi.error('加载操作日志失败');
@@ -228,6 +227,11 @@ const SystemManagement: React.FC = () => {
     if (!editTarget) return;
     if (!editEmail.trim()) { messageApi.warning('邮箱不能为空'); return; }
 
+    // 越级保护前置：先判断再写基础信息，避免「基本信息已保存、角色更新被拒」的半更新状态
+    if (editTarget.id === currentUser?.id && editTitle !== editTarget.title) {
+      messageApi.warning('不能修改自己的职务，请联系其他管理员');
+      return;
+    }
     setSaving(true);
     try {
       const updated = await userService.update(editTarget.id, {
@@ -236,11 +240,14 @@ const SystemManagement: React.FC = () => {
         title: editTitle,
         phone: editPhone.trim(),
       });
-      // ⚠️ B2 修复：职务变更须同步 role/permissions（否则界面显示"部门总监"但实际无总监权限，成本覆盖解锁/后端校验均失效）
-      if (editTitle !== editTarget.title) {
-        await userService.updateRole(editTarget.id, TITLE_ROLE_MAP[editTitle] || 'user', editTitle, TITLE_PERMISSIONS[editTitle] || []);
+      // ⚠️ B2 修复：职务变更须同步 role/permissions（否则界面显示"部门总监"但实际无总监权限）。
+      // ⚠️ A144：仅当职务是已知枚举时才推导角色——工时侧创建的 admin title 为空，
+      //   原实现 `|| 'user'` 会把 admin 静默降级为普通用户并清空权限。
+      const roleForTitle = TITLE_ROLE_MAP[editTitle];
+      if (editTitle !== editTarget.title && roleForTitle) {
+        await userService.updateRole(editTarget.id, roleForTitle, editTitle, TITLE_PERMISSIONS[editTitle] || []);
       }
-      const newPerms = editTitle !== editTarget.title ? (TITLE_PERMISSIONS[editTitle] || []) : updated.permissions;
+      const newPerms = editTitle !== editTarget.title && roleForTitle ? (TITLE_PERMISSIONS[editTitle] || []) : updated.permissions;
       setUsers(prev => prev.map(u => u.id === updated.id ? { ...updated, permissions: newPerms } : u));
       closeModal(setEditOpen);
       messageApi.success('用户信息已更新');
@@ -278,18 +285,23 @@ const SystemManagement: React.FC = () => {
   const openPermModal = useCallback((u: UserRecord) => {
     setEditTarget(u);
     setPermTitle(u.title);
-    // 优先使用数据库已保存的权限，否则用职务预设
-    setCheckedPerms(u.permissions && u.permissions.length > 0
-      ? [...u.permissions]
-      : [...(TITLE_PERMISSIONS[u.title] || [])]);
+    // 优先使用数据库已保存的权限；仅 permissions 为 null（从未配置）才用职务预设。
+    // ⚠️ A145：空数组 [] 表示「有意清空」，原实现按 falsy/长度判断会回填职务预设，
+    //   管理员点确认后权限被悄悄恢复。
+    setCheckedPerms(u.permissions == null
+      ? [...(TITLE_PERMISSIONS[u.title] || [])]
+      : [...u.permissions]);
     setPermOpen(true);
   }, []);
 
   const handlePermSave = async () => {
     if (!editTarget) return;
+    if (editTarget.id === currentUser?.id) { messageApi.warning('不能修改自己的角色/权限'); return; }
     setSaving(true);
     try {
-      const updated = await userService.updateRole(editTarget.id, TITLE_ROLE_MAP[permTitle] || 'user', permTitle, checkedPerms);
+      // 未知/空职务不改写角色（后端禁止修改自身角色，空 title 的工时管理员也不能被降级）
+      const role = TITLE_ROLE_MAP[permTitle] || editTarget.role;
+      const updated = await userService.updateRole(editTarget.id, role, permTitle, checkedPerms);
       setUsers(prev => prev.map(u => u.id === updated.id ? updated : u));
       closeModal(setPermOpen);
       messageApi.success('角色权限已更新');
@@ -670,7 +682,7 @@ const SystemManagement: React.FC = () => {
             dataSource={filteredLogs}
             columns={logColumns}
             loading={logLoading}
-            pagination={false}
+            pagination={{ pageSize: 50, showSizeChanger: false, hideOnSinglePage: true }}
             size="small"
             scroll={{ x: 436 }}
             style={{ fontSize: 13, background: '#fff', borderRadius: 8 }}

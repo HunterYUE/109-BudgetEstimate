@@ -3,6 +3,7 @@ import { query } from '../db/index.js';
 import { AppError } from '../middleware/index.js';
 import { requirePermission, hasPermission } from '../middleware/auth.js';
 import { crudRoutes, logAudit, objKeysToSnake, withTransaction, buildSearchWhere, parsePagination, round2 } from './helpers.js';
+import { selectApprovalPerms } from '../permissions.js';
 
 const fields = [
   'id', 'approval_type', 'quotation_id', 'opportunity_id', 'delivery_id',
@@ -57,7 +58,9 @@ export function applyPromoteDefaults(body: Record<string, any>, versionNo: unkno
   out.discount_rate ??= parseFloat(pv.discount_rate) || 0;
   out.gp3 ??= parseFloat(pv.gp3_profit_rate) || 0;
   out.total_cost ??= parseFloat(pv.total_cost) || 0;
-  out.tax_rate ??= parseFloat(pv.tax_rate) || 0.13;
+  // 0% 税率是合法值（免税）：仅在缺值/NaN 时回退 13%，不能用 `|| 0.13` 吞掉 0
+  const tax = parseFloat(pv.tax_rate);
+  out.tax_rate ??= Number.isFinite(tax) ? tax : 0.13;
   out.amount ??= parseFloat(pv.discounted_price) || 0;
   out.gp3_amount ??= parseFloat(pv.gp3_amount) || 0;
   return out;
@@ -76,9 +79,13 @@ const crudRouter = crudRoutes('approval_requests', fields, {
   skipList: true,
   excludeOnCreate: ['id', 'created_at', 'updated_at'],
   // ⚠️ L1 修复：status 只能经 POST /:id/records 走审批状态机（写记录+级联），禁止通用 PUT 直改（会绕过级联/审计断链）
-  excludeOnUpdate: ['id', 'created_at', 'updated_at', 'status', 'submit_time'],
+  // 身份/关联字段创建后不可改：改 approval_type 会绕过创建时的权限拆分与级联口径
+  excludeOnUpdate: [
+    'id', 'created_at', 'updated_at', 'status', 'submit_time',
+    'approval_type', 'quotation_id', 'opportunity_id', 'delivery_id',
+  ],
   // ⚠️ 最终审计修正：已终审审批不允许经通用 PUT 改财务字段（展示/审计口径污染；此前 excludeOnUpdate 只挡 status/submit_time）
-  beforeUpdate: async (id) => {
+  beforeUpdate: async (_req, id) => {
     const existing = (await query('SELECT status FROM approval_requests WHERE id = $1', [id])).rows[0];
     if (existing && isFinalApprovalStatus(existing.status)) {
       throw new AppError(409, '该审批已处理完毕，不可修改');
@@ -98,6 +105,11 @@ router.post('/', async (req, res, next) => {
     //   非法值直插会抛 PG 枚举错误被 500 兜底吞掉（泄漏内部错误语义）；显式预校验给 400
     if (!(APPROVAL_TYPES as readonly string[]).includes(approval_type)) {
       throw new AppError(400, '无效审批类型，允许值：quotation, plan, cost, promote');
+    }
+    // ⚠️ A110 纵深防御：挂载层按归一化后的类型选权限，处理器这里再按最终落库类型校验一次——
+    //   两处口径一致，未来若键名归一化/挂载逻辑调整，也不会让越权类型进入事务。
+    if (!hasPermission(req.user?.permissions, ...selectApprovalPerms(approval_type))) {
+      throw new AppError(403, '无权提交该类型审批');
     }
 
     // ⚠️ A15：事务样板收敛为 withTransaction
@@ -123,7 +135,41 @@ router.post('/', async (req, res, next) => {
         await client.query('UPDATE delivery_projects SET cost_status = $1, updated_at = now() WHERE id = $2', ['pending', delivery_id]);
       }
 
+      // ⚠️ A114：报价审批由服务端在同一事务内落 pending 并锁定版本——
+      //   此前完全依赖客户端先 saveVersion(pending)+sync(pending)，直调 API 创建审批时报价仍可改，
+      //   审批人审阅期间金额/成本能被覆盖，通过时又按「当前值」回写机会，审批快照失真。
+      if (approval_type === 'quotation' && body.quotation_id) {
+        const q = (await client.query(
+          'SELECT project_id, version_no, status FROM quotations WHERE id = $1 FOR UPDATE',
+          [body.quotation_id]
+        )).rows[0];
+        if (!q) throw new AppError(400, '关联报价不存在');
+        // 审批行版本号以报价行为权威来源，防止客户端提交与目标不一致的版本
+        if (body.version_no && body.version_no !== q.version_no) {
+          throw new AppError(400, '审批版本号与报价当前版本不一致');
+        }
+        body.version_no = q.version_no;
+        body.project_id = q.project_id;
+        await client.query(
+          "UPDATE quotations SET status = 'pending', updated_at = now() WHERE id = $1",
+          [body.quotation_id]
+        );
+        await client.query(
+          `UPDATE project_versions SET review_status = 'pending', updated_at = now()
+           WHERE project_id = $1 AND version_no = $2 AND review_status <> 'pending'`,
+          [q.project_id, q.version_no]
+        );
+      }
+
       if (approval_type === 'promote' && opportunity_id) {
+        // 晋升只对「信息/线索/机会」有意义；对已中标/赢/输的机会再走晋升会把阶段降回来
+        const opp = (await client.query(
+          'SELECT stage, status FROM sales_opportunities WHERE id = $1 FOR UPDATE', [opportunity_id]
+        )).rows[0];
+        if (!opp) throw new AppError(400, '关联销售机会不存在');
+        if (!['信息', '线索', '机会'].includes(opp.stage)) {
+          throw new AppError(400, '当前阶段不可提交晋升审批（仅信息/线索/机会）');
+        }
         await client.query('UPDATE sales_opportunities SET promote_locked = true, updated_at = now() WHERE id = $1', [opportunity_id]);
         if (!body.version_no && !body.total_accounting_price) {
           try {
@@ -232,27 +278,41 @@ router.post('/:id/records', async (req, res, next) => {
       if (ar.approval_type === 'promote' && ar.opportunity_id) {
         await client.query('UPDATE sales_opportunities SET promote_locked = false, updated_at = now() WHERE id = $1', [ar.opportunity_id]);
         // ⚠️ L3 修复：晋升到"机会"须写 lead_at/opportunity_at（COALESCE 首次写入不覆盖，与 opportunities.ts 阶段规则一致），否则财年归集丢失
+        // 仅允许在信息/线索/机会阶段内推进，防把审批期间已中标/已赢/已输的机会降级回「机会」
         if (newStatus === 'approved') await client.query(
-          "UPDATE sales_opportunities SET stage = '机会', lead_at = COALESCE(lead_at, now()), opportunity_at = COALESCE(opportunity_at, now()), updated_at = now() WHERE id = $1",
+          `UPDATE sales_opportunities
+           SET stage = '机会', lead_at = COALESCE(lead_at, now()), opportunity_at = COALESCE(opportunity_at, now()), updated_at = now()
+           WHERE id = $1 AND stage IN ('信息', '线索', '机会') AND status <> '输'`,
           [ar.opportunity_id]
         );
       }
       if (ar.approval_type === 'plan' && ar.delivery_id) {
         await client.query('UPDATE delivery_projects SET plan_status = $1, plan_approval = $2, updated_at = now() WHERE id = $3', [newStatus, appraisal, ar.delivery_id]);
-        if (newStatus === 'approved') await client.query('UPDATE delivery_nodes SET baseline_planned_end_date = planned_end_date WHERE delivery_project_id = $1 AND baseline_planned_end_date IS NULL', [ar.delivery_id]);
+        // 基线列默认值是空串（历史/直导数据），仅匹配 IS NULL 会漏掉这些行
+        if (newStatus === 'approved') await client.query(
+          "UPDATE delivery_nodes SET baseline_planned_end_date = planned_end_date WHERE delivery_project_id = $1 AND (baseline_planned_end_date IS NULL OR baseline_planned_end_date = '')",
+          [ar.delivery_id]
+        );
       }
       if (ar.approval_type === 'cost' && ar.delivery_id) {
         await client.query('UPDATE delivery_projects SET cost_status = $1, cost_approval = $2, updated_at = now() WHERE id = $3', [newStatus, appraisal, ar.delivery_id]);
       }
       if (ar.approval_type === 'quotation' && ar.quotation_id) {
         await client.query('UPDATE quotations SET locked = false, status = $1, updated_at = now() WHERE id = $2', [newStatus, ar.quotation_id]);
-        if (ar.version_no) {
-          const qi = (await client.query('SELECT project_id FROM quotations WHERE id = $1', [ar.quotation_id])).rows[0];
-          if (qi?.project_id) await client.query('UPDATE project_versions SET review_status = $1, updated_at = now() WHERE project_id = $2 AND version_no = $3', [newStatus, qi.project_id, ar.version_no]);
+        // ⚠️ A115 修复：版本回写以「报价行当前 project_id + version_no」为准，不再采信审批行里的
+        //   客户端快照 ar.version_no——否则可把审批结果写到未送审版本/其它项目。
+        const qt = (await client.query(
+          'SELECT project_id, version_no, opportunity_id, amount FROM quotations WHERE id = $1',
+          [ar.quotation_id]
+        )).rows[0];
+        if (qt?.project_id && qt.version_no) {
+          await client.query(
+            'UPDATE project_versions SET review_status = $1, updated_at = now() WHERE project_id = $2 AND version_no = $3',
+            [newStatus, qt.project_id, qt.version_no]
+          );
         }
-        if (newStatus === 'approved') {
-          const qt = (await client.query('SELECT opportunity_id, amount FROM quotations WHERE id = $1', [ar.quotation_id])).rows[0];
-          if (qt?.opportunity_id && qt?.amount > 0) await client.query('UPDATE sales_opportunities SET amount = $1, updated_at = now() WHERE id = $2', [round2(parseFloat(qt.amount) || 0), qt.opportunity_id]);
+        if (newStatus === 'approved' && qt?.opportunity_id && qt?.amount > 0) {
+          await client.query('UPDATE sales_opportunities SET amount = $1, updated_at = now() WHERE id = $2', [round2(parseFloat(qt.amount) || 0), qt.opportunity_id]);
         }
       }
       return { record, approvalType: ar.approval_type };
@@ -281,8 +341,10 @@ router.delete('/:id', async (req, res, next) => {
     // ⚠️ A15：事务样板收敛为 withTransaction
     let deletedRow: { approval_type?: string; sales_no?: string } | undefined;
     await withTransaction(async (client) => {
+      // ⚠️ A116：锁行后再判定终态——先查后删无锁时，审批事务可在两步之间把 pending 改成 approved，
+      //   导致已终审记录被删除（审批历史随之 CASCADE 丢失）。
       const row = (await client.query(
-        'SELECT approval_type, opportunity_id, delivery_id, quotation_id, status, sales_no FROM approval_requests WHERE id = $1', [id]
+        'SELECT approval_type, opportunity_id, delivery_id, quotation_id, status, sales_no FROM approval_requests WHERE id = $1 FOR UPDATE', [id]
       )).rows[0];
       if (!row) throw new AppError(404, '审批请求不存在');
       // ⚠️ 审计修复：已终审（approved/rejected）的审批是历史证据，删除会抹掉审批决策痕迹——拒绝删除；
@@ -309,7 +371,10 @@ router.delete('/:id', async (req, res, next) => {
           await client.query(`UPDATE project_versions SET review_status = 'draft', updated_at = now() WHERE project_id = $1 AND version_no = $2 AND review_status = 'pending'`, [qi.project_id, qi.version_no]);
         }
       }
-      await client.query('DELETE FROM approval_requests WHERE id = $1', [id]);
+      const deleted = await client.query(
+        "DELETE FROM approval_requests WHERE id = $1 AND status = 'pending' RETURNING id", [id]
+      );
+      if (deleted.rows.length === 0) throw new AppError(409, '该审批已处理完毕，不可删除');
     });
     logAudit(req, '删除审批', 'approval', '审批 ID:' + id + ' 类型:' + (deletedRow?.approval_type || '') + ' 已删除');
     res.json({ deleted: true, id });

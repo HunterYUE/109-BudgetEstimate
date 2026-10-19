@@ -145,9 +145,15 @@ const ClientManagement: React.FC = () => {
     // 从编码解析城市
     const codeMatch = client.code?.match(/^(?:[ABC]-)?([A-Z]{2})-([A-Z]{2,4})-\d{4}$/);
     if (codeMatch) setEditCity(codeMatch[2]);
-    // 获取完整数据（含联系人）
-    let detail = client;
-    try { detail = await clientService.getDetail(client.id); } catch { /* 详情加载失败时回退列表数据 */ }
+    // 获取完整数据（含联系人）。⚠️ A142：详情失败不能回退列表行——列表不包含 contacts，
+    //   回退后保存会把该客户全部联系人清空。加载失败直接中止本次编辑。
+    let detail: Client;
+    try {
+      detail = await clientService.getDetail(client.id);
+    } catch {
+      if (reqId === editRequestRef.current) messageApi.error('客户详情加载失败，请稍后重试');
+      return;
+    }
     if (reqId !== editRequestRef.current) return; // ⚠️ 已有更新的编辑请求，丢弃本次过期结果
     setEditForm({
       code: detail.code,
@@ -162,7 +168,7 @@ const ClientManagement: React.FC = () => {
     });
     setEditContacts((detail.contacts || []).map((c: Contact) => ({ ...c })));
     setEditOpen(true);
-  }, []);
+  }, [messageApi]);
 
   const openNewEnterprise = () => {
     setEditingId(null);

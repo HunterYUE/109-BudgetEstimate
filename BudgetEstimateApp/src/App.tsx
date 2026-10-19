@@ -5,7 +5,7 @@ import { canAccessRoute, firstAccessiblePath } from './utils/permissions';
 import { pageLoaders } from './utils/pageLoaders';
 import AppLayout from './layouts/AppLayout';
 
-// ⚠️ B9 修复：lazy 组件统一取自 pageLoaders（与 AppLayout 悬停预加载同源，增删页面只改一处）
+// lazy 组件统一取自 pageLoaders，与 AppLayout 悬停预加载同源，增删页面只改一处
 const Dashboard = lazy(pageLoaders['/']);
 const SalesOpportunityList = lazy(pageLoaders['/opportunities']);
 const QuotationList = lazy(pageLoaders['/quotations']);
@@ -51,8 +51,8 @@ function RoleGuard({ path, children }: { path: string; children: React.ReactNode
   const location = useLocation();
 
   if (!user || !canAccessRoute(user.permissions, path)) {
-    // ⚠️ B30 修复：无权限时重定向到用户可访问的首个路由（此前统一重定向到 '/'，而 '/' 要求「仪表盘查看」
-    //   权限——无该权限的用户陷入「guard 失败→重定向到 /→guard 再失败」死循环，触发 React Maximum update depth exceeded）
+    // 无权限时重定向到用户可访问的首个路由，此前统一重定向到 '/'，而 '/' 要求「仪表盘查看」
+    // 权限——无该权限的用户陷入「guard 失败→重定向到 /→guard 再失败」死循环，触发 React Maximum update depth exceeded
     const fallback = firstAccessiblePath(user?.permissions);
     if (!fallback) {
       // 用户没有任何可访问模块：给出明确提示而非继续重定向

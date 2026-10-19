@@ -12,6 +12,11 @@ const API_BASE = import.meta.env.VITE_API_BASE || '/api/v1';
 // ── GET 请求缓存（30 秒 TTL，避免页面切换重复请求） ──
 const cache = new Map<string, { data: unknown; expiry: number }>();
 const CACHE_TTL = 30_000;
+/** 缓存代际：写请求清缓存时递增。慢 GET 响应只有在代际未变时才允许回写，
+ *  否则「请求在途 → 写请求清缓存 → 旧响应返回」会把陈旧数据重新写回缓存 30 秒。 */
+let cacheEpoch = 0;
+/** 请求超时（毫秒）：网络半开/后端卡住时避免 loading 永久转圈 */
+const REQUEST_TIMEOUT_MS = 30_000;
 
 function getCached(key: string): unknown | undefined {
   const entry = cache.get(key);
@@ -81,15 +86,24 @@ async function request<T>(path: string, options?: RequestInit, noCache?: boolean
   // ⚠️ L6：token 在 HttpOnly cookie（后端 login Set-Cookie），fetch 同源自动携带（默认 credentials=same-origin），无需 Authorization header
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
 
+  const startEpoch = cacheEpoch;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   let res: Response;
   try {
     res = await fetch(url, {
       method: options?.method,
       body: options?.body,
+      signal: controller.signal,
       headers: { ...headers, ...(options?.headers as Record<string, string> || {}) },
     });
   } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw new ApiError(0, '请求超时，请稍后重试');
+    }
     throw new ApiError(0, '网络请求失败：' + (err instanceof Error ? err.message : '未知错误'));
+  } finally {
+    clearTimeout(timer);
   }
 
   // ⚠️ L6：401 = cookie 无效/过期（token 在 HttpOnly cookie，前端读不到也清不掉）——best-effort 调 logout 清服务端 cookie，再跳登录
@@ -104,23 +118,23 @@ async function request<T>(path: string, options?: RequestInit, noCache?: boolean
     throw new ApiError(res.status, body.error || `Request failed (${res.status})`);
   }
 
+  // 非 GET 请求在响应成功后立即清缓存（不等 body 解析）：
+  // 204/空 body 解析失败时也不能留下陈旧缓存
+  if (!isGet) {
+    const resourcePrefix = path.split('?')[0].split('/')[1] || '';
+    if (resourcePrefix) clearCache('/' + resourcePrefix);
+    // ⚠️ 跨资源级联写：清相关资源缓存，避免 30s 内读到陈旧数据（见 getCascadePrefixes）
+    for (const p of getCascadePrefixes(path)) clearCache(p);
+  }
+
   // 204 无内容 → 直接返回 undefined
   if (res.status === 204) return undefined as T;
 
   const data = await res.json();
   const result = toCamel(data) as T;
 
-  // GET 请求写入缓存（noCache 时不写入）
-  if (isGet) {
-    if (!noCache) setCache(cacheKey, result);
-  } else {
-    // 非 GET 请求（POST/PUT/DELETE）清除相关前缀缓存
-    const resourcePrefix = path.split('?')[0].split('/')[1] || '';
-    if (!resourcePrefix) return result;
-    clearCache('/' + resourcePrefix);
-    // ⚠️ 跨资源级联写：清相关资源缓存，避免 30s 内读到陈旧数据（见 getCascadePrefixes）
-    for (const p of getCascadePrefixes(path)) clearCache(p);
-  }
+  // GET 请求写入缓存（noCache 时不写入）；仅当请求期间缓存代际未变（未被写请求清过）
+  if (isGet && !noCache && startEpoch === cacheEpoch) setCache(cacheKey, result);
 
   return result;
 }
@@ -137,6 +151,7 @@ export function getCascadePrefixes(path: string): string[] {
 
 /** 清除缓存（用于数据变更后强制刷新） */
 export function clearCache(resourcePrefix?: string) {
+  cacheEpoch++;
   if (resourcePrefix) {
     for (const key of cache.keys()) {
       if (key.startsWith(resourcePrefix)) cache.delete(key);

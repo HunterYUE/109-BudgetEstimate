@@ -77,7 +77,7 @@ describe('BE-8：已审批计划交付的节点修改须交付管理权限', () 
   const d = src('routes/deliveries.ts');
 
   it('plan_status=approved 且无交付管理权限时拒绝', () => {
-    expect(d).toContain("if (dp.plan_status === 'approved' && !req.user?.permissions?.includes('交付管理')) {");
+    expect(d).toContain("if (dp.plan_status === 'approved' && !hasPermission(req.user?.permissions, '交付管理', '全部查看权限')) {");
     expect(d).toContain('throw new AppError(403');
   });
 });

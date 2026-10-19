@@ -25,6 +25,8 @@ export interface Component {
   hasWarranty: boolean;
   unit: string;                 // 计量单位（套/台/个/米…）
   reviewStatus: ReviewStatus;    // 物料审核状态
+  /** 待审核请求类型（与业务备注 note 解耦）：create/update/delete；'' = 无待审动作 */
+  reviewAction?: '' | 'create' | 'update' | 'delete';
   version: string;               // 编码中的版本号，如 V1.0
   createdAt: string;
   updatedAt: string;
@@ -64,6 +66,9 @@ export interface Group {
   name: string;
   isFixed: boolean;
   items: GroupItem[];
+  /** 组归属（后端 project_groups.version_id/project_id）：版本隔离判定依赖，勿再用 as-cast 读取 */
+  versionId?: string;
+  projectId?: string;
 }
 
 // ── 项目版本 ──
@@ -180,6 +185,9 @@ export interface QuotationSummary {
   projectId?: string;
   opportunityId?: string;
   locked?: boolean;
+  /** 是否存在真实的待审批请求（GET /quotations/:id 计算字段）。
+   *  false 表示 pending 是提交中断残留（无审批可操作），页面不应锁定，允许重存/重提。 */
+  hasPendingApproval?: boolean;
 }
 
 // ── 审批请求 ──
