@@ -2,8 +2,8 @@
 /**
  * 命名规范检查脚本
  * 扫描前端 src/ 下所有 .ts/.tsx 文件，检测：
- *   1. 非 API body 的蛇形键名
- *   2. 直接 fetch() 调用（绕过 api.ts）
+ * 1. 非 API body 的蛇形键名
+ * 2. 直接 fetch() 调用（绕过 api.ts）
  *
  * 规则详见 project memory: naming-convention-standard.md
  */

@@ -28,10 +28,10 @@ interface Props {
 interface FlatRow {
   key: string;
   _type: 'header' | 'item';
-  category: string;   // 成本类别
-  code: string;       // 编码/名称（成本类别列显示）
-  detail: string;     // 描述（描述列显示）
-  qty: number;        // 数量
+  category: string; // 成本类别
+  code: string; // 编码/名称（成本类别列显示）
+  detail: string; // 描述（描述列显示）
+  qty: number; // 数量
   estimated: number;
   actual: number;
   variance: number;
@@ -43,7 +43,7 @@ interface FlatRow {
 
 const ItemCostTable: React.FC<Props> = ({ groups, actualCosts, onActualCostChange, locked, version, laborRates }) => {
   const rows: FlatRow[] = useMemo(() => {
-    // ⚠️ 成本分解单一来源 buildCostLines（与 handleExportCost 共享），此处仅做展示层包装
+    // 成本分解单一来源 buildCostLines（与 handleExportCost 共享），此处仅做展示层包装
     const lines = buildCostLines(groups, actualCosts, version, laborRates);
     const result: FlatRow[] = [];
     let i = 0;
@@ -82,7 +82,7 @@ const ItemCostTable: React.FC<Props> = ({ groups, actualCosts, onActualCostChang
       }
     }
     return result;
-  // ⚠️ laborRates 参与人工成本计算（design/assembly 费率兜底），必须列入依赖，否则物料库费率加载后人工区不重算
+  // laborRates 参与人工成本计算（design/assembly 费率兜底），必须列入依赖，否则物料库费率加载后人工区不重算
   }, [groups, actualCosts, version, laborRates]);
 
   // ── 合计 ──
@@ -162,11 +162,11 @@ const ItemCostTable: React.FC<Props> = ({ groups, actualCosts, onActualCostChang
       title: '实际成本', width: 140, align: 'right' as const,
       render: (_text: unknown, rec: FlatRow) => {
         if (rec._type === 'header') {
-          return <span style={{ fontWeight: 700, fontSize: 13, color: '#000', display: 'block', textAlign: 'right', padding: '2px 4px' }}>¥{formatMoney(rec.actual)}</span>;
+          return <span style={{ fontWeight: 700, fontSize: 13, color: '', display: 'block', textAlign: 'right', padding: '2px 4px' }}>¥{formatMoney(rec.actual)}</span>;
         }
-        // ⚠️ 质保行不可编辑（handleActualChange 会拦截其写入），必须渲染为只读，否则输入被静默丢弃
+        // 质保行不可编辑（handleActualChange 会拦截其写入），必须渲染为只读，否则输入被静默丢弃
         if (locked || !onActualCostChange || rec._warrantyItem) {
-          return <span style={{ fontWeight: 600, fontSize: 13, color: '#000', display: 'block', textAlign: 'right', padding: '2px 4px' }}>¥{formatMoney(rec.actual)}</span>;
+          return <span style={{ fontWeight: 600, fontSize: 13, color: '', display: 'block', textAlign: 'right', padding: '2px 4px' }}>¥{formatMoney(rec.actual)}</span>;
         }
         return <MoneyInput value={rec.actual} onCommit={v => handleActualChange(rec, v)} />;
       },

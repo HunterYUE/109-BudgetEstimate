@@ -110,10 +110,11 @@ const Dashboard: React.FC = () => {
   const [deliveries, setDeliveries] = useState<DeliveryProject[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [quotations, setQuotations] = useState<QuotationSummary[]>([]);
+  const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    // ⚠️ allSettled：单个接口失败不拖垮整页（Promise.all 会整体拒绝导致仪表盘全空）
+    // allSettled：单个接口失败不拖垮整页（Promise.all 会整体拒绝导致仪表盘全空）
     Promise.allSettled([
       // 全部传 limit: LIST_LIMIT，避免后端默认 limit=100 导致统计静默截断（对齐 DeliveryAnalysis）
       opportunityService.list({ limit: LIST_LIMIT }),
@@ -122,6 +123,7 @@ const Dashboard: React.FC = () => {
       quotationService.list({ limit: LIST_LIMIT }),
     ]).then(([opps, dels, clis, quots]) => {
       if (cancelled) return;
+      if ([opps, dels, clis, quots].some(r => r.status === 'rejected')) setLoadError(true);
       if (opps.status === 'fulfilled') setOpportunities(opps.value);
       if (dels.status === 'fulfilled') setDeliveries(dels.value);
       if (clis.status === 'fulfilled') setClients(clis.value);
@@ -146,12 +148,12 @@ const Dashboard: React.FC = () => {
       const { start: mStart, end: mEnd } = last3Months[3 - offset];
       const monthOpps = opportunities.filter(o => {
         const created = new Date(o.createdAt);
-        // ⚠️ 有效结束用 oppEffectiveEnd（赢→wonAt/输→lostAt），与销售分析/财年规则一致，不用 updatedAt
+        // 有效结束用 oppEffectiveEnd（赢→wonAt/输→lostAt），与销售分析/财年规则一致，不用 updatedAt
         // 冻结机会不属于活跃（全页面统一口径），不计入
         return created <= mEnd && oppEffectiveEnd(o) >= mStart && o.status !== '冻结';
       });
       const monthWins = monthOpps.filter(o => {
-        // ⚠️ 赢单以「转交付（terminated）」为终极确认：手动标赢未转交付不算赢单，仍当作机会
+        // 赢单以「转交付（terminated）」为终极确认：手动标赢未转交付不算赢单，仍当作机会
         if (!isRealWin(o) || !o.wonAt) return false;
         const wonD = new Date(o.wonAt);
         return wonD >= mStart && wonD <= mEnd;
@@ -191,8 +193,8 @@ const Dashboard: React.FC = () => {
   const recentLosses = useMemo(() => {
     // 近 2 个月窗口：前两个月首日（避免 setMonth 月末溢出）
     const cutoff = monthsAgoStart(now, 2);
-    // ⚠️ A137：与销售分析同口径——缺 lostAt 的历史输单回退 updatedAt（共享 oppEffectiveEnd），
-    //   否则这些输单永远不会出现在「近期输单」且仍留在历史管道里。
+    // 与销售分析同口径——缺 lostAt 的历史输单回退 updatedAt（共享 oppEffectiveEnd），
+    // 否则这些输单永远不会出现在「近期输单」且仍留在历史管道里
     const lossDate = (o: SalesOpportunity) => oppEffectiveEnd(o);
     return opportunities
       .filter(o => o.status === '输' && lossDate(o) >= cutoff)
@@ -211,7 +213,7 @@ const Dashboard: React.FC = () => {
       if (isRealWin(o) && o.wonAt && new Date(o.wonAt) <= monthEnd) return null;
       // 输单结束时间走共享回退（缺 lostAt 用 updatedAt），与销售分析一致
       if (o.status === '输' && oppEffectiveEnd(o) <= monthEnd) return null;
-      // ⚠️ 用阶段推进时间还原该月月底的历史阶段（与销售分析漏斗 stageAsOf 同口径），而非当前阶段
+      // 用阶段推进时间还原该月月底的历史阶段（与销售分析漏斗 stageAsOf 同口径），而非当前阶段
       return stageAsOf(o, monthEnd);
     };
     const result: { name: string; value: number; color: string }[] = [];
@@ -225,7 +227,7 @@ const Dashboard: React.FC = () => {
     return result;
   }, [opportunities, last3Months, last3Labels]);
 
-  // ── 近期交付（已完成的项目，按实际完成时间倒序）──
+  // ── 近期交付（已完成的项目，按实际完成时间倒序） ──
   const recentDeliveries = useMemo(() => {
     // 近 2 个月窗口：前两个月首日（避免 setMonth 月末溢出）
     const cutoff = monthsAgoStart(now, 2);
@@ -272,7 +274,7 @@ const Dashboard: React.FC = () => {
       }
     }
     // 节点在月内的各桶（当月口径，不含未开始）：已完成=当月完成；进行中=当月执行过（含当月完成者）；
-    //   延期=当月延期完成+延期中。月前已完成节点不计入当月各桶。
+    // 延期=当月延期完成+延期中。月前已完成节点不计入当月各桶
     const getNodeBucketsInMonth = (node: DeliveryNode, monthEnd: Date): string[] => {
       const monthStart = new Date(monthEnd.getFullYear(), monthEnd.getMonth(), 1);
       const doneDate = node.actualDate || node.actualEndDate;
@@ -283,8 +285,8 @@ const Dashboard: React.FC = () => {
       if (new Date(node.plannedStartDate) > monthEnd) return [];
       const delay = getNodeDelay(node, monthEnd);
       // 当月执行过：开始 ≤ 月末（含当月完成者）
-      // ⚠️ A138：只用「实际开始日 ≤ 月末」判定当月是否执行过。
-      //   原实现 OR 了当前 status==='in_progress'，会让现在仍在进行的节点被计入所有历史月份。
+      // 只用「实际开始日 ≤ 月末」判定当月是否执行过
+      // 不得 OR 当前 status==='in_progress'，否则仍在进行的节点会被计入所有历史月份
       const executedInM = !!node.actualStartDate && new Date(node.actualStartDate) <= monthEnd;
       const buckets: string[] = [];
       if (executedInM) buckets.push('in_progress');
@@ -318,9 +320,9 @@ const Dashboard: React.FC = () => {
       return effEnd >= fyRange.start;
     });
     const onTimeRate = [...inFyDels].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).map(p => {
-      // ⚠️ A2 审计修复：无基线节点不判定——提取为共享纯函数 computeProjectOnTimeRate，
-      //   与 DeliveryAnalysis 节点按时率「无基线不判定」口径一致（原内联实现把无基线已完节点计为按时，
-      //   未审批实施计划的项目节点按时率恒 100%）
+      // 无基线节点不判定——提取为共享纯函数 computeProjectOnTimeRate，
+      // 与 DeliveryAnalysis 节点按时率「无基线不判定」口径一致（原内联实现把无基线已完节点计为按时，
+      // 未审批实施计划的项目节点按时率恒 100%）
       const { scheduled, rate } = computeProjectOnTimeRate(p, now);
       const hasDue = scheduled > 0;
       return {
@@ -333,9 +335,9 @@ const Dashboard: React.FC = () => {
     });
     const profitOverview: { name: string; value: number; color: string; displayValue?: string }[] = [];
     // 利润概览（与销售分析月度订单/月度销售同源，共享 projectMonthlySales）：
-    //   概算 = 每月转交付项目的订单利润（报价概算利润未税）→ 观察近3月订单利润
-    //   实际 = 每月完成交付项目的销售利润（未税 − 实际成本）→ 观察近3月销售利润
-    // ⚠️ 近 3 个月窗口（含边界）预过滤交付项目，避免对每个月份窗口全量遍历（O(M×N)）
+    // 概算 = 每月转交付项目的订单利润（报价概算利润未税）→ 观察近3月订单利润
+    // 实际 = 每月完成交付项目的销售利润（未税 − 实际成本）→ 观察近3月销售利润
+    // 近 3 个月窗口（含边界）预过滤交付项目，避免对每个月份窗口全量遍历（O(M×N)）
     // last3Months[0]=3个月前(最早月)，[2]=上个月(最晚月)；窗口取最早起点~最晚终点
     const winLo = last3Months[0].start, winHi = last3Months[2].end;
     const profitDels = deliveries.filter(p => {
@@ -355,7 +357,7 @@ const Dashboard: React.FC = () => {
             totalAmt += pt.orderAmt;
           } else {
             totalAmt += pt.salesAmt;
-            // ⚠️ 某月任一完成交付项目无成本 → 该月销售利润为无值（—），提示成本缺失
+            // 某月任一完成交付项目无成本 → 该月销售利润为无值（—），提示成本缺失
             if (pt.salesProfit !== undefined) totalProfit += pt.salesProfit;
             else incomplete = true;
           }
@@ -418,6 +420,11 @@ const Dashboard: React.FC = () => {
       <div style={{ fontSize: 17, fontWeight: 700, color: COLORS.textDark, marginBottom: 20, letterSpacing: 0.5 }}>
         仪表盘
       </div>
+      {loadError && (
+        <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 4, background: '#fff2f0', color: COLORS.danger, fontSize: 12 }}>
+          部分数据加载失败，统计可能不完整；请刷新页面重试。
+        </div>
+      )}
 
       {/* ── KPI 卡片行（共享 OverviewCards，样式对齐工时应用仪表盘） ── */}
       <OverviewCards

@@ -4,7 +4,7 @@ import { parseMoneyInput } from '../utils/tableUtils';
 import { formatMoney } from '../utils/calculations';
 
 /** 金额点击编辑组件：¥ 前缀 + 数字过滤 + 格式化 + 失焦/Enter 提交 + Escape 回退。
- *  原为 ItemCostTable ActualCostInput 单文件实现，提取共享供多处复用。 */
+ * 提取自 ItemCostTable 的 ActualCostInput，供多处复用 */
 export const MoneyInput: React.FC<{
   value: number;
   onCommit: (v: number) => void;
@@ -29,9 +29,8 @@ export const MoneyInput: React.FC<{
     const num = parseMoneyInput(text);
     committed.current = num;
     setText(num ? '¥' + num.toLocaleString() : '');
-    // ⚠️ 最终审计修正：值未变化不回调 onCommit（此前失焦/Enter 无条件回调，
-    //   金额未改也触发父级 setState + 标记 dirty，造成多余渲染与「未改也显示未保存」的假象）；
-    //   取整比较——显示即 Math.round(value)，浮点存储（如 1234.6 内部误差）不得误判为变更
+    // 值未变化不回调 onCommit，避免失焦/Enter 无条件触发父级 setState 与假未保存状态；
+    // 取整比较——显示即 Math.round(value)，浮点存储（如 1234.6 内部误差）不得误判为变更
     if (Math.round(num) !== Math.round(value)) onCommit(num);
     setEditing(false);
   };
@@ -39,7 +38,7 @@ export const MoneyInput: React.FC<{
   if (!editing) {
     return (
       <span onClick={() => { setEditing(true); setText(value ? String(value) : ''); setTimeout(() => inputRef.current?.focus(), 0); }}
-        style={{ cursor: 'text', fontWeight: 600, fontSize, color: '#000', display: 'block', textAlign: align, padding: '2px 4px', minHeight: 28, lineHeight: '24px', ...style }}>
+        style={{ cursor: 'text', fontWeight: 600, fontSize, color: '', display: 'block', textAlign: align, padding: '2px 4px', minHeight: 28, lineHeight: '24px', ...style }}>
         {text || '¥0'}
       </span>
     );

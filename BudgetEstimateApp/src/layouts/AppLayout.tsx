@@ -46,7 +46,7 @@ const HeaderUserMenu: React.FC = () => {
           </div>
           <div style={{
             marginTop: 8, fontSize: 11, fontWeight: 600,
-            color: '#fff', background: 'linear-gradient(135deg, #00509e, #4060e0)',
+            color: '#fff', background: 'linear-gradient(135deg, 09e, 0e0)',
             padding: '2px 12px', borderRadius: 10, display: 'inline-block',
           }}>
             {user?.title || (user?.role === 'director' ? '部门总监' : user?.role === 'admin' ? '管理员' : '用户')}
@@ -82,7 +82,7 @@ const HeaderUserMenu: React.FC = () => {
     >
       <div style={{
         width: 32, height: 32, borderRadius: '50%',
-        background: 'linear-gradient(135deg, #00509e, #4060e0)',
+        background: 'linear-gradient(135deg, 09e, 0e0)',
         color: '#fff',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         fontSize: 14, fontWeight: 700, cursor: 'pointer',
@@ -135,7 +135,7 @@ const AppLayout: React.FC = () => {
                 onClick={() => navigate(item.key)}
                 onMouseEnter={e => {
                   if (!isActive) e.currentTarget.style.background = 'rgba(255,255,255,0.06)';
-                  // ⚠️ B9 修复：悬停时预加载页面 chunk（与 App.tsx lazy 路由共用 pageLoaders 单一来源）
+                  // 悬停时预加载页面 chunk（与 App.tsx lazy 路由共用 pageLoaders 单一来源）
                   pageLoaders[item.key]?.();
                 }}
                 onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = 'transparent'; }}
@@ -170,7 +170,7 @@ const AppLayout: React.FC = () => {
           <span style={{ flex: 1, minWidth: 0, fontSize: 17, fontWeight: 700, color: '#0d1b2a', letterSpacing: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             销售和交付管理系统
           </span>
-          {/* ⚠️ B20 修复：移除无 onClick 死交互的通知铃铛（历史遗留，未接入任何通知系统） */}
+          {/* 移除无 onClick 死交互的通知铃铛（历史遗留，未接入任何通知系统） */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
             <HeaderUserMenu />
           </div>

@@ -4,8 +4,8 @@ import { buildCostLines } from '../src/utils/costBreakdown';
 
 /**
  * 8 行 fixture（与 computeCostComponents 口径自洽）：
- *   EQUIPMENT a1(直成本200, 免质保) + INTEGRATION b1(直成本200, 免质保) → 质保基数 400 → 质保 8(×2%)
- *   PROJECT_DELIVERY c1/c2 设计装配 + OTHER d1 → 总直成本 4320 → 风险 216(×5%)；商业 100
+ * EQUIPMENT a1(直成本200, 免质保) + INTEGRATION b1(直成本200, 免质保) → 质保基数 400 → 质保 8(×2%)
+ * PROJECT_DELIVERY c1/c2 设计装配 + OTHER d1 → 总直成本 4320 → 风险 216(×5%)；商业 100
  */
 function fixture(): Group[] {
   return [
@@ -58,7 +58,7 @@ describe('buildCostLines 成本对比行（ItemCostTable / handleExportCost 单�
     const risk = lines.find(l => l.key === '_risk')!;
     const commercial = lines.find(l => l.key === '_commercial')!;
     const warranty = lines.find(l => l.key === '_warranty')!;
-    expect(risk).toMatchObject({ category: '风险费用', estimated: 216 });   // 4320×0.05
+    expect(risk).toMatchObject({ category: '风险费用', estimated: 216 }); // 4320×0.05
     expect(commercial).toMatchObject({ category: '商业费用', estimated: 100 });
     expect(warranty).toMatchObject({ category: '质保费用', estimated: 8, actual: 8, readonly: true }); // 400×0.02
   });

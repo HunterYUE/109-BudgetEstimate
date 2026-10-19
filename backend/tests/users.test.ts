@@ -50,8 +50,8 @@ describe('validateNewUserInput 新用户输入校验（保序：必填→类型�
 });
 
 describe('validatePermissionsGrant 权限授予校验（白名单 + 委托限制）', () => {
-  // ⚠️ 路由层调用点以 `if (permissions !== undefined)` 守卫，undefined 不会进入本函数；
-  //   函数本身对 undefined 防御性抛 400（非数组即白名单外），与"非数组 → 400"同一条路径
+  // 路由层调用点以 `if (permissions !== undefined)` 守卫，undefined 不会进入本函数；
+  // 函数本身对 undefined 防御性抛 400（非数组即白名单外），与"非数组 → 400"同一条路径
   it('undefined → 400（防御性拒绝；路由层已提前守卫不调用）', () => {
     expect(() => validatePermissionsGrant(undefined, ['用户管理'])).toThrow(/无效值/);
   });

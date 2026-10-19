@@ -2,7 +2,7 @@ import type { SalesOpportunity, DeliveryNode, DeliveryProject } from '../types';
 import { TAX_RATE } from './constants';
 import { COLORS } from '../styles/colors';
 
-/** 千单位数字（不带 K 后缀）：1234 → "1"（⚠️ B18：DeliveryCharts 旧 fmtKNum 与本函数重复，收敛共用） */
+/** 千单位数字（不带 K 后缀）：1234 → "1"（DeliveryCharts 旧 fmtKNum 与本函数重复，收敛共用） */
 // Math.round(-500/1000) 得到 -0，toLocaleString 输出 "-0"（与 +500 → "1K" 不对称）；统一归一为 0
 export const fmtKBase = (v: number) => (Math.round(v / 1000) || 0).toLocaleString();
 /** 格式化数字为千单位显示（如 1234 → "1K"） */
@@ -20,7 +20,7 @@ export const chartLabel = (salesNo: string | undefined | null): string => {
   return s.length > 4 ? s.slice(0, 4) + '\n' + s.slice(4) : s;
 };
 
-/** 项目执行状态三态色：已完成绿、延期中（派生）红、否则蓝（DeliveryManagement/DeliveryCharts 6 处内联收敛单源，F08） */
+/** 项目执行状态三态色：已完成绿、延期中（派生）红、否则蓝（DeliveryManagement/DeliveryCharts 6 处内联收敛单源，） */
 export const projectStatusColor = (status: string, delayed: boolean): string =>
   status === '已完成' ? COLORS.success : delayed ? COLORS.danger : COLORS.primary;
 
@@ -74,7 +74,7 @@ export const getNodeBaseline = (node: DeliveryNode | undefined): string | undefi
 
 /**
  * 统一延期判定（全应用共享）
- * 规则：基线 = 初始审批实施计划完成日；无审批基线不判延期。
+ * 规则：基线 = 初始审批实施计划完成日；无审批基线不判延期
  * 延期是派生维度，完成前为临时状态，完成后按实际完成日重算为永久状态：
  * - 已完成（实际完成日 ≤ 判定时点）→ 实际完成日 vs 基线
  * · 实际 > 基线 → 永久延期，天数 = 实际 − 基线
@@ -94,14 +94,14 @@ export interface NodeDelayInfo {
 }
 
 /**
- * 统一延期判定内核（节点/项目共用）：以基线为准，参考完成日（actualEnd ?? 判定时点）与基线相差的天数。
+ * 统一延期判定内核（节点/项目共用）：以基线为准，参考完成日（actualEnd ?? 判定时点）与基线相差的天数
  * - 实际完成日 ≤ 判定时点 → 用实际完成日（结果永久）
  * - 否则 → 判定时点（未完成，仅已超期判延期，结果临时）
  */
 /** 统一归一到「本地日历日 00:00」：
- *  - 'YYYY-MM-DD'（基线/实际完成日）必须按本地日期解析——`new Date('2026-07-01')` 按 UTC 零点，
- *    在东八区等于当地 08:00，与月末 23:59:59.999 比较会凭空多出约 0.67 天（Math.round → +1 天误判延期）。
- *  - ISO 时间戳按其本地日历日取值（跨时区写入的实际日期保持一致）。 */
+ * - 'YYYY-MM-DD'（基线/实际完成日）必须按本地日期解析——`new Date('')` 按 UTC 零点，
+ * 在东八区等于当地 08:00，与月末 23:59:59.999 比较会凭空多出约 0.67 天（Math.round → +1 天误判延期）
+ * - ISO 时间戳按其本地日历日取值（跨时区写入的实际日期保持一致） */
 const toLocalDayStart = (v: string | Date): Date => {
   if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)) {
     const [y, m, d] = v.split('-').map(Number);
@@ -120,7 +120,7 @@ const delayOf = (baseline: string, actualEnd: Date | null, asOf: Date): { delaye
 };
 
 /**
- * 统一节点延期判定（事实延期口径）。
+ * 统一节点延期判定（事实延期口径）
  * - 已完成（实际完成日 ≤ 判定时点）→ 实际完成日 vs 基线，结果永久
  * - 未完成 → 判定时点（当前日期）vs 基线，仅已超期判延期，结果临时
  * - asOf = 判定时点（仪表盘历史月回溯传该月月底），默认当前日期
@@ -138,21 +138,21 @@ export const getNodeDelay = (node: DeliveryNode | undefined, asOf?: Date): NodeD
   return { hasBaseline: true, delayed, days };
 };
 
-/** 交付项目是否已完结交付：节点15完成 或 项目状态已完成（执行状态三态，延期中为派生维度） */
+/** 交付项目是否已完结交付：节点15完成或项目状态已完成（执行状态三态，延期中为派生维度） */
 export const isProjectDelivered = (p: DeliveryProject): boolean =>
   isNode15Done(getNode15(p.nodes)) || p.status === '已完成';
 
 /**
- * 交付项目实际完成日期。
+ * 交付项目实际完成日期
  * - 节点15完成且填实际日 → 实际完成日（actualDate，兼容旧数据 actualEndDate）【正常路径】
  * - 项目 status='已完成' 但节点15无实际日 → updatedAt 兜底【防御分支，正常流程不可达】
  * - 未完结 → null
  *
- * ⚠️ 业务不变量：节点15决定项目完成（DeliveryDetail「完成项目」按钮仅在全部节点 completed
+ * 业务不变量：节点15决定项目完成（DeliveryDetail「完成项目」按钮仅在全部节点 completed
  * 且成本审批通过时可用）；节点切 completed 必写 actualDate/actualEndDate
  * （见 handleNodeStatusClick）。故「项目已完成但节点15缺实际日」在正常流程中不存在；
  * 该 updatedAt 分支仅为异常/历史数据留的代码安全兜底——用最后修改时间近似完成时间，
- * 避免把已完结项目误判为未完结而在后续财年长期算活跃。
+ * 避免把已完结项目误判为未完结而在后续财年长期算活跃
  */
 export const getProjectDoneDate = (p: DeliveryProject): Date | null => {
   const node15 = getNode15(p.nodes);
@@ -172,10 +172,10 @@ export interface ProjectOnTimeRate {
   rate: number | null;
 }
 
-/** ⚠️ A2 审计修复：无基线（baselinePlannedEndDate 缺失）的已完成节点无法判断按时性，
- *  必须从分子分母剔除——原 Dashboard 内联实现 `node.actualDate || delay.delayed` 会把这类节点
- *  计为「按时」，无审批实施计划的项目节点按时率恒 100%，与 DeliveryAnalysis 节点按时率
- *  「无基线不判定」（refEnd 缺失 continue）口径打架。 */
+/** 无基线（baselinePlannedEndDate 缺失）的已完成节点无法判断按时性，
+ * 必须从分子分母剔除——原 Dashboard 内联实现 `node.actualDate || delay.delayed` 会把这类节点
+ * 计为「按时」，无审批实施计划的项目节点按时率恒 100%，与 DeliveryAnalysis 节点按时率
+ * 「无基线不判定」（refEnd 缺失 continue）口径打架 */
 export const computeProjectOnTimeRate = (p: DeliveryProject, now: Date): ProjectOnTimeRate => {
   const due = (p.nodes || []).map(n => ({ node: n, delay: getNodeDelay(n, now) }));
   // 完成日字段与 getNodeDelay 同源：actualDate 优先，兼容旧数据 actualEndDate
@@ -190,10 +190,10 @@ export const computeProjectOnTimeRate = (p: DeliveryProject, now: Date): Project
   };
 };
 
-/** ⚠️ B5 审计修复：节点15（项目总结）完成 = 成本审批通过 + 其余全部节点 completed——
- *  原 DeliveryDetail 仅校验成本审批，成本通过后节点3 仍 pending 即可提前勾完节点15，
- *  而分析以节点15完成日做交付完结/订单/销售归集，未完成项目会被计为已完结。
- *  excludeNodeNo 供「正在切换节点15」时跳过其自身（按钮场景不传 = 校验全部节点）。 */
+/** 节点15（项目总结）完成 = 成本审批通过 + 其余全部节点 completed——
+ * 原 DeliveryDetail 仅校验成本审批，成本通过后节点3 仍 pending 即可提前勾完节点15，
+ * 而分析以节点15完成日做交付完结/订单/销售归集，未完成项目会被计为已完结
+ * excludeNodeNo 供「正在切换节点15」时跳过其自身（按钮场景不传 = 校验全部节点） */
 export const projectCompletionGate = (
   nodes: DeliveryNode[] | undefined,
   costStatus: string | undefined,
@@ -215,8 +215,8 @@ export const quoteProfitExTax = (gp3Amt: number | undefined, taxRate?: number): 
   gp3Amt != null ? exAmount(gp3Amt, taxRate) : 0;
 
 /**
- * 交付实际销售利润（未税）：未税金额 − 实际总成本。
- * 无成本数据返回 undefined —— 不设 20% 假利润，避免误导，同时提示成本数据缺失。
+ * 交付实际销售利润（未税）：未税金额 − 实际总成本
+ * 无成本数据返回 undefined —— 不设 20% 假利润，避免误导，同时提示成本数据缺失
  */
 export const deliverySalesProfit = (exTax: number, totalActualCost?: number): number | undefined =>
   totalActualCost != null ? (exTax - totalActualCost) : undefined;
@@ -234,9 +234,9 @@ export interface QuoteRefInfo {
 }
 
 /**
- * 按 entity.quotationId 关联报价摘要，构建 entityId → 报价信息 的映射。
+ * 按 entity.quotationId 关联报价摘要，构建 entityId → 报价信息的映射
  * DeliveryAnalysis（交付项目→quotationId→quoteMap）与 SalesAnalysis（机会→quotationId→quotationSummaries）
- * 共用同一遍历/兜底/rate 计算，消除两处重复。
+ * 共用同一遍历/兜底/rate 计算，消除两处重复
  */
 export const buildQuoteInfoMap = <T extends { id: string; quotationId?: string }>(
   entities: T[],
@@ -256,9 +256,9 @@ export const buildQuoteInfoMap = <T extends { id: string; quotationId?: string }
 };
 
 /**
- * 交付未税金额 = 合同金额 ÷ (1+报价税率)。
+ * 交付未税金额 = 合同金额 ÷ (1+报价税率)
  * 税率一律取自「交付项目自身 quotationId」关联的报价（SalesAnalysis/DeliveryAnalysis 共用），
- * 消除此前三页分别按机会 quotationId / 交付 id / 报价 id 查找导致的口径分叉。
+ * 统一三页的关联查找口径，消除分别按机会 quotationId / 交付 id / 报价 id 查找导致的分叉
  */
 export const deliveryExTax = (p: DeliveryProject, info: Map<string, QuoteRefInfo>): number =>
   exAmount(p.contractAmount, info.get(p.id)?.taxRate);
@@ -308,8 +308,8 @@ export const fyMonthWindows = (fyRange: { start: Date; end: Date }): { start: Da
   });
 
 /**
- * 统一项目延期判定（以节点15为准，与节点同口径，事实延期）。
- * 完成前为临时状态（仅当前日期超基线判延期）；完成后按实际完成日重算为永久状态。
+ * 统一项目延期判定（以节点15为准，与节点同口径，事实延期）
+ * 完成前为临时状态（仅当前日期超基线判延期）；完成后按实际完成日重算为永久状态
  */
 export const getProjectDelay = (p: DeliveryProject, asOf?: Date): NodeDelayInfo => {
   const node15 = getNode15(p.nodes);

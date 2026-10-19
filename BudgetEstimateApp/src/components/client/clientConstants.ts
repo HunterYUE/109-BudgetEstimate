@@ -25,7 +25,7 @@ export const INDUSTRIES = [
 ];
 export const REGIONS = ['东区', '南区', '北区'];
 
-export const AREA_CODES: Record<string, string> = { 东区: 'EA', 南区: 'SO', 北区: 'NO', 国际: 'IN' };
+export const AREA_CODES: Record<string, string> = { 东区: 'EA', 南区: 'SO', 北区: 'NO' };
 
 /** 生成客户编号：保留等级字段在编号中，但流水号基于区域+城市迭代（同区同城共用水位） */
 export function generateClientCode(grade: string, areaCode: string, cityCode: string, existingCodes: string[]): string {

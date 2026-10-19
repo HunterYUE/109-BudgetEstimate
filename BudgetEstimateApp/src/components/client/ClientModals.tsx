@@ -110,9 +110,9 @@ export const ClientEditModal: React.FC<ClientEditModalProps> = ({
   onAddContact, onUpdateContact, onRemoveContact, onSave,
   onAddSubsidiary, onEditClient, onDeleteSubsidiary,
 }) => {
-  // 当前编辑客户的子公司列表（一次性计算，避免在 JSX 中重复 filter）。
-  // ⚠️ A141：editingId 为空表示「新增客户」，此时 parentId === null 是所有一级企业客户，
-  //   原实现把它们全部列为新客户的子公司，还允许点删除直接删真实企业。
+  // 当前编辑客户的子公司列表（一次性计算，避免在 JSX 中重复 filter）
+  // editingId 为空表示「新增客户」，此时 parentId === null 是所有一级企业客户，
+  // 不能把一级企业客户列为新客户的子公司，也不能允许在新增弹窗删除真实企业
   const subs = editingId ? clients.filter(c => c.parentId === editingId) : [];
   return (
     <Modal
@@ -415,7 +415,7 @@ export const ClientSubModal: React.FC<ClientSubModalProps> = ({
         </div>
       }
     >
-      <div style={{ fontSize: 12, color: '#888', marginBottom: 14 }}>
+      <div style={{ fontSize: 12, color: '', marginBottom: 14 }}>
         母公司：{clients.find(c => c.id === subParentId)?.name}
       </div>
       <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>

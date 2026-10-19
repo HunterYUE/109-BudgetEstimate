@@ -1,5 +1,5 @@
 import { api } from '../utils/api';
-import type { Project, ProjectVersion, Group, GroupItem } from '../types';
+import type { Project, ProjectVersion, Group } from '../types';
 
 export const projectService = {
   /** 获取单个项目（含版本、组、明细） */
@@ -19,14 +19,11 @@ export const projectService = {
   saveVersion: (projectId: string, data: Partial<ProjectVersion>) =>
     api.post<ProjectVersion>(`/project-versions`, { ...data, projectId }),
 
-  /** 保存组和明细（后端返回完整组，含明细；saveGroups 依赖返回的 id 同步状态） */
-  saveGroup: (projectId: string, versionId: string, data: { id?: string; projectId?: string; versionId?: string; groupNo: number; groupType: string; name: string; isFixed?: boolean; items?: Partial<GroupItem>[] }) =>
-    api.post<Group>('/project-groups', { ...data, projectId, versionId }),
+  /**
+   * 整版本批量保存组和明细：后端在同一事务内删除目标版本旧组后重建
+   * 返回组数组（顺序与入参一致），用于回写组 id；明细 id 由客户端提供时由后端保留
+   */
+  saveGroupBatch: (projectId: string, versionId: string, groups: Group[]) =>
+    api.post<Group[]>('/project-groups/batch', { projectId, versionId, groups }),
 
-  deleteGroup: (id: string) =>
-    api.delete(`/project-groups/${id}`),
-
-  /** 删除指定版本的所有组和明细（保存时清理不存在的数据；后端要求带 projectId 校验版本归属） */
-  deleteGroupsByVersion: (versionId: string, projectId: string) =>
-    api.delete(`/project-groups/by-version/${versionId}?project_id=${encodeURIComponent(projectId)}`),
 };

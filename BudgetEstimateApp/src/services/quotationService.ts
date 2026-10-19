@@ -8,8 +8,8 @@ export const quotationService = {
   get: (id: string) => api.get<QuotationSummary>(`/quotations/${id}`),
 
   /**
-   * 同步报价摘要（upsert）：保存项目时调用，写入/更新报价汇总记录。
-   * ⚠️ D6 修复：签名收敛为后端实际读取的 10 字段（折扣/GP3/成本分解等存于 project_versions，sync 不处理）
+   * 同步报价摘要（upsert）：保存项目时调用，写入/更新报价汇总记录
+   * 签名收敛为后端实际读取的 10 字段（折扣/GP3/成本分解等存于 project_versions，sync 不处理）
    */
   sync: (data: {
     projectId: string;

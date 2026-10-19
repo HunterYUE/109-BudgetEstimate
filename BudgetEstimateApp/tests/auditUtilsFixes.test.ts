@@ -6,9 +6,9 @@ import { sanitizeExportFilename } from '../src/utils/exportToExcel';
 import { buildCostLines } from '../src/utils/costBreakdown';
 
 // ── 审计工具层修复回归测试（2026-08-14 全量审计 Budget）──
-// 覆盖：U2 costBreakdown undefined 单价/数量兜底、U4 蓝表空角色禁存、U5 PART 类型标签、
-//       U7 导出文件名清洗（保留名/尾随点）、U8 付款条件缺期回退 0。
-// 纯函数直测（U2/U7）+ 静态源码断言（U4/U5/U8，组件内 hooks 不可直接实例化）。
+// 覆盖：costBreakdown undefined 单价/数量兜底、蓝表空角色禁存、PART 类型标签、
+// 导出文件名清洗（保留名/尾随点）、付款条件缺期回退 0
+// 纯函数直测 + 静态源码断言（组件内 hooks 不可直接实例化）
 
 const src = (rel: string) => readFileSync(fileURLToPath(new URL(`../src/${rel}`, import.meta.url)), 'utf8');
 

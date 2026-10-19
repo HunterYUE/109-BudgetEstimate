@@ -12,8 +12,8 @@ describe('parseVersionFromCode 编码版本号解析', () => {
   });
   it('无版本后缀 / 非 Vx.y 结尾 → null', () => {
     expect(parseVersionFromCode('ABC-123')).toBeNull();
-    expect(parseVersionFromCode('ABC-123-V1')).toBeNull();      // 无小数点
-    expect(parseVersionFromCode('ABC-123-V2.0.1')).toBeNull();  // 多小数点
+    expect(parseVersionFromCode('ABC-123-V1')).toBeNull(); // 无小数点
+    expect(parseVersionFromCode('ABC-123-V2.0.1')).toBeNull(); // 多小数点
     expect(parseVersionFromCode('ABC-V1.0-suffix')).toBeNull(); // 要求 $ 结尾
     expect(parseVersionFromCode('')).toBeNull();
     expect(parseVersionFromCode(null)).toBeNull();

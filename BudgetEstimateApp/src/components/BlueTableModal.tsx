@@ -7,7 +7,7 @@ import { PRICING_ADJUSTMENTS, PRICING_LABELS, POSITIONING_LABELS, POSITIONING_EX
 import { COLORS } from '../styles/colors';
 import { lockCellWidth, BARE_INPUT_STYLE } from '../utils/tableUtils';
 import { todayBeijing } from '../utils/timeFormat';
-import { uid } from '../utils/tagHelpers';
+import { uuid } from '../utils/uuid';
 import { formatMoney } from '../utils/calculations';
 
 interface BlueTableModalProps {
@@ -24,7 +24,7 @@ const ROLE_LABELS: Record<string, string> = {
   COACH: 'COACH',
 };
 
-/** 预算充足度选项（⚠️ B10：原渲染路径 IIFE 内联重建数组，提升为模块常量） */
+/** 预算充足度选项（原渲染路径 IIFE 内联重建数组，提升为模块常量） */
 const BUDGET_OPTS: Array<{ v: VetoBudgetOption; label: string }> = [
   { v: 'ok', label: '充足' },
   { v: 'possible', label: '紧张' },
@@ -36,7 +36,7 @@ function defaultRole(overrides?: Partial<BlueTableRole>): BlueTableRole {
   const roleType = overrides?.roleType || 'EB';
   const influence = overrides?.influence || 'medium';
   return {
-    id: uid('role'),
+    id: 'role-' + uuid(),
     roleType,
     name: '',
     influence,
@@ -71,9 +71,9 @@ function createEmptyBlueTable(): BlueTable {
 const TriangleArrows: React.FC<{ onUp: () => void; onDown: () => void }> = ({ onUp, onDown }) => (
   <div style={{ display: 'flex', flexDirection: 'column', gap: 0, lineHeight: 1 }}>
     <span onClick={onUp}
-      style={{ cursor: 'pointer', color: '#999', fontSize: 9, lineHeight: 1, height: 12, display: 'block', userSelect: 'none' }}>▲</span>
+      style={{ cursor: 'pointer', color: '', fontSize: 9, lineHeight: 1, height: 12, display: 'block', userSelect: 'none' }}>▲</span>
     <span onClick={onDown}
-      style={{ cursor: 'pointer', color: '#999', fontSize: 9, lineHeight: 1, height: 12, display: 'block', userSelect: 'none' }}>▼</span>
+      style={{ cursor: 'pointer', color: '', fontSize: 9, lineHeight: 1, height: 12, display: 'block', userSelect: 'none' }}>▼</span>
   </div>
 );
 // ── 子组件：三角形数字增减 ──
@@ -153,7 +153,7 @@ const TriangleReactionCell: React.FC<{
 
 const BlueTableModal: React.FC<BlueTableModalProps> = ({ open, opportunity, onSave, onClose }) => {
   const readOnly = !onSave;
-  // ⚠️ 惰性初始化：`useState(createEmptyBlueTable())` 会在每次渲染都调用工厂（分配角色/randomUUID），浪费
+  // 惰性初始化：`useState(createEmptyBlueTable())` 会在每次渲染都调用工厂（分配角色/randomUUID），浪费
   const [bt, setBt] = useState<BlueTable>(createEmptyBlueTable);
   const calc = useMemo(() => calcBlueTableWinRate(bt), [bt]);
   const [msg, ctx] = message.useMessage();
@@ -164,8 +164,8 @@ const BlueTableModal: React.FC<BlueTableModalProps> = ({ open, opportunity, onSa
       msg.warning('请填写项目节点计划');
       return false;
     }
-    // ⚠️ 审计修复 U4：角色全删空（roles.length===0）时阻止保存——此前 emptyNameRoles 过滤不命中空数组，
-    //   空蓝表可被保存；赢率侧缺角色可显示 0% 兜底，但落库后无任何采购角色，编辑重开为空态
+    // 角色全删空（roles.length===0）时阻止保存
+    // 空蓝表可被保存；赢率侧缺角色可显示 0% 兜底，但落库后无任何采购角色，编辑重开为空态
     if (bt.roles.length === 0) {
       msg.warning('请至少添加一个采购角色');
       return false;
@@ -199,7 +199,7 @@ const BlueTableModal: React.FC<BlueTableModalProps> = ({ open, opportunity, onSa
   const removeRole = useCallback((roleId: string) => setBt(prev => ({
     ...prev,
     roles: prev.roles.filter(r => r.id !== roleId),
-    // ⚠️ 同步清理引用该角色的提升目标，避免孤儿 target 显示"-"或选中已删除角色
+    // 同步清理引用该角色的提升目标，避免孤儿 target 显示"-"或选中已删除角色
     targets: prev.targets.filter(t => t.roleId !== roleId),
   })), []);
 
@@ -287,7 +287,7 @@ const BlueTableModal: React.FC<BlueTableModalProps> = ({ open, opportunity, onSa
       render: (_: unknown, rec: BlueTableRole) => (
         <TriangleNumberCell value={rec.support} onChange={v => updateRole(rec.id, { support: v })}
           min={-5} max={5}
-          getColor={v => v <= -3 ? COLORS.danger : v <= 0 ? '#888' : COLORS.success} />
+          getColor={v => v <= -3 ? COLORS.danger : v <= 0 ? '' : COLORS.success} />
       ),
     },
     {
@@ -295,7 +295,7 @@ const BlueTableModal: React.FC<BlueTableModalProps> = ({ open, opportunity, onSa
       render: (_: unknown, rec: BlueTableRole) => (
         <TriangleNumberCell value={rec.demandFit} onChange={v => updateRole(rec.id, { demandFit: v })}
           min={1} max={5}
-          getColor={v => v <= 2 ? COLORS.danger : v === 3 ? '#888' : COLORS.success} />
+          getColor={v => v <= 2 ? COLORS.danger : v === 3 ? '' : COLORS.success} />
       ),
     },
     {
@@ -303,7 +303,7 @@ const BlueTableModal: React.FC<BlueTableModalProps> = ({ open, opportunity, onSa
       render: (_: unknown, rec: BlueTableRole) => (
         <TriangleNumberCell value={rec.relationship} onChange={v => updateRole(rec.id, { relationship: v })}
           min={1} max={5}
-          getColor={v => v <= 2 ? COLORS.danger : v === 3 ? '#888' : COLORS.success} />
+          getColor={v => v <= 2 ? COLORS.danger : v === 3 ? '' : COLORS.success} />
       ),
     },
     {
@@ -344,7 +344,7 @@ const BlueTableModal: React.FC<BlueTableModalProps> = ({ open, opportunity, onSa
       {ctx}
 
       {/* ── 独立卡片区块（表单区） ── */}
-      {/* ⚠️ 表单区须包在 position:relative 容器内，view-only 覆盖层放在容器内部：
+      {/* 表单区须包在 position:relative 容器内，view-only 覆盖层放在容器内部：
           body 是滚动容器（maxHeight 限高），overlay 若直接放 body 层，absolute+inset:0 只覆盖首屏可视高度，
           滚动后下方字段仍可编辑 → view-only 失效。包一层后 overlay 覆盖整个表单区高度 */}
       <div style={{ position: 'relative' }}>
@@ -416,7 +416,7 @@ const BlueTableModal: React.FC<BlueTableModalProps> = ({ open, opportunity, onSa
                 {(() => {
                   const TIMELINE_OPTS = [
                     { v: 'optimistic' as TimelineOption, label: '乐观', color: COLORS.success },
-                    { v: 'neutral' as TimelineOption, label: '中性', color: '#888' },
+                    { v: 'neutral' as TimelineOption, label: '中性', color: '' },
                     { v: 'negative' as TimelineOption, label: '消极', color: COLORS.danger },
                   ];
                   const curIdx = TIMELINE_OPTS.findIndex(o => o.v === bt.timelineOption);
@@ -542,7 +542,7 @@ const BlueTableModal: React.FC<BlueTableModalProps> = ({ open, opportunity, onSa
               </div>
             </div>
 
-            {/* 提升目标 / 行动计划 子表 */}
+            {/* 提升目标 / 行动计划子表 */}
             <div>
               <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
                 <RiseOutlined style={{ fontSize: 16, color: COLORS.primary }} />
@@ -596,7 +596,7 @@ const BlueTableModal: React.FC<BlueTableModalProps> = ({ open, opportunity, onSa
                         <div style={{ width: 70, padding: '4px 8px', textAlign: 'center', borderRight: `1px solid ${COLORS.borderLight}` }}>
                           <span style={{
                             fontSize: 13, fontWeight: 700,
-                            color: (role?.support ?? 0) <= -3 ? COLORS.danger : (role?.support ?? 0) <= 0 ? '#888' : COLORS.success,
+                            color: (role?.support ?? 0) <= -3 ? COLORS.danger : (role?.support ?? 0) <= 0 ? '' : COLORS.success,
                           }}>
                             {role?.support ?? '-'}
                           </span>
@@ -605,7 +605,7 @@ const BlueTableModal: React.FC<BlueTableModalProps> = ({ open, opportunity, onSa
                         <div style={{ width: 80, padding: '4px 8px', textAlign: 'center', borderRight: `1px solid ${COLORS.borderLight}` }}>
                           <TriangleNumberCell value={t.targetSupport} onChange={v => updateTarget(i, { targetSupport: v })}
                             min={-5} max={5}
-                            getColor={v => v <= -3 ? COLORS.danger : v <= 0 ? '#888' : COLORS.success} />
+                            getColor={v => v <= -3 ? COLORS.danger : v <= 0 ? '' : COLORS.success} />
                         </div>
                         {/* 行动计划 */}
                         <div style={{ flex: 1, padding: '3px 8px' }}>
@@ -727,7 +727,7 @@ const BlueTableModal: React.FC<BlueTableModalProps> = ({ open, opportunity, onSa
             ].map((item, i) => (
               <span key={i} style={{
                 fontSize: 12, display: 'inline-flex', alignItems: 'center',
-                color: '#000',
+                color: '',
                 background: item.ok ? '#e8f5e9' : '#e3f2fd',
                 padding: '3px 12px', borderRadius: 12,
               }}>
@@ -743,7 +743,7 @@ const BlueTableModal: React.FC<BlueTableModalProps> = ({ open, opportunity, onSa
         {!readOnly && <Button type="text" icon={<DeleteOutlined />} onClick={handleClear}
           style={{ color: COLORS.danger, fontSize: 16, width: 36, height: 36, borderRadius: 3 }} />}
         <Button type="text" icon={<CloseOutlined />} onClick={onClose}
-          style={{ color: '#999', fontSize: 16, width: 36, height: 36, borderRadius: 3 }} />
+          style={{ color: '', fontSize: 16, width: 36, height: 36, borderRadius: 3 }} />
         {!readOnly && <Button type="text" icon={<CheckOutlined />} onClick={handleSave}
           style={{ color: COLORS.primary, fontSize: 16, width: 36, height: 36, borderRadius: 3 }} />}
       </div>

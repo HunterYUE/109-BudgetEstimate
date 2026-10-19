@@ -12,7 +12,7 @@ const fields = [
   'lead_at', 'opportunity_at', 'bid_at', 'negotiation_at', 'created_at', 'updated_at',
 ];
 
-// ── 机会状态机纯逻辑（路由层取「当前状态 + 是否已转交付」后调用，测试直测锁定全状态机）──
+// ── 机会状态机纯逻辑（路由层取「当前状态 + 是否已转交付」后调用，测试直测锁定全状态机） ──
 
 /** 阶段白名单（服务端采集各阶段时间戳的唯一依据，客户端直写被忽略）——逐级递进：线索⊂机会⊂投标⊂议价⊂中标 */
 export const STAGE_LEAD = ['线索', '机会', '投标', '议价', '中标'];
@@ -28,8 +28,8 @@ export const OPP_STAGES = ['信息', '线索', '机会', '投标', '议价', '�
 export const OPP_STATUSES = ['过程中', '赢', '输', '冻结'] as const;
 
 /** 创建时的生命周期字段服务端归一化：忽略客户端传入的时间戳，按创建阶段用服务器时刻采集。
- *  ⚠️ A118：此前 POST 未排除四个阶段时间列，客户端可直写任意历史时间伪造财年归集；
- *  同时与 PUT 的 COALESCE 语义保持一致（创建即首次进入，阶段时间 = 创建时刻）。 */
+ * POST 必须排除四个阶段时间列，否则客户端可直写任意历史时间伪造财年归集；
+ * 同时与 PUT 的 COALESCE 语义保持一致（创建即首次进入，阶段时间 = 创建时刻） */
 export function applyOppCreateLifecycle(body: Record<string, any>, nowIso: string): void {
   if (body.stage !== undefined && !(OPP_STAGES as readonly string[]).includes(body.stage)) {
     throw new AppError(400, `无效阶段，允许值：${OPP_STAGES.join('、')}`);
@@ -53,10 +53,10 @@ export function applyOppCreateLifecycle(body: Record<string, any>, nowIso: strin
   else delete body.lost_at;
 }
 
-/** 机会状态机决策：输入 body（已转 snake）+ 当前库状态 + 是否有交付，返回需追加的 SQL 片段（每段以 ', ' 开头）。
- *  ⚠️ 纯字符串拼接（now()/COALESCE 由 DB 求值）——输单 lost_at 采集、离开输单清除、四阶段 COALESCE、
- *    转交付三分支（赢/输/过程中）全部在此锁定。无交付的「非输」机会转交付抛 400（A105 防伪赢单）；无交付的「输」
- *    机会仅归档（不追加子句）。路由层负责取两值传入。 */
+/** 机会状态机输入 body（已转 snake）+ 当前库状态 + 是否有交付，返回需追加的 SQL 片段（每段以 ', ' 开头）。
+ * 纯字符串拼接（now()/COALESCE 由 DB 求值）——输单 lost_at 采集、离开输单清除、四阶段 COALESCE、
+ * 转交付三分支（赢/输/过程中）全部在此锁定。无交付的「非输」机会转交付抛 400（防伪赢单）；无交付的「输」
+ * 机会仅归档（不追加子句）。路由层负责取两值传入 */
 export function buildOppStatusClauses(body: Record<string, any>, currentStatus: string | undefined, hasDelivery: boolean): string {
   let extra = '';
   // 状态变"输"：lost_at 记录当次输单时间（每次输单都更新，不留存旧值）
@@ -74,14 +74,14 @@ export function buildOppStatusClauses(body: Record<string, any>, currentStatus: 
       if (currentStatus === '赢') {
         extra += `, won_at = COALESCE(won_at, now())`;
       } else if (currentStatus === '输') {
-        // ⚠️ 最终审计修正：转交付 = 赢单终极确认——已标输的机会转入交付同样算赢单（置赢/中标 + won_at，清 lost_at）
+        // 转交付 = 赢单终极确认——已标输的机会转入交付同样算赢单（置赢/中标 + won_at，清 lost_at）
         extra += `, status = '赢', stage = '中标', won_at = COALESCE(won_at, now()), lost_at = NULL`;
       } else {
         // 过程中/冻结转交付 → 100% 确认为赢单
         extra += `, status = '赢', stage = '中标', won_at = COALESCE(won_at, now())`;
       }
     } else if (currentStatus !== '输') {
-      // ⚠️ A105 修复：转交付须真实存在交付项目——防仅持写权限者伪造 terminated 直接把机会标成赢单
+      // 转交付须真实存在交付项目——防仅持写权限者伪造 terminated 直接把机会标成赢单
       throw new AppError(400, '转交付须先创建交付项目');
     }
     // 无交付的"输"机会归档终止（仅置 terminated），不改状态/阶段/won_at——不追加子句
@@ -120,19 +120,27 @@ export function composeSalesNo(d: Date, nextSeq: number): string {
 const crudRouter = crudRoutes('sales_opportunities', fields, {
   searchFields: ['sales_no', 'client_name', 'project_name', 'salesman'],
   orderBy: 'updated_at DESC',
-  // ⚠️ A19 修复：列表（自定义 GET /）与更新（自定义 PUT /:id 含 promote_locked/lost_at/阶段规则）均已由顶层路由覆盖，
-  //   skipList/skipUpdate 跳过 crudRoutes 中会被遮蔽的死处理器，避免两套逻辑并存
+  // 列表（自定义 GET /）与更新（自定义 PUT /:id 含 promote_locked/lost_at/阶段规则）均已由顶层路由覆盖，
+  // skipList/skipUpdate 跳过 crudRoutes 中会被遮蔽的死处理器，避免两套逻辑并存
   skipList: true,
   skipUpdate: true,
-  // ⚠️ A108 修复：创建禁直设生命周期字段——won_at/lost_at 由 PUT 状态机采集、promote_locked 需特权（PUT 有
-  //   全部查看权限 校验、POST 此前无）、terminated 仅转交付流程置位。POST 直设可伪造赢单时间/绕过转交付标记。
+  // 创建禁直设生命周期字段——won_at/lost_at 由 PUT 状态机采集、promote_locked 需特权（POST/PUT 均需
+  // 全部查看权限校验）、terminated 仅转交付流程置位。POST 直设可伪造赢单时间/绕过转交付标记
   excludeOnCreate: ['id', 'created_at', 'updated_at', 'won_at', 'lost_at', 'promote_locked', 'terminated'],
-  // ⚠️ A118：阶段/状态枚举校验 + 阶段时间戳服务端采集（客户端传入的时间一律被覆盖）
+  // 阶段/状态枚举校验 + 阶段时间戳服务端采集（客户端传入的时间一律被覆盖）
   beforeCreate: async (snakeBody) => applyOppCreateLifecycle(snakeBody, new Date().toISOString()),
-  // ⚠️ F3 修复：机会已转交付时删除会撞 NO ACTION 外键（delivery_projects.opportunity_id），明确提示
+  // 机会已转交付时删除会撞 NO ACTION 外键（delivery_projects.opportunity_id），明确提示
   beforeDelete: async (id) => {
     const delivery = (await query('SELECT id FROM delivery_projects WHERE opportunity_id = $1', [id])).rows[0];
     if (delivery) throw new AppError(409, '该机会已转交付，无法删除。请先删除对应交付项目。');
+    const pending = (await query(
+      "SELECT 1 FROM approval_requests WHERE opportunity_id = $1 AND status = 'pending'", [id]
+    )).rows[0];
+    if (pending) throw new AppError(409, '该机会存在待审批请求，请先取消审批');
+    const quote = (await query(
+      'SELECT id FROM quotations WHERE opportunity_id = $1 LIMIT 1', [id]
+    )).rows[0];
+    if (quote) throw new AppError(409, '该机会存在关联报价，无法删除。请先删除报价。');
   },
 });
 
@@ -180,11 +188,11 @@ router.get('/', async (req, res, next) => {
             )
           )
         ELSE NULL END as blue_table,
-        -- ⚠️ has_quote 检查任何报价（不限 status='approved'），删除此条件会导致 draft 状态的报价不被视为"有报价"
-        --   （保留 EXISTS：口径是"机会名下任一报价"，与下方 JOIN 的"关联报价"语义不同；opportunity_id 有索引，逐行开销可接受）
+        -- has_quote 检查任何报价（不限 status='approved'），删除此条件会导致 draft 状态的报价不被视为"有报价"
+        -- （保留 EXISTS：口径是"机会名下任一报价"，与下方 JOIN 的"关联报价"语义不同；opportunity_id 有索引，逐行开销可接受）
         EXISTS(SELECT 1 FROM quotations WHERE opportunity_id = so.id) as has_quote,
-        -- ⚠️ A109 修复：quotation_amount/tax_rate 由逐行标量子查询改为 LEFT JOIN 链（q.id = so.quotation_id
-        --   精确匹配关联报价，pv 按 project+version 取税率；无关联报价时两列 NULL，与原子查询结果一致）
+        -- quotation_amount/tax_rate 由逐行标量子查询改为 LEFT JOIN 链（q.id = so.quotation_id
+        -- 精确匹配关联报价，pv 按 project+version 取税率；无关联报价时两列 NULL，与原子查询结果一致）
         q.amount AS quotation_amount,
         pv.tax_rate AS tax_rate
        FROM sales_opportunities so
@@ -192,7 +200,7 @@ router.get('/', async (req, res, next) => {
        LEFT JOIN quotations q ON q.id = so.quotation_id
        LEFT JOIN project_versions pv ON pv.project_id = q.project_id AND pv.version_no = q.version_no
        ${where}
-       -- ⚠️ 按销售编号升序固定排列，不可改回 updated_at DESC（否则列表随编辑刷新不停跳动）
+       -- 按销售编号升序固定排列，不可改回 updated_at DESC（否则列表随编辑刷新不停跳动）
        ORDER BY so.sales_no ASC
        LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
       [...params, limit, offset]
@@ -223,18 +231,27 @@ router.get('/:id/detail', async (req, res, next) => {
 router.put('/:id/blue-table', async (req, res, next) => {
   try {
     const { id } = req.params;
-    // ⚠️ A9 修复：同机会一次查询取回 id+sales_no，复用存在性检查与审计（此前对同一 id 连查两次）
-    const oppRow = (await query('SELECT id, sales_no FROM sales_opportunities WHERE id = $1', [id])).rows[0];
+    // 同机会一次查询取回 id+sales_no，复用存在性检查与审计
+    // 纵深防御：路径大小写/尾斜杠变体不得绕过蓝表权限
+    if (!hasPermission(req.user?.permissions, '销售蓝表编辑', '全部查看权限')) {
+      throw new AppError(403, '无销售蓝表编辑权限');
+    }
+    const oppRow = (await query(
+      'SELECT id, sales_no, promote_locked, terminated FROM sales_opportunities WHERE id = $1', [id]
+    )).rows[0];
     if (!oppRow) throw new AppError(404, '机会未找到');
+    if (oppRow.promote_locked || oppRow.terminated) {
+      throw new AppError(409, '机会已锁定或已转交付，不可修改蓝表');
+    }
     const body = objKeysToSnake({ ...req.body });
     const { veto_budget, budget_amount, timeline_plan, timeline_option,
             pricing, positioning, reaction_mode, strategy, targets, roles, win_rate } = body;
 
-    // ⚠️ A117：蓝表保存改为单事务完整闭环——
-    //   ① 临时角色 id（前端 uid('role')）与重插后的 UUID 不一致，targets 引用会永久失效；
-    //     现在保留库中已有角色 id，新角色记录「临时 id → UUID」映射，并回写 targets 后再落库。
-    //   ② 赢率原本由前端第二个请求写入，第二步失败会让蓝表与 win_rate 长期分叉；
-    //     现在 win_rate 与蓝表同事务写入。
+    // 蓝表保存改为单事务完整闭环——
+    // ① 临时角色 id（前端 uid('role')）与重插后的 UUID 不一致，targets 引用会永久失效；
+    // 现在保留库中已有角色 id，新角色记录「临时 id → UUID」映射，并回写 targets 后再落库
+    // ② 赢率原本由前端第二个请求写入，第二步失败会让蓝表与 win_rate 长期分叉；
+    // 现在 win_rate 与蓝表同事务写入
     const bt = await withTransaction(async (client) => {
       // Upsert 蓝表（targets 先留空，待角色 id 映射后再更新）
       const blueTable = (await client.query(
@@ -339,8 +356,8 @@ router.put('/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
     const body = objKeysToSnake({ ...req.body });
-    // ⚠️ promote_locked 是特权字段：只要 body 含它（无论是否伴随其他字段）都需『全部查看权限』，
-    //    否则 { promote_locked:true, notes:'x' } 会落入 else 分支绕过检查（F1 修复）
+    // promote_locked 是特权字段：只要 body 含它（无论是否伴随其他字段）都需『全部查看权限』，
+    // 否则 { promote_locked:true, notes:'x' } 会落入 else 分支绕过检查
     if ('promote_locked' in body) {
       if (!hasPermission(req.user?.permissions, '全部查看权限')) {
         throw new AppError(403, '仅部门总监和管理员可锁定/解锁机会');
@@ -351,19 +368,51 @@ router.put('/:id', async (req, res, next) => {
         throw new AppError(403, '该机会已提交转机会审批，审批完成前不可修改');
       }
     }
+    const existing = (await query(
+      'SELECT status, stage, terminated, won_at, quotation_id, amount FROM sales_opportunities WHERE id = $1',
+      [id]
+    )).rows[0];
+    if (!existing) throw new AppError(404, '记录不存在');
+
+    // 不可变归属字段：销售编号/客户/项目名称创建后只读；报价关联只允许首次写入或保持不变
+    for (const f of ['sales_no', 'client_name', 'project_name']) {
+      if (body[f] !== undefined) throw new AppError(400, '销售编号/客户名称/项目名称创建后不可修改');
+    }
+    if (body.quotation_id !== undefined && existing.quotation_id
+      && body.quotation_id !== existing.quotation_id) {
+      throw new AppError(409, '机会已关联报价，不可更换');
+    }
+    // 存在任一报价后金额锁定（与前端字段锁定规则一致）
+    if (body.amount !== undefined && Number(body.amount) !== Number(existing.amount)) {
+      const hasQuote = (await query(
+        'SELECT 1 FROM quotations WHERE opportunity_id = $1 LIMIT 1', [id]
+      )).rows[0];
+      if (hasQuote) throw new AppError(409, '机会存在报价，金额不可修改');
+    }
+    // 已转交付/已赢机会不可回退状态或阶段，也不可清除终止标记
+    if (body.terminated === false) throw new AppError(409, '已转交付的机会不可撤销终止');
+    if (existing.terminated || existing.won_at) {
+      if ((body.status !== undefined && body.status !== '赢')
+        || (body.stage !== undefined && body.stage !== '中标')) {
+        throw new AppError(409, '已转交付/已赢机会不可回退状态或阶段');
+      }
+    }
+
     // 通过检查后交给标准 CRUD PUT 处理（复用上面的 body 转换结果）
-    // ⚠️ 修复：阶段时间戳（lead_at/opportunity_at/bid_at/negotiation_at）禁直设——由下方阶段规则
-    //   COALESCE 服务端采集（首次写入不覆盖），客户端直写可伪造“进入某阶段的时间”污染财年归集口径
+    // 阶段时间戳（lead_at/opportunity_at/bid_at/negotiation_at）禁直设——由下方阶段规则
+    // COALESCE 服务端采集（首次写入不覆盖），客户端直写可伪造“进入某阶段的时间”污染财年归集口径
     const updateCols = fields.filter(f =>
-      !OPP_UPDATE_EXCLUDE.includes(f) && body[f] !== undefined
+      !OPP_UPDATE_EXCLUDE.includes(f)
+      && Object.prototype.hasOwnProperty.call(body, f)
+      && body[f] !== undefined
     );
     if (updateCols.length === 0) throw new AppError(400, '没有要更新的字段');
     let setClause = updateCols.map((f, i) => `"${f}" = $${i + 1}`).join(', ');
     const rawValues = updateCols.map(f => body[f]);
-    // ⚠️ won_at 仅在转交付（terminated）时采集（69d3de6 语义，勿回归）：
+    // won_at 仅在转交付（terminated）时采集（69d3de6 语义，勿回归）：
     // 手动标赢未转交付不算赢单，won_at 保持 NULL；转交付时由 buildOppStatusClauses 的 terminated 块 COALESCE 写入
-    // 状态机决策（纯函数 buildOppStatusClauses）：输单 lost_at 采集/离开输单清除/四阶段 COALESCE/转交付三分支。
-    // 当前状态与交付存在性仅转交付时查询（保持原实现"仅在 terminated 块内查询"的语义，顺序 delivery→cur 不变）
+    // 状态机决策（纯函数 buildOppStatusClauses）：输单 lost_at 采集/离开输单清除/四阶段 COALESCE/转交付三分支
+    // 当前状态与交付存在性仅转交付时查询（仅在 terminated 块内查询，顺序 delivery→cur）
     if (body.terminated) {
       const delivery = (await query('SELECT 1 FROM delivery_projects WHERE opportunity_id = $1', [id])).rows[0];
       const cur = (await query('SELECT status FROM sales_opportunities WHERE id = $1', [id])).rows[0];
@@ -386,8 +435,8 @@ router.get('/next-sales-no', async (req, res, next) => {
   try {
     const d = new Date();
     const prefix = buildSalesNoPrefix(d);
-    // ⚠️ A107 修复：MAX+1 取号并发竞态——两用户同时点「新增」会拿到同一序号，后建者撞唯一约束。
-    //   pg_advisory_xact_lock 在事务内串行化取号（同名 key 的并发调用排队），消除同刻取重号
+    // MAX+1 取号并发竞态——两用户同时点「新增」会拿到同一序号，后建者撞唯一约束
+    // pg_advisory_xact_lock 在事务内串行化取号（同名 key 的并发调用排队），消除同刻取重号
     const nextSeq = await withTransaction(async (client) => {
       await client.query(`SELECT pg_advisory_xact_lock(hashtext('opportunity_sales_no_gen'))`);
       const r = (await client.query(

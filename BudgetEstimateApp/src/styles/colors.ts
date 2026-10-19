@@ -12,13 +12,13 @@ export const COLORS = {
   /** 警告 — 橙色 */
   warning: '#e65100',
   /** 次要文字 — 灰色 */
-  textSecondary: '#666',
+  textSecondary: '',
   /** 浅色文字 — 浅灰 */
-  textLight: '#999',
+  textLight: '',
   /** 深色文字 */
   textDark: '#0d1b2a',
   /** 主文字色 */
-  textPrimary: '#333',
+  textPrimary: '',
   /** 禁用/占位文字 */
   textDisabled: '#ccc',
   /** 表头/辅助文字 */
@@ -50,7 +50,7 @@ export const COLORS = {
   /** 琥珀色（甘特图项目色） */
   amber: '#c76a00',
   /** 灰色（甘特图项目色） */
-  chartGray: '#888',
+  chartGray: '',
   /** 甘特图未执行节点 */
   barPending: '#bbb',
 } as const;

@@ -3,15 +3,15 @@ import { LIST_LIMIT } from '../utils/constants';
 import type { Component } from '../types';
 
 // 组件目录缓存（模块级，避免重复加载）
-// ⚠️ B2：加 5 分钟 TTL——物料库变更后报价页编码下拉/红!校验不再陈旧；
-// MaterialManagement 保存/删除/审核后调用 invalidateCatalogCache() 主动失效，下次加载立即拉新。
+// 加 5 分钟 TTL——物料库变更后报价页编码下拉/红!校验不再陈旧；
+// MaterialManagement 保存/删除/审核后调用 invalidateCatalogCache() 主动失效，下次加载立即拉新
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
 let catalogCache: Component[] | null = null;
 let catalogCacheAt = 0;
 let catalogGen = 0;
 let catalogLoading = false;
-// ⚠️ B2：waiter 记录注册时的 gen——失效后才加入的调用方不得被在途旧请求结果满足（否则拿到陈旧数据且缓存未写回，永不再刷新）
+// waiter 记录注册时的 gen——失效后才加入的调用方不得被在途旧请求结果满足（否则拿到陈旧数据且缓存未写回，永不再刷新）
 const catalogWaiters: Array<{ gen: number; resolve: (data: Component[]) => void }> = [];
 
 /** 主动失效缓存（保存/删除/审核物料后调用） */
@@ -32,7 +32,7 @@ export function loadCatalog(): Promise<Component[]> {
 
 function fetchCatalog(gen: number): Promise<Component[]> {
   catalogLoading = true;
-  // ⚠️ 传 limit: LIST_LIMIT：物料目录是报价编码下拉唯一数据源，默认 100 会截断合法编码（全量拉取防编码缺失）
+  // 传 limit: LIST_LIMIT：物料目录是报价编码下拉唯一数据源，默认 100 会截断合法编码（全量拉取防编码缺失）
   return componentService.list({ limit: LIST_LIMIT }).then(data => {
     catalogLoading = false;
     // 同代 waiter 用本次结果满足；失效后（gen 落后）的 waiter 不拿旧数据——经 loadCatalog() 重新发起新代加载

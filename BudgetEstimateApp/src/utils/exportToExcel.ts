@@ -1,14 +1,14 @@
 /** 导出 HTML 表格为 .xls 文件（Excel 可打开） */
 
 /**
- * ⚠️ B36 修复：HTML 转义用户可控文本——客户/项目/物料名/备注等含 `& < > " '` 会破坏导出表格结构
- *   或注入多余标记；未转义即拼接还会被恶意文本利用。所有注入 HTML 的字符串必须经此函数。
+ * HTML 转义用户可控文本——客户/项目/物料名/备注等含 `& < > " '` 会破坏导出表格结构
+ * 或注入多余标记；未转义即拼接还会被恶意文本利用。所有注入 HTML 的字符串必须经此函数
  */
 export function escapeHtml(s: string | number | null | undefined): string {
   if (s == null) return '';
   let str = String(s);
-  // Excel 公式注入：以 = + - @ 开头的单元格文本会被 Excel 当公式执行（如 HYPERLINK/DDE）。
-  // 前缀单引号强制按文本处理；仅影响这些首字符的字符串（正常中文/数字不受影响）。
+  // Excel 公式注入：以 = + - @ 开头的单元格文本会被 Excel 当公式执行（如 HYPERLINK/DDE）
+  // 前缀单引号强制按文本处理；仅影响这些首字符的字符串（正常中文/数字不受影响）
   if (/^[=+\-@]/.test(str)) str = "'" + str;
   return str
     .replace(/&/g, '&amp;')
@@ -18,15 +18,15 @@ export function escapeHtml(s: string | number | null | undefined): string {
     .replace(/'/g, '&#39;');
 }
 
-/** ⚠️ 审计修复 U7：导出文件名清洗——非法字符 + Windows 保留名/尾随点空格（此前只清非法字符，
- *   `CON`/`PRN`/`COM1` 等保留名与尾随 `.`/空格在 Windows 下载失败或静默改名）。纯函数便于单测。 */
+/** 导出文件名清洗——非法字符 + Windows 保留名/尾随点空格（此前只清非法字符，
+ * `CON`/`PRN`/`COM1` 等保留名与尾随 `.`/空格在 Windows 下载失败或静默改名）。纯函数便于单测 */
 export function sanitizeExportFilename(filename: string): string {
   return filename
-    .replace(/[\\/:*?"<>|]/g, '_')           // 非法字符（B36 既有）
-    .replace(/[. ]+$/, '')                    // 尾随点/空格（Windows 忽略扩展名前的尾随点）
+    .replace(/[\\/:*?"<>|]/g, '_')           // 非法字符
+    .replace(/[. ]+$/, '') // 尾随点/空格（Windows 忽略扩展名前的尾随点）
     // 保留设备名（允许 "CON.2026" 这类带后缀形式；Windows 按第一个点前的基名判定）
     .replace(/^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\..*)?$/i, '_$1$2')
-    || 'export';                              // 清洗后为空（全非法字符）兜底
+    || 'export'; // 清洗后为空（全非法字符）兜底
 }
 
 export function exportHtmlTable(filename: string, htmlContent: string) {
@@ -46,7 +46,7 @@ export function exportHtmlTable(filename: string, htmlContent: string) {
 </style>
 </head><body>${htmlContent}</body></html>`;
 
-  // ⚠️ B36 + 审计修复 U7：文件名清洗非法字符（Windows 不允许 \ / : * ? " < > |）、保留名与尾随点
+  // + 文件名清洗非法字符（Windows 不允许 \ / : * ? " < > |）、保留名与尾随点
   const safeFilename = sanitizeExportFilename(filename);
 
   const blob = new Blob([fullHtml], { type: 'application/vnd.ms-excel;charset=utf-8' });

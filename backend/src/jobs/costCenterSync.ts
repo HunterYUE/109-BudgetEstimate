@@ -2,14 +2,14 @@ import cron from 'node-cron';
 import { query } from '../db/index.js';
 
 /**
- * 成本中心码表同步（timerecording.cost_centers）。
+ * 成本中心码表同步（timerecording.cost_centers）
  *
  * 规则：
  * - warranty（质保）：预算库 delivery_projects 中「节点15完成」（delivery_nodes node_no=15 AND status='completed'）
- *   的项目，自动以其 sales_no 去 -E 加 -W 生成质保成本中心 —— 工时应用在自己的数据库里创建。
- * - department / personal / leave：每个财年自动补建（A{前缀}-DE-000 / A{前缀}-00-000 / A{前缀}-LE-000，不存在则插）。
- * - sales / project 不落码表：由 GET /cost-centers 实时查询预算库（sales_opportunities / delivery_projects）。
- * 全部幂等（INSERT ... ON CONFLICT DO NOTHING），可任意频次重复调用。
+ * 的项目，自动以其 sales_no 去 -E 加 -W 生成质保成本中心 —— 工时应用在自己的数据库里创建
+ * - department / personal / leave：每个财年自动补建（A{前缀}-DE-000 / A{前缀}-00-000 / A{前缀}-LE-000，不存在则插）
+ * - sales / project 不落码表：由 GET /cost-centers 实时查询预算库（sales_opportunities / delivery_projects）
+ * 全部幂等（INSERT ... ON CONFLICT DO NOTHING），可任意频次重复调用
  */
 
 const BEIJING = 'Asia/Shanghai';
@@ -42,14 +42,14 @@ export function fyStep(fy: string, delta: number): string {
  * 当前可用的部门/个人成本中心财年集合（可用窗口 = 财年起点提前一月 ~ 下一财年首月末）：
  * - 恒含当前财年；
  * - 6 月（新财年提前一月）追加下一年 —— 便于提前安排新财年任务；
- * - 7 月（新财年首月）追加上一年 —— 保证老财年工时数据可完整补录。
+ * - 7 月（新财年首月）追加上一年 —— 保证老财年工时数据可完整补录
  */
 export function availableCostCenterFys(refDate: Date = new Date()): string[] {
   const cur = fiscalYearLabel(refDate);
   const m = refDate.getMonth(); // 服务器 TZ = Asia/Shanghai
   const set = new Set([cur]);
-  if (m === 5) set.add(fyStep(cur, 1));   // 6 月：下一年
-  if (m === 6) set.add(fyStep(cur, -1));  // 7 月：上一年
+  if (m === 5) set.add(fyStep(cur, 1)); // 6 月：下一年
+  if (m === 6) set.add(fyStep(cur, -1)); // 7 月：上一年
   return Array.from(set);
 }
 
@@ -82,7 +82,7 @@ export async function ensureFiscalYearCostCenters(fys: string[]): Promise<void> 
 }
 
 /**
- * 幂等同步成本中心码表（质保 + 部门/个人/请休假全量）。
+ * 幂等同步成本中心码表（质保 + 部门/个人/请休假全量）
  * @param fys 需确保存在的部门/个人财年集合（含请求财年，避免跨财年远周为空）
  */
 export async function ensureCostCenters(
@@ -95,8 +95,8 @@ export async function ensureCostCenters(
 /**
  * 服务启动挂载：
  * - 质保码表每小时探测（幂等；覆盖预算库节点完成的异步性，需要新鲜度）；
- * - 部门/个人/请休假财年码表每日 03:10 低频补建（L4：此前每小时全量重跑 5 财年×3 码，财年集合一年只变一两次，
- *   高频重跑纯属浪费；新财年 6/7 月窗口由 availableCostCenterFys 在 GET /cost-centers 侧按需覆盖，删除恢复由每日补建兜底）。
+ * - 部门/个人/请休假财年码表每日 03:10 低频补建（按日补建，避免每小时全量重跑 5 财年×3 码；财年集合一年只变一两次，
+ * 高频重跑纯属浪费；新财年 6/7 月窗口由 availableCostCenterFys 在 GET /cost-centers 侧按需覆盖，删除恢复由每日补建兜底）
  */
 export function startCostCenterSync(): void {
   cron.schedule('0 * * * *', async () => {
@@ -109,7 +109,7 @@ export function startCostCenterSync(): void {
   }, { timezone: BEIJING });
   cron.schedule('10 3 * * *', async () => {
     try {
-      // ⚠️ 用与 ensureCostCenters 默认相同的财年集合：6 月需含「下一财年」提前预建（recentFiscalYears(3) 不含下一年）
+      // 用与 ensureCostCenters 默认相同的财年集合：6 月需含「下一财年」提前预建（recentFiscalYears(3) 不含下一年）
       await ensureFiscalYearCostCenters(Array.from(new Set([...availableCostCenterFys(), ...recentFiscalYears(3)])));
       console.log('[CostCenter] 部门/个人/请休假财年码表已同步');
     } catch (err) {

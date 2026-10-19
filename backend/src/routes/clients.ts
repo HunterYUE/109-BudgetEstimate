@@ -11,7 +11,7 @@ const fields = [
 ];
 
 /** 联系人 INSERT 参数归一化（name/position/phone/email/superior 空串兜底；decision_role 默认 '使用'）。
- *  不含 client_id，由路由前缀拼接——与 /:id/save 与 /:id/contacts 两处共用 */
+ * 不含 client_id，由路由前缀拼接——与 /:id/save 与 /:id/contacts 两处共用 */
 export function normalizeContact(c: Record<string, any>): {
   name: string; position: string; phone: string; email: string; decision_role: string; superior: string;
 } {
@@ -42,7 +42,7 @@ const router = crudRoutes('clients', fields, {
   orderBy: 'updated_at DESC',
   extra: (r) => {
     // 含联系人和历史的完整客户信息
-    // ⚠️ H1 修复：detail 含 quotation_history（历史报价折后价），读取需客户相关权限（列表基础信息仍开放）
+    // detail 含 quotation_history（历史报价折后价），读取需客户相关权限（列表基础信息仍开放）
     r.get('/:id/detail', requirePermission('客户管理', '报价编制', '销售机会管理', '全部查看权限'), async (req, res, next) => {
       try {
         const { id } = req.params;
@@ -84,9 +84,9 @@ const router = crudRoutes('clients', fields, {
         const body = objKeysToSnake(req.body);
         const { contacts, ...clientData } = body;
 
-        // ⚠️ A15：事务样板收敛为 withTransaction
+        // 事务样板收敛为 withTransaction
         const { updated, savedContacts } = await withTransaction(async (client) => {
-          // ⚠️ L2 修复：客户不存在返回 404（此前对不存在客户更新 0 行仍返回 200 空壳）
+          // 客户不存在返回 404
           const clientRow = (await client.query('SELECT id FROM clients WHERE id = $1', [id])).rows[0];
           if (!clientRow) throw new AppError(404, '客户未找到');
 
@@ -109,15 +109,15 @@ const router = crudRoutes('clients', fields, {
                 [clientData.salesman, oldClient?.name]
               );
             }
-            // ⚠️ F10 修复：客户改名 → 级联更新去规范化的 client_name（机会/项目/报价/交付），
-            //    否则客户详情历史（按 client_name 关联）改名后消失
+            // 客户改名 → 级联更新去规范化的 client_name（机会/项目/报价/交付），
+            // 否则客户详情历史（按 client_name 关联）改名后消失
             if (hasCascadeChange(clientData.name, oldClient?.name)) {
               const oldName = oldClient?.name;
               await client.query('UPDATE sales_opportunities SET client_name = $1 WHERE client_name = $2', [clientData.name, oldName]);
               await client.query('UPDATE projects SET client_name = $1 WHERE client_name = $2', [clientData.name, oldName]);
               await client.query('UPDATE quotations SET client_name = $1 WHERE client_name = $2', [clientData.name, oldName]);
               await client.query('UPDATE delivery_projects SET client_name = $1 WHERE client_name = $2', [clientData.name, oldName]);
-              // ⚠️ 审计修复：审批请求也带冗余 client_name，改名后一并级联（否则审批列表显示旧客户名）
+              // 审批请求也带冗余 client_name，改名后一并级联（否则审批列表显示旧客户名）
               await client.query('UPDATE approval_requests SET client_name = $1 WHERE client_name = $2', [clientData.name, oldName]);
             }
           }

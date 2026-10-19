@@ -1,6 +1,6 @@
 /** 颜色工具 —— 十六进制颜色解析与派生（KPI 图标色块淡色背景共用，对齐工时应用 utils/color） */
 
-/** 十六进制 → RGB 三元组（兼容 #888 三位简写；仅被 withAlpha 消费，不导出） */
+/** 十六进制 → RGB 三元组（兼容 三位简写；仅被 withAlpha 消费，不导出） */
 function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
   const h = String(hex || '').replace('#', '');
   const full = h.length === 3 ? h.split('').map(c => c + c).join('') : h;

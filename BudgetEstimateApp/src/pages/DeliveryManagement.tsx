@@ -17,7 +17,7 @@ const statusTag: Record<string, { label: string; color: string }> = {
   '已完成': { label: '已完成', color: 'green' },
 };
 
-/** 审批状态徽标（草稿可自定义标签，如成本对比显示"草稿"；⚠️ B12：label/color 收敛至 STATUS_CONFIG 单源） */
+/** 审批状态徽标（草稿可自定义标签，如成本对比显示"草稿"；label/color 收敛至 STATUS_CONFIG 单源） */
 const StatusBadge: React.FC<{ status: string; draftLabel?: string }> = ({ status, draftLabel }) => {
   const cfg = STATUS_CONFIG[status];
   const label = status === 'draft' && draftLabel ? draftLabel : (cfg?.label || status);
@@ -35,7 +35,7 @@ const DeliveryManagement: React.FC = () => {
   const fetchProjects = useCallback(async () => {
     setLoading(true);
     try {
-      // ⚠️ 传 limit: LIST_LIMIT，避免后端默认 limit=100 导致列表截断
+      // 传 limit: LIST_LIMIT，避免后端默认 limit=100 导致列表截断
       const data = await deliveryService.list({ limit: LIST_LIMIT });
       setProjects(data);
     } catch {
@@ -91,7 +91,7 @@ const DeliveryManagement: React.FC = () => {
               <span>合同金额 &yen;{formatMoney(p.contractAmount)}</span>
             </div>
             <div style={{ fontSize: 12, color: COLORS.textLight, marginTop: 2, display: 'flex', gap: 16 }}>
-              {/* ⚠️ B12 复核：计划审批状态 draft 显示「待提交」（与审批流语义一致，提交后才进入审批）；
+              {/* 计划审批状态 draft 显示「待提交」（与审批流语义一致，提交后才进入审批）；
                   成本状态默认「草稿」不变 */}
               <span>计划：<StatusBadge status={p.planStatus} draftLabel="待提交" /></span>
               <span>成本：<StatusBadge status={p.costStatus} draftLabel="草稿" /></span>

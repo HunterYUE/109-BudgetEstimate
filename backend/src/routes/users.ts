@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import { query } from '../db/index.js';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { AppError } from '../middleware/index.js';
-import { logAudit, objKeysToSnake, normalizeEmail, EMAIL_RE, resetUserPassword, withTransaction, assertCanManage, ROLE_RANK, PASSWORD_MAX } from './helpers.js';
+import { logAudit, objKeysToSnake, normalizeEmail, EMAIL_RE, resetUserPassword, withTransaction, assertCanManage, ROLE_RANK, PASSWORD_MAX, assertUserDeletable } from './helpers.js';
 import { PAGE_LIMIT } from '../constants.js';
 
 const router = Router();
@@ -16,9 +16,9 @@ const USER_FIELDS = 'id, email, display_name, title, phone, role, is_active, cre
 
 // ── 用户管理安全常量与越级保护 ──
 export const VALID_ROLES = ['admin', 'director', 'manager', 'user'];
-// ROLE_RANK + assertCanManage 已收敛至 helpers.ts（A6 复核：users.ts 与 timerecording.ts 管理员路径共用，防双份漂移）
+// ROLE_RANK + assertCanManage 已收敛至 helpers.ts（users.ts 与 timerecording.ts 管理员路径共用，防双份漂移）
 /** 服务端权限白名单（与 BudgetEstimateApp/src/pages/SystemManagement.tsx 的 ALL_PERMISSIONS 同源）：
- *  禁止写入白名单外的任意字符串，防"任意赋权/万能权限漂移" */
+ * 禁止写入白名单外的任意字符串，防"任意赋权/万能权限漂移" */
 export const ALL_PERMISSIONS = [
   '仪表盘查看', '销售分析', '销售机会管理', '新建信息/线索/机会', '编辑销售机会', '转线索/转机会',
   '销售蓝表编辑', '报价列表查看', '报价编制', '审批管理', '交付管理', '交付分析',
@@ -28,8 +28,8 @@ export const ALL_PERMISSIONS = [
 // EMAIL_RE 复用 helpers.ts（auth/users 登录与创建共用，防双份漂移）
 
 /** 新用户输入校验（保序：必填 → 类型 → 角色白名单 → 越级保护 → 密码长度 → 邮箱格式），
- *  返回归一化邮箱（trim+小写）。仅供 POST /users 用（PUT 字段级校验内联不走此函数）。
- *   ⚠️ 越级保护在内（assertCanManage）：非 admin/director 不得创建 admin/director 账号 */
+ * 返回归一化邮箱（trim+小写）。仅供 POST /users 用（PUT 字段级校验内联不走此函数）
+ * 越级保护在内（assertCanManage）：非 admin/director 不得创建 admin/director 账号 */
 export function validateNewUserInput(input: Record<string, any>, actorRole: string): string {
   const { display_name, email, password, role = 'user' } = input;
   if (!email || !display_name || !password) {
@@ -59,7 +59,7 @@ export function validateNewUserInput(input: Record<string, any>, actorRole: stri
 }
 
 /** 权限授予校验：① 白名单（ALL_PERMISSIONS 外或非字符串 → 400）② 委托限制——只能授予操作者自己已持有的权限（→ 403）。
- *  防"用户管理"持有者给傀儡账号赋「全部查看权限」；permissions 为 undefined 时不做校验（更新未涉权限字段） */
+ * 防"用户管理"持有者给傀儡账号赋「全部查看权限」；permissions 为 undefined 时不做校验（更新未涉权限字段） */
 export function validatePermissionsGrant(permissions: unknown, actorPerms: string[]): void {
   if (!Array.isArray(permissions) || !permissions.every(p => typeof p === 'string' && ALL_PERMISSIONS.includes(p))) {
     throw new AppError(400, '权限包含无效值（白名单外或非字符串）');
@@ -73,7 +73,7 @@ export function validatePermissionsGrant(permissions: unknown, actorPerms: strin
 /** GET /api/users - 获取用户列表 */
 router.get('/', async (_req, res, next) => {
   try {
-    // ⚠️ A13 修复：补分页上限（此前无 LIMIT 全表返回；用户量增长后响应体无界）
+    // 补分页上限
     const result = await query(`SELECT ${USER_FIELDS} FROM users ORDER BY created_at ASC LIMIT $1`, [PAGE_LIMIT]);
     res.json(result.rows);
   } catch (err) { next(err); }
@@ -84,7 +84,7 @@ router.post('/', async (req, res, next) => {
   try {
     // 统一转换为 snake_case（兼容前端 api.ts toSnake 或直接调用）
     const { display_name, email, password, title = '', phone = '', role = 'user' } = objKeysToSnake({ ...req.body });
-    // ⚠️ 校验全部收敛至 validateNewUserInput（必填→类型→角色白名单→越级保护→密码长度→邮箱格式，返回归一化邮箱）
+    // 校验全部收敛至 validateNewUserInput（必填→类型→角色白名单→越级保护→密码长度→邮箱格式，返回归一化邮箱）
     const emailNorm = validateNewUserInput({ display_name, email, password, role }, req.user!.role);
 
     const existing = await query('SELECT id FROM users WHERE LOWER(email) = $1', [emailNorm]);
@@ -93,7 +93,7 @@ router.post('/', async (req, res, next) => {
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
-    // ⚠️ L3：password_changed_at = now() 建号即记录改密基准，后续重置据此吊销旧 JWT（requireAuth 比对 iat）
+    // password_changed_at = now() 建号即记录改密基准，后续重置据此吊销旧 JWT（requireAuth 比对 iat）
     const result = await query(
       `INSERT INTO users (email, display_name, title, phone, password_hash, role, password_changed_at)
        VALUES ($1, $2, $3, $4, $5, $6, now()) RETURNING ${USER_FIELDS}`,
@@ -114,13 +114,18 @@ router.put('/:id', async (req, res, next) => {
 
     const existing = await query('SELECT role FROM users WHERE id = $1', [id]);
     if (existing.rows.length === 0) throw new AppError(404, '用户不存在');
-    // ⚠️ 越级保护：只能管理「角色等级 ≤ 自己」的账号（assertCanManage 依 ROLE_RANK 纯等级比较——
-    //   同级可管理、仅高等级受拒；此注释与 helpers.ts 行为对齐，勿改回"同级禁止"表述）
+    // 越级保护：只能管理「角色等级 ≤ 自己」的账号（assertCanManage 依 ROLE_RANK 纯等级比较——
+    // 同级可管理、仅高等级受拒；此注释与 helpers.ts 行为对齐，勿改回"同级禁止"表述）
     assertCanManage(req.user!.role, ROLE_RANK[existing.rows[0].role] ?? 0);
 
     // 类型校验（防非法值触发 PG 类型错误 500）
     if (display_name !== undefined && typeof display_name !== 'string') throw new AppError(400, '姓名必须为字符串');
     if (title !== undefined && typeof title !== 'string') throw new AppError(400, '职务必须为字符串');
+    if (title !== undefined && title.length > 50) throw new AppError(400, '职务不能超过 50 字');
+    // 跨应用访问限制依据 title，禁止本人修改自己的职务（否则受限账号可自助解除限制）
+    if (title !== undefined && id === req.user!.userId) {
+      throw new AppError(403, '不能修改自己的职务');
+    }
     if (phone !== undefined && typeof phone !== 'string') throw new AppError(400, '电话必须为字符串');
     if (is_active !== undefined && typeof is_active !== 'boolean') throw new AppError(400, 'is_active 必须为布尔值');
 
@@ -152,14 +157,14 @@ router.put('/:id', async (req, res, next) => {
       values
     );
 
-    // ⚠️ 审计修复：邮箱变更双写 timerecording.profiles（冗余展示字段，无 FK）——不同步会让工时侧
-    //   /auth/me 等返回旧邮箱、数据自相矛盾；timerecording schema 未部署时 to_regclass 探测跳过
+    // 邮箱变更双写 timerecording.profiles（冗余展示字段，无 FK）——不同步会让工时侧
+    // /auth/me 等返回旧邮箱、数据自相矛盾；timerecording schema 未部署时 to_regclass 探测跳过
     if (emailNorm !== undefined) {
       const sc = (await query(`SELECT to_regclass('timerecording.profiles') AS p`)).rows[0];
       if (sc?.p) await query('UPDATE timerecording.profiles SET email = $1 WHERE id = $2', [emailNorm, id]);
     }
 
-    // 用户编辑/停用属敏感操作，必须留痕（此前该端点完全无审计）
+    // 用户编辑/停用属敏感操作，必须留痕
     const updated = result.rows[0];
     logAudit(
       req,
@@ -180,10 +185,10 @@ router.put('/:id/password', async (req, res, next) => {
 
     const existing = await query('SELECT role, email, display_name FROM users WHERE id = $1', [id]);
     if (existing.rows.length === 0) throw new AppError(404, '用户不存在');
-    // ⚠️ 越级保护：非 admin 不得重置同级/更高角色账号密码（防改密接管 admin·director）
+    // 越级保护：非 admin 不得重置同级/更高角色账号密码（防改密接管 admin·director）
     assertCanManage(req.user!.role, ROLE_RANK[existing.rows[0].role] ?? 0);
 
-    // ⚠️ A18：密码长度校验/哈希/改密吊销（password_changed_at）共用 resetUserPassword（与工时重置同源）
+    // 密码长度校验/哈希/改密吊销（password_changed_at）共用 resetUserPassword（与工时重置同源）
     await resetUserPassword(id, password);
 
     logAudit(req, '重置密码', 'user', `用户 ${existing.rows[0].display_name || existing.rows[0].email} 密码已重置`);
@@ -198,7 +203,7 @@ router.put('/:id/role', async (req, res, next) => {
     const { id } = req.params;
     const { role, title, permissions } = objKeysToSnake({ ...req.body });
 
-    // ⚠️ 自保护：不能修改自己的角色/权限（防持有"用户管理"权限者自提权为 admin/director）
+    // 自保护：不能修改自己的角色/权限（防持有"用户管理"权限者自提权为 admin/director）
     if (id === req.user!.userId) throw new AppError(400, '不能修改自己的角色/权限');
 
     if (role && !VALID_ROLES.includes(role)) {
@@ -207,13 +212,13 @@ router.put('/:id/role', async (req, res, next) => {
 
     const userRow = (await query('SELECT role, email, display_name FROM users WHERE id = $1', [id])).rows[0];
     if (!userRow) throw new AppError(404, '用户不存在');
-    // ⚠️ 越级保护：① 目标当前角色 ≥ 操作者 → 不可改（防降级/改权 admin·director）；
-    //            ② 新角色等级 ≥ 操作者 → 不可提（防制造同级/更高账号）
+    // 越级保护：① 目标当前角色 ≥ 操作者 → 不可改（防降级/改权 admin·director）；
+    // ② 新角色等级 ≥ 操作者 → 不可提（防制造同级/更高账号）
     assertCanManage(req.user!.role, ROLE_RANK[userRow.role] ?? 0);
     if (role) assertCanManage(req.user!.role, ROLE_RANK[role] ?? 0);
 
-    // ⚠️ permissions 白名单 + 委托限制：仅允许写白名单内权限，且只能授予操作者自己已持有的权限
-    //   （防"用户管理"持有者给傀儡账号赋「全部查看权限」）
+    // permissions 白名单 + 委托限制：仅允许写白名单内权限，且只能授予操作者自己已持有的权限
+    // （防"用户管理"持有者给傀儡账号赋「全部查看权限」）
     if (permissions !== undefined) {
       validatePermissionsGrant(permissions, req.user!.permissions || []);
     }
@@ -250,15 +255,17 @@ router.delete('/:id', async (req, res, next) => {
       throw new AppError(400, '不能删除自己的账号');
     }
 
-    // ⚠️ 越级保护：非 admin 不得删除同级/更高角色账号（防删 admin·director 造成系统无人可管）
+    // 越级保护：非 admin 不得删除同级/更高角色账号（防删 admin·director 造成系统无人可管）
     const targetRow = (await query('SELECT role FROM users WHERE id = $1', [id])).rows[0];
     if (!targetRow) throw new AppError(404, '用户不存在');
     assertCanManage(currentUser.role, ROLE_RANK[targetRow.role] ?? 0);
+    // 与工时删除入口同口径：已审核工时/审核记录不可随删号清空
+    await assertUserDeletable(id);
 
-    // ⚠️ F13 修复：先删 timerecording.profiles（引用 users.id），再删 users，同一事务避免孤儿/外键冲突
-    // ⚠️ M5 修复：① timerecording schema 可能未部署，用 to_regclass 探测，避免 .catch 吞错导致事务 abort；
-    //            ② 先清空以该用户为 reviewer/created_by 的引用（无 ON DELETE 动作），否则 FK 阻塞删除
-    // ⚠️ A15：事务样板收敛为 withTransaction
+    // 先删 timerecording.profiles（引用 users.id），再删 users，同一事务避免孤儿/外键冲突
+    // ① timerecording schema 可能未部署，用 to_regclass 探测，避免 .catch 吞错导致事务 abort；
+    // ② 先清空以该用户为 reviewer/created_by 的引用（无 ON DELETE 动作），否则 FK 阻塞删除
+    // 事务样板收敛为 withTransaction
     const deleted = await withTransaction(async (client) => {
       const sc = (await client.query(
         `SELECT to_regclass('timerecording.profiles') AS p,
@@ -269,8 +276,8 @@ router.delete('/:id', async (req, res, next) => {
         const hasProfile = (await client.query('SELECT id FROM timerecording.profiles WHERE id = $1', [id])).rows.length > 0;
         if (hasProfile) {
           if (sc.tr) await client.query('UPDATE timerecording.time_records SET reviewed_by = NULL WHERE reviewed_by = $1', [id]);
-          // ⚠️ created_by 为 NOT NULL：须先执行生产库 ALTER COLUMN ... DROP NOT NULL，
-          //   否则该 UPDATE 命中 23502 令整个删号事务回滚（曾给他人派过任务的管理员将删不掉）
+          // created_by 为 NOT NULL：须先执行生产库 ALTER COLUMN ... DROP NOT NULL，
+          // 否则该 UPDATE 命中 23502 令整个删号事务回滚（曾给他人派过任务的管理员将删不掉）
           if (sc.ta) await client.query('UPDATE timerecording.task_assignments SET created_by = NULL WHERE created_by = $1', [id]);
           await client.query('DELETE FROM timerecording.profiles WHERE id = $1', [id]);
         }

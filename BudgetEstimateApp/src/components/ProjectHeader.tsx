@@ -37,8 +37,8 @@ function parsePayment(terms: string): number[] {
 }
 
 function formatPayment(vals: number[]): string {
-  // ⚠️ 审计修复 U8：vals[i] 可能为 undefined（付款条件字符串缺某期）——此前拼出 '预付undefined%'
-  //   入库污染付款条件，且 next[i]=... 回写后该期显示为「undefined% ▾」
+  // vals[i] 可能为 undefined（付款条件字符串缺某期）
+  // 入库污染付款条件，且 next[i]=... 回写后该期显示为「undefined% ▾」
   return PAYMENT_LABELS.map((l, i) => l + (vals[i] ?? 0) + '%').join(' ');
 }
 
@@ -166,10 +166,10 @@ const ProjectHeader: React.FC<Props> = ({ project, onUpdate, readOnly }) => {
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                 {PAYMENT_LABELS.map((label, i) => {
                   const curIdx = PCT_OPTIONS.findIndex(o => o.value === pct[i]);
-                  // ⚠️ B4 复核修复：选项上限仅 60%（PCT_OPTIONS 13 档 0–60%）。此前对自定义值（如 100%）用
+                  // 复核选项上限仅 60%（PCT_OPTIONS 13 档 0–60%）
                   // Math.round(pct/5) 钳制索引显示最近选项标签，导致「100% 显示为 60%」。现自定义值直接显示真实值；
-                  //   undefined（该期未配置）回退到中位选项 30%（预付默认）。点击循环从「当前值之后的下一个选项」
-                  //   起步（超过 60% 上限回绕到 0%），而非用钳制索引 (safeIdx+1)%13。
+                  // undefined（该期未配置）回退到中位选项 30%（预付默认）。点击循环从「当前值之后的下一个选项」
+                  // 起步（超过 60% 上限回绕到 0%），而非用钳制索引 (safeIdx+1)%13
                   const nVal = isFinite(pct[i]) ? pct[i] : PCT_OPTIONS[Math.floor(PCT_OPTIONS.length / 2)].value;
                   const display = curIdx >= 0
                     ? PCT_OPTIONS[curIdx].label
@@ -223,7 +223,7 @@ const ProjectHeader: React.FC<Props> = ({ project, onUpdate, readOnly }) => {
 
 
 const ProjectLayoutUpload: React.FC<{ value: string; onChange: (v: string) => void }> = ({ value, onChange }) => {
-  const { message, modal } = App.useApp(); // ⚠️ B23：消费 antd 主题上下文，弃静态 message/Modal
+  const { message, modal } = App.useApp(); // 消费 antd 主题上下文，弃静态 message/Modal
   const inputRef = useRef<HTMLInputElement>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [modalSize, setModalSize] = useState({ w: 800, h: 600 });

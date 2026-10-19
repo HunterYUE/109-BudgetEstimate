@@ -16,7 +16,7 @@ import { STAGE_COLORS, LIST_LIMIT } from '../utils/constants';
 import { settingsService, type UserSettings } from '../services/settingsService';
 
 // ── 常量 ──
-// ⚠️ B14：stageColors 收敛至 utils/constants.ts 的 STAGE_COLORS（与 SalesOpportunityList 单源）
+// stageColors 收敛至 utils/constants.ts 的 STAGE_COLORS（与 SalesOpportunityList 单源）
 const STAGES = ['信息', '线索', '机会', '投标', '议价', '中标'] as const;
 
 // localStorage 输入的 parseInt 保护
@@ -94,12 +94,12 @@ const SalesAnalysis: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [fySelect, setFySelect] = useState(() => fiscalYearLabel(new Date()));
 
-  // ⚠️ 财年范围缓存一次复用（原每个 useMemo 内各自 parseFY）
+  // 财年范围缓存一次复用（原每个 useMemo 内各自 parseFY）
   const fyRange = useMemo(() => parseFY(fySelect), [fySelect]);
 
   const aliveRef = useRef(true);
   const loadAll = useCallback(async () => {
-    // ⚠️ allSettled：单个接口失败不拖垮整页；全部传 limit: LIST_LIMIT 避免后端默认 limit=100 静默截断
+    // allSettled：单个接口失败不拖垮整页；全部传 limit: LIST_LIMIT 避免后端默认 limit=100 静默截断
     const [opps, qs, dps] = await Promise.allSettled([
       opportunityService.list({ limit: LIST_LIMIT }),
       quotationService.list({ limit: LIST_LIMIT }),
@@ -123,7 +123,7 @@ const SalesAnalysis: React.FC = () => {
   // ── 报价按 id 建索引（避免 find O(N×M)），供 deliveryQuoteInfo 与月度 KPI 复用 ──
   const quotationById = useMemo(() => new Map(quotationSummaries.map(q => [q.id, q])), [quotationSummaries]);
   // ── 交付关联报价（按交付项目 id 索引，与 DeliveryAnalysis 同口径）：税率/折后报价/概算利润/利润率 ──
-  // ⚠️ 税率一律取交付项目自身 quotationId（不再经机会反查），消除跨页税率分叉
+  // 税率一律取交付项目自身 quotationId（不再经机会反查），消除跨页税率分叉
   const deliveryQuoteInfo = useMemo(
     () => buildQuoteInfoMap(deliveryProjects, qid => quotationById.get(qid)),
     [deliveryProjects, quotationById],
@@ -151,7 +151,7 @@ const SalesAnalysis: React.FC = () => {
   const salesTargetRef = React.useRef<HTMLInputElement>(null);
   const settingsTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
-  // ── 从服务端加载用户设置（必须在所有 setState 声明之后）──
+  // ── 从服务端加载用户设置（必须在所有 setState 声明之后） ──
   const [serverTargets, setServerTargets] = useState<UserSettings>({});
   useEffect(() => {
     if (loading) return;
@@ -211,12 +211,12 @@ const SalesAnalysis: React.FC = () => {
     scheduleServerSave(key, v);
   };
 
-  // ── 预解析目标输入值（避免渲染中重复 parseInt）──
+  // ── 预解析目标输入值（避免渲染中重复 parseInt） ──
   const parsedAnnualTarget = useMemo(() => safeParseInt(annualTargetInput), [annualTargetInput]);
   const parsedSalesTarget = useMemo(() => safeParseInt(annualSalesTarget), [annualSalesTarget]);
   const parsedGp3 = useMemo(() => parseFloat(gp3Input) || 0, [gp3Input]);
 
-  // ── 月度订单数据（当月转交付项目的合同金额与订单利润之和，按财年月汇总）──
+  // ── 月度订单数据（当月转交付项目的合同金额与订单利润之和，按财年月汇总） ──
   // 复用共享归集 projectMonthlySales：订单金额 = orderAmt，订单利润 = orderProfit（报价概算利润未税）
   const monthlyOrderData = useMemo(() => {
     return fyMonthWindows(fyRange).map((w, i) => {
@@ -231,9 +231,9 @@ const SalesAnalysis: React.FC = () => {
     });
   }, [fyRange, deliveryQuoteInfo, deliveryProjects]);
 
-  // ── 月度销售数据（当月完成交付项目的销售金额与销售利润之和，按财年月汇总）──
+  // ── 月度销售数据（当月完成交付项目的销售金额与销售利润之和，按财年月汇总） ──
   // 复用共享归集 projectMonthlySales：销售金额 = salesAmt，销售利润 = salesProfit（未税 − 实际成本）
-  // ⚠️ 某月任一完成交付项目无成本数据 → 该月销售利润为无值（undefined），提示成本缺失
+  // 某月任一完成交付项目无成本数据 → 该月销售利润为无值（undefined），提示成本缺失
   const monthlySalesData = useMemo(() => {
     return fyMonthWindows(fyRange).map((w, i) => {
       let amount = 0, profit = 0, incomplete = false;
@@ -283,12 +283,12 @@ const SalesAnalysis: React.FC = () => {
     return { cumulative, expectedCumulative, profitCumulative, expectedProfitCumulative, elapsedMonths, annualProfitTarget, gp3: parsedGp3 };
   }, [monthlyOrderData, parsedAnnualTarget, parsedGp3, elapsedMonths]);
 
-  // ── 当前活跃管道（不过滤财年；含未转交付的手动标赢，仍当作机会）──
+  // ── 当前活跃管道（不过滤财年；含未转交付的手动标赢，仍当作机会） ──
   const currentPipeline = useMemo(() =>
     allOpps.filter(o => o.status === '过程中' || (o.status === '赢' && !isRealWin(o))),
   [allOpps]);
 
-  // ── 漏斗：财年内的管道快照（仅统计在所选财年内活跃的过程机会，按"该财年结束时的历史阶段"分桶）──
+  // ── 漏斗：财年内的管道快照（仅统计在所选财年内活跃的过程机会，按"该财年结束时的历史阶段"分桶） ──
   const funnelSnapshot = useMemo(() => {
     const byStage = new Map<string, { count: number; amount: number }>();
     for (const s of STAGES) byStage.set(s, { count: 0, amount: 0 });
@@ -309,17 +309,17 @@ const SalesAnalysis: React.FC = () => {
     }));
   }, [currentPipeline, fyRange]);
 
-  // ── 中标（按转交付时间 wonAt 归入财年；赢单以「转交付 terminated」为终极确认）──
+  // ── 中标（按转交付时间 wonAt 归入财年；赢单以「转交付 terminated」为终极确认） ──
   const fyWonByTime = useMemo(() => {
     return allOpps.filter(o => {
-      // ⚠️ 全局规则：手动标赢未转交付不计赢单
+      // 全局规则：手动标赢未转交付不计赢单
       if (!isRealWin(o) || !o.wonAt) return false;
       const d = new Date(o.wonAt);
       return d >= fyRange.start && d <= fyRange.end;
     });
   }, [fyRange, allOpps]);
 
-  // ── 订单加权 GP3（财年内获得订单的交付项目加权平均 GP3，取自最新版本报价编制表概算利润）──
+  // ── 订单加权 GP3（财年内获得订单的交付项目加权平均 GP3，取自最新版本报价编制表概算利润） ──
   const orderWeightedGP3 = useMemo(() => {
     // 订单按获得（转交付 createdAt）时间归入财年，与「月度订单」同口径
     const inFy = deliveryProjects.filter(p => {
@@ -331,7 +331,7 @@ const SalesAnalysis: React.FC = () => {
     for (const p of inFy) {
       const oppProfit = deliveryQuoteInfo.get(p.id);
       if (!oppProfit || oppProfit.discounted <= 0) continue;
-      // ⚠️ 权重用未税金额（与月度订单/未税口径一致），而非含税 contractAmount
+      // 权重用未税金额（与月度订单/未税口径一致），而非含税 contractAmount
       const ex = deliveryExTax(p, deliveryQuoteInfo);
       totalAmt += ex;
       weighted += ex * oppProfit.rate;
@@ -339,7 +339,7 @@ const SalesAnalysis: React.FC = () => {
     return totalAmt > 0 ? (weighted / totalAmt * 100) : null;
   }, [fyRange, deliveryQuoteInfo, deliveryProjects]);
 
-  // ── 已交付项目实际 GP3（已完成项目总结且成本审批通过的项目的加权平均实际 GP3）──
+  // ── 已交付项目实际 GP3（已完成项目总结且成本审批通过的项目的加权平均实际 GP3） ──
   const deliveredActualGP3 = useMemo(() => {
     // 与「月度销售」同口径：节点15完成且完成日 ∈ 财年（销售金额只归集到完成月/财年，不可跨年重复）
     const delivered = deliveryProjects.filter(p => {
@@ -369,7 +369,7 @@ const SalesAnalysis: React.FC = () => {
     amount: fyWonByTime.reduce((s, o) => s + exAmt(o), 0),
   }), [fyWonByTime]);
 
-  // ── 输单（按输单时间 lostAt 归入财年，缺失回退 updatedAt）──
+  // ── 输单（按输单时间 lostAt 归入财年，缺失回退 updatedAt） ──
   const fyLostByTime = useMemo(() => {
     return allOpps.filter(o => {
       if (o.status !== '输') return false;
@@ -379,27 +379,27 @@ const SalesAnalysis: React.FC = () => {
   }, [fyRange, allOpps]);
   // 财年"机会+"阶段输单（漏斗中标转化率分母 = 赢 + 机会+输单；剔除线索/信息阶段输单——它们未进入机会阶段）
   const fyOppLost = useMemo(() => {
-    const oppLost = fyLostByTime.filter(o => stageIdx(o.stage) >= stageIdx('机会'));
+    const oppLost = fyLostByTime.filter(o => stageIdx(stageAsOf(o, new Date(o.lostAt || o.updatedAt))) >= stageIdx('机会'));
     return { count: oppLost.length, amount: oppLost.reduce((s, o) => s + exAmt(o), 0) };
   }, [fyLostByTime]);
 
-  // ── 财年各阶段汇总（用于漏斗右侧 FY 累计显示；过滤逻辑与 useFyFiltered 相同，直接复用 fyFiltered）──
+  // ── 财年各阶段汇总（用于漏斗右侧 FY 累计显示；过滤逻辑与 useFyFiltered 相同，直接复用 fyFiltered） ──
   const fyInfo = useMemo(() => ({
     count: fyFiltered.length,
     amount: fyFiltered.reduce((s, o) => s + exAmt(o), 0),
   }), [fyFiltered]);
 
   const fyLead = useMemo(() => {
-    const items = fyFiltered.filter(o => stageIdx(o.stage) >= stageIdx('线索') || o.wonAt);
+    const items = fyFiltered.filter(o => stageIdx(stageAsOf(o, fyRange.end)) >= stageIdx('线索') || o.wonAt);
     return { count: items.length, amount: items.reduce((s, o) => s + exAmt(o), 0) };
   }, [fyFiltered]);
 
   const fyOpp = useMemo(() => {
-    const items = fyFiltered.filter(o => stageIdx(o.stage) >= stageIdx('机会') || o.wonAt);
+    const items = fyFiltered.filter(o => stageIdx(stageAsOf(o, fyRange.end)) >= stageIdx('机会') || o.wonAt);
     return { count: items.length, amount: items.reduce((s, o) => s + exAmt(o), 0) };
   }, [fyFiltered]);
 
-  // ── 概览卡片主/副参考月（3 个，按所选财年锚定）──
+  // ── 概览卡片主/副参考月（3 个，按所选财年锚定） ──
   // 已结束财年 → 财年最后三个月（6月/5月/4月）；当前财年 → 最近3个完整月
   // （新财年初自动继承前一财年 6/5/4 月的管道与滚动数据，避免从 0 开始）；未来财年 → 全null
   const overviewRefMonths = useMemo<(Date | null)[]>(() => {
@@ -417,7 +417,7 @@ const SalesAnalysis: React.FC = () => {
     ];
   }, [fyRange]);
 
-  // ── 按财年锚定的月度 KPI（加权管道/加权利润/加权利润率）──
+  // ── 按财年锚定的月度 KPI（加权管道/加权利润/加权利润率） ──
   // 销售周期/赢单转化率已由 rolling12mKpi 负责，此处仅输出管道三项
   const monthlyKpi = useMemo(() => {
     const calcMonth = (refEnd: Date | null) => {
@@ -431,7 +431,7 @@ const SalesAnalysis: React.FC = () => {
       });
       // 管道基数 = 该月活跃（过程中/未转交付标赢；冻结已排除）且阶段≥机会的项目；
       // 已转交付的赢单不计入管道；终止（输）后经 oppEffectiveEnd 不再计入后续月份
-      // ⚠️ 用参考月历史阶段 stageAsOf 而非当前阶段：已推进到议价的机会不应计入早前月份的管道（与漏斗/仪表盘口径一致）
+      // 用参考月历史阶段 stageAsOf 而非当前阶段：已推进到议价的机会不应计入早前月份的管道（与漏斗/仪表盘口径一致）
       const pipelineOpps = activeOpps.filter(o => !isRealWin(o) && stageIdx(stageAsOf(o, monthEnd)) >= stageIdx('机会'));
       let weighted = 0, profit = 0;
       for (const o of pipelineOpps) {
@@ -455,7 +455,7 @@ const SalesAnalysis: React.FC = () => {
     return map;
   }, [deliveryProjects]);
 
-  // ── 按财年锚定的滚动12个月指标（销售周期、赢单转化率，用于概览卡片）──
+  // ── 按财年锚定的滚动12个月指标（销售周期、赢单转化率，用于概览卡片） ──
   // 销售周期 = 转交付时间(交付项目创建) − 进入机会时间(opportunityAt；回退 createdAt)；仅统计已转交付的赢单
   const rolling12mKpi = useMemo(() => {
     const calcWindow = (refEnd: Date | null) => {
@@ -464,12 +464,12 @@ const SalesAnalysis: React.FC = () => {
       // 真正的12个月窗口：起点 = 参考月往前推11个月的首日（如参考6月 → 去年7月1日）
       const wStart = new Date(wEnd.getFullYear(), wEnd.getMonth() - 11, 1);
       // 以"机会"为锚点：赢单转化率/销售周期只统计达到机会阶段的项目（信息/线索质量不稳定，作基线波动大）
-      // ⚠️ 全局规则：赢单以转交付（terminated）为终极确认，手动标赢未转交付不计赢单
+      // 全局规则：赢单以转交付（terminated）为终极确认，手动标赢未转交付不计赢单
       const won = allOpps.filter(o =>
         isRealWin(o) && o.wonAt && new Date(o.wonAt) >= wStart && new Date(o.wonAt) <= wEnd
       );
       const lost = allOpps.filter(o =>
-        o.status === '输' && stageIdx(o.stage) >= stageIdx('机会') &&
+        o.status === '输' && stageIdx(stageAsOf(o, new Date(o.lostAt || o.updatedAt))) >= stageIdx('机会') &&
         new Date(o.lostAt || o.updatedAt) >= wStart && new Date(o.lostAt || o.updatedAt) <= wEnd
       );
       const cycles = won.filter(o => deliveryCreatedByOpp.has(o.id)).map(o => {
@@ -485,7 +485,7 @@ const SalesAnalysis: React.FC = () => {
     return overviewRefMonths.map(calcWindow);
   }, [allOpps, overviewRefMonths, deliveryCreatedByOpp]);
 
-  // ── 输单原因柱状图（按输单时间归入财年）──
+  // ── 输单原因柱状图（按输单时间归入财年） ──
   const dimLossReasons = useDimReasons(fyLostByTime, '竞对');
   const dimCancelReasons = useDimReasons(fyLostByTime, '取消');
   const dimAbandonReasons = useDimReasons(fyLostByTime, '放弃');
@@ -509,7 +509,7 @@ const SalesAnalysis: React.FC = () => {
     for (const o of fyFiltered) {
       if (!o.salesman) continue;
       if (o.status === '过程中' || o.status === '冻结' || (o.status === '赢' && !isRealWin(o))) continue;
-      if (stageIdx(o.stage) < stageIdx('机会')) continue;
+      if (stageIdx(stageAsOf(o, fyRange.end)) < stageIdx('机会')) continue;
       let s = map.get(o.salesman);
       if (!s) { s = newEntry(o.salesman); map.set(o.salesman, s); }
       s.totalCount++;
@@ -534,7 +534,7 @@ const SalesAnalysis: React.FC = () => {
     for (const o of fyFiltered) {
       if (!o.salesman) continue;
       if (isRealWin(o) || o.status === '冻结') continue; // 冻结机会不计入管道（全页面统一口径）
-      if (stageIdx(o.stage) < stageIdx('机会')) continue;
+      if (stageIdx(stageAsOf(o, fyRange.end)) < stageIdx('机会')) continue;
       let s = map.get(o.salesman);
       if (!s) { s = newEntry(o.salesman); map.set(o.salesman, s); }
       s.pipelinePotential += exAmt(o);
@@ -545,7 +545,7 @@ const SalesAnalysis: React.FC = () => {
     }));
   }, [fyWonByTime, fyFiltered, fyRange, deliveryProjects, allOpps, deliveryQuoteInfo]);
 
-  // ── 4 个维度提取（图表通过 topN=10 自动排序取前10名）──
+  // ── 4 个维度提取（图表通过 topN=10 自动排序取前10名） ──
   const dimEfficiency: BarItem[] = salesmenStats.map(s => ({ name: s.name, value: Math.round(s.conversionEff * 10) / 10 }));
   const dimOrderAmount: BarItem[] = salesmenStats.map(s => ({ name: s.name, value: s.orderAmount }));
   const dimPipeline: BarItem[] = salesmenStats.map(s => ({ name: s.name, value: s.pipelinePotential }));
@@ -765,7 +765,7 @@ const SalesAnalysis: React.FC = () => {
           <div style={{ flex: '0 0 calc(25% - 12px)' }}><VerticalBarChart title="放弃" data={dimAbandonReasons} format="num" height={220} topN={6} barWidthRatio={0.6} maxBarWidth={26} chartWidth={460} hideAvgLine contentOffset={30} padBottom={28} /></div>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, marginTop: 15, gridAutoRows: 213 }}>
-          {/* ⚠️ 排行卡：卡片下框线上移 20px（233→213）+ X 标签与柱体分离（此前 padBottom=11 在消除 viewBox 缩放后标签侵入柱底）。
+          {/* 排行卡：卡片下框线上移 20px（233→213）+ X 标签与柱体分离。
               参数：SVG 高度 203→183（内容高 30+183=213 恰等于行高，底部无空白）、padBottom 11→23；
               柱顶 padTop=32 不动，柱底 zeroY=192→160（卡片 213 物理上无法容纳原 zeroY=192+标签，柱体整体上移 32px、
               高度 160→128 减 32px，为「卡片减 20px + 标签与柱底分离 8px」的数学必然）；X 标签基线 y=183-5=178 顶≈168，

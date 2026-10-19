@@ -9,7 +9,7 @@ import { tagService } from '../services/tagService';
 import { tabItemStyle } from '../utils/tableUtils';
 
 // ── 组件 ──
-// ⚠️ 标签树种子数据已迁移到数据库（backend/migrations/031-seed-tags.sql），此处不再使用 mock
+// 标签树种子数据已迁移到数据库（backend/migrations/031-seed-tags.sql），此处不再使用 mock
 
 /** 层级颜色/背景（模块级常量，避免每次渲染重建） */
 const LEVEL_COLORS = [COLORS.labelDark, COLORS.primary, COLORS.purple, '#008080', COLORS.amber];
@@ -45,8 +45,8 @@ const TagManagement: React.FC = () => {
 
   const [loading, setLoading] = useState(true);
 
-  // ⚠️ B4 修复：树加载提取为 loadTree 供「失败回滚」复用——重命名/改说明/删除失败时回拉服务端树，
-  //   撤销乐观本地更新（此前乐观更新失败不回滚，页面状态与后端不一致直到手动刷新）
+  // 树加载提取为 loadTree 供「失败回滚」复用——重命名/改说明/删除失败时回拉服务端树，
+  // 撤销乐观本地更新
   const loadTree = useCallback(async () => {
     try {
       const data = await tagService.getTree();
@@ -146,8 +146,12 @@ const TagManagement: React.FC = () => {
   const confirmAdd = () => {
     const name = addModalName.trim();
     if (!name) { msg.warning('请输入标签名称'); return; }
-    // 调用 API 创建（获取服务端生成的 ID）；失败降级为本地内存模式
-    tagService.create({ name, parentId: addModalParentId }).then(
+    // 同级排序号 = 现有最大值 + 1（否则新增标签刷新后会跳到同级最前）
+    const siblings = addModalParentId
+      ? (getNodeByPath(tree, findPath(tree, addModalParentId) || [])?.children || [])
+      : tree;
+    const nextSortOrder = siblings.reduce((max, sib) => Math.max(max, Number((sib as { sortOrder?: number }).sortOrder) || 0), -1) + 1;
+    tagService.create({ name, parentId: addModalParentId, sortOrder: nextSortOrder }).then(
       (row) => {
         setTree(prev => insertNode(cloneTree(prev), addModalParentId, { id: row.id, name }));
         if (addModalParentId) setExpandedIds(prev => new Set(prev).add(addModalParentId!));
@@ -189,15 +193,15 @@ const TagManagement: React.FC = () => {
     if (removedEditing) setEditingId(null);
     setDeleteTarget(null);
     // 持久化到后端
-    // ⚠️ B4 修复：成功消息移到 API 回包后（此前调用前即提示「已删除」，实际删除失败却显示成功）；
-    //   失败时回拉服务端树撤销乐观删除，保证本地与后端一致
+    // 成功消息移到 API 回包后；
+    // 失败时回拉服务端树撤销乐观删除，保证本地与后端一致
     tagService.delete(target.id).then(
       () => msg.success('已删除'),
       () => { msg.error('删除失败，请重试'); loadTree(); }
     );
   };
 
-  const moveNode = (id: string, direction: -1 | 1, e?: React.MouseEvent) => {
+  const moveNode = async (id: string, direction: -1 | 1, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     // 从当前 state 直接计算（事件处理器中 state 即最新），不依赖函数式更新的延迟执行
     const t = cloneTree(tree);
@@ -211,12 +215,17 @@ const TagManagement: React.FC = () => {
     // 交换相邻两个节点
     [siblings[idx], siblings[newIdx]] = [siblings[newIdx], siblings[idx]];
     setTree(t);
-    // ⚠️ 对受影响兄弟重新分配连续整数 sortOrder（避免 Date.now() 污染整数排序字段）；仅持久化变化的节点
-    siblings.forEach((sib, i) => {
-      if ((sib as { sortOrder?: number }).sortOrder !== i) {
-        tagService.update(sib.id, { sortOrder: i });
-      }
-    });
+    // 对受影响兄弟重新分配连续整数 sortOrder；等待全部写入，失败时回拉服务端树保持界面一致
+    try {
+      await Promise.all(siblings.map((sib, i) =>
+        (sib as { sortOrder?: number }).sortOrder !== i
+          ? tagService.update(sib.id, { sortOrder: i })
+          : Promise.resolve()
+      ));
+    } catch {
+      msg.error('排序保存失败，已重新加载');
+      loadTree();
+    }
   };
 
   // ── 渲染表格 ──
@@ -391,7 +400,7 @@ const TagManagement: React.FC = () => {
                           style={{ width: 18, height: 18, lineHeight: '18px', color: COLORS.textMuted, fontSize: 11 }} title="下移" />
                       </span>
                     </td>
-                    <td style={{ padding: '2px 4px', verticalAlign: 'middle', fontSize: 12, color: '#888', position: 'relative', borderLeft: `1px solid ${COLORS.borderInner}`, lineHeight: '18px' }}>
+                    <td style={{ padding: '2px 4px', verticalAlign: 'middle', fontSize: 12, color: '', position: 'relative', borderLeft: `1px solid ${COLORS.borderInner}`, lineHeight: '18px' }}>
                       {descEditId === node.id ? (
                         <input value={descEditValue}
                           onChange={e => setDescEditValue(e.target.value)}

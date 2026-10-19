@@ -47,10 +47,8 @@ const ROUTE_ORDER = [
 ];
 
 /**
- * ⚠️ B30 修复：返回用户权限下第一个可访问的路由（无权限重定向目标）。
- *   此前 RoleGuard 对无权限路径统一重定向到 '/'，而 '/' 要求「仪表盘查看」——无该权限的用户
- *   陷入「guard 失败→重定向到 /→guard 再失败」死循环（React Maximum update depth exceeded）。
- *   全部路由都无权时返回 null，调用方应展示无权限提示而非继续重定向。
+ * 返回用户权限下第一个可访问的路由（无权限重定向目标）
+ * 全部路由都无权时返回 null，调用方应展示无权限提示，避免重定向死循环
  */
 export function firstAccessiblePath(permissions: string[] | undefined): string | null {
   if (!permissions || permissions.length === 0) return null;
@@ -71,9 +69,9 @@ export function canSeeMenu(permissions: string[] | undefined, menuKey: string): 
 }
 
 /**
- * ⚠️ A1 复核：检查用户是否持有任一「写动作」权限——用于前端隐藏无权用户的增删改按钮/入口。
- *   与后端 writeGuard 权限列表同源（仅写动作权限，不含纯只读页面权限，防「有查看权但无写权」用户误点后 403）。
- *   仅作 UX 门控；真实鉴权仍以后端 writeGuard 为准。
+ * 检查用户是否持有任一「写动作」权限——用于前端隐藏无权用户的增删改按钮/入口
+ * 与后端 writeGuard 权限列表同源（仅写动作权限，不含纯只读页面权限，防「有查看权但无写权」用户误点后 403）
+ * 仅作 UX 门控；真实鉴权仍以后端 writeGuard 为准
  */
 export function hasPermission(permissions: string[] | undefined, writePerms: string[]): boolean {
   if (!permissions || permissions.length === 0) return false;

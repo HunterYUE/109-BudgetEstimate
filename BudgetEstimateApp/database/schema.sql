@@ -630,6 +630,39 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
+-- 交付完成门禁（数据库最终防线）：节点全部完成、节点15有实际完成日、成本审批已通过
+CREATE OR REPLACE FUNCTION check_delivery_completion() RETURNS trigger AS $$
+BEGIN
+  IF NEW.status = '已完成' AND OLD.status IS DISTINCT FROM '已完成' THEN
+    IF NEW.cost_status <> 'approved' THEN
+      RAISE EXCEPTION '成本对比审批通过后才能完成项目' USING ERRCODE = '23514';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM delivery_nodes WHERE delivery_project_id = NEW.id) THEN
+      RAISE EXCEPTION '交付项目尚无节点，不能完成' USING ERRCODE = '23514';
+    END IF;
+    IF EXISTS (SELECT 1 FROM delivery_nodes WHERE delivery_project_id = NEW.id AND status <> 'completed') THEN
+      RAISE EXCEPTION '尚有节点未完成' USING ERRCODE = '23514';
+    END IF;
+    IF NOT EXISTS (
+      SELECT 1 FROM delivery_nodes
+      WHERE delivery_project_id = NEW.id AND node_no = 15 AND status = 'completed'
+        AND ((actual_date IS NOT NULL AND actual_date <> '') OR (actual_end_date IS NOT NULL AND actual_end_date <> ''))
+    ) THEN
+      RAISE EXCEPTION '节点15完成必须填写实际完成日期' USING ERRCODE = '23514';
+    END IF;
+  ELSIF OLD.status = '已完成' AND NEW.status <> '已完成' THEN
+    RAISE EXCEPTION '已完成项目不可回退状态' USING ERRCODE = '23514';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DO $$ BEGIN
+  CREATE TRIGGER trg_delivery_completion_gate BEFORE UPDATE OF status ON delivery_projects
+    FOR EACH ROW EXECUTE FUNCTION check_delivery_completion();
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
 DO $$ BEGIN
   CREATE TRIGGER trg_clients_updated_at BEFORE UPDATE ON clients
     FOR EACH ROW EXECUTE FUNCTION update_updated_at();

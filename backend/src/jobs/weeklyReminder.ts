@@ -2,12 +2,12 @@ import cron from 'node-cron';
 import { query } from '../db/index.js';
 
 /**
- * 周日晚 20:30（北京时间）向用户（除部门总监）推送「工时提交提醒」，显示在页面铃铛。
+ * 周日晚 20:30（北京时间）向用户（除部门总监）推送「工时提交提醒」，显示在页面铃铛
  *
  * 规则：
- * - 每周只发一次：按「本周起点后的 reminder 通知」去重，任务失败/服务重启重复触发也不会刷屏。
- * - 本周已提交/已通过的员工不打扰。
- * - 时段口径：EXTRACT(ISOYEAR/WEEK) 即 ISO 周，与前端 dayjs isoWeek 一致；周日属当周末尾，周号正确。
+ * - 每周只发一次：按「本周起点后的 reminder 通知」去重，任务失败/服务重启重复触发也不会刷屏
+ * - 本周已提交/已通过的员工不打扰
+ * - 时段口径：EXTRACT(ISOYEAR/WEEK) 即 ISO 周，与前端 dayjs isoWeek 一致；周日属当周末尾，周号正确
  */
 
 const CRON_EXPR = '30 20 * * 0'; // 每周日 20:30
@@ -20,8 +20,8 @@ export function beijingMidnightUtc(dateStr: string): Date {
 }
 
 /** 从「北京时间 Date」（UTC 字段即北京墙钟时间）推导当前 ISO 周（周一起）的周日（YYYY-MM-DD）：
- *   周日即当天（生产 cron 行为不变）；非周日锚定到本周的周日，避免周号/去重基准错位（L1）。
- *   ⚠️ 克隆入参不 mutate（此前就地 setUTCDate 改写调用方 Date；测试与调用方可安全复用入参） */
+ * 周日即当天（生产 cron 行为不变）；非周日锚定到本周的周日，避免周号/去重基准错位
+ * 克隆入参不 mutate，调用方可安全复用入参 */
 export function isoWeekSundayFromDate(bj: Date): string {
   const d = new Date(bj.getTime());
   const dayNum = d.getUTCDay() || 7; // 周日=7
@@ -38,7 +38,7 @@ function currentIsoWeekSunday(): string {
 }
 
 /**
- * 执行一次推送，返回实际插入的通知条数。
+ * 执行一次推送，返回实际插入的通知条数
  * @param anchorDate 可选：目标周日的日期（YYYY-MM-DD）——供测试指定固定锚点；缺省取当前 ISO 周的周日
  */
 export async function runWeeklyReminder(anchorDate?: string): Promise<number> {

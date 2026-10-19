@@ -12,7 +12,7 @@ import { ensureCostCenters, startCostCenterSync } from './jobs/costCenterSync.js
 // 业务时刻依赖服务器时区（北京时间）：提交闸门 assertWeekSubmittable（周日 20:30）、财年窗口
 // availableCostCenterFys / fiscalYearLabel（6/7 月切换）都用本地 Date 判定。显式固定为北京时间，
 // 防止主机时区漂移（如迁移到 UTC 机器）让这些时刻/窗口静默偏移 8 小时。须在首次 Date 调用前设置，
-// 各模块仅在运行时调用 Date（无 import 期调用），置于文件体顶部即可。
+// 各模块仅在运行时调用 Date（无 import 期调用），置于文件体顶部即可
 process.env.TZ = 'Asia/Shanghai';
 
 const app = express();
@@ -109,8 +109,8 @@ async function gracefulShutdown(signal: string) {
   shuttingDown = true;
   console.log(`\n[API] 收到 ${signal}，开始优雅关闭...`);
   try {
-    // ⚠️ A122：先等 HTTP 连接排空，再释放连接池——原实现不等待 close 回调，
-    //   pool.end() 立即返回后 process.exit 会掐断仍在写响应的请求/文件流。
+    // 先等 HTTP 连接排空，再释放连接池
+    // pool.end() 立即返回后 process.exit 会掐断仍在写响应的请求/文件流
     await closeHttpServer();
     console.log('[API] HTTP 服务器已关闭');
     await pool.end();

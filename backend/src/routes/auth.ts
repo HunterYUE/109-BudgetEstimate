@@ -11,7 +11,7 @@ import { normalizeEmail, EMAIL_RE, DUMMY_PASSWORD_HASH, PASSWORD_MAX } from './h
 const router = Router();
 
 // 跨应用判定已收敛至 middleware/auth.ts（requireBudgetAuth 复用同一规则）；
-// 此处重新导出保持既有测试/调用方导入路径不变。
+// 此处重新导出保持既有测试/调用方导入路径不变
 export { isRestrictedCrossAppUser };
 
 /** 认证用户响应归一化（DB 行 → 前端 camelCase 形状；login 默认不含 createdAt，/me 传 true 包含） */
@@ -30,7 +30,7 @@ export function shapeAuthUser(u: Record<string, any>, includeCreatedAt = false):
 /** POST /api/auth/login */
 router.post('/login', async (req, res, next) => {
   try {
-    const { email, password } = req.body;
+    const { email, password } = req.body ?? {};
     if (!email || !password) {
       throw new AppError(400, '请输入邮箱和密码');
     }
@@ -64,7 +64,7 @@ router.post('/login', async (req, res, next) => {
       throw new AppError(401, '邮箱或密码错误');
     }
 
-    // ⚠️ 跨应用登录权限：普通员工仅限任务规划和报工应用，禁止登录销售·交付应用
+    // 跨应用登录权限：普通员工仅限任务规划和报工应用，禁止登录销售·交付应用
     if (isRestrictedCrossAppUser(user.title, user.role)) {
       throw new AppError(403, '该账号仅限登录任务规划和报工应用，无权使用销售和交付管理');
     }
@@ -74,14 +74,16 @@ router.post('/login', async (req, res, next) => {
       email: user.email,
       role: user.role,
     });
-    // ⚠️ L6 修复：token 只写 HttpOnly cookie（JS 读不到），不再回传 body
+    // token 只写 HttpOnly cookie（JS 读不到），不再回传 body
+    // 登录即切换为当前账号：清除另一应用可能残留的他人会话，避免双 cookie 指向不同用户
+    clearAuthCookie(res, COOKIE_NAME_TR);
     setAuthCookie(res, COOKIE_NAME_BUDGET, token);
 
     // 审计日志：登录（非阻塞 fire-and-forget——审计表/DB 异常不应让用户登录失败；失败仅记录日志）
     query(
       `INSERT INTO audit_logs (time, user_name, action, module, detail)
        VALUES (now(), $1, '登录', 'auth', $2)`,
-      [email, `用户 ${user.display_name || email} 登录系统，角色: ${user.role}`]
+      [emailNorm, `用户 ${user.display_name || emailNorm} 登录系统，角色: ${user.role}`]
     ).catch(err => console.error('[Audit] 登录审计写入失败:', (err as Error).message));
 
     res.json({
@@ -102,7 +104,7 @@ router.get('/me', requireAuth, async (req, res, next) => {
       throw new AppError(404, '用户不存在');
     }
     const u = result.rows[0];
-    // ⚠️ 跨应用登录权限：普通员工仅限任务规划和报工应用（已持有旧 token 也在此拦截并登出）
+    // 跨应用登录权限：普通员工仅限任务规划和报工应用（已持有旧 token 也在此拦截并登出）
     if (isRestrictedCrossAppUser(u.title, u.role)) {
       throw new AppError(403, '该账号仅限登录任务规划和报工应用，无权使用销售和交付管理');
     }
@@ -111,8 +113,8 @@ router.get('/me', requireAuth, async (req, res, next) => {
 });
 
 /** POST /api/auth/logout - 清除认证 cookie（幂等；无需鉴权，HttpOnly cookie 只有服务端能清）。
- *  requireAuth 认任一应用 cookie，只清本应用那个等于没登出：另一应用的 cookie 仍可访问本应用 API。
- *  因此登出按「全局登出」处理，两个 cookie 一并清除。 */
+ * requireAuth 认任一应用 cookie，只清本应用那个等于没登出：另一应用的 cookie 仍可访问本应用 API
+ * 因此登出按「全局登出」处理，两个 cookie 一并清除 */
 router.post('/logout', (_req, res) => {
   clearAuthCookie(res, COOKIE_NAME_BUDGET);
   clearAuthCookie(res, COOKIE_NAME_TR);

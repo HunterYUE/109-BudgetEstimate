@@ -4,9 +4,9 @@ import { fileURLToPath } from 'node:url';
 import { getCascadePrefixes } from '../src/utils/api';
 
 // ── 审计应用层修复回归测试（2026-08-14 全量审计 Budget）──
-// 覆盖：BU-1' 转交付金额口径、BU-2 报价财年口径、BU-3 重入守卫、BU-4 审批创建级联清缓存、
-//       BU-5 物料审核本地伪造、BU-6 提交审批非原子回滚、BU-7 版本兜底、BU-9 提交人过滤器。
-// 组件内 hooks 逻辑用静态源码断言（与后端 audit-fixes.test.ts 同模式）；可纯函数化的（BU-4）直测。
+// 覆盖：转交付金额口径、报价财年口径、重入守卫、审批创建级联清缓存、
+// 物料审核本地伪造、提交审批非原子回滚、版本兜底、提交人过滤器
+// 组件内 hooks 逻辑用静态源码断言（与后端 audit-fixes.test.ts 同模式）；可纯函数化的（BU-4）直测
 
 const src = (rel: string) => readFileSync(fileURLToPath(new URL(`../src/${rel}`, import.meta.url)), 'utf8');
 

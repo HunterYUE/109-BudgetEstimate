@@ -9,15 +9,15 @@ const fields = [
   'locked', 'created_at', 'updated_at',
 ];
 
-/** 报价 sync 可写状态白名单（H2 修复：只能写 draft/pending，禁止直接置 approved/rejected——须走审批状态机）；
- *  undefined 视为合法（路由层 status 有默认 'draft'，仅显式传非法值才拦截） */
+/** 报价 sync 可写状态白名单（只能写 draft/pending，禁止直接置 approved/rejected——须走审批状态机）；
+ * undefined 视为合法（部分更新不修改状态，仅显式传非法值才拦截） */
 export const QUOTATION_SYNC_STATUSES = ['draft', 'pending'];
 export function isValidSyncStatus(status: unknown): boolean {
   return !status || (QUOTATION_SYNC_STATUSES as string[]).includes(status as string);
 }
 
 /** 审批中（status='pending'）禁改的字段：财务口径 + 行归属。
- *  归属字段（project_id/version_no）此前可改，会让审批结果回写到未送审版本或其它项目。 */
+ * 归属字段（project_id/version_no）不可修改，否则审批结果会回写到未送审版本或其它项目 */
 export const QUOTATION_FINANCIAL = [
   'amount', 'total_cost', 'profit_rate', 'sales_no', 'opportunity_id',
   'project_id', 'version_no', 'client_name', 'project_name',
@@ -67,22 +67,22 @@ customRouter.put('/sync', async (req, res, next) => {
       throw new AppError(400, '缺少必填字段：project_id, version_no');
     }
 
-    // ⚠️ H2 修复：sync 只能写入 draft/pending，禁止直接置 approved/rejected（须走审批状态机）
+    // sync 只能写入 draft/pending，禁止直接置 approved/rejected（须走审批状态机）
     if (!isValidSyncStatus(status)) {
       throw new AppError(400, `报价状态只能为 draft 或 pending，不允许直接设为 ${status}`);
     }
 
-    // ⚠️ F18 修复：待审批（status='pending'）的报价不允许被 sync 覆盖。
-    //    此前检查 locked 字段但全库无任何路径置 true（死守卫），改为检查真实信号 status='pending'
+    // 待审批（status='pending'）的报价不允许被 sync 覆盖
+    // 以 status='pending' 作为真实锁定信号；locked 字段无置 true 路径
     const existing = (await query(
       'SELECT * FROM quotations WHERE project_id = $1 AND version_no = $2',
       [project_id, version_no]
     )).rows[0];
     if (existing?.status === 'pending') {
-      // ⚠️ 审计修复：status='pending' 须结合是否存在关联审批请求判定——提交审批链路为
-      //   保存版本(pending) → sync 报价(pending) → 创建审批请求；若审批创建失败（无权限/网络/参数错），
-      //   报价会残留 status='pending' 但无审批请求，此前的 409 会永久锁死该报价无法再保存。
-      //   仅当存在真实「待审批」请求时拦截（历史 approved/rejected 记录不应阻断恢复）。
+      // status='pending' 须结合是否存在关联审批请求判定——提交审批链路为
+      // 保存版本(pending) → sync 报价(pending) → 创建审批请求；若审批创建失败（无权限/网络/参数错），
+      // 报价会残留 status='pending' 但无审批请求
+      // 仅当存在真实「待审批」请求时拦截（历史 approved/rejected 记录不应阻断恢复）
       const hasApproval = (await query(
         "SELECT 1 FROM approval_requests WHERE quotation_id = $1 AND status = 'pending'", [existing.id]
       )).rows[0];
@@ -90,9 +90,8 @@ customRouter.put('/sync', async (req, res, next) => {
         throw new AppError(409, '该报价待审批中，无法同步保存');
       }
     }
-    // ⚠️ A112 修复：sync 改为「只更新请求体显式出现的列」。
-    //   原实现给缺失字段填默认值 0/null 并全量覆盖，提交失败补偿回滚（只传状态）会把
-    //   amount/total_cost/profit_rate 清零、opportunity_id 置 NULL，财务数据被静默破坏。
+    // sync 只更新请求体显式出现的列
+    // 只更新请求体显式出现的列，避免缺省字段被默认值覆盖导致金额/成本/关联被清零
     const SYNC_COLS = ['sales_no', 'client_name', 'project_name', 'status', 'amount', 'total_cost', 'profit_rate', 'opportunity_id'];
     let result;
     if (existing) {
@@ -132,12 +131,11 @@ customRouter.put('/sync', async (req, res, next) => {
 const crudRouter = crudRoutes('quotations', fields, {
   searchFields: ['sales_no', 'client_name', 'project_name'],
   orderBy: 'sales_no DESC, version_no DESC',
-  // ⚠️ A2 修复：status 与 locked 均只能经审批流程（POST /approvals/:id/records）流转，创建/更新均禁直设
-  //   （此前 excludeOnCreate 漏 status，POST /quotations 可传 status:'approved' 绕过审批状态机）
+  // status 只能经审批流程（POST /approvals/:id/records）流转；locked 为历史兼容字段，无置 true 路径
   excludeOnCreate: ['id', 'created_at', 'updated_at', 'status', 'locked'],
   excludeOnUpdate: ['id', 'created_at', 'updated_at', 'status', 'locked'],
-  // ⚠️ A103 修复：报价审批中（status='pending'）禁改财务字段——审批人基于提交时快照做决策，
-  //   期间被改金额会让审批与机会回写口径失真（sync 端点有 409 守卫，通用 PUT 此前无）。
+  // 报价审批中（status='pending'）禁改财务字段——审批人基于提交时快照做决策，
+  // 期间被改金额会让审批与机会回写口径失真（sync 与通用 PUT 均需 409 守卫）
   beforeUpdate: async (_req, id, snakeBody) => {
     if (!QUOTATION_FINANCIAL.some(f => snakeBody[f] !== undefined)) return;
     const existing = (await query('SELECT status FROM quotations WHERE id = $1', [id])).rows[0];
@@ -145,8 +143,8 @@ const crudRouter = crudRoutes('quotations', fields, {
       throw new AppError(409, '该报价待审批中，审批完成前不可修改金额/成本/毛利率/编号/归属/关联机会');
     }
   },
-  // ⚠️ A113：存在待审批请求时禁止删除——FK 为 ON DELETE SET NULL，删除后审批成为孤儿，
-  //   审批通过时级联分支静默空操作，审批历史与业务对象断链。
+  // 存在待审批请求时禁止删除——FK 为 ON DELETE SET NULL，删除后审批成为孤儿，
+  // 审批通过时级联分支静默空操作，审批历史与业务对象断链
   beforeDelete: async (id) => {
     const pending = (await query(
       "SELECT 1 FROM approval_requests WHERE quotation_id = $1 AND status = 'pending'", [id]

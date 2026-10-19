@@ -25,7 +25,7 @@ if (!DB_PASSWORD) {
   process.exit(1);
 }
 
-// L5 修复：DB_PORT 显式校验，此前直接 parseInt 传给 pg，非法值静默回退默认端口，难排查 
+// DB_PORT 显式校验，非法值直接拒绝
 const dbPort = Number(DB_PORT);
 if (!Number.isInteger(dbPort) || dbPort < 1 || dbPort > 65535) {
   console.error('[DB] FATAL: 无效的 DB_PORT 配置:', DB_PORT);
@@ -33,7 +33,7 @@ if (!Number.isInteger(dbPort) || dbPort < 1 || dbPort > 65535) {
 }
 
 // 单条语句/查询上限（默认 30s）：慢查询或锁等待长期占用连接会把 20 个连接耗尽，
-// 进而拖垮全部 API；超时让请求快速失败并释放连接。可用环境变量覆盖（如大批量运维查询）。
+// 进而拖垮全部 API；超时让请求快速失败并释放连接。可用环境变量覆盖（如大批量运维查询）
 const STATEMENT_TIMEOUT_MS = Number(process.env.DB_STATEMENT_TIMEOUT_MS) || 30000;
 
 const pool = new pg.Pool({

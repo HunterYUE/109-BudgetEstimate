@@ -11,8 +11,8 @@ import { BARE_INPUT_STYLE } from '../utils/tableUtils';
 import { tabItemStyle } from '../utils/tableUtils';
 
 /** 生成随机初始密码（≥8 位，大小写字母+数字+特殊字符混合）
- *  ⚠️ B27：弃共享硬编码默认密码 ChangeMe@2024——任一管理员看到弹窗即知道全员初始密码，
- *  存在账号接管风险；改为每人随机、创建成功时仅此一次展示，由创建人安全渠道告知本人。 */
+ * 弃共享硬编码默认密码 ChangeMe@2024——任一管理员看到弹窗即知道全员初始密码，
+ * 存在账号接管风险；改为每人随机、创建成功时仅此一次展示，由创建人安全渠道告知本人 */
 function generateRandomPassword(): string {
   const sets = ['ABCDEFGHJKMNPQRSTUVWXYZ', 'abcdefghjkmnpqrstuvwxyz', '23456789', '!@#$%^&*'];
   const pool = sets.join('');
@@ -59,7 +59,7 @@ const ALL_PERMISSIONS = [
 ];
 
 const TITLE_PERMISSIONS: Record<string, string[]> = {
-  // ⚠️ 普通员工：供工时填报/统计应用使用的员工角色（无业务系统编辑权限，仅可看仪表盘）
+  // 普通员工：供工时填报/统计应用使用的员工角色（无业务系统编辑权限，仅可看仪表盘）
   '普通员工': ['仪表盘查看'],
   '销售经理': ['销售机会管理', '新建信息/线索/机会', '编辑销售机会', '转线索/转机会', '销售蓝表编辑', '客户管理', '新建客户', '报价列表查看', '仪表盘查看'],
   '方案经理': ['物料管理', '新增物料', '新建标签', '报价编制', '报价列表查看', '仪表盘查看', '销售机会管理', '客户管理'],
@@ -106,8 +106,8 @@ const SystemManagement: React.FC = () => {
   const [permOpen, setPermOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<UserRecord | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<UserRecord | null>(null);
-  // ⚠️ B27 复核：随机初始密码仅此一次展示——message toast 数秒自动消失，密码即永久丢失；
-  //   改为持久 Modal + 一键复制（关闭后不再展示，创建人须当场抄送用户）
+  // 随机初始密码仅此一次展示——message toast 数秒自动消失，密码即永久丢失；
+  // 改为持久 Modal + 一键复制（关闭后不再展示，创建人须当场抄送用户）
   const [tempCred, setTempCred] = useState<{ name: string; email: string; password: string } | null>(null);
 
   // 新增用户表单
@@ -161,8 +161,8 @@ const SystemManagement: React.FC = () => {
   // ── 用户管理操作 ──
 
   const toggleUserActive = useCallback(async (user: UserRecord) => {
-    // ⚠️ B6 修复：禁停用当前登录账号（防误操作把自己锁在门外，锁死后只能等他人或数据库恢复）；
-    //   禁停用最后一个启用的管理员（防全员停用后无人可恢复系统）
+    // 禁停用当前登录账号（防误操作把自己锁在门外，锁死后只能等他人或数据库恢复）；
+    // 禁停用最后一个启用的管理员（防全员停用后无人可恢复系统）
     if (currentUser && user.id === currentUser.id) { messageApi.warning('不能停用当前登录账号'); return; }
     if (user.isActive && user.role === 'admin') {
       const otherActiveAdmins = users.filter(u => u.id !== user.id && u.isActive && u.role === 'admin');
@@ -182,7 +182,7 @@ const SystemManagement: React.FC = () => {
 
     setSaving(true);
     try {
-      // ⚠️ B27：每人随机初始密码，创建成功后一次性展示（下方成功消息），不落库明文
+      // 每人随机初始密码，创建成功后一次性展示（下方成功消息），不落库明文
       const password = generateRandomPassword();
       const created = await userService.create({
         email: newEmail.trim(),
@@ -194,7 +194,7 @@ const SystemManagement: React.FC = () => {
       });
       // 为新用户初始化默认权限（基于选择的职务）
       const defaultPerms = TITLE_PERMISSIONS[newTitle] || [];
-      // ⚠️ updateRole 失败须回滚并提示（原静默吞掉会创建"无权限死账号"：前端显示有权限而 DB 未持久化）
+      // updateRole 失败须回滚并提示（原静默吞掉会创建"无权限死账号"：前端显示有权限而 DB 未持久化）
       try {
         await userService.updateRole(created.id, TITLE_ROLE_MAP[newTitle] || 'user', newTitle, defaultPerms);
       } catch {
@@ -205,7 +205,7 @@ const SystemManagement: React.FC = () => {
       setUsers(prev => [...prev, { ...created, permissions: defaultPerms }]);
       setAddOpen(false);
       messageApi.success(`用户 ${created.displayName} 添加成功`);
-      // ⚠️ B27 复核：初始密码改由持久 Modal 展示（toast 自动消失会丢密码），见下方「初始密码」弹窗
+      // 初始密码改由持久 Modal 展示（toast 自动消失会丢密码），见下方「初始密码」弹窗
       setTempCred({ name: created.displayName, email: created.email, password });
     } catch (err: unknown) {
       messageApi.error((err as Error).message || '添加失败');
@@ -240,9 +240,9 @@ const SystemManagement: React.FC = () => {
         title: editTitle,
         phone: editPhone.trim(),
       });
-      // ⚠️ B2 修复：职务变更须同步 role/permissions（否则界面显示"部门总监"但实际无总监权限）。
-      // ⚠️ A144：仅当职务是已知枚举时才推导角色——工时侧创建的 admin title 为空，
-      //   原实现 `|| 'user'` 会把 admin 静默降级为普通用户并清空权限。
+      // 职务变更须同步 role/permissions（否则界面显示"部门总监"但实际无总监权限）
+      // 仅当职务是已知枚举时才推导角色——工时侧创建的 admin title 为空，
+      // 职务为空或未知时不得回退 'user'，否则会静默降级 admin 并清空权限
       const roleForTitle = TITLE_ROLE_MAP[editTitle];
       if (editTitle !== editTarget.title && roleForTitle) {
         await userService.updateRole(editTarget.id, roleForTitle, editTitle, TITLE_PERMISSIONS[editTitle] || []);
@@ -285,9 +285,9 @@ const SystemManagement: React.FC = () => {
   const openPermModal = useCallback((u: UserRecord) => {
     setEditTarget(u);
     setPermTitle(u.title);
-    // 优先使用数据库已保存的权限；仅 permissions 为 null（从未配置）才用职务预设。
-    // ⚠️ A145：空数组 [] 表示「有意清空」，原实现按 falsy/长度判断会回填职务预设，
-    //   管理员点确认后权限被悄悄恢复。
+    // 优先使用数据库已保存的权限；仅 permissions 为 null（从未配置）才用职务预设
+    // 空数组 [] 表示「有意清空」
+    // 管理员点确认后权限被悄悄恢复
     setCheckedPerms(u.permissions == null
       ? [...(TITLE_PERMISSIONS[u.title] || [])]
       : [...u.permissions]);
@@ -453,7 +453,7 @@ const SystemManagement: React.FC = () => {
             dataSource={users}
             columns={userColumns}
             rowKey="id"
-            pagination={false}
+            pagination={{ pageSize: 50, showSizeChanger: false, hideOnSinglePage: true }}
             size="small"
             bordered
             loading={loading}
@@ -612,7 +612,7 @@ const SystemManagement: React.FC = () => {
                         style={{
                           padding: '4px 14px', borderRadius: 4, cursor: 'pointer', fontSize: 13,
                           border: `1.5px solid ${permTitle === t ? COLORS.primary : '#d0d0d0'}`,
-                          color: permTitle === t ? '#fff' : '#555',
+                          color: permTitle === t ? '#fff' : '',
                           background: permTitle === t ? COLORS.primary : '#fff',
                           transition: 'all 0.15s', userSelect: 'none',
                         }}>{t}</div>
@@ -707,7 +707,7 @@ const SystemManagement: React.FC = () => {
         </div>
       </Modal>
 
-      {/* ⚠️ B27 复核：初始密码仅此一次展示——持久 Modal（非自动消失的 toast）+ 一键复制，
+      {/* 初始密码仅此一次展示——持久 Modal（非自动消失的 toast）+ 一键复制，
           关闭后不再展示，创建人须当场抄送用户；阻止右上角 X 关闭防误关丢密码 */}
       <Modal
         title={<span style={{ fontSize: 17, fontWeight: 600, color: COLORS.textDark }}>用户创建成功 · 初始密码</span>}

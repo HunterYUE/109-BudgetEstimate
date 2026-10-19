@@ -21,7 +21,7 @@ interface Props {
   saving?: boolean;
 }
 
-// F08：节点状态文案收敛单源 constants.NODE_STATUS_META（此前与 DeliveryDetail.statusMap 逐字重复）
+// 节点状态文案收敛单源 constants.NODE_STATUS_META
 const STATUS_LABELS = NODE_STATUS_META;
 
 /** 计算工作日 */
@@ -41,7 +41,7 @@ function shortDate(d: string) { return d ? d.slice(2) : '—'; }
 
 /** 节点实际开始时间：actualStartDate 优先，兼容旧数据从变更历史推断进入 in_progress 的时刻 */
 function actualStartOf(node: DeliveryNode): string | null {
-  // ⚠️ history 判空防御：旧数据可能缺该字段
+  // history 判空防御：旧数据可能缺该字段
   return node.actualStartDate || node.history?.find(h => h.field === 'status' && h.newValue === 'in_progress')?.changedAt || null;
 }
 
@@ -60,7 +60,7 @@ const DeliveryNodeTimeline: React.FC<Props> = ({
   onSavePlan, onSubmitPlan, onExportPlan,
   saving = false,
 }) => {
-  const { modal } = App.useApp(); // ⚠️ B24：静态 Modal.info 消费 antd 主题上下文
+  const { modal } = App.useApp(); // 静态 Modal.info 消费 antd 主题上下文
   const sorted = [...nodes].sort((a, b) => a.nodeNo - b.nodeNo);
   const [editing, setEditing] = useState<{ id: string; field: 'plannedStartDate' | 'plannedEndDate' } | null>(null);
   const [editVal, setEditVal] = useState('');
@@ -183,7 +183,7 @@ const DeliveryNodeTimeline: React.FC<Props> = ({
                         background: '#fff', border: `1px solid ${COLORS.borderInput}`, borderRadius: 4,
                         minWidth: 72, boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
                       }}>
-                        {/* ⚠️ 修复：进行中/已完成节点可切回「未开始」（此前只有进行中→已完成，误勾后无法撤销；
+                        {/* 进行中/已完成节点可切回「未开始」（此前只有进行中→已完成，误勾后无法撤销；
                            pending 保持仅前进；in_progress 可后退到未开始或前进到完成；completed 可后退） */}
                         {(node.status === 'pending'
                           ? ['in_progress']
@@ -210,7 +210,7 @@ const DeliveryNodeTimeline: React.FC<Props> = ({
                 </td>
                 <td style={{ ...cellStyle, textAlign: 'center', padding: '10px 8px 6px' }}>
                   {(() => {
-                    // ⚠️ 共享延期判定：基线 = 初始审批实施计划；无基线不判延期
+                    // 共享延期判定：基线 = 初始审批实施计划；无基线不判延期
                     const { hasBaseline, days } = getNodeDelay(node);
                     if (!hasBaseline) return <Tag color="default" style={{ margin: 0, borderRadius: 3, fontSize: 11, lineHeight: '22px', border: 'none', color: '#bbb' }}>—</Tag>;
                     if (days > 0) return <Tag color={COLORS.danger} style={{ margin: 0, borderRadius: 3, fontSize: 11, lineHeight: '22px', border: 'none' }}>+{days}</Tag>;

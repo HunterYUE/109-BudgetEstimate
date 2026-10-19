@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { TagNode } from '../src/types';
 import {
-  uid, collectTagPaths, collectDescendantIds, flattenTree, findPath, getNodeByPath,
+  collectTagPaths, collectDescendantIds, flattenTree, findPath, getNodeByPath,
 } from '../src/utils/tagHelpers';
 
 function node(id: string, name: string, children?: TagNode[]): TagNode {
@@ -12,16 +12,6 @@ const tree: TagNode[] = [
   node('a', 'A', [node('a1', 'A1'), node('a2', 'A2', [node('a21', 'A21')])]),
   node('b', 'B'),
 ];
-
-describe('uid 唯一 ID 生成器', () => {
-  it('格式 prefix-base36时间戳-随机3位；默认前缀 t', () => {
-    expect(uid('mat')).toMatch(/^mat-[a-z0-9]+-[a-z0-9]{3}$/);
-    expect(uid()).toMatch(/^t-[a-z0-9]+-[a-z0-9]{3}$/);
-  });
-  it('连续调用不重复', () => {
-    expect(uid('mat')).not.toBe(uid('mat'));
-  });
-});
 
 describe('collectTagPaths 路径展平（含祖先链，根为自身）', () => {
   it('深度优先全路径', () => {

@@ -5,8 +5,8 @@ import { parsePagination, escapeLikePattern } from './helpers.js';
 
 const router = Router();
 
-// ⚠️ M6 修复：审计日志为只读资源（仅 GET 列表 / 单条 / 统计），移除 crudRoutes 的 POST/PUT/DELETE，
-//   防止审计记录被伪造、篡改、删除。审计写入只经后端 logAudit() 追加。
+// 审计日志为只读资源（仅 GET 列表 / 单条 / 统计），移除 crudRoutes 的 POST/PUT/DELETE，
+// 防止审计记录被伪造、篡改、删除。审计写入只经后端 logAudit() 追加
 
 // 自定义列表查询：LEFT JOIN users 获取显示名
 router.get('/', async (req, res, next) => {
@@ -16,8 +16,8 @@ router.get('/', async (req, res, next) => {
       LEFT JOIN users u ON u.email = al.user_name`;
     const params: any[] = [];
     if (search) {
-      // ⚠️ A10 修复：通配符转义统一口径（%/_/\ 转义），与 buildSearchWhere 一致（escapeLikePattern 复用）；
-      //   u.display_name 跨表别名无法走共享构造
+      // 通配符转义统一口径（%/_/\ 转义），与 buildSearchWhere 一致（escapeLikePattern 复用）；
+      // u.display_name 跨表别名无法走共享构造
       sql += ` WHERE (al.user_name::text ILIKE $1 OR al.action::text ILIKE $1 OR al.module::text ILIKE $1 OR al.detail::text ILIKE $1 OR u.display_name::text ILIKE $1)`;
       params.push(`%${escapeLikePattern(search)}%`);
     }

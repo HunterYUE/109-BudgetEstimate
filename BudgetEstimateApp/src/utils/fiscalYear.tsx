@@ -31,7 +31,7 @@ export const FYSelector: React.FC<{
       </span>
       <span
         style={{
-          fontSize: 13, color: '#333', fontWeight: 600,
+          fontSize: 13, color: '', fontWeight: 600,
           padding: '0 4px', minWidth: 48, textAlign: 'center',
         }}
       >

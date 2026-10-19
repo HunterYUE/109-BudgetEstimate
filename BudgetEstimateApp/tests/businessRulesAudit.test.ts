@@ -3,9 +3,9 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 // ── 业务规则审计回归测试（2026-08-14 双应用业务逻辑/规则审计，Budget 侧）──
-// 覆盖：A2 Dashboard 节点按时率无基线不判定、B5 节点15完成门禁、B1/A1 qtyTotal 合法 0 不被吞。
+// 覆盖：Dashboard 节点按时率无基线不判定、节点15完成门禁、qtyTotal 合法 0 不被吞
 // 纯函数逻辑已在 calculations.test.ts / analysisShared.test.ts 直测；此处静态断言组件/工具
-// 确实引用共享函数（防回退为内联的旧缺陷实现），沿用 auditAppFixes.test.ts 的源码断言模式。
+// 确实引用共享函数（防回退为内联的旧缺陷实现），沿用 auditAppFixes.test.ts 的源码断言模式
 
 const src = (rel: string) => readFileSync(fileURLToPath(new URL(`../src/${rel}`, import.meta.url)), 'utf8');
 

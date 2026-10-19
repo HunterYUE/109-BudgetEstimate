@@ -19,8 +19,8 @@ const COOKIE_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 对齐 JWT exp（24h）
 const COOKIE_SECURE = process.env.COOKIE_SECURE === '1';
 
 /** 手写 cookie 解析，不引入 cookie-parser 依赖，取指定 name 的值，无则 undefined。
- *  畸形百分号编码不抛错（decode 失败回退原始串）：cookieValue 在 async 中间件中同步抛出会变成
- *  未处理的 Promise rejection（Express 4 不会转交 errorHandler），请求将永久挂起。 */
+ * 畸形百分号编码不抛错（decode 失败回退原始串）：cookieValue 在 async 中间件中同步抛出会变成
+ * 未处理的 Promise rejection（Express 4 不会转交 errorHandler），请求将永久挂起 */
 function cookieValue(header: string | undefined, name: string): string | undefined {
   if (!header) return undefined;
   for (const part of header.split(';')) {
@@ -67,7 +67,7 @@ export interface JwtPayload {
   userId: string;
   email: string;
   role: string;
-  /** jsonwebtoken 自动写入的签发时刻（Unix 秒），L3 改密吊销比对用，旧 token 无 iat → 0，仅影响手工伪造 token */
+  /** jsonwebtoken 自动写入的签发时刻（Unix 秒），改密吊销比对用，旧 token 无 iat → 0，仅影响手工伪造 token */
   iat?: number;
   exp?: number;
 }
@@ -77,29 +77,35 @@ export function signToken(payload: JwtPayload): string {
 }
 
 export async function requireAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
-  // 从 HttpOnly cookie 取 token，工时/预算任一，token 互通，Bearer header 已下线，login 不再回传 token。
-  // 两个 cookie 都尝试验签：短路取第一个会在旧 tr_token 过期时遮蔽新签发的 budget_token（正常会话被误判 401）。
-  const candidates = [
-    cookieValue(req.headers.cookie, COOKIE_NAME_TR),
-    cookieValue(req.headers.cookie, COOKIE_NAME_BUDGET),
-  ].filter((t): t is string => !!t);
+  // 从 HttpOnly cookie 取 token，按「本应用优先」排序：预算请求优先 budget_token，工时请求优先 tr_token
+  // 两个 cookie 都验签：① 过期 token 不遮蔽另一个有效 token；② 若两个都有效但属于不同账号，
+  // 说明浏览器残留了他人会话（共用工作站），直接拒绝，避免以另一账号身份操作
+  const trToken = cookieValue(req.headers.cookie, COOKIE_NAME_TR);
+  const budgetToken = cookieValue(req.headers.cookie, COOKIE_NAME_BUDGET);
+  const isTrRequest = (req.originalUrl || '').includes('/timerecording') || (req.baseUrl || '').includes('timerecording');
+  const candidates = (isTrRequest ? [trToken, budgetToken] : [budgetToken, trToken])
+    .filter((t): t is string => !!t);
   if (candidates.length === 0) {
     res.status(401).json({ error: '未登录，请先登录' });
     return;
   }
-  let decoded: JwtPayload | undefined;
+  const validTokens: JwtPayload[] = [];
   for (const token of candidates) {
     try {
-      decoded = jwt.verify(token, JWT_SECRET!, { algorithms: ['HS256'] }) as JwtPayload;
-      break;
+      validTokens.push(jwt.verify(token, JWT_SECRET!, { algorithms: ['HS256'] }) as JwtPayload);
     } catch { /* 尝试下一个 cookie */ }
   }
-  if (!decoded) {
+  if (validTokens.length === 0) {
     res.status(401).json({ error: '登录已过期，请重新登录' });
     return;
   }
+  if (validTokens.length > 1 && validTokens[0].userId !== validTokens[1].userId) {
+    res.status(401).json({ error: '检测到多个账号的登录凭证，请退出后重新登录' });
+    return;
+  }
+  const decoded = validTokens[0];
   // 每次请求从库取最新角色/权限，管理员调整即时生效，无需重新登录
-  // DB 故障返回 500 而非误判为凭证失效，此前 catch 兜底会吞掉查询错误
+  // DB 故障返回 500 而非误判为凭证失效
   try {
     const userRow = await pool.query(
       `SELECT u.is_active, u.email, u.permissions, u.role, u.title, u.display_name, u.password_changed_at,
@@ -126,7 +132,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     }
     // 角色/邮箱同样从库刷新，JWT 中的旧值不参与鉴权与审计归因（改邮箱后审计仍记旧邮箱的问题在此消除）
     // title 一并加载，工时应用跨应用登录限制——销售经理禁用工时 API——须在路由层依据 title 判定
-    // 审计修复 BE-7：display_name 一并加载，审批提交人服务端派生，防客户端伪造提交人
+    // display_name 一并加载，审批提交人服务端派生，防客户端伪造提交人
     req.user = {
       ...decoded,
       email: row.email || decoded.email,
@@ -142,14 +148,14 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
 }
 
 /** 跨应用登录限制判定：普通员工仅限任务规划和报工应用，禁止访问销售·交付 API（admin/director 例外）。
- *  与 routes/timerecording.ts 的 trAppGuard（销售经理禁用工时 API）对称：登录与 /me 的检查只是入口，
- *  真正的防线必须覆盖持有旧 token 直调 API 的路径。 */
+ * 与 routes/timerecording.ts 的 trAppGuard（销售经理禁用工时 API）对称：登录与 /me 的检查只是入口，
+ * 真正的防线必须覆盖持有旧 token 直调 API 的路径 */
 export function isRestrictedCrossAppUser(title: unknown, role: unknown): boolean {
   return String(title ?? '').trim() === '普通员工' && role !== 'admin' && role !== 'director';
 }
 
 /** 预算应用鉴权组合：requireAuth 加载用户 → 拦截工时专属账号。
- *  业务路由一律使用本组合（替代裸 requireAuth），防 tr_token 直调销售/报价/交付接口。 */
+ * 业务路由一律使用本组合（替代裸 requireAuth），防 tr_token 直调销售/报价/交付接口 */
 export async function requireBudgetAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
   await requireAuth(req, res, () => {
     if (isRestrictedCrossAppUser(req.user?.title, req.user?.role)) {

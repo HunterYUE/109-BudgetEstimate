@@ -29,7 +29,7 @@ export const SOURCES: { value: SourcingType; label: string }[] = [
   { value: 'PURCHASED', label: '外购' },
 ];
 
-/** 审核状态统一配置（⚠️ B12：物料/报价/交付/审批 6 处 label+color 收敛单源；bg 供报价页状态徽章使用） */
+/** 审核状态统一配置（物料/报价/交付/审批 6 处 label+color 收敛单源；bg 供报价页状态徽章使用） */
 export const STATUS_CONFIG: Record<string, { label: string; color: string; bg?: string }> = {
   draft:    { label: '草稿',   color: COLORS.textSecondary, bg: COLORS.bgTag },
   pending:  { label: '待审批', color: COLORS.warning,        bg: '#fff3e0' },

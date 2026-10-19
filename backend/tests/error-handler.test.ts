@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { pgErrorResponse, AppError } from '../src/middleware/errorHandler.js';
 
 // errorHandler 的 PG 错误码映射（纯函数化提取）：前端依赖这些消息/状态码做错误提示，
-// 提取后直测每个分支，防回归（A110 不透传 DB detail，服务端 console.error 保留完整信息）。
+// 提取后直测每个分支，防回归（不透传 DB detail，服务端 console.error 保留完整信息）
 
 describe('pgErrorResponse PG 错误码 → 对外响应', () => {
   it('22P02 无效类型/枚举值 → 400', () => {

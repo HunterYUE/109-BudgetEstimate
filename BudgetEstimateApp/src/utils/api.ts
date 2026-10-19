@@ -1,9 +1,9 @@
 /**
  * API 基础客户端 - 封装 fetch，统一处理错误、环境配置
  *
- * 命名规范边界：这是前后端 camelCase/snake_case 的转换层。
- * GET 响应自动 toCamel() 转驼峰，POST/PUT body 自动 toSnake() 转蛇形。
- * 所有 API 通信必须走此客户端；认证接口（login/logout/me）因 HttpOnly cookie 需原生 fetch 除外。
+ * 命名规范边界：这是前后端 camelCase/snake_case 的转换层
+ * GET 响应自动 toCamel() 转驼峰，POST/PUT body 自动 toSnake() 转蛇形
+ * 所有 API 通信必须走此客户端；认证接口（login/logout/me）因 HttpOnly cookie 需原生 fetch 除外
  * 详见 memory/naming-convention-standard.md
  */
 
@@ -13,7 +13,7 @@ const API_BASE = import.meta.env.VITE_API_BASE || '/api/v1';
 const cache = new Map<string, { data: unknown; expiry: number }>();
 const CACHE_TTL = 30_000;
 /** 缓存代际：写请求清缓存时递增。慢 GET 响应只有在代际未变时才允许回写，
- *  否则「请求在途 → 写请求清缓存 → 旧响应返回」会把陈旧数据重新写回缓存 30 秒。 */
+ * 否则「请求在途 → 写请求清缓存 → 旧响应返回」会把陈旧数据重新写回缓存 30 秒 */
 let cacheEpoch = 0;
 /** 请求超时（毫秒）：网络半开/后端卡住时避免 loading 永久转圈 */
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -42,7 +42,7 @@ export function toCamel(obj: unknown): unknown {
   const record = obj as Record<string, unknown>;
   const result: Record<string, unknown> = {};
   for (const key of Object.keys(record)) {
-    // ⚠️ 以下划线开头的键（如 _risk, _commercial）为内部标识符，不进行蛇形→驼峰转换
+    // 以下划线开头的键（如 _risk, _commercial）为内部标识符，不进行蛇形→驼峰转换
     result[key.startsWith('_') ? key : key.replace(/_([a-z])/g, (_, l) => l.toUpperCase())] = toCamel(record[key]);
   }
   return result;
@@ -62,7 +62,7 @@ export function toSnake(obj: unknown): unknown {
   return result;
 }
 
-export class ApiError extends Error {
+class ApiError extends Error {
   status: number;
 
   constructor(status: number, message: string) {
@@ -83,7 +83,7 @@ async function request<T>(path: string, options?: RequestInit, noCache?: boolean
     if (cached !== undefined) return cached as T;
   }
 
-  // ⚠️ L6：token 在 HttpOnly cookie（后端 login Set-Cookie），fetch 同源自动携带（默认 credentials=same-origin），无需 Authorization header
+  // token 在 HttpOnly cookie（后端 login Set-Cookie），fetch 同源自动携带（默认 credentials=same-origin），无需 Authorization header
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
 
   const startEpoch = cacheEpoch;
@@ -106,7 +106,7 @@ async function request<T>(path: string, options?: RequestInit, noCache?: boolean
     clearTimeout(timer);
   }
 
-  // ⚠️ L6：401 = cookie 无效/过期（token 在 HttpOnly cookie，前端读不到也清不掉）——best-effort 调 logout 清服务端 cookie，再跳登录
+  // 401 = cookie 无效/过期（token 在 HttpOnly cookie，前端读不到也清不掉）——best-effort 调 logout 清服务端 cookie，再跳登录
   if (res.status === 401) {
     fetch(API_BASE + '/auth/logout', { method: 'POST' }).catch(() => {});
     window.location.href = import.meta.env.BASE_URL + 'login';
@@ -123,7 +123,7 @@ async function request<T>(path: string, options?: RequestInit, noCache?: boolean
   if (!isGet) {
     const resourcePrefix = path.split('?')[0].split('/')[1] || '';
     if (resourcePrefix) clearCache('/' + resourcePrefix);
-    // ⚠️ 跨资源级联写：清相关资源缓存，避免 30s 内读到陈旧数据（见 getCascadePrefixes）
+    // 跨资源级联写：清相关资源缓存，避免 30s 内读到陈旧数据（见 getCascadePrefixes）
     for (const p of getCascadePrefixes(path)) clearCache(p);
   }
 
@@ -140,12 +140,14 @@ async function request<T>(path: string, options?: RequestInit, noCache?: boolean
 }
 
 /** 跨资源级联清缓存前缀（纯函数，便于单测）：非 GET 写请求按路径返回需清除的缓存前缀。
- *  ⚠️ 审计修复 BU-4：此前仅 POST /approvals/:id/records 触发级联；POST /approvals（创建审批）不触发——
- *  plan/cost 创建即改 delivery 状态、promote 创建即 promote_locked 机会，30s 内列表读到陈旧数据。
- *  放宽为 startsWith('/approvals') 同时覆盖创建与审批记录。 */
+ * 审批创建（POST /approvals）同样会改交付状态与机会锁定，须一并清理——
+ * plan/cost 创建即改 delivery 状态、promote 创建即 promote_locked 机会，30s 内列表读到陈旧数据
+ * 放宽为 startsWith('/approvals') 同时覆盖创建与审批记录 */
 export function getCascadePrefixes(path: string): string[] {
   if (path.startsWith('/project-versions') || path.startsWith('/project-groups')) return ['/projects'];
   if (path.startsWith('/approvals')) return ['/quotations', '/projects', '/deliveries', '/opportunities'];
+  // 客户改名/销售员变更会级联更新机会/项目/报价/交付/审批中的冗余字段
+  if (path.startsWith('/clients')) return ['/opportunities', '/quotations', '/projects', '/deliveries', '/approvals'];
   return [];
 }
 

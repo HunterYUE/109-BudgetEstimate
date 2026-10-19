@@ -18,8 +18,8 @@ export function calcDirectCost(item: {
 }
 
 /** 计算售价（取整到个位）
- *  预期售价 = 直接成本 / (1 - 毛利率)
- *  例：成本100、毛利率35% → 100/(1-0.35) = 153.8 */
+ * 预期售价 = 直接成本 / (1 - 毛利率)
+ * 例：成本100、毛利率35% → 100/(1-0.35) = 153.8 */
 export function calcItemPrices(
   directCost: number,
   marginRate: number,
@@ -62,8 +62,8 @@ export interface ProjectSummary {
 }
 
 /**
- * 成本构成共享计算：全部项次直接成本合计、质保基数、质保/风险/商业费用。
- * ⚠️ calcProjectSummary / computeDeliveryEstGP3 / buildCostLines 三处共用，防口径漂移（质保基数仅 EQUIPMENT/INTEGRATION 免质保项）。
+ * 成本构成共享计算：全部项次直接成本合计、质保基数、质保/风险/商业费用
+ * calcProjectSummary / computeDeliveryEstGP3 / buildCostLines 三处共用，防口径漂移（质保基数仅 EQUIPMENT/INTEGRATION 免质保项）
  */
 export function computeCostComponents(
   groups: Group[],
@@ -81,7 +81,7 @@ export function computeCostComponents(
 }
 
 /** 计算版本汇总（含物料/人工/项目费用分解）
- *  ⚠️ discountedPrice 参数必须为未税值（内部使用），返回的 totalAccountingPrice/discountedPrice 为含税值
+ * discountedPrice 参数必须为未税值（内部使用），返回的 totalAccountingPrice/discountedPrice 为含税值
  */
 export function calcProjectSummary(
   groups: Group[],
@@ -93,7 +93,7 @@ export function calcProjectSummary(
   },
   discountedPriceUntaxed?: number
 ): ProjectSummary {
-  // ⚠️ 质保基数/质保/风险/商业费用统一走 computeCostComponents（防与成本对比表口径漂移）
+  // 质保基数/质保/风险/商业费用统一走 computeCostComponents（防与成本对比表口径漂移）
   const { totalDirectCost, warrantyBase, warrantyCost, riskCost, commercialCost } = computeCostComponents(groups, version);
   let totalAccountingPrice = 0;
   let materialCost = 0;
@@ -154,7 +154,7 @@ export function formatMoney(value: number | undefined | null, locale = 'zh-CN'):
   return Math.round(num).toLocaleString(locale);
 }
 
-/** 费率（小数）→ 百分比数值（0.35 → 35）：各页散落 `Math.round(v * 10000) / 100` 收敛单源（F08 重复逻辑家族） */
+/** 费率（小数）→ 百分比数值（0.35 → 35）：各页散落 `Math.round(v * 10000) / 100` 收敛单源（重复逻辑家族） */
 export function rateToPercent(v: number): number {
   return Math.round(v * 10000) / 100;
 }
@@ -162,12 +162,12 @@ export function rateToPercent(v: number): number {
 /**
  * 计算交付项目的概算 GP3（不含实际成本）
  * 公式：
- *   exTax = contractAmount / (1 + taxRate)
- *   totalEstimated = Σ direct_cost
- *   warrantyCost = Σ(items WITHOUT warranty × direct_cost) × warranty_rate
- *   riskCost = totalEstimated * risk_rate
- *   grandEstimated = totalEstimated + riskCost + warrantyCost + commercialCost
- *   estGP3 = (exTax - grandEstimated) / exTax
+ * exTax = contractAmount / (1 + taxRate)
+ * totalEstimated = Σ direct_cost
+ * warrantyCost = Σ(items WITHOUT warranty × direct_cost) × warranty_rate
+ * riskCost = totalEstimated * risk_rate
+ * grandEstimated = totalEstimated + riskCost + warrantyCost + commercialCost
+ * estGP3 = (exTax - grandEstimated) / exTax
  */
 export function computeDeliveryEstGP3(
   contractAmount: number,
@@ -177,7 +177,7 @@ export function computeDeliveryEstGP3(
   const taxRate = version?.taxRate ?? TAX_RATE;
   const exTax = Math.round(contractAmount / (1 + taxRate));
 
-  // ⚠️ 质保/风险/商业费用统一走 computeCostComponents（防与 calcProjectSummary / buildCostLines 口径漂移）
+  // 质保/风险/商业费用统一走 computeCostComponents（防与 calcProjectSummary / buildCostLines 口径漂移）
   const { totalDirectCost: totalEstimated, warrantyCost, riskCost, commercialCost } = computeCostComponents(groups, version ?? {});
 
   const grandEstimated = totalEstimated + riskCost + warrantyCost + commercialCost;

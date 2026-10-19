@@ -29,7 +29,7 @@ class ErrorBoundary extends React.Component<Props, State> {
       return (
         <div style={{
           display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-          height: '100vh', padding: 40, background: '#f5f7fa', color: '#555',
+          height: '100vh', padding: 40, background: '#f5f7fa', color: '',
           fontFamily: 'system-ui, sans-serif',
         }}>
           <div style={{

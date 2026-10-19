@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { toCamel, toSnake } from '../src/utils/api';
 
 // F10 前后端契约一致性：camelCase↔snake_case 转换层（api.ts 唯一 fetch 层）
-// 记忆命名规范：GET 响应 toCamel、POST/PUT body toSnake；所有 API 通信必须走此层。
+// 记忆命名规范：GET 响应 toCamel、POST/PUT body toSnake；所有 API 通信必须走此层
 
 describe('toCamel 响应转换（后端 snake_case → 前端 camelCase）', () => {
   it('扁平键：contract_amount → contractAmount', () => {

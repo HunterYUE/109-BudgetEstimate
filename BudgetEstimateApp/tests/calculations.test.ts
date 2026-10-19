@@ -27,8 +27,8 @@ describe('calcDirectCost 直接成本 = 物料×量 + 设计工时×费率 + 装
     expect(calcDirectCost({ unitCost: 100 })).toBe(100);
     expect(calcDirectCost({})).toBe(0);
   });
-  // ⚠️ B1/A1 审计修复：`qtyTotal || 1` 会吞掉合法 0（数量可输入 0、DB 无 CHECK>0）——改成 `?? 1` 后
-  //   缺省仍按 1（上一条），但显式 0 保留：物料/装配成本按 0 计，不再虚增为 ×1
+  // `qtyTotal || 1` 会吞掉合法 0（数量可输入 0、DB 无 CHECK>0），须使用 `?? 1`；
+  // 缺省仍按 1（上一条），但显式 0 保留：物料/装配成本按 0 计，不再虚增为 ×1
   it('qtyTotal=0 合法值不得被吞成 1（物料/装配按 0 计，设计工时费照常）', () => {
     expect(calcDirectCost({ unitCost: 100, qtyTotal: 0 })).toBe(0);
     expect(calcDirectCost({ unitCost: 100, qtyTotal: 0, designHours: 10, designHourRate: 80 })).toBe(800);
@@ -63,18 +63,18 @@ describe('computeCostComponents 成本构成（质保基数仅 EQUIPMENT/INTEGRA
   const groups = [
     group('EQUIPMENT', '设备组', [
       item({ id: 'a1', unitCost: 100, qtyTotal: 2, directCost: 1600, hasWarranty: false }), // 入质保基数
-      item({ id: 'a2', unitCost: 50, qtyTotal: 1, directCost: 50, hasWarranty: true }),     // 含质保 → 排除
+      item({ id: 'a2', unitCost: 50, qtyTotal: 1, directCost: 50, hasWarranty: true }), // 含质保 → 排除
     ]),
     group('INTEGRATION', '集成', [item({ id: 'b1', directCost: 720, hasWarranty: false })]),
-    group('PROJECT_DELIVERY', '交付服务', [item({ id: 'c1', directCost: 300 })]),          // 非 EQ/INT → 不入质保基数
+    group('PROJECT_DELIVERY', '交付服务', [item({ id: 'c1', directCost: 300 })]), // 非 EQ/INT → 不入质保基数
   ];
   const v = { warrantyRate: 0.02, riskRate: 0.05, commercialCost: 100 };
   it('基数 = 1600 + 720 = 2320；质保 46；风险按全部直接成本 2670×5% = 134；商业 100', () => {
     const c = computeCostComponents(groups, v);
     expect(c.totalDirectCost).toBe(2670); // 1600+50+720+300
     expect(c.warrantyBase).toBe(2320);
-    expect(c.warrantyCost).toBe(46);      // round(2320×0.02)
-    expect(c.riskCost).toBe(134);         // round(2670×0.05)
+    expect(c.warrantyCost).toBe(46); // round(2320×0.02)
+    expect(c.riskCost).toBe(134); // round(2670×0.05)
     expect(c.commercialCost).toBe(100);
   });
   it('缺省费率按 0', () => {
@@ -98,8 +98,8 @@ describe('calcProjectSummary 版本汇总（含税输出 / GP3 口径）', () =>
 
   it('物料/人工/项目费用分解：EQUIPMENT+INTEGRATION 按 物料 vs 人工拆、PROJECT_DELIVERY 全人工、包装全项目费用', () => {
     const s = calcProjectSummary(groups, version);
-    expect(s.materialCost).toBe(450);   // a1:200 + a2:50 + b1:200
-    expect(s.laborCost).toBe(2220);     // a1:1400 + a2:0 + b1:520 + c1:300
+    expect(s.materialCost).toBe(450); // a1:200 + a2:50 + b1:200
+    expect(s.laborCost).toBe(2220); // a1:1400 + a2:0 + b1:520 + c1:300
     expect(s.projectExpense).toBe(200); // d1
   });
   it('含税输出：售价×1.13 取整；总成本=直接成本+质保+风险 再×1.13', () => {
@@ -133,8 +133,8 @@ describe('computeDeliveryEstGP3 交付概算（不含实际成本）', () => {
     const r = computeDeliveryEstGP3(11300, groups, { warrantyRate: 0.02, riskRate: 0.05, commercialCost: 100, taxRate: 0.13 });
     expect(r.exTax).toBe(Math.round(11300 / 1.13)); // 10000
     expect(r.totalEstimated).toBe(2320);
-    expect(r.warrantyCost).toBe(46);  // round(2320×0.02)
-    expect(r.riskCost).toBe(116);     // round(2320×0.05)
+    expect(r.warrantyCost).toBe(46); // round(2320×0.02)
+    expect(r.riskCost).toBe(116); // round(2320×0.05)
     expect(r.commercialCost).toBe(100);
     expect(r.grandEstimated).toBe(2320 + 116 + 46 + 100);
     expect(r.estGP3).toBeCloseTo((10000 - 2582) / 10000, 4);

@@ -16,22 +16,22 @@ export interface Component {
   brand: string;
   model: string;
   specification: string;
-  note: string;                 // 备注说明
-  supplier: string;              // 供应商（贸易商/代理商/厂商）
+  note: string; // 备注说明
+  supplier: string; // 供应商（贸易商/代理商/厂商）
   sourcingType: SourcingType;
   unitCost: number;
   designHours: number;
   assemblyHours: number;
   hasWarranty: boolean;
-  unit: string;                 // 计量单位（套/台/个/米…）
-  reviewStatus: ReviewStatus;    // 物料审核状态
+  unit: string; // 计量单位（套/台/个/米…）
+  reviewStatus: ReviewStatus; // 物料审核状态
   /** 待审核请求类型（与业务备注 note 解耦）：create/update/delete；'' = 无待审动作 */
   reviewAction?: '' | 'create' | 'update' | 'delete';
-  version: string;               // 编码中的版本号，如 V1.0
+  version: string; // 编码中的版本号，如 V1.0
   createdAt: string;
   updatedAt: string;
   changeLog: { version: string; date: string; note: string }[];
-  tags?: string[];               // 标签路径数组，如 ["上下料系统","桁架上下料","桁架机械手"]
+  tags?: string[]; // 标签路径数组，如 ["上下料系统","桁架上下料","桁架机械手"]
 }
 
 // ── 组内明细项 ──
@@ -40,20 +40,20 @@ export interface GroupItem {
   itemNo: number;
   itemType: ItemType;
   componentId: string;
-  code: string;                    // 编码（DB 列 code）
-  description: string;             // 描述（DB 列 description）
+  code: string; // 编码（DB 列 code）
+  description: string; // 描述（DB 列 description）
   qtyTotal: number;
   unit: string;
-  sourcingType: SourcingType;    // 'SELF_MANUFACTURED'=自制, 'PURCHASED'=外购
+  sourcingType: SourcingType; // 'SELF_MANUFACTURED'=自制, 'PURCHASED'=外购
   unitCost: number;
   designHours: number;
   assemblyHours: number;
   designHourRate: number;
   assemblyHourRate: number;
   directCost: number;
-  marginRate: number;            // 毛利率
+  marginRate: number; // 毛利率
   basicPrice: number;
-  accountingPrice: number;        // 预期售价
+  accountingPrice: number; // 预期售价
   hasWarranty: boolean;
   note: string;
 }
@@ -111,7 +111,7 @@ export interface Project {
   projectName: string;
   projectStage: string;
   expectedAwardDate: string;
-  projectLayout: string;       // 布置图（三维布局截图 PDF/PNG，base64 或文件名）
+  projectLayout: string; // 布置图（三维布局截图 PDF/PNG，base64 或文件名）
   deliveryPeriod: string;
   paymentTerms: string;
   postfix: string;
@@ -127,23 +127,23 @@ export interface SalesOpportunity {
   clientName: string;
   projectName: string;
   amount: number;
-  stage: string;                // 信息/线索/机会/投标/议价/中标
-  winRate: number;              // 0-100
-  status: string;               // 过程中/赢/输/冻结
+  stage: string; // 信息/线索/机会/投标/议价/中标
+  winRate: number; // 0-100
+  status: string; // 过程中/赢/输/冻结
   salesman: string;
   competitor: string;
   /** 输单时填写的赢家（谁赢得了订单），与 competitor（竞争对手列表）是不同字段 */
   winner?: string;
   expectedCloseDate: string;
   notes: string;
-  reasons: string;              // 状态变更原因，格式：大类:子类:具体项;大类:子类
+  reasons: string; // 状态变更原因，格式：大类:子类:具体项;大类:子类
   createdAt: string;
   updatedAt: string;
   /** 首次标记为'赢'的时间（后续编辑不覆盖） */
   wonAt?: string;
   /** 首次标记为'输'的时间（后续编辑不覆盖），与 wonAt 对称 */
   lostAt?: string;
-  /** 进入"机会"阶段的时间（创建为机会 或 线索晋升为机会；信息/线索阶段为 undefined） */
+  /** 进入"机会"阶段的时间（创建为机会或线索晋升为机会；信息/线索阶段为 undefined） */
   opportunityAt?: string;
   /** 进入"线索"阶段的时间 */
   leadAt?: string;
@@ -160,7 +160,7 @@ export interface SalesOpportunity {
   taxRate?: number;
   terminated?: boolean;
   promoteLocked?: boolean;
-  blueTable?: BlueTable;       // 销售蓝表数据（可选）
+  blueTable?: BlueTable; // 销售蓝表数据（可选）
 }
 
 // ── 报价列表摘要 ──
@@ -186,7 +186,7 @@ export interface QuotationSummary {
   opportunityId?: string;
   locked?: boolean;
   /** 是否存在真实的待审批请求（GET /quotations/:id 计算字段）。
-   *  false 表示 pending 是提交中断残留（无审批可操作），页面不应锁定，允许重存/重提。 */
+   * false 表示 pending 是提交中断残留（无审批可操作），页面不应锁定，允许重存/重提 */
   hasPendingApproval?: boolean;
 }
 
@@ -270,7 +270,7 @@ export interface DeliveryProject {
   clientName: string;
   projectName: string;
   contractAmount: number;
-  quotationId: string;          // 关联报价ID，用于加载成本对比数据
+  quotationId: string; // 关联报价ID，用于加载成本对比数据
   /** 执行状态三态：未开始/进行中/已完成（延期中为派生维度，见 analysisShared.getProjectDelay） */
   status: '未开始' | '进行中' | '已完成';
   nodes: DeliveryNode[];
@@ -328,13 +328,13 @@ export type ReactionMode = 'G' | 'T' | 'EK' | 'OC';
 export interface BlueTableRole {
   id: string;
   roleType: RoleType;
-  name?: string;               // 联系人姓名
-  influence: InfluenceLevel;   // 影响力
-  /** 影响力权重值，默认 高=5 中=3 低=1，可微调 */
+  name?: string; // 联系人姓名
+  influence: InfluenceLevel; // 影响力
+  /** 影响力权重值，默认高=5 中=3 低=1，可微调 */
   influenceWeight: number;
-  support: number;             // 支持度 -5~+5
-  demandFit: number;           // 需求匹配度 1~5
-  relationship: number;        // 客户关系 1~5
+  support: number; // 支持度 -5~+5
+  demandFit: number; // 需求匹配度 1~5
+  relationship: number; // 客户关系 1~5
 }
 
 export interface BlueTable {
@@ -346,9 +346,9 @@ export interface BlueTable {
   timelineOption: TimelineOption;
   roles: BlueTableRole[];
   pricing: PricingLevel;
-  positioning: number;         // 项目定位 1~10
+  positioning: number; // 项目定位 1~10
   reactionMode: ReactionMode;
-  strategy: string;            // 下一步行动
+  strategy: string; // 下一步行动
   targets: { roleId: string; targetSupport: number; plan?: string }[];
   updatedAt: string;
 }
@@ -373,7 +373,7 @@ export interface Client {
   salesman: string;
   creditLevel: CreditLevel;
   grade: ClientGrade;
-  /** 仅 /:id/detail 返回；列表接口不含（L9 修复：声明与实际响应一致） */
+  /** 仅 /:id/detail 返回；列表接口不含（声明与实际响应一致） */
   contacts?: Contact[];
   history?: ClientHistoryRecord[];
   /** 历史报价记录（后端返回） */

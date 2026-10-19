@@ -56,7 +56,7 @@ const GroupCard: React.FC<Props> = ({ group, onGroupChange, onAddItem, onDeleteI
       title={
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
           <Tag color={gtype.color} style={{ minWidth: 64, textAlign: 'center' }}>{gtype.label}</Tag>
-          {!group.isFixed && onGroupNameChange && (
+          {!group.isFixed && editable && onGroupNameChange && (
             editingName ? (
               <input ref={nameInputRef} value={nameDraft}
                 onChange={e => setNameDraft(e.target.value)}
@@ -111,6 +111,6 @@ const GroupCard: React.FC<Props> = ({ group, onGroupChange, onAddItem, onDeleteI
 /**
  * React.memo：QuotationPage 中编辑单个物料会触发全页重渲染，
  * 但未变更组的 group 引用保持不变（map 对非目标组原样返回），
- * memo 使仅受影响组重渲染，其余组跳过 → 大表编辑时避免全量重渲染。
+ * memo 使仅受影响组重渲染，其余组跳过 → 大表编辑时避免全量重渲染
  */
 export default React.memo(GroupCard);

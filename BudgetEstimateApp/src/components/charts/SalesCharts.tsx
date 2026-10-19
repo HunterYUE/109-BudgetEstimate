@@ -54,7 +54,7 @@ export const SalesFunnel: React.FC<FunnelProps> = ({ funnelData, fyInfo, fyLead,
   };
 
   // 财年累计均值转化率（项目数口径）：线索/信息、机会/线索、中标/(赢+机会+输)
-  // ⚠️ 仅项目数口径；金额口径因财年累计各阶段金额重叠、无递进意义，不展示
+  // 仅项目数口径；金额口径因财年累计各阶段金额重叠、无递进意义，不展示
   // 中标转化率 = 赢/(赢+机会+输)：机会→中标的推进率（已决出的机会+项目，不含进行中；线索/信息输单未进机会不计入）
   const convData = [
     { key: 'lead', cnt: fyInfo.count > 0 ? fyLead.count / fyInfo.count * 100 : 0 },
@@ -147,6 +147,6 @@ export const SalesFunnel: React.FC<FunnelProps> = ({ funnelData, fyInfo, fyLead,
 };
 
 /**
- * 竖状柱状图 ⚠️ B11：已收敛至 components/charts/VerticalBarChart.tsx 单源
- * （SalesAnalysis 与 DeliveryAnalysis 共用），此处不再重复定义。
+ * 竖状柱状图已收敛至 components/charts/VerticalBarChart.tsx 单源
+ * （SalesAnalysis 与 DeliveryAnalysis 共用），此处不再重复定义
  */

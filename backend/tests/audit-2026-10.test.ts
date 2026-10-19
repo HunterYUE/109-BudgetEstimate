@@ -3,13 +3,17 @@ import {
   selectOpportunityPerms, OPP_CREATE_WRITE, OPP_EDIT_WRITE,
   OPP_DELETE_WRITE, OPP_BLUE_TABLE_WRITE,
   selectComponentPerms, COMPONENT_REVIEW_WRITE, WRITE_GUARD,
+  selectDeliveryPerms, DELIVERY_CREATE_WRITE,
 } from '../src/permissions.js';
+import { objKeysToSnake } from '../src/routes/helpers.js';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { isRestrictedCrossAppUser } from '../src/middleware/auth.js';
 import { applyOppCreateLifecycle } from '../src/routes/opportunities.js';
 import { costCenterTypeOf, resolveCostCenterType } from '../src/routes/timerecording.js';
 
-// 2026-10 全量审计回归：权限拆分、跨应用守卫、机会创建时间戳服务端采集、工时成本中心类型派生。
-// 全部为纯函数直测（真实形状，无 DB / 无 mock）。
+// 2026-10 全量审计回归：权限拆分、跨应用守卫、机会创建时间戳服务端采集、工时成本中心类型派生
+// 全部为纯函数直测（真实形状，无 DB / 无 mock）
 
 describe('selectOpportunityPerms：销售机会写权限按动作拆分（A110）', () => {
   it('创建 / 删除 / 蓝表 / 编辑各自使用独立权限集', () => {
@@ -105,5 +109,36 @@ describe('工时成本中心类型派生（A124：服务端权威，防类型伪
     expect(resolveCostCenterType('A2627-LE-000', 'leave')).toBe('leave');
     expect(resolveCostCenterType('A2627-LE-000', undefined)).toBe('leave');
     expect(() => resolveCostCenterType('A2026-07-001-E', 'personal')).toThrow(/类型与编码不匹配/);
+  });
+});
+
+
+describe('路径选择器大小写/尾斜杠归一（Express 路由不区分大小写）', () => {
+  it('蓝表路径大写/尾斜杠仍走蓝表权限', () => {
+    expect(selectOpportunityPerms('PUT', '/abc/BLUE-TABLE/')).toEqual(OPP_BLUE_TABLE_WRITE);
+  });
+  it('交付节点路径尾斜杠仍走转交付写权限', () => {
+    expect(selectDeliveryPerms('PUT', '/abc/nodes/')).toEqual(DELIVERY_CREATE_WRITE);
+  });
+});
+
+describe('objKeysToSnake 原型污染防护', () => {
+  it('__proto__ / constructor / prototype 键 → 400', () => {
+    expect(() => objKeysToSnake(JSON.parse('{"__proto__":{"lead_at":"2000-01-01"}}'))).toThrow(/非法键名/);
+    expect(() => objKeysToSnake({ constructor: 'x' })).toThrow(/非法键名/);
+    expect(() => objKeysToSnake({ prototype: 'x' })).toThrow(/非法键名/);
+  });
+  it('正常键正常转换', () => {
+    expect(objKeysToSnake({ salesNo: 'A1', groupType: 'EQUIPMENT' }))
+      .toEqual({ sales_no: 'A1', group_type: 'EQUIPMENT' });
+  });
+});
+
+describe('组保存批量端点接线（静态断言）', () => {
+  const src = readFileSync(fileURLToPath(new URL('../src/routes/index.ts', import.meta.url)), 'utf8');
+  it('存在 /project-groups/batch 且使用事务与版本归属校验', () => {
+    expect(src).toContain("router.post('/project-groups/batch'");
+    expect(src).toContain('版本不属于该项目');
+    expect(src).toContain('明细 id 由客户端提供时保留');
   });
 });

@@ -214,7 +214,7 @@ describe('fyMonthWindows 财年 12 月窗口（index 0 = 7 月）', () => {
     expect(wins[0].start.getMonth()).toBe(6);
     expect(wins[0].end.getDate()).toBe(31);
     expect(wins[6].start.getFullYear()).toBe(2026); // 1 月
-    expect(wins[11].start.getMonth()).toBe(5);      // 6 月
+    expect(wins[11].start.getMonth()).toBe(5); // 6 月
   });
 });
 
@@ -257,8 +257,8 @@ describe('stageAsOf 同天边界（阶段时间 ≤ 判定日即进入）', () =
     negotiationAt: '2026-06-01', bidAt: '2026-05-01', opportunityAt: '2026-04-01', leadAt: '2026-03-01',
   } as any;
   it('判定日 == 议价进入日（当天中午）→ 议价', () => {
-    // ⚠️ 契约真相：无时区日期字符串 '2026-06-01' 按 UTC 解析 = 北京 08:00；
-    //   凌晨(00:00)判定会早于 08:00 → 未进入。当天 12:00 判定已过 08:00 → 议价。
+    // 契约真相：无时区日期字符串 '2026-06-01' 按 UTC 解析 = 北京 08:00；
+    // 凌晨(00:00)判定会早于 08:00 → 未进入。当天 12:00 判定已过 08:00 → 议价
     expect(stageAsOf(o, new Date('2026-06-01T12:00:00'))).toBe('议价');
   });
   it('无任何阶段时间 → 信息', () => {

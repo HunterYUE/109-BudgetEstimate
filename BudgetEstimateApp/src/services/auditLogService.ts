@@ -4,7 +4,7 @@ export interface AuditLog {
   id: string;
   time: string;
   userName: string;
-  displayName?: string;    // 关联 users 表的真实姓名（后端 LEFT JOIN 返回）
+  displayName?: string; // 关联 users 表的真实姓名（后端 LEFT JOIN 返回）
   action: string;
   module: string;
   detail: string;

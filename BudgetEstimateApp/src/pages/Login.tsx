@@ -88,7 +88,7 @@ const Login: React.FC = () => {
             <div style={{ textAlign: 'center', marginBottom: 36 }}>
               <div style={{
                 width: 64, height: 64, borderRadius: 14,
-                background: 'linear-gradient(135deg, #1a237e, #283593, #3949ab)',
+                background: 'linear-gradient(135deg, a237e, 593, 9ab)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 margin: '0 auto 16px',
                 boxShadow: '0 4px 12px rgba(26,35,126,0.3)',
@@ -101,7 +101,7 @@ const Login: React.FC = () => {
               <h2 style={{ fontSize: 'clamp(18px, 2vw, 20px)', fontWeight: 700, color: '#1a1a2e', margin: 0, marginBottom: 4 }}>
                 欢迎回来
               </h2>
-              <p style={{ fontSize: 'clamp(12px, 1.3vw, 13px)', color: '#888', margin: 0 }}>
+              <p style={{ fontSize: 'clamp(12px, 1.3vw, 13px)', color: '', margin: 0 }}>
                 请登录您的账号以继续
               </p>
             </div>
@@ -122,7 +122,7 @@ const Login: React.FC = () => {
               <div style={{ marginBottom: 20 }}>
                 <label style={{
                   display: 'block', fontSize: 13, fontWeight: 600,
-                  color: '#444', marginBottom: 8,
+                  color: '', marginBottom: 8,
                 }}>邮箱</label>
                 <div style={{
                   display: 'flex', alignItems: 'center',
@@ -149,7 +149,7 @@ const Login: React.FC = () => {
               <div style={{ marginBottom: 28 }}>
                 <label style={{
                   display: 'block', fontSize: 13, fontWeight: 600,
-                  color: '#444', marginBottom: 8,
+                  color: '', marginBottom: 8,
                 }}>密码</label>
                 <div style={{
                   display: 'flex', alignItems: 'center',
@@ -176,7 +176,7 @@ const Login: React.FC = () => {
               <button type="submit" disabled={submitting}
                 style={{
                   width: '100%', padding: '12px 0', fontSize: 15, fontWeight: 600,
-                  background: submitting ? '#91caff' : 'linear-gradient(135deg, #1a237e, #3949ab)',
+                  background: submitting ? '#91caff' : 'linear-gradient(135deg, a237e, 9ab)',
                   color: '#fff', border: 'none', borderRadius: 8,
                   cursor: submitting ? 'not-allowed' : 'pointer',
                   transition: 'all 0.2s', letterSpacing: 2,

@@ -31,15 +31,15 @@ export interface CostLine {
 }
 
 /**
- * 汇总报价组 → 成本对比行（ItemCostTable 与 handleExportCost 的单一数字来源）。
- * 顺序与旧实现一致：EQUIPMENT 材料（按组）→ INTEGRATION 材料 → 设计/装配人工 →
- * 交付服务（除 SV-DESIGN/INSASS）→ 项目费用 → 风险 → 商业 → 质保。
+ * 汇总报价组 → 成本对比行（ItemCostTable 与 handleExportCost 的单一数字来源）
+ * 顺序：EQUIPMENT 材料（按组）→ INTEGRATION 材料 → 设计/装配人工 →
+ * 交付服务（除 SV-DESIGN/INSASS）→ 项目费用 → 风险 → 商业 → 质保
  *
- * ⚠️ 口径与 calcDirectCost 一致（不可单独改动，否则两处漂移）：
- *   - 设计工时 = 整行总工时（设计只发生一次），不乘数量
- *   - 装配工时 = 单件工时 × 数量
- *   - 质保基数仅统计 EQUIPMENT/INTEGRATION 的免质保项
- *   - 风险基数 = 全部项次 directCost 之和
+ * 口径与 calcDirectCost 一致（不可单独改动，否则两处漂移）：
+ * - 设计工时 = 整行总工时（设计只发生一次），不乘数量
+ * - 装配工时 = 单件工时 × 数量
+ * - 质保基数仅统计 EQUIPMENT/INTEGRATION 的免质保项
+ * - 风险基数 = 全部项次 directCost 之和
  */
 export function buildCostLines(
   groups: Group[],
@@ -67,7 +67,7 @@ export function buildCostLines(
     }
   }
 
-  // ── 2. INTEGRATION 材料部分（同类型多组全部计入，防与 calcProjectSummary 汇总口径分叉）──
+  // ── 2. INTEGRATION 材料部分（同类型多组全部计入，防与 calcProjectSummary 汇总口径分叉） ──
   for (const g of groups) {
     if (g.groupType !== 'INTEGRATION') continue;
     for (const item of g.items) {
@@ -114,7 +114,7 @@ export function buildCostLines(
     lines.push({ key: '_assy_debug', category: '人工成本', code: 'SV-INSASS-000000-V1.0', detail: '装配调试', qty: Math.round(totalAssemblyHours), estimated: totalAssemblyCost, actual: act('_assy_debug') });
   }
 
-  // ── 4. PROJECT_DELIVERY 其他服务项（同类型多组全部计入；排除已汇总到设计/装配的项）──
+  // ── 4. PROJECT_DELIVERY 其他服务项（同类型多组全部计入；排除已汇总到设计/装配的项） ──
   for (const g of groups) {
     if (g.groupType !== 'PROJECT_DELIVERY') continue;
     for (const item of g.items) {
@@ -134,7 +134,7 @@ export function buildCostLines(
 
   // ── 6. 风险 / 商业 / 质保 ──
   if (version) {
-    // ⚠️ 质保基数/风险/商业费用统一走 computeCostComponents（与 calcProjectSummary / computeDeliveryEstGP3 同口径）
+    // 质保基数/风险/商业费用统一走 computeCostComponents（与 calcProjectSummary / computeDeliveryEstGP3 同口径）
     const { riskCost, commercialCost, warrantyCost } = computeCostComponents(groups, version);
     // 行显隐按费率判断（与原始实现一致），金额用共享计算值
     if ((version.riskRate ?? 0) > 0) {

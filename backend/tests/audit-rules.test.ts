@@ -3,8 +3,8 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 // ── 业务规则审计回归测试（2026-08-14 双应用业务逻辑/规则审计）──
-// 覆盖：C1 工时管理员建号越级保护、C2 审批类型枚举白名单、C3/C4 交付节点输入防御（history 数组 + status 枚举）。
-// 沿用 route-guards.test.ts / audit-fixes.test.ts 的「静态源码断言」模式（无 DB 连接，无 mock 数据）。
+// 覆盖：工时管理员建号越级保护、审批类型枚举白名单、交付节点输入防御（history 数组 + status 枚举）
+// 沿用 route-guards.test.ts / audit-fixes.test.ts 的「静态源码断言」模式（无 DB 连接，无 mock 数据）
 
 const src = (rel: string) => readFileSync(fileURLToPath(new URL(`../src/${rel}`, import.meta.url)), 'utf8');
 

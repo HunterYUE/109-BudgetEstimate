@@ -4,7 +4,7 @@ import rateLimit from 'express-rate-limit';
 import { query } from '../db/index.js';
 import { requireAuth, requireRole, signToken, setAuthCookie, clearAuthCookie, COOKIE_NAME_TR, COOKIE_NAME_BUDGET } from '../middleware/auth.js';
 import { AppError } from '../middleware/index.js';
-import { logAudit, round2, normalizeEmail, resetUserPassword, withTransaction, assertCanManage, ROLE_RANK, DUMMY_PASSWORD_HASH, parsePagination } from './helpers.js';
+import { logAudit, round2, normalizeEmail, resetUserPassword, withTransaction, assertCanManage, ROLE_RANK, DUMMY_PASSWORD_HASH, parsePagination, EMAIL_RE, PASSWORD_MAX, assertUserDeletable } from './helpers.js';
 import { PAGE_LIMIT } from '../constants.js';
 import { ensureCostCenters, recentFiscalYears, availableCostCenterFys, fiscalYearLabel } from '../jobs/costCenterSync.js';
 
@@ -15,21 +15,22 @@ export const isTrAdmin = (u: { role?: string } | undefined): boolean => !!u && (
 
 /**
  * 成本中心存在性校验（共享基底，任务与工时记录复用）：
- *   -S(sales)/-E(project) 实时查预算库；-W(warranty)/-DE-(department)/-00-(personal) 查工时码表。
- *   部门/个人中心还须处于可用财年窗口（新财年提前一月生成、老财年延续新财年首月），
- *   防止把早已归档或远未生成的部门/个人中心派给任务。
- *   opts.allowDE: 工时记录允许部门中心；任务则只允许个人中心（部门中心不用于任务）。
+ * -S(sales)/-E(project) 实时查预算库；-W(warranty)/-DE-(department)/-00-(personal) 查工时码表
+ * 部门/个人中心还须处于可用财年窗口（新财年提前一月生成、老财年延续新财年首月），
+ * 防止把早已归档或远未生成的部门/个人中心派给任务
+ * opts.allowDE: 工时记录允许部门中心；任务则只允许个人中心（部门中心不用于任务）
  */
 async function assertCostCenterValidBase(
   code: string | null | undefined,
   label: string,
   opts: { allowDE: boolean }
 ): Promise<void> {
-  // ⚠️ 分配任务时成本中心必填，不能为空
+  // 分配任务时成本中心必填，不能为空
   if (!code) throw new AppError(400, '成本中心不能为空');
+  if (typeof code !== 'string') throw new AppError(400, '成本中心编码必须为字符串');
   const m = /^A(\d{4})-(DE|00|LE)-\d{3}$/.exec(code);
   if (m) {
-    // ⚠️ 任务不允许部门中心，也不允许请休假中心（请休假只用于工时记录，不用于任务）
+    // 任务不允许部门中心，也不允许请休假中心（请休假只用于工时记录，不用于任务）
     if (!opts.allowDE && (m[2] === 'DE' || m[2] === 'LE')) throw new AppError(400, `${label}不能使用部门或请休假成本中心，请选择项目或个人成本中心`);
     const fy = 'FY' + m[1];
     const row = await query('SELECT 1 FROM timerecording.cost_centers WHERE code = $1', [code]);
@@ -89,7 +90,7 @@ export function resolveCostCenterType(code: string | null | undefined, provided:
 }
 
 /** 同用户同日时间段不得重叠（时间段非空的记录之间；excludeId 供 PUT 排除自身）。
- *  与 serverHours 一起构成服务端时段权威：防重复插入同一时段把单日工时无限放大。 */
+ * 与 serverHours 一起构成服务端时段权威：防重复插入同一时段把单日工时无限放大 */
 export async function assertNoTimeOverlap(
   userId: string,
   date: string,
@@ -104,6 +105,7 @@ export async function assertNoTimeOverlap(
   const rows = (await query(
     `SELECT start_time, end_time FROM timerecording.time_records
      WHERE user_id = $1 AND date = $2 AND start_time IS NOT NULL AND end_time IS NOT NULL
+       AND status <> 'rejected'
      ${excludeId ? 'AND id <> $3' : ''}`,
     params
   )).rows;
@@ -114,8 +116,8 @@ export async function assertNoTimeOverlap(
   }
 }
 
-/** 周级状态机守卫：同一用户同一 ISO 周一旦存在 submitted/approved/locked 记录，整周冻结，
- *  禁止再新增/修改/删除/提交（前端 weekCommitted 只是 UX，服务端必须权威）。 */
+/** 周级状态机守卫：同一用户同一 ISO 周一旦存在 submitted/approved/locked 记录，禁止新增记录；
+ * 已存在的草稿/驳回记录仍可修正与重提，避免撤回或驳回后陷入永久只读 */
 export async function assertWeekNotCommitted(
   userId: string,
   year: number,
@@ -140,24 +142,24 @@ const TIME_COST_CENTER_TYPES = ['sales', 'project', 'warranty', 'department', 'p
 const NOTIFICATION_TYPES = ['approval', 'rejection', 'submission', 'task', 'task_feedback', 'reminder', 'withdraw'] as const;
 
 /** 任务状态枚举（对齐 DB task_assignments_status_check；与前端 TASK_STATUS_META 键一致）。
- *  POST/PUT 应用层预校验，垃圾状态返回明确 400，避免撞 DB CHECK 变 500 */
+ * POST/PUT 应用层预校验，垃圾状态返回明确 400，避免撞 DB CHECK 变 500 */
 const TASK_STATUSES = ['pending', 'in_progress', 'completed', 'cancelled', 'postponed', 'delayed'];
 
 /** 请休假成本中心编码 A####-LE-###（isLeaveCostCenter 与回填/查询共用） */
 const LE_CODE_RE = /^A\d{4}-LE-\d{3}$/;
 
 /** 是否请休假成本中心（编码 A####-LE-### 或类型标记 leave）：请休假硬性规则共用判断，
- *  防客户端把 LE 码标成其他类型（type 与 code 任一命中即按请休假校验） */
+ * 防客户端把 LE 码标成其他类型（type 与 code 任一命中即按请休假校验） */
 export function isLeaveCostCenter(code: string | null | undefined, type?: string | null): boolean {
   return type === 'leave' || LE_CODE_RE.test(code || '');
 }
 
 /** 请休假硬性校验（POST/PUT 共用）：
- *   - 晚班/周末/节假日（hour_type 服务端派生 overtime）拒绝；
- *   - 单日请休假合计 ≤ 8 小时（含本行工时；PUT 传 excludeId 排除本条自身）。
- *     ⚠️ D3 核实 2026-08-14：日净工时 = 8h（上满一天计 8h，非时段跨度 9h），
- *     全天请假 = 8h 天然落在此上限内，8h 上限为正确口径，不放宽。
- *   code/type 任一命中请休假（isLeaveCostCenter 口径）即触发校验 */
+ * - 晚班/周末/节假日（hour_type 服务端派生 overtime）拒绝；
+ * - 单日请休假合计 ≤ 8 小时（含本行工时；PUT 传 excludeId 排除本条自身）
+ * 日净工时 = 8h（上满一天计 8h，非时段跨度 9h），
+ * 全天请假 = 8h 天然落在此上限内，8h 上限为正确口径，不放宽
+ * code/type 任一命中请休假（isLeaveCostCenter 口径）即触发校验 */
 async function assertLeaveValid(opts: {
   userId: string;
   date: string;
@@ -172,12 +174,14 @@ async function assertLeaveValid(opts: {
   const params = opts.excludeId ? [opts.userId, opts.date, opts.excludeId] : [opts.userId, opts.date];
   const dayTotal = (await query(
     `SELECT COALESCE(SUM(hours), 0) AS total FROM timerecording.time_records
-     WHERE user_id = $1 AND date = $2${opts.excludeId ? ' AND id <> $3' : ''} AND (cost_center_type = 'leave' OR cost_center LIKE 'A%-LE-%')`,
+     WHERE user_id = $1 AND date = $2${opts.excludeId ? ' AND id <> $3' : ''}
+       AND status <> 'rejected'
+       AND (cost_center_type = 'leave' OR cost_center LIKE 'A%-LE-%')`,
     params
   )).rows[0].total;
-  // ⚠️ 浮点纪律：dayTotal 是 SUM 累加值、opts.hours 是 2 位小数，4.1+3.9 在 float64 下=8.000000000000002
-  //   会误拒合法输入；先 round2 再与上限比较（对齐 DB NUMERIC 2 位精度）
-  // ⚠️ D3 核实 2026-08-14：日净工时 8h，全天请假=8h，上限保持 8h 不放宽
+  // 浮点纪律：dayTotal 是 SUM 累加值、opts.hours 是 2 位小数，4.1+3.9 在 float64 下=8.000000000000002
+  // 会误拒合法输入；先 round2 再与上限比较（对齐 DB NUMERIC 2 位精度）
+  // 日净工时 8h，全天请假=8h，上限保持 8h 不放宽
   if (round2(Number(dayTotal) + opts.hours) > 8) throw new AppError(400, '请休假每天最多 8 小时');
 }
 
@@ -200,11 +204,11 @@ export function isValidUuidArray(ids: any): ids is string[] {
 
 /**
  * 工时角色（派生自预算用户 role + permissions）：
- *   director 总监（全部权限） / manager 方案·交付经理（可分配任务、查看综合分析） / employee 员工（仅本人填报/统计）
+ * director 总监（全部权限） / manager 方案·交付经理（可分配任务、查看综合分析） / employee 员工（仅本人填报/统计）
  */
 export const trRoleOf = (u: { role?: string; permissions?: string[] } | undefined): 'director' | 'manager' | 'employee' => {
-  // ⚠️ 修复：admin（系统/工时管理员）按 director 级处理——后端 requireRole('director','admin')
-  //   已视 admin 为全权管理员，前端导航/路由若仍按 employee 收缩会把管理入口藏掉（前后台权限不一致）
+  // admin（系统/工时管理员）按 director 级处理——后端 requireRole('director','admin')
+  // 已视 admin 为全权管理员，前端导航/路由若仍按 employee 收缩会把管理入口藏掉（前后台权限不一致）
   if (u?.role === 'director' || u?.role === 'admin') return 'director';
   const perms: string[] = u?.permissions || [];
   if (perms.includes('报价编制') || perms.includes('交付管理')) return 'manager';
@@ -214,10 +218,10 @@ export const trRoleOf = (u: { role?: string; permissions?: string[] } | undefine
 export const isManager = (u: { role?: string; permissions?: string[] } | undefined): boolean => trRoleOf(u) !== 'employee';
 
 /**
- * ⚠️ A106 修复：跨应用登录权限纵深防御——销售经理（title='销售经理' 且非 director/admin）禁止调用任何工时 API。
- *   此前仅登录端点与 /auth/me 拦截，但 requireAuth 认 tr_token/budget_token 任一 cookie，
- *   销售经理登录预算应用后可直接用预算 cookie 绕过登录直调工时接口（提报工时/查全员数据）。
- *   requireAuth 每请求加载 title（auth.ts A106）后，此处对全部受保护路由统一拦截。
+ * 跨应用登录权限纵深防御——销售经理（title='销售经理' 且非 director/admin）禁止调用任何工时 API
+ * 仅登录端点与 /auth/me 拦截不够：requireAuth 认 tr_token/budget_token 任一 cookie，
+ * 销售经理登录预算应用后可直接用预算 cookie 绕过登录直调工时接口（提报工时/查全员数据）
+ * requireAuth 每请求加载 title（auth.ts）后，此处对全部受保护路由统一拦截
  */
 const trAppGuard: RequestHandler = (req, res, next) => {
   const u = req.user;
@@ -231,8 +235,8 @@ const trAppGuard: RequestHandler = (req, res, next) => {
 /** 工时受保护路由鉴权组合：requireAuth 加载用户 → trAppGuard 拦截销售经理（替代裸 requireAuth） */
 const trAuth: RequestHandler[] = [requireAuth, trAppGuard];
 
-// ── 服务端权威计算（S4 修复） ──
-// hours/hour_type 一律由后端按起止时间与日期重算，不信任前端传入值（防伪造、防前后端口径漂移）。
+// ── 服务端权威计算 ──
+// hours/hour_type 一律由后端按起止时间与日期重算，不信任前端传入值（防伪造、防前后端口径漂移）
 
 /** "HH:MM"（或含秒 "HH:MM:SS"）→ 分钟数；格式非法返回 null */
 export function toMinutes(t?: string | null): number | null {
@@ -265,9 +269,9 @@ export function isStatutoryHoliday(d: Date): boolean {
   return list.includes(`${mm}-${dd}`);
 }
 
-/** 周末调休上班日（补班，周六/周日上班）——D2 决策 2026-08-14：补班日 = 工作日，
- *   serverHourType 对补班日返回 normal（出勤/请假均按正常工作日计，不再判加班）。
- *   与前端 src/utils/holidays.js MAKEUP_WORKDAYS 同一份，需人工同步（对齐 STATUTORY_HOLIDAYS 同步契约） */
+/** 周末调休上班日（补班，周六/周日上班）—— 决策补班日 = 工作日，
+ * serverHourType 对补班日返回 normal（出勤/请假均按正常工作日计，不再判加班）
+ * 与前端 src/utils/holidays.js MAKEUP_WORKDAYS 同一份，需人工同步（对齐 STATUTORY_HOLIDAYS 同步契约） */
 const MAKEUP_WORKDAYS: Record<number, string[]> = {
   2025: ['01-26','02-08','04-27','09-28','10-11'],
   2026: ['01-04','02-14','02-28','05-09','09-20','10-10'],
@@ -286,15 +290,15 @@ export function serverHourType(date?: string | null, start?: string | null, end?
   const evening = s != null && e != null && Math.max(0, Math.min(e, 1230) - Math.max(s, 1080)) > 0;
   const [y, m, d] = String(date || '').split('-').map(Number);
   const wd = (Number.isFinite(y) && Number.isFinite(m) && Number.isFinite(d)) ? new Date(y, m - 1, d).getDay() : -1;
-  // ⚠️ D2 决策 2026-08-14：补班日（周末上班）= 工作日，周末加班判定豁免（出勤/请假均按 normal）
+  // 决策补班日（周末上班）= 工作日，周末加班判定豁免（出勤/请假均按 normal）
   const weekendOvertime = (wd === 0 || wd === 6) && !(wd >= 0 && isMakeupWorkday(new Date(y, m - 1, d)));
   return (evening || weekendOvertime || (wd >= 0 && isStatutoryHoliday(new Date(y, m - 1, d)))) ? 'overtime' : 'normal';
 }
 
 /**
- * 周提交开放校验（⚠️ 一周只提交一次，禁半周/未来周提交）：
- *   目标周在「周日 20:30」之后才允许提交（服务端本地时区=北京，对齐周日 20:30 提交提醒=该周推送提交信息的时刻）；
- *   此前提交该周或未来周记录一律拒绝。
+ * 周提交开放校验（一周只提交一次，禁半周/未来周提交）：
+ * 目标周在「周日 20:30」之后才允许提交（服务端本地时区=北京，对齐周日 20:30 提交提醒=该周推送提交信息的时刻）；
+ * 提交该周或未来周记录一律拒绝
  * @param dateStr 记录日期 YYYY-MM-DD
  */
 function assertWeekSubmittable(dateStr: string): void {
@@ -306,10 +310,10 @@ function assertWeekSubmittable(dateStr: string): void {
 }
 
 /**
- * 补录窗口起点（⚠️ D1 决策 2026-08-14）：当前周 + 前 4 周可补录，超过 4 周锁定（只读）。
- *   截止点 = 当前 ISO 周周一 − 4 周（服务器本地时区=北京，日期粒度、落在周界）。
- *   date 早于截止点的记录：新增/修改/删除/提交一律拒绝（前端冻结格子为 UX，此处为权威防线）。
- *   now 由调用方注入（asOf 约定，F12 便于测试；默认服务器当前时间）
+ * 补录窗口起点：当前周 + 前 4 周可补录，超过 4 周锁定（只读）
+ * 截止点 = 当前 ISO 周周一 − 4 周（服务器本地时区=北京，日期粒度、落在周界）
+ * date 早于截止点的记录：新增/修改/删除/提交一律拒绝（前端冻结格子为 UX，此处为权威防线）
+ * now 由调用方注入（asOf 约定，便于测试；默认服务器当前时间）
  */
 export function backfillWindowStart(now: Date = new Date()): string {
   const daysSinceMonday = (now.getDay() + 6) % 7; // 周一=0…周日=6
@@ -326,7 +330,7 @@ export function assertBackfillWindow(dateStr: unknown, now: Date = new Date()): 
   }
 }
 
-/** 校验日期为真实历法日期（格式 + 回验，拦截 2026-02-30/2026-13-01 等越界日期） */
+/** 校验日期为真实历法日期（格式 + 回验，拦截 /等越界日期） */
 export function isValidDateStr(s: unknown): s is string {
   if (typeof s !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
   const [y, m, d] = s.split('-').map(Number);
@@ -334,7 +338,7 @@ export function isValidDateStr(s: unknown): s is string {
   return dt.getFullYear() === y && dt.getMonth() === m - 1 && dt.getDate() === d;
 }
 
-// ⚠️ M4 修复：工时登录端点同样加限速（此前只有主 /auth/login 限速，此处可被暴力破解）
+// 工时登录端点同样加限速
 const trLoginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 20,
@@ -350,7 +354,7 @@ router.post('/auth/login', trLoginLimiter, async (req, res, next) => {
     if (!email || !password) throw new AppError(400, '请输入账号和密码');
     // 类型校验（防对象/数组入参触发 PG 类型错误 500）
     if (typeof email !== 'string' || typeof password !== 'string') throw new AppError(400, '账号和密码必须为字符串');
-    // ⚠️ A5 修复：邮箱归一化（trim+小写），LOWER 比较命中表达式索引（此前裸 email 比较未归一化，' A@x ' 无法登录）
+    // 邮箱归一化（trim+小写），LOWER 比较命中表达式索引
     const emailNorm = normalizeEmail(email);
 
     const result = await query(
@@ -363,11 +367,11 @@ router.post('/auth/login', trLoginLimiter, async (req, res, next) => {
     );
 
     const user = result.rows[0];
-    // ⚠️ A5 修复：用户不存在也执行 bcrypt 假比较（抹平时耗），统一返回「账号或密码错误」不区分用户是否存在
+    // 用户不存在也执行 bcrypt 假比较（抹平时耗），统一返回「账号或密码错误」不区分用户是否存在
     const valid = await bcrypt.compare(password, user?.password_hash || DUMMY_PASSWORD_HASH);
     if (!user || !valid) throw new AppError(401, '账号或密码错误');
 
-    // ⚠️ 跨应用登录权限：销售经理仅限销售·交付应用，禁止登录任务规划和报工应用
+    // 跨应用登录权限：销售经理仅限销售·交付应用，禁止登录任务规划和报工应用
     if (String(user.title || '').trim() === '销售经理' && user.role !== 'admin' && user.role !== 'director') {
       throw new AppError(403, '该账号仅限登录销售和交付管理应用，无权使用任务规划和报工应用');
     }
@@ -375,8 +379,8 @@ router.post('/auth/login', trLoginLimiter, async (req, res, next) => {
     // 如果没有 profile 则创建
     let createdEmployeeId: string | undefined;
     if (!user.tr_role) {
-      // ⚠️ A127：employee_id 有唯一约束，直接取邮箱前缀会让不同域同 local-part 的账号
-      //   首次登录永远 500（ON CONFLICT (id) 只处理主键冲突）。冲突时追加 id 片段。
+      // employee_id 有唯一约束，直接取邮箱前缀会让不同域同 local-part 的账号
+      // 首次登录永远 500（ON CONFLICT (id) 只处理主键冲突）。冲突时追加 id 片段
       const baseId = user.email.split('@')[0];
       const clash = (await query(
         'SELECT 1 FROM timerecording.profiles WHERE employee_id = $1', [baseId]
@@ -391,7 +395,9 @@ router.post('/auth/login', trLoginLimiter, async (req, res, next) => {
     }
 
     const token = signToken({ userId: user.id, email: user.email, role: user.role });
-    // ⚠️ L6 修复：token 只写 HttpOnly cookie（JS 读不到），不再回传 body
+    // token 只写 HttpOnly cookie（JS 读不到），不再回传 body
+    // 登录即切换为当前账号：清除预算应用可能残留的他人会话
+    clearAuthCookie(res, COOKIE_NAME_BUDGET);
     setAuthCookie(res, COOKIE_NAME_TR, token);
 
     res.json({
@@ -402,7 +408,7 @@ router.post('/auth/login', trLoginLimiter, async (req, res, next) => {
         employeeId: user.employee_id || createdEmployeeId || user.email.split('@')[0],
         name: user.name || user.display_name,
         role: user.tr_role || (user.role === 'director' || user.role === 'admin' ? 'admin' : 'employee'),
-        // ⚠️ 工时角色：director(总监)/manager(方案·交付经理)/employee(普通员工)
+        // 工时角色：director(总监)/manager(方案·交付经理)/employee(普通员工)
         trRole: trRoleOf({ role: user.role, permissions: user.permissions }),
       },
     });
@@ -423,7 +429,7 @@ router.get('/auth/me', ...trAuth, async (req, res, next) => {
     );
     if (result.rows.length === 0) throw new AppError(404, '用户不存在');
     const r = result.rows[0];
-    // ⚠️ 跨应用登录权限：销售经理仅限报价·交付应用（已持有旧 token 也在此拦截并登出）
+    // 跨应用登录权限：销售经理仅限报价·交付应用（已持有旧 token 也在此拦截并登出）
     if (r.title === '销售经理' && req.user!.role !== 'admin' && req.user!.role !== 'director') {
       throw new AppError(403, '该账号仅限登录销售和交付管理应用，无权使用任务规划和报工应用');
     }
@@ -433,14 +439,14 @@ router.get('/auth/me', ...trAuth, async (req, res, next) => {
       employeeId: r.employee_id || r.email.split('@')[0],
       name: r.name || r.display_name,
       role: r.role || 'employee',
-      // ⚠️ 工时角色：req.user 含 JWT role 与每请求加载的 permissions
+      // 工时角色：req.user 含 JWT role 与每请求加载的 permissions
       trRole: trRoleOf({ role: req.user!.role, permissions: req.user!.permissions }),
     });
   } catch (err) { next(err); }
 });
 
 /** POST /api/v1/timerecording/auth/logout - 清除认证 cookie（幂等；无需鉴权，HttpOnly cookie 只有服务端能清）。
- *  requireAuth 认任一应用 cookie，与预算登出同口径：两个 cookie 一并清除，否则另一应用的 cookie 仍可继续访问。 */
+ * requireAuth 认任一应用 cookie，与预算登出同口径：两个 cookie 一并清除，否则另一应用的 cookie 仍可继续访问 */
 router.post('/auth/logout', (_req, res) => {
   clearAuthCookie(res, COOKIE_NAME_TR);
   clearAuthCookie(res, COOKIE_NAME_BUDGET);
@@ -449,15 +455,15 @@ router.post('/auth/logout', (_req, res) => {
 
 // ── 用户档案 ──
 
-// ⚠️ 全员档案列表：管理员看全字段；非管理员仅返回 id/employee_id/name/is_active/created_at（供任务规划/我的账户展示，
-//   不泄漏邮箱/角色——平衡隐私与任务规划需要全员名单；created_at=系统注册日，个人统计开工率应出勤起点需要）
-//   is_director（派生，所有角色可见）：EXISTS 查预算 users 按 email 判定 role='director'，供仪表盘开工率分母剔除部门总监应出工工时；
-//   恒为布尔（未匹配到 users 也返回 false，不产生 NULL）；仅暴露「是否总监」布尔，不额外暴露 role/email。
+// 全员档案列表：管理员看全字段；非管理员仅返回 id/employee_id/name/is_active/created_at（供任务规划/我的账户展示，
+// 不泄漏邮箱/角色——平衡隐私与任务规划需要全员名单；created_at=系统注册日，个人统计开工率应出勤起点需要）
+// is_director（派生，所有角色可见）：EXISTS 查预算 users 按 email 判定 role='director'，供仪表盘开工率分母剔除部门总监应出工工时；
+// 恒为布尔（未匹配到 users 也返回 false，不产生 NULL）；仅暴露「是否总监」布尔，不额外暴露 role/email
 router.get('/profiles', ...trAuth, async (req, res, next) => {
   try {
     const admin = isTrAdmin(req.user);
-    // ⚠️ C101：显式支持 limit 查询参数（钳制 [1, PAGE_LIMIT]，缺省 1000 保持全量读取口径），
-    //   供调用方显式声明所需条数，防数据量上涨后静默截断
+    // 显式支持 limit 查询参数（钳制 [1, PAGE_LIMIT]，缺省 1000 保持全量读取口径），
+    // 供调用方显式声明所需条数，防数据量上涨后静默截断
     const { limit } = parsePagination(req.query, PAGE_LIMIT);
     const select = admin ? 'p.id, p.employee_id, p.name, p.email, p.role, p.is_active, p.created_at' : 'p.id, p.employee_id, p.name, p.is_active, p.created_at';
     const rows = (await query(
@@ -475,7 +481,7 @@ router.get('/profiles', ...trAuth, async (req, res, next) => {
 
 router.get('/profiles/:id', ...trAuth, async (req, res, next) => {
   try {
-    // ⚠️ 归属校验：只能看自己的档案（email/role 属隐私）；管理员可看任意档案
+    // 归属校验：只能看自己的档案（email/role 属隐私）；管理员可看任意档案
     const user = req.user!;
     const admin = isTrAdmin(user);
     if (req.params.id !== user.userId && !admin) throw new AppError(403, '无权查看他人档案');
@@ -489,20 +495,27 @@ router.put('/profiles/:id', ...trAuth, async (req, res, next) => {
   try {
     const user = req.user!;
     const admin = isTrAdmin(user);
-    // ⚠️ F6 修复：只能改自己的档案；role/is_active 等管理字段仅管理员可改（此前任意用户可改任意档案含角色）
+    // 只能改自己的档案；role/is_active 等管理字段仅管理员可改
     if (req.params.id !== user.userId && !admin) throw new AppError(403, '无权修改他人档案');
     if (['role', 'is_active'].some(f => f in req.body) && !admin) throw new AppError(403, '仅管理员可修改角色/启用状态');
-    // ⚠️ A126：越级保护——仅有 isTrAdmin 判定时 director(2) 可停用/改邮箱更高等级的 admin(3)，
-    //   停用会让 requireAuth 对两个应用同时 401，等于永久锁死更高权限账号。与 users.ts/重置密码同口径。
+    // 不能停用或修改自己的角色（避免两个应用同时失去登录/管理能力）
+    if (req.params.id === user.userId && req.body.is_active === false) {
+      throw new AppError(400, '不能停用自己的账号');
+    }
+    if (req.params.id === user.userId && req.body.role !== undefined) {
+      throw new AppError(400, '不能修改自己的角色');
+    }
+    // 越级保护——仅有 isTrAdmin 判定时 director(2) 可停用/改邮箱更高等级的 admin(3)，
+    // 停用会让 requireAuth 对两个应用同时 401，等于永久锁死更高权限账号。与 users.ts/重置密码同口径
     if (req.params.id !== user.userId) {
       const target = (await query('SELECT role FROM public.users WHERE id = $1', [req.params.id])).rows[0];
       if (!target) throw new AppError(404, '目标账号不存在');
       assertCanManage(user.role || 'user', ROLE_RANK[target.role] ?? 0);
     }
-    // ⚠️ 审计修复：profiles.role 撞 profiles_role_check 约束（仅 admin/employee）会返回 500，此处显式预校验给 400
+    // profiles.role 撞 profiles_role_check 约束（仅 admin/employee）会返回 500，此处显式预校验给 400
     if (req.body.role !== undefined && !['admin', 'employee'].includes(req.body.role)) throw new AppError(400, '角色不合法，仅支持 admin/employee');
-    // ⚠️ K3 修复：改 email 须归一化 + 查重（users.email 是登录键，TR 侧改邮箱须同步回写预算 users，
-    //   否则预算登录失效、is_director（lower(u.email)=lower(p.email)）判定失真）——与预算 users.ts 改邮箱回写 profiles 对称
+    // 改 email 须归一化 + 查重（users.email 是登录键，TR 侧改邮箱须同步回写预算 users，
+    // 否则预算登录失效、is_director（lower(u.email)=lower(p.email)）判定失真）——与预算 users.ts 改邮箱回写 profiles 对称
     const emailChanging = req.body.email !== undefined;
     let emailNorm: string | undefined;
     if (emailChanging) {
@@ -521,7 +534,7 @@ router.put('/profiles/:id', ...trAuth, async (req, res, next) => {
     }
     if (!fields.length) throw new AppError(400, '没有要更新的字段');
     values.push(req.params.id);
-    // ⚠️ K3 修复：档案更新与 users.email 回写置于同一事务，任一失败整体回滚（防档案与登录邮箱半同步）
+    // 档案更新与 users.email 回写置于同一事务，任一失败整体回滚（防档案与登录邮箱半同步）
     const r = await withTransaction(async (client) => {
       const upd = (await client.query(
         `UPDATE timerecording.profiles SET ${fields.join(', ')} WHERE id = $${idx} RETURNING id, employee_id, name, email, role, is_active`,
@@ -541,8 +554,8 @@ router.put('/profiles/:id', ...trAuth, async (req, res, next) => {
 
 /**
  * 可用成本中心清单（按类型分组）：
- *   sales / project —— 预算库实时数据（sales_opportunities -S、delivery_projects -E）
- *   warranty / department / personal —— 工时应用码表 timerecording.cost_centers（自动补建）
+ * sales / project —— 预算库实时数据（sales_opportunities -S、delivery_projects -E）
+ * warranty / department / personal —— 工时应用码表 timerecording.cost_centers（自动补建）
  */
 router.get('/cost-centers', ...trAuth, async (req, res, next) => {
   try {
@@ -551,7 +564,7 @@ router.get('/cost-centers', ...trAuth, async (req, res, next) => {
 
     // 可用财年窗口：6 月提前生成下一年、7 月老财年可用 → 该集合内的部门/个人中心才返回
     const available = availableCostCenterFys();
-    // ⚠️ A128：仅接受当前/相邻/近三个财年，任意 FY9999 入参不得触发码表写库与全量扫描
+    // 仅接受当前/相邻/近三个财年，任意 FY9999 入参不得触发码表写库与全量扫描
     if (!available.includes(fyLabel) && !recentFiscalYears(3).includes(fyLabel)) {
       throw new AppError(400, '财年超出可查询范围');
     }
@@ -570,7 +583,7 @@ router.get('/cost-centers', ...trAuth, async (req, res, next) => {
     const [salesRows, projectRows, warrantyRows, deptRows, personalRows, leaveRows] = await Promise.all([
       query(`SELECT sales_no, project_name, client_name FROM sales_opportunities WHERE sales_no LIKE 'A%-S' ORDER BY sales_no`),
       query(`SELECT sales_no, project_name, client_name FROM delivery_projects WHERE sales_no LIKE 'A%-E' ORDER BY sales_no`),
-      // ⚠️ 关联子查询 → LEFT JOIN：delivery_projects.sales_no 唯一且有索引，单次连接替代每行一次子查询
+      // 关联子查询 → LEFT JOIN：delivery_projects.sales_no 唯一且有索引，单次连接替代每行一次子查询
       query(`
         SELECT cc.code, cc.name, dp.client_name
         FROM timerecording.cost_centers cc
@@ -601,7 +614,7 @@ router.get('/cost-centers', ...trAuth, async (req, res, next) => {
 router.get('/time-records', ...trAuth, async (req, res, next) => {
   try {
     const user = req.user!;
-    // ⚠️ 总监 + 方案/交付经理可读全员（综合分析需要）；普通员工仅本人
+    // 总监 + 方案/交付经理可读全员（综合分析需要）；普通员工仅本人
     const manager = isManager(user);
     const { user_id, date_from, date_to, year, week_number, status, status_in, cost_center, reviewed_from } = req.query;
     const conditions: string[] = [];
@@ -615,8 +628,8 @@ router.get('/time-records', ...trAuth, async (req, res, next) => {
     }
     if (date_from) { conditions.push(`date >= $${idx++}`); params.push(date_from); }
     if (date_to) { conditions.push(`date <= $${idx++}`); params.push(date_to); }
-    // ⚠️ 截断重规划：按审批时间过滤（AdminApproval 已审核历史仅展示近 3 个月，reviewed_from 服务端有界拉取，
-    //   取代「全量拉取后客户端再过滤」——历史随年份无限增长，固定 limit 迟早截断）
+    // 截断重规划：按审批时间过滤（AdminApproval 已审核历史仅展示近 3 个月，reviewed_from 服务端有界拉取，
+    // 取代「全量拉取后客户端再过滤」——历史随年份无限增长，固定 limit 迟早截断）
     if (reviewed_from) { conditions.push(`reviewed_at >= $${idx++}`); params.push(reviewed_from); }
     if (year) {
       const y = parseInt(year as string, 10);
@@ -636,7 +649,7 @@ router.get('/time-records', ...trAuth, async (req, res, next) => {
     }
     if (cost_center) { conditions.push(`cost_center = $${idx++}`); params.push(cost_center); }
 
-    // ⚠️ C101：显式支持 limit 查询参数（缺省 1000 保持全量口径；聚合/全量拉取由前端显式传 limit）
+    // 显式支持 limit 查询参数（缺省 1000 保持全量口径；聚合/全量拉取由前端显式传 limit）
     const { limit } = parsePagination(req.query, PAGE_LIMIT);
     const sql = `SELECT * FROM timerecording.time_records${conditions.length ? ' WHERE ' + conditions.join(' AND ') : ''} ORDER BY date DESC, created_at DESC LIMIT $${idx}`;
     params.push(limit);
@@ -648,25 +661,25 @@ router.get('/time-records', ...trAuth, async (req, res, next) => {
 router.post('/time-records', ...trAuth, async (req, res, next) => {
   try {
     const user = req.user!;
-    // ⚠️ 总监/管理员也可填报工时（2026-08-06 需求调整，此前按"总监不填报"做了 403 限制）
+    // 总监/管理员也可填报工时（需求调整
     const { date, start_time, end_time, cost_center, cost_center_type, task_description } = req.body;
-    // 所有用户只能为自己建记录（此前可传任意 user_id 代建）
+    // 所有用户只能为自己建记录
     const targetUserId = user.userId;
     if (!targetUserId || !isValidDateStr(date) || toMinutes(start_time) == null || toMinutes(end_time) == null) {
       throw new AppError(400, '缺少必填字段或日期/时间格式无效');
     }
-    // ⚠️ A123：起止倒置/相等此前静默保存为 0 工时；显式拒绝，避免“以为已报工”
+    // 起止倒置/相等会静默保存为 0 工时，须显式拒绝，避免“以为已报工”
     if (toMinutes(end_time)! <= toMinutes(start_time)!) {
       throw new AppError(400, '结束时间必须晚于开始时间（跨午夜请分两段记录）');
     }
-    // ⚠️ A124：新记录成本中心必填（历史空值仅通过 PUT 兼容，不再产生新的无归属记录）
+    // 新记录成本中心必填（历史空值仅通过 PUT 兼容，不再产生新的无归属记录）
     if (!cost_center) throw new AppError(400, '请选择成本中心');
-    // ⚠️ D1 决策 2026-08-14：补录窗口 = 当前周 + 前 4 周，超过 4 周锁定（早于截止点拒绝新增）
+    // 决策补录窗口 = 当前周 + 前 4 周，超过 4 周锁定（早于截止点拒绝新增）
     assertBackfillWindow(date);
-    // ⚠️ S4 修复：hours/hour_type 服务端权威重算，不信任前端传入值
+    // hours/hour_type 服务端权威重算，不信任前端传入值
     const hours = serverHours(start_time, end_time);
     const hour_type = serverHourType(date, start_time, end_time);
-    // ⚠️ 同思路：year/week_number 服务端按 date 重算 ISO 周（跨年/跨周边界与前端 dayjs 一致），忽略前端值
+    // 同思路：year/week_number 服务端按 date 重算 ISO 周（跨年/跨周边界与前端 dayjs 一致），忽略前端值
     const iso = isoWeekOf(date);
     // 成本中心存在性 + 类型枚举 + 文本长度（与任务侧一致；工时侧允许部门中心）
     await assertTimeCostCenterValid(cost_center);
@@ -696,11 +709,11 @@ router.put('/time-records/:id', ...trAuth, async (req, res, next) => {
   try {
     const user = req.user!;
     const admin = isTrAdmin(user);
-    // ⚠️ F6 修复：status 不能直接改（须走 /submit 与 /review 审批流程），移除出可更新字段；
-    //   week_number/year 也移除：由 date 服务端重算，不信任前端
+    // status 不能直接改（须走 /submit 与 /review 审批流程），移除出可更新字段；
+    // week_number/year 也移除：由 date 服务端重算，不信任前端
     const fields = ['date', 'start_time', 'end_time', 'cost_center', 'cost_center_type', 'task_description'];
-    // ⚠️ S4 修复：先取当前行，合并入请求字段后由服务端重算 hours/hour_type（不信任前端）；
-    //   带 user_id/cost_center/cost_center_type 供请休假校验判断记录归属与类型（合并后口径）
+    // 先取当前行，合并入请求字段后由服务端重算 hours/hour_type（不信任前端）；
+    // 带 user_id/cost_center/cost_center_type 供请休假校验判断记录归属与类型（合并后口径）
     const existing = (await query(
       `SELECT user_id, date, start_time, end_time, hours, hour_type, cost_center, cost_center_type FROM timerecording.time_records WHERE id = $1${admin ? '' : ' AND user_id = $2'}`,
       admin ? [req.params.id] : [req.params.id, user.userId]
@@ -710,6 +723,10 @@ router.put('/time-records/:id', ...trAuth, async (req, res, next) => {
     if (req.body.date !== undefined && !isValidDateStr(req.body.date)) throw new AppError(400, '日期格式无效');
     if (req.body.start_time !== undefined && toMinutes(req.body.start_time) == null) throw new AppError(400, '开始时间格式无效');
     if (req.body.end_time !== undefined && toMinutes(req.body.end_time) == null) throw new AppError(400, '结束时间格式无效');
+    // 显式置空会留下「时间缺失但工时非 0」的不一致记录
+    if (req.body.start_time === null || req.body.end_time === null) {
+      throw new AppError(400, '开始/结束时间不可置空');
+    }
     if (req.body.cost_center !== undefined) await assertTimeCostCenterValid(req.body.cost_center);
     if (req.body.cost_center_type != null && !TIME_COST_CENTER_TYPES.includes(req.body.cost_center_type)) {
       throw new AppError(400, 'cost_center_type 无效');
@@ -727,7 +744,7 @@ router.put('/time-records/:id', ...trAuth, async (req, res, next) => {
     // 合并后重算：起止时间或日期任一变化都要保证 hours/hour_type 服务端权威；
     // 时间缺失（旧数据）时保留原值，不重算成 0
     const merged = { ...existing, ...req.body };
-    // ⚠️ D1 决策 2026-08-14：补录窗口校验用合并后日期（改动日期也须落在窗口内）
+    // 决策补录窗口校验用合并后日期（改动日期也须落在窗口内）
     assertBackfillWindow(merged.date);
     const hasTimes = merged.start_time != null && merged.end_time != null;
     if (hasTimes && toMinutes(merged.end_time)! <= toMinutes(merged.start_time)!) {
@@ -735,10 +752,16 @@ router.put('/time-records/:id', ...trAuth, async (req, res, next) => {
     }
     const recomputedHours = hasTimes ? serverHours(merged.start_time, merged.end_time) : existing.hours;
     const recomputedHourType = hasTimes ? serverHourType(merged.date, merged.start_time, merged.end_time) : existing.hour_type;
-    const effectiveType = resolveCostCenterType(merged.cost_center, merged.cost_center_type);
-    // 周级状态机 + 同日时段重叠（排除本行）
-    const mergedIso = isoWeekOf(merged.date);
-    await assertWeekNotCommitted(existing.user_id, mergedIso.year, mergedIso.week, [req.params.id]);
+    // 类型一致性：仅当客户端显式修改编码或类型时校验；未变更时保留原值（兼容历史脏类型）
+    const typeExplicit = req.body.cost_center_type !== undefined;
+    const codeChanged = req.body.cost_center !== undefined;
+    const effectiveType = (!typeExplicit && !codeChanged)
+      ? existing.cost_center_type
+      : resolveCostCenterType(
+          merged.cost_center,
+          typeExplicit ? req.body.cost_center_type : costCenterTypeOf(merged.cost_center),
+        );
+    // 同日时段重叠（排除本行）；周级冻结只阻止新增记录，已存在记录允许修正/重提
     if (hasTimes) await assertNoTimeOverlap(existing.user_id, merged.date, merged.start_time, merged.end_time, req.params.id);
     // 请休假硬性校验（合并后口径，用记录真实类型/编码判断；排除本行）：晚班/周末/节假日拒绝；单日合计 ≤ 8 小时
     await assertLeaveValid({
@@ -753,18 +776,18 @@ router.put('/time-records/:id', ...trAuth, async (req, res, next) => {
       updates.push(`cost_center_type = $${idx++}`);
       values.push(effectiveType);
     }
-    // ⚠️ year/week_number 由 date 服务端权威重算（忽略前端值）
+    // year/week_number 由 date 服务端权威重算（忽略前端值）
     const iso = isoWeekOf(merged.date);
     updates.push(`year = $${idx++}`, `week_number = $${idx++}`);
     values.push(iso.year, iso.week);
-    // ⚠️ 工作流优化：驳回记录允许编辑修正，编辑后自动回到 draft（可重新提交）
-    // ⚠️ 审计修复：驳回记录编辑回草稿时必须同步清空 submitted_at（draft 语义=未提交，
-    //   否则残留"草稿带提交时间"的数据异常，撤回判定/历史口径会失真）
+    // 工作流优化：驳回记录允许编辑修正，编辑后自动回到 draft（可重新提交）
+    // 驳回记录编辑回草稿时必须同步清空 submitted_at（draft 语义=未提交，
+    // 否则残留"草稿带提交时间"的数据异常，撤回判定/历史口径会失真）
     updates.push(
       `status = CASE WHEN status = 'rejected' THEN 'draft' ELSE status END`,
       `submitted_at = CASE WHEN status = 'rejected' THEN NULL ELSE submitted_at END`,
-      // ⚠️ 审计修复：驳回编辑回草稿须同步清空审核链（与撤回通道 withdraw 清空口径一致）——
-      //   残留 review_notes/reviewed_by/reviewed_at + draft 状态会让审核历史与统计口径失真
+      // 驳回编辑回草稿须同步清空审核链（与撤回通道 withdraw 清空口径一致）——
+      // 残留 review_notes/reviewed_by/reviewed_at + draft 状态会让审核历史与统计口径失真
       `review_notes = CASE WHEN status = 'rejected' THEN NULL ELSE review_notes END`,
       `reviewed_by = CASE WHEN status = 'rejected' THEN NULL ELSE reviewed_by END`,
       `reviewed_at = CASE WHEN status = 'rejected' THEN NULL ELSE reviewed_at END`
@@ -783,10 +806,10 @@ router.put('/time-records/:id', ...trAuth, async (req, res, next) => {
 });
 
 /** 撤回提交（→ draft，仅本人）
- *  ⚠️ 规则（与用户约定一致）：① 提交后 30 天内未审核可撤回；② 审批通过后 30 天内也可撤回（改后重新提交审核）。
- *  撤回已通过记录时清空审核链（reviewed_by/reviewed_at/review_notes/submitted_at，draft 语义=未提交）
- *  并通知原审核人（其审批被撤回，须知情）。
- *  ⚠️ S3 修复：前端按 `30 * 24h` 判定可撤回，此前后端用 interval '1 month'（漂移 1~3 天），统一为 30 天 */
+ * 规则（与用户约定一致）：① 提交后 30 天内未审核可撤回；② 审批通过后 30 天内也可撤回（改后重新提交审核）
+ * 撤回已通过记录时清空审核链（reviewed_by/reviewed_at/review_notes/submitted_at，draft 语义=未提交）
+ * 并通知原审核人（其审批被撤回，须知情）
+ * 前端按 `30 * 24h` 判定可撤回 */
 router.put('/time-records/:id/withdraw', ...trAuth, async (req, res, next) => {
   try {
     const uid = req.user!.userId;
@@ -796,8 +819,8 @@ router.put('/time-records/:id/withdraw', ...trAuth, async (req, res, next) => {
       [req.params.id, uid]
     )).rows[0];
     if (!before) throw new AppError(404, '记录不存在或无权撤回');
-    // ⚠️ A125：撤回后记录会变 draft，而 draft 的编辑/提交/删除都受补录窗口限制——
-    //   窗口外的已通过记录撤回后既不能改也不能重交，等于把已审核工时变成永久死数据。撤回前先校验窗口。
+    // 撤回后记录会变 draft，而 draft 的编辑/提交/删除都受补录窗口限制——
+    // 窗口外的已通过记录撤回后既不能改也不能重交，等于把已审核工时变成永久死数据。撤回前先校验窗口
     assertBackfillWindow(String(before.date).slice(0, 10));
     const r = (await query(
       `UPDATE timerecording.time_records
@@ -830,18 +853,16 @@ router.delete('/time-records/:id', ...trAuth, async (req, res, next) => {
   try {
     const user = req.user!;
     const admin = isTrAdmin(user);
-    // ⚠️ F6 修复：归属校验，非管理员只能删自己的记录
-    // ⚠️ M2 修复：状态守卫——仅 draft/rejected 可删；已提交/已审核/已锁定记录禁止删除，防破坏工时审计链
-    //   （rejected 允许删除：驳回记录可修正后重交，也可整行移除，语义一致）
-    // ⚠️ D1 决策 2026-08-14：删除前取记录日期做补录窗口校验（超 4 周记录不可删，整周锁定只读）
+    // 归属校验，非管理员只能删自己的记录
+    // 状态守卫——仅 draft/rejected 可删；已提交/已审核/已锁定记录禁止删除，防破坏工时审计链
+    // （rejected 允许删除：驳回记录可修正后重交，也可整行移除，语义一致）
+    // 删除前取记录日期做补录窗口校验（超 4 周记录不可删）
     const existing = (await query(
       `SELECT date, user_id, year, week_number FROM timerecording.time_records WHERE id = $1${admin ? '' : ' AND user_id = $2'} AND status IN ('draft','rejected')`,
       admin ? [req.params.id] : [req.params.id, user.userId]
     )).rows[0];
     if (!existing) throw new AppError(404, admin ? '记录不存在或已提交/已审核，不可删除' : '记录不存在、无权删除或已提交/已审核，不可删除');
     assertBackfillWindow(String(existing.date).slice(0, 10));
-    // 周级冻结：同周已有提交/通过记录时，草稿也不可单独删除（整周是一张审批单）
-    await assertWeekNotCommitted(existing.user_id, existing.year, existing.week_number);
     const r = (await query(
       `DELETE FROM timerecording.time_records WHERE id = $1${admin ? '' : ' AND user_id = $2'} AND status IN ('draft','rejected') RETURNING id`,
       admin ? [req.params.id] : [req.params.id, user.userId]
@@ -853,40 +874,19 @@ router.delete('/time-records/:id', ...trAuth, async (req, res, next) => {
 
 // ── 审批 ──
 
-/** 提交审核（⚠️ F6 补漏：只能提交自己的草稿记录；submitted_at 供「30 天内可撤回」判定）
- *  ⚠️ 周推送规则：目标周周日 20:30 前不可提交（禁半周/未来周提交）——先取记录日期校验，避免先改后拒 */
-router.put('/time-records/:id/submit', ...trAuth, async (req, res, next) => {
-  try {
-    const rec = (await query(
-      `SELECT date FROM timerecording.time_records WHERE id = $1 AND status = 'draft' AND user_id = $2`,
-      [req.params.id, req.user!.userId]
-    )).rows[0];
-    if (rec) assertWeekSubmittable(String(rec.date).slice(0, 10));
-    // ⚠️ D1 决策 2026-08-14：补录窗口外（超 4 周）不可提交——整周锁定只读，禁把过期未提交周强行提交
-    if (rec) assertBackfillWindow(String(rec.date).slice(0, 10));
-    // 周级状态机：同周已有提交/通过记录时不可再分批提交剩余草稿
-    if (rec) {
-      const iso = isoWeekOf(String(rec.date).slice(0, 10));
-      await assertWeekNotCommitted(req.user!.userId, iso.year, iso.week, [req.params.id]);
-    }
-    const r = (await query(
-      `UPDATE timerecording.time_records SET status = 'submitted', submitted_at = now()
-       WHERE id = $1 AND status = 'draft' AND user_id = $2 RETURNING *`,
-      [req.params.id, req.user!.userId]
-    )).rows[0];
-    if (!r) throw new AppError(400, '只能提交自己的草稿记录');
-    res.json(r);
-  } catch (err) { next(err); }
+/** 提交审核（只能提交自己的草稿记录；submitted_at 供「30 天内可撤回」判定）
+ * 周推送规则：目标周周日 20:30 前不可提交（禁半周/未来周提交）——先取记录日期校验，避免先改后拒 */
+router.put('/time-records/:id/submit', ...trAuth, async (_req, _res, next) => {
+  next(new AppError(400, '请使用整周批量提交（POST /time-records/submit-batch）'));
 });
-
-/** 批量提交（⚠️ F6 补漏：只能提交自己的草稿记录） */
+/** 批量提交（只能提交自己的草稿记录） */
 router.post('/time-records/submit-batch', ...trAuth, async (req, res, next) => {
   try {
     const { ids } = req.body;
     if (!isValidUuidArray(ids)) throw new AppError(400, 'ids 必填且须为 uuid 数组');
-    // ⚠️ 周推送规则：目标周周日 20:30 前不可提交——先校验所有草稿记录所在周，再变更（防半途拒绝留下半提交态）
-    // ⚠️ A111 修复：批量提交须全部为本人草稿且属于同一周（与 review-batch 周原子性同口径）——此前部分 id
-    //   非草稿会被 UPDATE 静默跳过（半提交态）、跨周混批会让单条提交通知的周标签失真（rows[0] 代表全部）
+    // 周推送规则：目标周周日 20:30 前不可提交——先校验所有草稿记录所在周，再变更（防半途拒绝留下半提交态）
+    // 批量提交须全部为本人草稿且属于同一周（与 review-batch 周原子性同口径）
+    // 非草稿会被 UPDATE 静默跳过（半提交态）、跨周混批会让单条提交通知的周标签失真（rows[0] 代表全部）
     const drafts = (await query(
       `SELECT date, year, week_number FROM timerecording.time_records
        WHERE id = ANY($1::uuid[]) AND status = 'draft' AND user_id = $2`,
@@ -896,22 +896,34 @@ router.post('/time-records/submit-batch', ...trAuth, async (req, res, next) => {
     const weekKeys = new Set(drafts.map((d: any) => `${d.year}-${d.week_number}`));
     if (weekKeys.size > 1) throw new AppError(400, '批量提交的记录须属于同一周');
     for (const d of drafts) assertWeekSubmittable(String(d.date).slice(0, 10));
-    // ⚠️ D1 决策 2026-08-14：补录窗口外（超 4 周）不可提交——整周锁定只读，禁把过期未提交周强行提交
+    // 决策补录窗口外（超 4 周）不可提交——整周锁定只读，禁把过期未提交周强行提交
     for (const d of drafts) assertBackfillWindow(String(d.date).slice(0, 10));
-    // 周级状态机：同周若已有提交/通过记录（不属于本次批次）则不可再分批提交
-    if (drafts[0]) await assertWeekNotCommitted(req.user!.userId, drafts[0].year, drafts[0].week_number, ids);
+    // 整周原子提交：必须覆盖本周全部草稿，禁止分批提交造成半周提交态
+    if (drafts[0]) {
+      const weekDrafts = (await query(
+        `SELECT id FROM timerecording.time_records
+         WHERE user_id = $1 AND year = $2 AND week_number = $3 AND status = 'draft'`,
+        [req.user!.userId, drafts[0].year, drafts[0].week_number]
+      )).rows.map((r: any) => r.id);
+      const idSet = new Set(ids);
+      const missing = weekDrafts.filter((id: string) => !idSet.has(id));
+      if (weekDrafts.length !== ids.length || missing.length > 0) {
+        throw new AppError(400, '请提交该周全部草稿记录（不支持分批提交）');
+      }
+    }
     const rows = (await query(
       `UPDATE timerecording.time_records SET status = 'submitted', submitted_at = now()
        WHERE id = ANY($1::uuid[]) AND status = 'draft' AND user_id = $2 RETURNING *`,
       [ids, req.user!.userId]
     )).rows;
-    // ⚠️ 工作流优化：提交成功后自动通知所有管理员（移除前端轮询全员列表找 admin 的依赖）
+    if (rows.length !== ids.length) throw new AppError(409, '部分记录状态已变化，请刷新后重试');
+    // 工作流优化：提交成功后自动通知所有管理员（移除前端轮询全员列表找 admin 的依赖）
     if (rows.length > 0) {
       try {
         const admins = (await query(`SELECT id FROM timerecording.profiles WHERE role = 'admin' AND is_active = true`)).rows;
         if (admins.length > 0) {
           const weekLabel = `${rows[0].year}W${rows[0].week_number}`;
-          // ⚠️ 请休假是存储记录不是工时：通知「共 Xh」按工作工时口径，排除请休假记录（type/code 任一命中 LE 即排除）
+          // 请休假是存储记录不是工时：通知「共 Xh」按工作工时口径，排除请休假记录（type/code 任一命中 LE 即排除）
           const totalHours = round2(rows.filter((r: any) => !isLeaveCostCenter(r.cost_center, r.cost_center_type))
             .reduce((s: number, r: any) => s + parseFloat(r.hours || 0), 0));
           const submitter = (await query('SELECT name FROM timerecording.profiles WHERE id = $1', [req.user!.userId])).rows[0]?.name || '员工';
@@ -931,7 +943,7 @@ router.post('/time-records/submit-batch', ...trAuth, async (req, res, next) => {
 });
 
 /** 写一条通知（6 处单行通知推送共用，消除重复 INSERT；linkUrl/taskId 缺省 → NULL，与逐列省略语义一致）。
- *  调用方负责 try/catch 降级（通知失败不影响主流程）；返回插入行（POST /notifications 需返回） */
+ * 调用方负责 try/catch 降级（通知失败不影响主流程）；返回插入行（POST /notifications 需返回） */
 async function notify(opts: { userId: string; title: string; message: string; type: string; linkUrl?: string; taskId?: string | null }) {
   const r = await query(
     `INSERT INTO timerecording.notifications (user_id, title, message, type, link_url, task_id)
@@ -955,25 +967,10 @@ async function notifyReview(r: any, action: string, review_notes?: string) {
   } catch (err) { console.warn('[Notify] 审核结果通知发送失败:', (err as Error).message); /* 通知失败不影响审批主流程 */ }
 }
 
-/** 审批通过/驳回（⚠️ F6 补漏：审批是管理员操作，防止任意用户代审/自审） */
-router.put('/time-records/:id/review', ...trAuth, requireRole('director', 'admin'), async (req, res, next) => {
-  try {
-    const { action, review_notes } = req.body;
-    if (!['approved', 'rejected'].includes(action)) throw new AppError(400, '操作必须是 approved 或 rejected');
-    if (typeof review_notes === 'string' && review_notes.length > 500) throw new AppError(400, '审核备注不能超过 500 字');
-    const reviewer = req.user!;
-    // ⚠️ 产品决策：总监一般不填报工时，若填报可自审（撤销此前 user_id<>reviewer 自审防护）
-    const r = (await query(
-      `UPDATE timerecording.time_records SET status = $1, review_notes = $2, reviewed_by = $3, reviewed_at = now()
-       WHERE id = $4 AND status = 'submitted' RETURNING *`,
-      [action, review_notes || '', reviewer.userId, req.params.id]
-    )).rows[0];
-    if (!r) throw new AppError(400, '只能审核已提交的记录');
-    await notifyReview(r, action, review_notes);
-    res.json(r);
-  } catch (err) { next(err); }
+/** 审批通过/驳回（审批是管理员操作，防止任意用户代审/自审） */
+router.put('/time-records/:id/review', ...trAuth, requireRole('director', 'admin'), async (_req, _res, next) => {
+  next(new AppError(400, '请使用整周批量审核（POST /time-records/review-batch）'));
 });
-
 /** 批量审批（管理员）：一次审批一组记录（如同一员工同一周），原子完成，只发一条通知 */
 router.post('/time-records/review-batch', ...trAuth, requireRole('director', 'admin'), async (req, res, next) => {
   try {
@@ -982,11 +979,11 @@ router.post('/time-records/review-batch', ...trAuth, requireRole('director', 'ad
     if (!['approved', 'rejected'].includes(action)) throw new AppError(400, '操作必须是 approved 或 rejected');
     if (typeof review_notes === 'string' && review_notes.length > 500) throw new AppError(400, '审核备注不能超过 500 字');
     const reviewer = req.user!;
-    // ⚠️ A15：事务样板收敛为 withTransaction
+    // 事务样板收敛为 withTransaction
     const rows = await withTransaction(async (client) => {
-      // ⚠️ 审计修复：批审须保证 周原子性 —— 所有记录同一员工同一周、且全部处于 submitted。
-      //   此前 UPDATE 静默跳过非 submitted 的 id，可能造成"部分审批"，跨员工/跨周混批还会让
-      //   单条通知口径失真。前端按 user+week 分组调用，正常不会触发；此处作为纵深防御显式 400。
+      // 批审须保证周原子性 —— 所有记录同一员工同一周、且全部处于 submitted
+      // UPDATE 不得静默跳过非 submitted 的 id，否则会造成部分审批；跨员工/跨周混批还会让
+      // 单条通知口径失真。前端按 user+week 分组调用，正常不会触发；此处作为纵深防御显式 400
       const before = (await client.query(
         `SELECT user_id, year, week_number, status FROM timerecording.time_records WHERE id = ANY($1::uuid[])`,
         [ids]
@@ -996,14 +993,25 @@ router.post('/time-records/review-batch', ...trAuth, requireRole('director', 'ad
       const batchUsers = new Set(before.map((b: any) => b.user_id));
       const batchWeeks = new Set(before.map((b: any) => `${b.year}-${b.week_number}`));
       if (batchUsers.size !== 1 || batchWeeks.size !== 1) throw new AppError(400, '批审记录须属于同一员工同一周');
-      return (await client.query(
+      const first = before[0] as { user_id: string; year: number; week_number: number };
+      const weekSubmitted = (await client.query(
+        `SELECT id FROM timerecording.time_records
+         WHERE user_id = $1 AND year = $2 AND week_number = $3 AND status = 'submitted'`,
+        [first.user_id, first.year, first.week_number]
+      )).rows.map((r: { id: string }) => r.id);
+      if (weekSubmitted.length !== ids.length) {
+        throw new AppError(400, '请审核该周全部待审核记录（不支持部分审核）');
+      }
+      const rows = (await client.query(
         `UPDATE timerecording.time_records SET status = $1, review_notes = $2, reviewed_by = $3, reviewed_at = now()
          WHERE id = ANY($4::uuid[]) AND status = 'submitted' RETURNING *`,
         [action, review_notes || '', reviewer.userId, ids]
       )).rows;
+      if (rows.length !== ids.length) throw new AppError(409, '部分记录状态已变化，请刷新后重试');
+      return rows;
     });
     if (rows.length > 0) {
-      // ⚠️ 请休假是存储记录不是工时：通知「共 Xh」按工作工时口径，排除请休假记录（type/code 任一命中 LE 即排除）
+      // 请休假是存储记录不是工时：通知「共 Xh」按工作工时口径，排除请休假记录（type/code 任一命中 LE 即排除）
       const totalHours = round2(rows.filter((r: any) => !isLeaveCostCenter(r.cost_center, r.cost_center_type))
         .reduce((s: number, r: any) => s + parseFloat(r.hours || 0), 0));
       await notifyReview({ ...rows[0], user_id: rows[0].user_id }, action, `${review_notes || ''}${rows.length > 1 ? `（共 ${rows.length} 条，${totalHours}h）` : ''}`);
@@ -1019,7 +1027,7 @@ router.post('/time-records/review-batch', ...trAuth, requireRole('director', 'ad
 router.get('/task-assignments', ...trAuth, async (req, res, next) => {
   try {
     const user = req.user!;
-    // ⚠️ 总监 + 方案/交付经理可看全员任务（规划甘特）；普通员工仅自己
+    // 总监 + 方案/交付经理可看全员任务（规划甘特）；普通员工仅自己
     const manager = isManager(user);
     const { user_id, status, start, end } = req.query;
     const conditions: string[] = [];
@@ -1031,10 +1039,10 @@ router.get('/task-assignments', ...trAuth, async (req, res, next) => {
       conditions.push(`user_id = $${idx++}`); params.push(user.userId);
     }
     if (status) { conditions.push(`status = $${idx++}`); params.push(status); }
-    // ⚠️ 窗口过滤：只返回与 [start, end] 有交集的任务（甘特按 14 周窗口拉取，避免全量返回 + 窗口外任务条撑高行高）
+    // 窗口过滤：只返回与 [start, end] 有交集的任务（甘特按 14 周窗口拉取，避免全量返回 + 窗口外任务条撑高行高）
     if (start) { conditions.push(`end_datetime >= $${idx++}`); params.push(start); }
     if (end) { conditions.push(`start_datetime <= $${idx++}`); params.push(end); }
-    // ⚠️ C101：显式支持 limit 查询参数（缺省 1000 保持全量口径）
+    // 显式支持 limit 查询参数（缺省 1000 保持全量口径）
     const { limit } = parsePagination(req.query, PAGE_LIMIT);
     const sql = `SELECT * FROM timerecording.task_assignments${conditions.length ? ' WHERE ' + conditions.join(' AND ') : ''} ORDER BY start_datetime LIMIT $${idx}`;
     params.push(limit);
@@ -1045,34 +1053,34 @@ router.get('/task-assignments', ...trAuth, async (req, res, next) => {
 router.post('/task-assignments', ...trAuth, async (req, res, next) => {
   try {
     const user = req.user!;
-    // ⚠️ 给他人派任务是 总监/方案经理/交付经理 权限；普通员工只能给自己建任务
+    // 给他人派任务是总监/方案经理/交付经理权限；普通员工只能给自己建任务
     const manager = isManager(user);
     const { user_id, task_name, color, start_datetime, end_datetime, status, note, cost_center } = req.body;
     const targetUserId = (manager && user_id) ? user_id : user.userId;
-    // ⚠️ 输入边界：user_id 无 FK（孤儿任务风险）——仅管理员可指定他人，须存在于在职档案：
-    //   防把任务派给不存在/已停用的员工（孤儿任务在甘特永不显示、还白发通知）
+    // 输入边界：user_id 无 FK（孤儿任务风险）——仅管理员可指定他人，须存在于在职档案：
+    // 防把任务派给不存在/已停用的员工（孤儿任务在甘特永不显示、还白发通知）
     if (manager) {
       const target = (await query('SELECT 1 FROM timerecording.profiles WHERE id = $1 AND is_active', [targetUserId])).rows[0];
       if (!target) throw new AppError(400, '目标员工不存在或已停用');
     }
-    // ⚠️ 输入边界：status/起止时间/color 列有 DB NOT NULL/CHECK 约束，先应用层校验返回明确 400（避免撞约束变 500）
+    // 输入边界：status/起止时间/color 列有 DB NOT NULL/CHECK 约束，先应用层校验返回明确 400（避免撞约束变 500）
     if (status != null && !TASK_STATUSES.includes(status as string)) throw new AppError(400, '任务状态不合法');
     const sDate = new Date(start_datetime), eDate = new Date(end_datetime);
     if (!start_datetime || !end_datetime || isNaN(sDate.getTime()) || isNaN(eDate.getTime())) throw new AppError(400, '开始/结束时间无效');
     if (eDate < sDate) throw new AppError(400, '结束时间不能早于开始时间');
-    // ⚠️ color 列 NOT NULL 无默认：客户端缺失时兜底主色（前端不读该列、按状态取色）
+    // color 列 NOT NULL 无默认：客户端缺失时兜底主色（前端不读该列、按状态取色）
     const finalColor = color || '#00509e';
-    // ⚠️ 输入边界：task_name/note 列均为 text 无 DB 约束，须应用层校验（与前端 maxLength 对齐）
+    // 输入边界：task_name/note 列均为 text 无 DB 约束，须应用层校验（与前端 maxLength 对齐）
     if (typeof task_name === 'string' && task_name.length > 100) throw new AppError(400, '任务名称不能超过 100 字');
     if (typeof note === 'string' && note.length > 500) throw new AppError(400, '备注不能超过 500 字');
-    // ⚠️ 成本中心必须存在（含部门/个人可用财年窗口校验），否则拒绝派任务
+    // 成本中心必须存在（含部门/个人可用财年窗口校验），否则拒绝派任务
     await assertCostCenterValid(cost_center);
     const r = (await query(
       `INSERT INTO timerecording.task_assignments (user_id, task_name, color, start_datetime, end_datetime, status, created_by, note, cost_center)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
       [targetUserId, task_name, finalColor, start_datetime, end_datetime, status || 'in_progress', user.userId, note || '', cost_center || null]
     )).rows[0];
-    // ⚠️ 任务推送：管理员派给他人的任务，自动通知该员工
+    // 任务推送：管理员派给他人的任务，自动通知该员工
     if (r && targetUserId !== user.userId) {
       try {
         const assigner = (await query('SELECT name FROM timerecording.profiles WHERE id = $1', [user.userId])).rows[0]?.name || '管理员';
@@ -1093,10 +1101,10 @@ router.post('/task-assignments', ...trAuth, async (req, res, next) => {
 router.put('/task-assignments/:id', ...trAuth, async (req, res, next) => {
   try {
     const user = req.user!;
-    // ⚠️ 总监 + 方案/交付经理可编辑他人任务；普通员工只能改自己的
+    // 总监 + 方案/交付经理可编辑他人任务；普通员工只能改自己的
     const manager = isManager(user);
     const fields = ['task_name', 'color', 'start_datetime', 'end_datetime', 'status', 'note', 'history', 'cost_center'];
-    // ⚠️ 先取旧状态，用于通知判定（对比状态是否变化）
+    // 先取旧状态，用于通知判定（对比状态是否变化）
     const old = (await query(
       `SELECT * FROM timerecording.task_assignments WHERE id = $1${manager ? '' : ' AND user_id = $2'}`,
       manager ? [req.params.id] : [req.params.id, user.userId]
@@ -1109,33 +1117,33 @@ router.put('/task-assignments/:id', ...trAuth, async (req, res, next) => {
     for (const f of fields) {
       if (req.body[f] !== undefined) {
         updates.push(`${f} = $${idx++}`);
-        // ⚠️ history 是 jsonb 列：node-postgres 会把 JS 数组序列化成 PG 数组字面量 `{...}`（非 JSON），
-        //   直接传值会导致 jsonb 解析失败（22P02 Expected ":", but found "}"）。
-        //   与 approvals/deliveries/opportunities 写 jsonb 的先例一致，先 JSON.stringify。
+        // history 是 jsonb 列：node-postgres 会把 JS 数组序列化成 PG 数组字面量 `{...}`（非 JSON），
+        // 直接传值会导致 jsonb 解析失败（22P02 Expected ":", but found "}"）
+        // 与 approvals/deliveries/opportunities 写 jsonb 的先例一致，先 JSON.stringify
         values.push(f === 'history' && req.body[f] !== null ? JSON.stringify(req.body[f]) : req.body[f]);
       }
     }
     if (!updates.length) throw new AppError(400, '没有要更新的字段');
-    // ⚠️ 输入边界：task_name/note 列均为 text 无 DB 约束，须应用层校验（与前端 maxLength 对齐）
-    //   typeof 判字符串：null/数字等非字符串一律不触长度检查，避免 null.length 抛 500
+    // 输入边界：task_name/note 列均为 text 无 DB 约束，须应用层校验（与前端 maxLength 对齐）
+    // typeof 判字符串：null/数字等非字符串一律不触长度检查，避免 null.length 抛 500
     if (typeof req.body.task_name === 'string' && req.body.task_name.length > 100) throw new AppError(400, '任务名称不能超过 100 字');
     if (typeof req.body.note === 'string' && req.body.note.length > 500) throw new AppError(400, '备注不能超过 500 字');
-    // ⚠️ 输入边界：status 必须在枚举内（撞 DB CHECK 会返回 500）；起止时间改任一字段时按旧值补齐校验顺序
+    // 输入边界：status 必须在枚举内（撞 DB CHECK 会返回 500）；起止时间改任一字段时按旧值补齐校验顺序
     if (req.body.status !== undefined && !TASK_STATUSES.includes(req.body.status as string)) throw new AppError(400, '任务状态不合法');
     if (req.body.start_datetime !== undefined || req.body.end_datetime !== undefined) {
       const ns = new Date(req.body.start_datetime ?? old.start_datetime), ne = new Date(req.body.end_datetime ?? old.end_datetime);
       if (isNaN(ns.getTime()) || isNaN(ne.getTime())) throw new AppError(400, '开始/结束时间无效');
       if (ne < ns) throw new AppError(400, '结束时间不能早于开始时间');
     }
-    // ⚠️ 输入边界：history 是 jsonb 数组列（NOT NULL，无 DB 约束）——必须是数组且条数有界：
-    //   防 API 直传超大数组撑大行、传 null 撞 NOT NULL 返 500、传非数组字符串（如 "garbage"）破坏前端 [...history] 展开
+    // 输入边界：history 是 jsonb 数组列（NOT NULL，无 DB 约束）——必须是数组且条数有界：
+    // 防 API 直传超大数组撑大行、传 null 撞 NOT NULL 返 500、传非数组字符串（如 "garbage"）破坏前端 [...history] 展开
     if (req.body.history !== undefined) {
       if (!Array.isArray(req.body.history) || req.body.history.length > 200) {
         throw new AppError(400, '历史快照必须是数组且不超过 200 条');
       }
     }
-    // ⚠️ 改成本中心时必须存在（含个人中心可用财年窗口）；未改动（与旧值一致）则跳过——
-    //    存量任务可能引用已从预算库消失的中心（如已归档销售单），未改动时不应阻止保存其他字段
+    // 改成本中心时必须存在（含个人中心可用财年窗口）；未改动（与旧值一致）则跳过——
+    // 存量任务可能引用已从预算库消失的中心（如已归档销售单），未改动时不应阻止保存其他字段
     if (req.body.cost_center !== undefined && req.body.cost_center !== old.cost_center) {
       await assertCostCenterValid(req.body.cost_center);
     }
@@ -1147,9 +1155,9 @@ router.put('/task-assignments/:id', ...trAuth, async (req, res, next) => {
     )).rows[0];
     if (!r) throw new AppError(404, manager ? '未找到' : '任务不存在或无权修改');
 
-    // ⚠️ 任务工作流通知（完整规划）：
-    //  1) 管理员改派/编辑他人任务 → 推送「任务更新」给被分配员工
-    //  2) 状态变更为反馈态（已完成/被取消/被推迟/已延误）→ 反馈给派发人（自身除外）
+    // 任务工作流通知（完整规划）：
+    // 1) 管理员改派/编辑他人任务 → 推送「任务更新」给被分配员工
+    // 2) 状态变更为反馈态（已完成/被取消/被推迟/已延误）→ 反馈给派发人（自身除外）
     const FEEDBACK_STATES = ['completed', 'cancelled', 'postponed', 'delayed'];
     if (r.user_id !== user.userId) {
       try {
@@ -1166,7 +1174,7 @@ router.put('/task-assignments/:id', ...trAuth, async (req, res, next) => {
     }
     if (req.body.status && req.body.status !== old.status && FEEDBACK_STATES.includes(req.body.status) && r.created_by !== user.userId) {
       try {
-        // 仅在需要发反馈通知时才查被分配员工姓名（此前无条件查询，纯读请求也多做一次往返）
+        // 仅在需要发反馈通知时才查被分配员工姓名
         const empName = (await query('SELECT name FROM timerecording.profiles WHERE id = $1', [r.user_id])).rows[0]?.name || '员工';
         const statusLabel: Record<string, string> = { completed: '已完成', cancelled: '被取消', postponed: '被推迟', delayed: '已延误' };
         const label = statusLabel[req.body.status as string];
@@ -1187,14 +1195,14 @@ router.put('/task-assignments/:id', ...trAuth, async (req, res, next) => {
 router.delete('/task-assignments/:id', ...trAuth, async (req, res, next) => {
   try {
     const user = req.user!;
-    // ⚠️ 总监 + 方案/交付经理可删除他人任务；普通员工只能删自己的
+    // 总监 + 方案/交付经理可删除他人任务；普通员工只能删自己的
     const manager = isManager(user);
     const r = (await query(
       `DELETE FROM timerecording.task_assignments WHERE id = $1${manager ? '' : ' AND user_id = $2'} RETURNING id`,
       manager ? [req.params.id] : [req.params.id, user.userId]
     )).rows[0];
     if (!r) throw new AppError(404, manager ? '记录不存在' : '任务不存在或无权删除');
-    // ⚠️ 级联清理该任务的关联通知（无 FK，软引用；避免孤儿通知指向已删除任务）
+    // 级联清理该任务的关联通知（无 FK，软引用；避免孤儿通知指向已删除任务）
     await query('DELETE FROM timerecording.notifications WHERE task_id = $1', [r.id]);
     res.json({ success: true });
   } catch (err) { next(err); }
@@ -1203,8 +1211,8 @@ router.delete('/task-assignments/:id', ...trAuth, async (req, res, next) => {
 // ── 通知 ──
 
 // 角标统计通知条数（前端 unreadCount = 列表长度）。上限 200：submit-batch 会向所有启用管理员扇出 submission 通知，
-//   活跃总监 90 天窗口内可累积数百条；200 ≈ 一个多月未读缓冲。点击即删使列表窗口随删除滑动，超出部分仍可逐批消化。
-//   同时约束单次拉取 payload 与弹窗 DOM 规模（上限再提高需改分页/虚拟列表）。
+// 活跃总监 90 天窗口内可累积数百条；200 ≈ 一个多月未读缓冲。点击即删使列表窗口随删除滑动，超出部分仍可逐批消化
+// 同时约束单次拉取 payload 与弹窗 DOM 规模（上限再提高需改分页/虚拟列表）
 const NOTIFICATION_LIST_LIMIT = 200;
 
 router.get('/notifications', ...trAuth, async (req, res, next) => {
@@ -1218,12 +1226,12 @@ router.get('/notifications', ...trAuth, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// ⚠️ 查看后消除：点击通知即删除（替代旧的「标记已读」——已读通知仍留库会随使用持续累积）。
-//   通知是可消费的指针（审批/任务/提醒的跳转入口），底层业务数据（工时/任务）均独立持久化，删除通知无数据损失。
+// 查看后消除：点击通知即删除（替代旧的「标记已读」——已读通知仍留库会随使用持续累积）
+// 通知是可消费的指针（审批/任务/提醒的跳转入口），底层业务数据（工时/任务）均独立持久化，删除通知无数据损失
 router.delete('/notifications/:id', ...trAuth, async (req, res, next) => {
   try {
     const user = req.user!;
-    // F6 约束延续：只能删除自己的通知
+    // 只能删除自己的通知
     const r = (await query(
       'DELETE FROM timerecording.notifications WHERE id = $1 AND user_id = $2 RETURNING id',
       [req.params.id, user.userId]
@@ -1240,10 +1248,10 @@ router.post('/notifications', ...trAuth, async (req, res, next) => {
     const user = req.user!;
     const admin = isTrAdmin(user);
     const { user_id, title, message: msg, type, link_url } = req.body;
-    // ⚠️ F6 修复：给他人发通知是管理/系统操作；非管理员只能给自己建
+    // 给他人发通知是管理/系统操作；非管理员只能给自己建
     const targetUserId = (admin && user_id) ? user_id : user.userId;
-    // ⚠️ 审计修复：type 对齐 DB CHECK 枚举（不符会撞约束返回 500）+ 标题/消息长度边界（title 为 NOT NULL，
-    //   undefined/超长会让数据库抛错而非给出可读 400）
+    // type 对齐 DB CHECK 枚举（不符会撞约束返回 500）+ 标题/消息长度边界（title 为 NOT NULL，
+    // undefined/超长会让数据库抛错而非给出可读 400）
     const resolvedType = type || 'submission';
     if (!NOTIFICATION_TYPES.includes(resolvedType)) throw new AppError(400, 'type 无效');
     if (typeof title !== 'string' || !title.trim() || title.length > 100) throw new AppError(400, '标题不能为空且不超过 100 字');
@@ -1266,28 +1274,39 @@ router.post('/admin/users', ...trAuth, requireRole('director', 'admin'), async (
   try {
     const { email, name, password, employee_id, role = 'employee' } = req.body;
     if (!email || !name || !password) throw new AppError(400, '缺少必填字段');
-    if (password.length < 8) throw new AppError(400, '密码至少8个字符'); // 与主用户管理/reset-password 口径统一
-    // ⚠️ 审计修复：profiles.role 撞 profiles_role_check 约束（仅 admin/employee）会返回 500，此处显式预校验给 400
+    if (typeof email !== 'string' || typeof name !== 'string' || typeof password !== 'string') {
+      throw new AppError(400, '邮箱/姓名/密码必须为字符串');
+    }
+    if (employee_id !== undefined && typeof employee_id !== 'string') throw new AppError(400, '员工编号必须为字符串');
+    if (password.length < 8) throw new AppError(400, '密码至少8个字符');
+    if (password.length > PASSWORD_MAX) throw new AppError(400, `密码不能超过${PASSWORD_MAX}位`);
+    // profiles.role 撞 profiles_role_check 约束（仅 admin/employee）会返回 500，此处显式预校验给 400
     if (!['admin', 'employee'].includes(role)) throw new AppError(400, '角色不合法，仅支持 admin/employee');
-    // ⚠️ C1 审计修复：越级保护——director(2) 不得铸 admin(3) 号（与 users.ts 创建路径、本文件 reset-password 的
-    //   assertCanManage 对齐）；此前仅 requireRole('director','admin') 让 director 可创建 admin 提权账号。
-    //   'employee' 不在 ROLE_RANK（undefined→0），director/admin 均可创建，仅封顶级越级。
+    // 越级保护——director(2) 不得铸 admin(3) 号（与 users.ts 创建路径、本文件 reset-password 的
+    // assertCanManage 对齐）
+    // 'employee' 不在 ROLE_RANK（undefined→0），director/admin 均可创建，仅封顶级越级
     assertCanManage(req.user!.role, ROLE_RANK[role] ?? 0);
-    // ⚠️ L4 修复：重复邮箱预检，避免撞唯一约束返回笼统错误（与 users.ts 口径一致）
-    // ⚠️ 最终审计修正：建用户走 normalizeEmail 归一化（A17 此前未覆盖此路径）——去重与落库都用归一邮箱，
-    //   与登录 LOWER(email) 口径一致，防大小写近似账号绕过去重/UNIQUE 造成登录歧义（rows[0] 不定）
+    // 重复邮箱预检，避免撞唯一约束返回笼统错误（与 users.ts 口径一致）
+    // 建用户走 normalizeEmail 归一化——去重与落库都用归一邮箱，
+    // 与登录 LOWER(email) 口径一致，防大小写近似账号绕过去重/UNIQUE 造成登录歧义（rows[0] 不定）
     const normEmail = normalizeEmail(email);
+    if (!EMAIL_RE.test(normEmail)) throw new AppError(400, '邮箱格式无效');
     const dup = (await query('SELECT id FROM public.users WHERE LOWER(email) = $1', [normEmail])).rows[0];
     if (dup) throw new AppError(409, '该邮箱已被注册');
 
     const passwordHash = await bcrypt.hash(password, 10);
-    const empId = employee_id || normEmail.split('@')[0];
-    // ⚠️ F14 修复：users + profiles 两步写放入同一事务，避免中途失败留下"有 users 无 profile"半成品
-    // ⚠️ A15：事务样板收敛为 withTransaction
+    const baseEmpId = employee_id || normEmail.split('@')[0];
+    const empClash = (await query(
+      'SELECT 1 FROM timerecording.profiles WHERE employee_id = $1', [baseEmpId]
+    )).rows[0];
+    if (empClash && employee_id) throw new AppError(409, '该员工编号已存在');
+    const empId = empClash ? `${baseEmpId}-${String(Date.now()).slice(-6)}` : baseEmpId;
+    // users + profiles 两步写放入同一事务，避免中途失败留下"有 users 无 profile"半成品
+    // 事务样板收敛为 withTransaction
     const user = await withTransaction(async (client) => {
-      // ⚠️ 修复：users.role 同步为请求角色（admin→'admin'，employee→'user'）——此前恒写 'user'，
-      //   导致工时管理员创建的 admin 账号永远过不了 requireRole('director','admin')，管理功能形同虚设。
-      //   employees 仍落 'user'（VALID_ROLES 含 user；'employee' 非预算角色体系，避免系统管理页出现未知角色）
+      // users.role 同步为请求角色（admin→'admin'，employee→'user'）
+      // 导致工时管理员创建的 admin 账号永远过不了 requireRole('director','admin')，管理功能形同虚设
+      // employees 仍落 'user'（VALID_ROLES 含 user；'employee' 非预算角色体系，避免系统管理页出现未知角色）
       const usersRole = role === 'admin' ? 'admin' : 'user';
       const u = (await client.query(
         `INSERT INTO public.users (email, display_name, password_hash, role, password_changed_at)
@@ -1313,12 +1332,12 @@ router.post('/admin/users/:id/reset-password', ...trAuth, requireRole('director'
   try {
     const { id } = req.params;
     const { password } = req.body;
-    // ⚠️ A6 复核越级保护：此前仅 requireRole('director','admin')，无目标等级比较——director(2) 可重置 admin(3) 密码越级接管。
-    //   与 users.ts 的 assertCanManage 语义对齐（纯 ROLE_RANK 等级比较），director 只能管理 manager 及以下账号。
+    // 越级保护：仅 requireRole('director','admin') 而无目标等级比较时，director(2) 可重置 admin(3) 密码越级接管
+    // 与 users.ts 的 assertCanManage 语义对齐（纯 ROLE_RANK 等级比较），director 只能管理 manager 及以下账号
     const target = (await query('SELECT role FROM public.users WHERE id = $1', [id])).rows[0];
     if (!target) throw new AppError(404, '用户不存在');
     assertCanManage(req.user!.role, ROLE_RANK[target.role] ?? 0);
-    // ⚠️ A18：密码长度校验/哈希/改密吊销（password_changed_at）共用 resetUserPassword（与主用户管理 users.ts 同源）
+    // 密码长度校验/哈希/改密吊销（password_changed_at）共用 resetUserPassword（与主用户管理 users.ts 同源）
     await resetUserPassword(id, password);
     logAudit(req, '重置密码', 'admin', '用户 ' + id.slice(0,8) + ' 密码已重置');
     res.json({ success: true });
@@ -1329,25 +1348,19 @@ router.post('/admin/users/:id/reset-password', ...trAuth, requireRole('director'
 router.delete('/admin/users/:id', ...trAuth, requireRole('director', 'admin'), async (req, res, next) => {
   try {
     const { id } = req.params;
-    // ⚠️ 自删保护：防止误删当前登录账号导致全员锁死（唯一管理员被删后无人可再管理）
+    // 自删保护：防止误删当前登录账号导致全员锁死（唯一管理员被删后无人可再管理）
     if (id === req.user!.userId) throw new AppError(400, '不能删除自己的账号');
-    // ⚠️ A6 复核越级保护：director 不得删除 admin 账号（等级比较，防删更高级账号令系统无人可管）；
-    //   顺带补 404（此前 DELETE 对不存在用户静默返回 success:true）
+    // 越级保护：director 不得删除 admin 账号（等级比较，防删更高级账号令系统无人可管）；
+    // 顺带补 404
     const target = (await query('SELECT role FROM public.users WHERE id = $1', [id])).rows[0];
     if (!target) throw new AppError(404, '用户不存在');
     assertCanManage(req.user!.role, ROLE_RANK[target.role] ?? 0);
-    // ⚠️ A146：time_records/task_assignments/notifications 均 ON DELETE CASCADE——
-    //   删除会静默清空该员工全部已审核工时与任务历史。存在已审核工时时拒绝，引导停用账号。
-    const approvedCount = (await query(
-      "SELECT COUNT(*)::int AS n FROM timerecording.time_records WHERE user_id = $1 AND status = 'approved'",
-      [id]
-    )).rows[0]?.n || 0;
-    if (approvedCount > 0) {
-      throw new AppError(409, `该用户存在 ${approvedCount} 条已审核工时，删除会一并清空历史数据；请改为停用账号`);
-    }
-    // ⚠️ F14 修复：profiles + users 两步删除放入同一事务，避免中途失败留下"有 profile 无 users"半成品
-    // ⚠️ M5 修复：先清空以该用户为 reviewer/创建者的引用（无 ON DELETE 动作会 FK 阻塞删除），再删 profile
-    // ⚠️ A15：事务样板收敛为 withTransaction
+    // time_records/task_assignments/notifications 均 ON DELETE CASCADE——
+    // 存在已审核工时或审核记录时拒绝删除，引导停用账号（与预算删除入口共用守卫）
+    await assertUserDeletable(id);
+    // profiles + users 两步删除放入同一事务，避免中途失败留下"有 profile 无 users"半成品
+    // 先清空以该用户为 reviewer/创建者的引用（无 ON DELETE 动作会 FK 阻塞删除），再删 profile
+    // 事务样板收敛为 withTransaction
     await withTransaction(async (client) => {
       await client.query('UPDATE timerecording.time_records SET reviewed_by = NULL WHERE reviewed_by = $1', [id]);
       await client.query('UPDATE timerecording.task_assignments SET created_by = NULL WHERE created_by = $1', [id]);

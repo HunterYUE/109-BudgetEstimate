@@ -105,7 +105,7 @@ const MaterialManagement: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [messageApi, msgContextHolder] = message.useMessage();
   const { user } = useAuth();
-  // ⚠️ A1 复核：写动作需「新增物料」权限（与后端 writeGuard 同源）；无写权用户隐藏增/改/删/审核按钮，仅可查看
+  // 写动作需「新增物料」权限（与后端 writeGuard 同源）；无写权用户隐藏增/改/删/审核按钮，仅可查看
   const canWrite = hasPermission(user?.permissions, ['新增物料', '全部查看权限']);
   // 审核动作独立权限：不能「自己提交、自己审批」（尤其删除申请）
   const canReview = hasPermission(user?.permissions, ['审批管理', '全部查看权限']);
@@ -115,7 +115,7 @@ const MaterialManagement: React.FC = () => {
   const loadMaterials = useCallback(async () => {
     setLoading(true);
     try {
-      // ⚠️ 传 limit: LIST_LIMIT，避免后端默认 limit=100 导致列表截断
+      // 传 limit: LIST_LIMIT，避免后端默认 limit=100 导致列表截断
       const res = await componentService.list({ limit: LIST_LIMIT });
       if (res) {
         setMaterials(res.map(c => deepClone(c)));
@@ -165,7 +165,7 @@ const MaterialManagement: React.FC = () => {
     return materials.filter(matchesFilter);
   }, [materials, matchesFilter]);
 
-  // ── 标签树（需在 groupedRows 之前声明）──
+  // ── 标签树（需在 groupedRows 之前声明） ──
   const [tagTree, setTagTree] = useState<TagNode[]>([]);
 
   useEffect(() => {
@@ -192,7 +192,7 @@ const MaterialManagement: React.FC = () => {
       let bestId: string | null = null;
       let bestDepth = -1;
       for (const id of t) {
-        // ⚠️ 用 findPath 计算真实深度（原实现只在直接子级查找，≥2 层标签恒被当 depth=1，排序偏向根标签）
+        // 用 findPath 计算真实深度
         const path = findPath(tagTree, id);
         const depth = path ? path.length : 0;
         if (depth > bestDepth) { bestDepth = depth; bestId = id; }
@@ -287,13 +287,13 @@ const MaterialManagement: React.FC = () => {
         await componentService.create(buildCreateFields(editForm, parsed?.version || 'V0.1', now));
       }
       await loadMaterials();
-      invalidateCatalogCache(); // ⚠️ B2：物料变更后失效报价页编码下拉缓存
+      invalidateCatalogCache(); // 物料变更后失效报价页编码下拉缓存
       messageApi.success(editingId ? '物料已更新，需重新审核' : '物料已创建');
       setEditOpen(false);
     } catch (err) {
       console.error('[Material] 保存失败:', err);
-      // ⚠️ B7 修复：API 失败不再本地伪造假 id/本地回退——「已保存到本地、刷新后丢失」的假数据会误导
-      //   用户以为已入库，伪造 id 还会与后端真实数据并存；仅提示错误并保持弹窗打开可修正重试
+      // API 失败不再本地伪造假 id/本地回退——「已保存到本地、刷新后丢失」的假数据会误导
+      // 用户以为已入库，伪造 id 还会与后端真实数据并存；仅提示错误并保持弹窗打开可修正重试
       messageApi.error('保存失败，请重试');
     }
   };
@@ -317,11 +317,11 @@ const MaterialManagement: React.FC = () => {
         messageApi.success('删除申请已提交，待审核');
       }
       await loadMaterials();
-      invalidateCatalogCache(); // ⚠️ B2：失效报价页编码下拉缓存（同 286 说明）
+      invalidateCatalogCache(); // 失效报价页编码下拉缓存（同 286 说明）
     } catch (err) {
       console.error('[Material] 删除失败:', err);
-      // ⚠️ B7 修复：API 失败不再本地移除/本地标记（刷新后恢复的假状态误导用户，且列表与后端不一致），
-      //   仅提示错误；条目保持真实状态，用户可重试
+      // API 失败不再本地移除/本地标记（刷新后恢复的假状态误导用户，且列表与后端不一致），
+      // 仅提示错误；条目保持真实状态，用户可重试
       messageApi.error('删除申请提交失败，请重试');
     }
     setDeleteModalItem(null);
@@ -335,7 +335,7 @@ const MaterialManagement: React.FC = () => {
       const result = await componentService.review(item.id, 'approved');
       messageApi.success(result.deleted ? '删除申请已通过，物料已移除' : '物料已通过审核');
       await loadMaterials();
-      invalidateCatalogCache(); // ⚠️ B2：失效报价页编码下拉缓存（同 286 说明）
+      invalidateCatalogCache(); // 失效报价页编码下拉缓存（同 286 说明）
     } catch (err) {
       console.error('[Material] 保存失败:', err);
       messageApi.error(item.reviewAction === 'delete' ? '删除审批失败，请重试' : '审核失败，请重试');
@@ -348,7 +348,7 @@ const MaterialManagement: React.FC = () => {
       await componentService.review(item.id, 'rejected');
       messageApi.warning(item.reviewAction === 'delete' ? '删除申请已驳回' : '物料已驳回');
       await loadMaterials();
-      invalidateCatalogCache(); // ⚠️ B2：失效报价页编码下拉缓存（同 286 说明）
+      invalidateCatalogCache(); // 失效报价页编码下拉缓存（同 286 说明）
     } catch (err) {
       console.error('[Material] 保存失败:', err);
       messageApi.error(item.reviewAction === 'delete' ? '删除申请驳回失败，请重试' : '驳回失败，请重试');
@@ -379,7 +379,7 @@ const MaterialManagement: React.FC = () => {
       },
     },
     { title: '名称', dataIndex: 'nameCn', width: 135, onCell: onCellLock(135),
-      render: (v: string) => <span style={{ fontSize: 12, color: '#555' }}>{v}</span>,
+      render: (v: string) => <span style={{ fontSize: 12, color: '' }}>{v}</span>,
     },
     {
       title: '类型', dataIndex: 'category', width: 60, align: 'center' as const, onCell: onCellLock(60),
@@ -395,7 +395,7 @@ const MaterialManagement: React.FC = () => {
       filters: [{ text: '全部', value: '__all__' }, ...brandFilterOptions],
       filterSearch: true,
       onFilter: (value: unknown, record: Component) => value === '__all__' || record.brand === value,
-      render: (v: string | undefined) => <span style={{ fontSize: 12, color: '#555' }}>{v || '—'}</span>,
+      render: (v: string | undefined) => <span style={{ fontSize: 12, color: '' }}>{v || '—'}</span>,
     },
     { title: '供应商', dataIndex: 'supplier', width: 80, onCell: onCellLock(80),
       filters: (() => {
@@ -404,16 +404,16 @@ const MaterialManagement: React.FC = () => {
       })(),
       filterSearch: true,
       onFilter: (value: unknown, record: Component) => value === '__all__' || record.supplier === value,
-      render: (v: string) => <span style={{ fontSize: 12, color: '#555' }}>{v || '—'}</span>,
+      render: (v: string) => <span style={{ fontSize: 12, color: '' }}>{v || '—'}</span>,
     },
     { title: '型号', dataIndex: 'model', width: 90, onCell: onCellLock(90),
-      render: (v: string) => <span style={{ fontSize: 12, color: '#555' }}>{v || '—'}</span>,
+      render: (v: string) => <span style={{ fontSize: 12, color: '' }}>{v || '—'}</span>,
     },
     { title: '单位', dataIndex: 'unit', width: 48, align: 'center' as const, onCell: onCellLock(48),
       filters: [{ text: '全部', value: '__all__' }, ...UNITS.map(u => ({ text: u, value: u }))],
       filterSearch: true,
       onFilter: (value: unknown, record: Component) => value === '__all__' || record.unit === value,
-      render: (v: string) => <span style={{ fontSize: 12, color: '#555' }}>{v || '—'}</span>,
+      render: (v: string) => <span style={{ fontSize: 12, color: '' }}>{v || '—'}</span>,
     },
     { title: '规格', dataIndex: 'specification', width: 210, onCell: onCellLock(210),
       render: (v: string) => <span title={v} style={{ fontSize: 12, color: COLORS.textSecondary, display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{v || '—'}</span>,
@@ -447,7 +447,7 @@ const MaterialManagement: React.FC = () => {
           const found = tagPathMap.find(t => t.id === id);
           return found ? found.path.join(' / ') : id;
         });
-        return <span style={{ fontSize: 12, color: '#888' }}>{labels.join('; ')}</span>;
+        return <span style={{ fontSize: 12, color: '' }}>{labels.join('; ')}</span>;
       },
     },
     { title: '单位成本', dataIndex: 'unitCost', width: 85, align: 'right' as const, onCell: onCellLock(85),
@@ -473,22 +473,22 @@ const MaterialManagement: React.FC = () => {
                 onClick={() => openEdit(rec)}
                 style={{ color: rec.reviewStatus === 'pending' ? COLORS.borderInput : COLORS.primary, fontSize: 14 }}
                 disabled={rec.reviewStatus === 'pending'} />
-              {rec.reviewStatus === 'pending' && canReview && (
-                <>
-                  <Button type="text" size="small" icon={<CheckOutlined />}
-                    onClick={() => handleApprove(rec)}
-                    style={{ color: COLORS.success, fontSize: 16 }}
-                    title={rec.reviewAction === 'delete' ? '通过删除申请' : '审核通过'} />
-                  <Button type="text" size="small" icon={<CloseOutlined />}
-                    onClick={() => handleReject(rec)}
-                    style={{ color: COLORS.danger, fontSize: 16 }}
-                    title="驳回" />
-                </>
-              )}
               <Button type="text" size="small" icon={<DeleteOutlined />}
                 onClick={() => deleteItem(rec)}
                 style={{ color: rec.reviewStatus === 'pending' ? COLORS.borderInput : COLORS.textLight, fontSize: 14 }}
                 disabled={rec.reviewStatus === 'pending'} />
+            </>
+          )}
+          {rec.reviewStatus === 'pending' && canReview && (
+            <>
+              <Button type="text" size="small" icon={<CheckOutlined />}
+                onClick={() => handleApprove(rec)}
+                style={{ color: COLORS.success, fontSize: 16 }}
+                title={rec.reviewAction === 'delete' ? '通过删除申请' : '审核通过'} />
+              <Button type="text" size="small" icon={<CloseOutlined />}
+                onClick={() => handleReject(rec)}
+                style={{ color: COLORS.danger, fontSize: 16 }}
+                title="驳回" />
             </>
           )}
         </Space>
@@ -586,7 +586,7 @@ const MaterialManagement: React.FC = () => {
         dataSource={sortedMaterials}
         columns={columns}
         rowKey="id"
-        pagination={false}
+        pagination={{ pageSize: 100, showSizeChanger: false, hideOnSinglePage: true }}
         size="small"
         bordered
         scroll={{ x: 1320 }}

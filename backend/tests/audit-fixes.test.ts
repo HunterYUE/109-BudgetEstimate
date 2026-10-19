@@ -4,9 +4,9 @@ import { fileURLToPath } from 'node:url';
 import { errorHandler } from '../src/middleware/errorHandler.js';
 
 // ── 审计修复回归测试（2026-08-14 全量审计）──
-// 覆盖：BE-1 版本审批绕过、BE-2 交付创建敏感字段、BE-4 审批并发重复、BE-5 基线不可变、
-//       BE-7 提交人服务端派生、BE-8 节点越权、DB-1 schema 缺列、BE-6 唯一约束 409 兜底。
-// 沿用 route-guards.test.ts 的「静态源码断言 + 纯函数直测」模式（无 DB 连接，无 mock 数据）。
+// 覆盖：版本审批绕过、交付创建敏感字段、审批并发重复、基线不可变、
+// 提交人服务端派生、节点越权、schema 缺列、唯一约束 409 兜底
+// 沿用 route-guards.test.ts 的「静态源码断言 + 纯函数直测」模式（无 DB 连接，无 mock 数据）
 
 const src = (rel: string) => readFileSync(fileURLToPath(new URL(`../src/${rel}`, import.meta.url)), 'utf8');
 
@@ -14,7 +14,7 @@ describe('BE-1：POST /project-versions 审批终态禁直设（防 ON CONFLICT 
   const idx = src('routes/index.ts');
 
   it('review_status 白名单收敛为 draft/pending（approved/rejected 只能经审批流）', () => {
-    expect(idx).toContain("!['draft', 'pending'].includes(review_status)");
+    expect(idx).toContain("!['draft', 'pending'].includes(snakeBody.review_status)");
   });
 
   it('旧白名单（含终态）不得残留', () => {
@@ -53,9 +53,9 @@ describe('BE-4：审批创建并发去重（父实体行 FOR UPDATE 串行化）
 describe('BE-5：节点基线不可覆盖（库中审批基线优先）', () => {
   const d = src('routes/deliveries.ts');
 
-  it('baseline 以 baselineMap 优先，客户端值仅作无基线兜底', () => {
-    expect(d).toContain('const baseline = baselineMap[node.node_no] || node.baseline_planned_end_date || null;');
-    expect(d).not.toContain('const baseline = node.baseline_planned_end_date || baselineMap[node.node_no] || null;');
+  it('baseline 只取库中审批基线，客户端提交值不参与', () => {
+    expect(d).toContain('const baseline = baselineMap[node.node_no] || null;');
+    expect(d).not.toContain('node.baseline_planned_end_date || null');
   });
 });
 
@@ -63,8 +63,8 @@ describe('BE-7：审批提交人服务端派生（防客户端伪造）', () => 
   const a = src('routes/approvals.ts');
 
   it('submitter 排除出客户端可写字段', () => {
-    // ⚠️ 2026-08-14 重构：内联 `!['id',...,'submitter']` 已收敛为命名常量 APPROVAL_INSERT_EXCLUDE（提取纯函数化），
-    //   断言改为锁定常量本身——比依赖偶然代码形态（`![...]` 框式字面量）更准，防回归到可直写 submitter
+    // 内联 `!['id',...,'submitter']` 已收敛为命名常量 APPROVAL_INSERT_EXCLUDE，
+    // 断言改为锁定常量本身——比依赖偶然代码形态（`![...]` 框式字面量）更准，防回归到可直写 submitter
     expect(a).toMatch(/APPROVAL_INSERT_EXCLUDE = \[[^\]]*'submitter'[^\]]*\]/);
   });
 

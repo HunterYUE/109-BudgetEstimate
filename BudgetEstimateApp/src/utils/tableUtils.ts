@@ -18,8 +18,8 @@ export const moneyInputFilter = (raw: string): string => {
 };
 
 /** 金额输入解析：按数值字面量解析后取整元（0 视为空）。
- *  ⚠️ 不能直接删除所有非数字字符——`1,234.56` 会被拼成 123456（放大 100 倍），
- *  `-100` 会被改成正数。此处保留符号/小数点/千分位，再按整数元截断。 */
+ * 不能直接删除所有非数字字符——`1,234.56` 会被拼成 123456（放大 100 倍），
+ * `-100` 会被改成正数。此处保留符号/小数点/千分位，再按整数元截断 */
 export const parseMoneyInput = (text: string): number => {
   const cleaned = String(text ?? '').replace(/[^\d.-]/g, '');
   const n = Number.parseFloat(cleaned);

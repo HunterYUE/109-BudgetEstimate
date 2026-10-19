@@ -49,7 +49,7 @@ function buildChangeEntry(
     (startChanged && endChanged ? ', ' : '') +
     (endChanged ? '结束: ' + change.newEndVal : '');
   const now = new Date();
-  // ⚠️ B17 修复：北京日期/时间戳复用 utils/timeFormat（todayBeijing/formatBeijing），弃手动 +8h 与 toLocaleDateString 双实现
+  // 北京日期/时间戳复用 utils/timeFormat（todayBeijing/formatBeijing），弃手动 +8h 与 toLocaleDateString 双实现
   const beijingDate = todayBeijing();
   const beijingTs = formatBeijing(now);
   return { id: uuid(), field: 'plannedDate', oldValue: oldDesc, newValue: newDesc, changedAt: beijingDate, modifier, changedAtFull: beijingTs };
@@ -59,7 +59,7 @@ const DeliveryDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [msg, ctx] = message.useMessage();
-  const { modal } = App.useApp(); // ⚠️ B24：静态 Modal.confirm 消费 antd 主题上下文
+  const { modal } = App.useApp(); // 静态 Modal.confirm 消费 antd 主题上下文
   const location = useLocation();
   // 从 sessionStorage 恢复 tab（刷新后保留），其次从 location.state（从父页面跳转），最后默认 plan
   const [tab, setTab] = useState<'plan' | 'cost' | 'files'>(() => {
@@ -81,9 +81,9 @@ const DeliveryDetail: React.FC = () => {
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [quoteError, setQuoteError] = useState<string | null>(null);
   const [savingPlan, setSavingPlan] = useState(false);
-  // ⚠️ 审计修复 BU-3：提交审批重入守卫（confirmSubmitPlan/handleSubmitCost 复用）——双击确认会并发发两次
-  //   POST /approvals（后端 dedup 拦截第二次，但前端应避免重复请求）；handleSavePlan 已有 savingPlan 锁，
-  //   提交审批此前无锁
+  // 提交审批重入守卫（confirmSubmitPlan/handleSubmitCost 复用）——双击确认会并发发两次
+  // POST /approvals（后端 dedup 拦截第二次，但前端应避免重复请求）；handleSavePlan 已有 savingPlan 锁，
+  // 提交审批防重入锁
   const [submittingApproval, setSubmittingApproval] = useState(false);
   const [submitCostOpen, setSubmitCostOpen] = useState(false);
   const [costOverride, setCostOverride] = useState(false);
@@ -107,9 +107,9 @@ const DeliveryDetail: React.FC = () => {
   useEffect(() => {
     if (!id) return;
     let cancelled = false;
-    // ⚠️ B33 修复：切换交付项目（id 变更）时重置成本缓存——initialCostsLoaded 原本防的是「同项目内保存/刷新
-    //   不覆盖在编成本」，但路由复用组件换 id 后 ref 仍为 true，新项目 actualCosts 永不载入；同时 actualCosts
-    //   残留上一项目数据造成串项目显示
+    // 切换交付项目（id 变更）时重置成本缓存——initialCostsLoaded 原本防的是「同项目内保存/刷新
+    // 不覆盖在编成本」，但路由复用组件换 id 后 ref 仍为 true，新项目 actualCosts 永不载入；同时 actualCosts
+    // 残留上一项目数据造成串项目显示
     initialCostsLoaded.current = false;
     setActualCosts({});
     setLoading(true);
@@ -136,21 +136,23 @@ const DeliveryDetail: React.FC = () => {
           const qvn = quote.versionNo || '';
           if (!pid) throw new Error('报价缺少关联项目');
           projectService.getFull(pid as string).then(proj => {
-            // ⚠️ B63 修复：严格按报价版本号匹配版本，不再回退 versions[0]——交付成本对比必须对齐报价审批时
-            //   的那个版本（组/金额）；versions[0] 可能是其它版本，错配版本会让成本对比得出错误结论。
-            //   无匹配时 ver 为 undefined → 走下方 legacy 全量组回退（旧数据组无 versionId 的场景）
+            // 严格按报价版本号匹配版本，不再回退 versions[0]——交付成本对比必须对齐报价审批时
+            // 的那个版本（组/金额）；versions[0] 可能是其它版本，错配版本会让成本对比得出错误结论
+            // 无匹配时 ver 为 undefined → 走下方 legacy 全量组回退（旧数据组无 versionId 的场景）
             const ver = (proj.versions || []).find((v: ProjectVersion) => v.versionNo === qvn);
+            // 报价版本号非空但项目版本中不存在：中止加载，禁止回退到 latest 版本（审批快照会错配）
+            if (qvn && !ver) throw new Error(`报价版本 ${qvn} 不存在`);
             const vid = ver?.id || '';
             const filtered = (proj.groups || []).filter((g: Group) => g.versionId === vid);
-            // ⚠️ 最终审计修正：版本匹配成功（ver 存在）时只保留该版本组——该版本确实无组（filtered 空）且
-            //   存在已带版本号的组时保持空，不再错误回退全量组把其它版本混进成本对比；
-            //   兼容 legacy 旧数据（组均无 versionId）仍回退全量组（对齐 QuotationPage 同款 hasVersionedGroups 判定）
+            // 版本匹配成功（ver 存在）时只保留该版本组——该版本确实无组（filtered 空）且
+            // 存在已带版本号的组时保持空，不再错误回退全量组把其它版本混进成本对比；
+            // 兼容 legacy 旧数据（组均无 versionId）仍回退全量组（对齐 QuotationPage 同款 hasVersionedGroups 判定）
             const hasVersionedGroups = (proj.groups || []).some((g: Group) => g.versionId);
             if (!cancelled) setQuotationProject({
               ...proj,
-              // ⚠️ 审计修复 #8：groups 已按匹配版本 ver 过滤，但报价财务参数（warranty/risk/tax/commercial）
-              //   此前仍取 currentVersion（最新版）导致成本对比用错版本——统一覆写为匹配版本，
-              //   无匹配时回退项目当前/首个版本（兼容 legacy 无版本号数据）
+              // groups 已按匹配版本 ver 过滤，报价财务参数（warranty/risk/tax/commercial）
+              // 不得取 currentVersion（最新版），否则成本对比用错版本；统一覆写为匹配版本，
+              // 无匹配时回退项目当前/首个版本（兼容 legacy 无版本号数据）
               currentVersion: ver || proj.currentVersion || proj.versions?.[0],
               // legacy 数据（所有组都没有 versionId）回退全量；已有版本隔离时只保留匹配版本，
               // 版本号匹配失败则保持空组（不得把其它版本混入成本对比）
@@ -196,7 +198,7 @@ const DeliveryDetail: React.FC = () => {
   useEffect(() => { loadFiles(); }, [loadFiles]);
 
   const handleUploadClick = (key: string) => {
-    if (uploading) return; // ⚠️ 上传中禁止再次打开文件选择，避免并发上传
+    if (uploading) return; // 上传中禁止再次打开文件选择，避免并发上传
     setActiveFileKey(key);
     fileInputRef.current?.click();
   };
@@ -209,7 +211,7 @@ const DeliveryDetail: React.FC = () => {
     setUploading(true);
     try {
       await deliveryFileService.upload(id, activeFileKey, file);
-      clearCache('/deliveries'); // ⚠️ upload 走原生 fetch（非 api.*），不会自动清缓存；只需清交付前缀
+      clearCache('/deliveries'); // upload 走原生 fetch（非 api.*），不会自动清缓存；只需清交付前缀
       const fresh = await deliveryFileService.list(id);
       setDeliveryFiles(fresh);
       msg.success('上传成功');
@@ -223,7 +225,7 @@ const DeliveryDetail: React.FC = () => {
 
   const handleRemoveFile = (fileId: string) => {
     if (!id) return;
-    // ⚠️ 附件删除不可恢复，需确认（合同/协议等关键文件误删即永久丢失）
+    // 附件删除不可恢复，需确认（合同/协议等关键文件误删即永久丢失）
     modal.confirm({
       title: '确认删除该附件？',
       content: '删除后不可恢复。',
@@ -244,15 +246,15 @@ const DeliveryDetail: React.FC = () => {
 
   const handleViewFile = async (fileId: string) => {
     if (!id) return;
-    // ⚠️ F7 修复：fetch 取 Blob（L6 后认证在 HttpOnly cookie 自动携带），避免 token 暴露在 URL。
-    //    先同步开空窗再在 fetch 后导航，避免 window.open 在 await 后被浏览器弹窗拦截
+    // fetch 取 Blob（后认证在 HttpOnly cookie 自动携带），避免 token 暴露在 URL
+    // 先同步开空窗再在 fetch 后导航，避免 window.open 在 await 后被浏览器弹窗拦截
     const win = window.open('', '_blank');
     try {
       const url = await deliveryFileService.download(id, fileId);
       if (win) win.location.href = url; else window.open(url, '_blank');
-      // ⚠️ B37 修复：导航后延迟回收 Blob URL——此前每次预览都新建一个 Blob URL 且永不 revoke，
-      //    重复预览持续泄漏内存（Blob 含整份 PDF 内容）。60s 足够新窗口完成加载展示；仅回收 URL，
-      //    已渲染内容不受影响（新窗口内刷新此地址才会失效，可接受的权衡）
+      // 导航后延迟回收 Blob URL
+      // 重复预览持续泄漏内存（Blob 含整份 PDF 内容）。60s 足够新窗口完成加载展示；仅回收 URL，
+      // 已渲染内容不受影响（新窗口内刷新此地址才会失效，可接受的权衡）
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch {
       win?.close();
@@ -303,11 +305,11 @@ const DeliveryDetail: React.FC = () => {
   const handleNodeStatusClick = useCallback((nodeId: string, newStatus?: string) => {
     if (!project) return;
     // 节点15（项目总结）切到"已完成"需要成本对比已通过 + 其余全部节点 completed
-    // ⚠️ B5 审计修复：原仅校验成本审批——成本通过后节点3 仍 pending 即可提前勾完节点15，
-    //   而分析以节点15完成日做交付完结归集，会把未完成项目计为已完结；现与「完成项目」按钮共用门禁
+    // 原仅校验成本审批——成本通过后节点3 仍 pending 即可提前勾完节点15，
+    // 而分析以节点15完成日做交付完结归集，会把未完成项目计为已完结；现与「完成项目」按钮共用门禁
     const targetNode = project.nodes.find(n => n.id === nodeId);
     if (!targetNode) return;
-    // 目标节点唯一，nextStatus 只需计算一次（原实现在 map 内重复计算）
+    // 目标节点唯一，nextStatus 只需计算一次
     const nextStatus = (newStatus || STATUS_CYCLE[(STATUS_CYCLE.indexOf(targetNode.status) + 1) % STATUS_CYCLE.length]) as DeliveryNode['status'];
     if (nextStatus === 'completed' && targetNode.nodeNo === 15) {
       const gate = projectCompletionGate(project.nodes, project.costStatus, { excludeNodeNo: 15 });
@@ -325,7 +327,7 @@ const DeliveryDetail: React.FC = () => {
         const updated: DeliveryNode = { ...n, status: nextStatus };
         // 状态变更不记录历史（仅当审批通过后的日期变更才记历史）
         if (nextStatus === 'in_progress') {
-          // 回退已完成节点时保留原始实际开始日（原实现无条件改成今天，静默缩短实际工期）
+          // 回退已完成节点时保留原始实际开始日
           updated.actualStartDate = n.actualStartDate || today;
           if (n.status === 'completed') {
             updated.actualDate = undefined;
@@ -335,9 +337,8 @@ const DeliveryDetail: React.FC = () => {
           updated.actualDate = today;
           updated.actualEndDate = today;
         } else {
-          // 切回「未开始」：清除实际开始/完成日期，与状态保持一致。
-          // ⚠️ 修复：此前从进行中切回保留 actualStartDate，导致误勾的节点即使撤销仍被
-          //   节点分析按「已到达」统计（如 A2026-07-003-E 节点5）。撤销应彻底恢复未开始。
+          // 切回「未开始」：清除实际开始/完成日期，与状态保持一致
+          // 切回未开始须清除实际开始日，否则误勾的节点即使撤销仍会被节点分析按「已到达」统计
           updated.actualStartDate = undefined;
           updated.actualDate = undefined;
           updated.actualEndDate = undefined;
@@ -351,7 +352,7 @@ const DeliveryDetail: React.FC = () => {
   const handlePlannedDateChange = useCallback((nodeId: string, field: 'plannedStartDate' | 'plannedEndDate', date: string) => {
     if (!project) return;
     const node = project.nodes.find(n => n.id === nodeId);
-    if (!node || node[field] === date) return;  // 日期未变，不处理
+    if (!node || node[field] === date) return; // 日期未变，不处理
     // 日期范围验证
     if (field === 'plannedEndDate' && date < node.plannedStartDate) {
       msg.warning('计划结束日期不能早于开始日期');
@@ -410,7 +411,7 @@ const DeliveryDetail: React.FC = () => {
   const handleNodeCommentsChange = useCallback((nodeId: string, comments: string) => {
     if (!project) return;
     const node = project.nodes.find(n => n.id === nodeId);
-    if (!node || node.comments === comments) return; // ⚠️ 无实际变更不置脏
+    if (!node || node.comments === comments) return; // 无实际变更不置脏
     setHasChanges(true);
     setProject(prev => {
       if (!prev) return prev;
@@ -422,9 +423,9 @@ const DeliveryDetail: React.FC = () => {
   }, [project]);
 
   /**
-   * 将累积的待刷新日期变更写入各节点的 history（保存前调用）。
-   * ⚠️ 不在本函数删除 pending 条目：删除延迟到调用方保存成功后 clear()，
-   *    若保存失败则保留条目，重试仍能生成审计历史（避免历史丢失）。
+   * 将累积的待刷新日期变更写入各节点的 history（保存前调用）
+   * 不在本函数删除 pending 条目：删除延迟到调用方保存成功后 clear()，
+   * 若保存失败则保留条目，重试仍能生成审计历史（避免历史丢失）
    */
   const flushPendingDateChanges = useCallback((projectData: DeliveryProject): DeliveryProject => {
     if (projectData.planStatus !== 'approved') return projectData;
@@ -443,12 +444,12 @@ const DeliveryDetail: React.FC = () => {
 
   // ── 实施计划保存 ──
   const handleSavePlan = useCallback(async () => {
-    if (!project || savingPlan) return; // ⚠️ 防止重复点击
+    if (!project || savingPlan) return; // 防止重复点击
     setSavingPlan(true);
     try {
       const flushed = flushPendingDateChanges(project);
       await deliveryService.saveNodes(project.id, flushed.nodes);
-      pendingDateChangesRef.current.clear(); // ⚠️ 保存成功后才清空待处理日期变更（失败保留，重试仍生成历史）
+      pendingDateChangesRef.current.clear(); // 保存成功后才清空待处理日期变更（失败保留，重试仍生成历史）
       setProject(flushed);
       setHasChanges(false);
       msg.success('实施计划已保存');
@@ -462,8 +463,8 @@ const DeliveryDetail: React.FC = () => {
   // ── 成本操作 ──
   const handleActualCostChange = useCallback((itemId: string, value: number) => {
     if (costLocked) return;
-    // ⚠️ 最终审计修正：值未变化不重复写 state/不标 dirty（此前失焦无改动也触发，
-    //   未保存标识一直亮起、审批数据塞满等价回写）
+    // 值未变化不重复写 state/不标 dirty，避免失焦无改动也触发，
+    // 未保存标识一直亮起、审批数据塞满等价回写）
     if (actualCosts[itemId] === value) return;
     setActualCosts(prev => ({ ...prev, [itemId]: value }));
     setCostDirty(true);
@@ -486,8 +487,8 @@ const DeliveryDetail: React.FC = () => {
   }, [project, msg]);
 
   const confirmSubmitPlan = useCallback(async () => {
-    if (!project || submittingApproval) return; // ⚠️ 审计修复 BU-3：防双击并发提交
-    // ⚠️ A139：报价/版本数据未就绪时提交会把快照写成 0 成本/空版本号
+    if (!project || submittingApproval) return; // 防双击并发提交
+    // 报价/版本数据未就绪时提交会把快照写成 0 成本/空版本号
     if (quoteLoading || quoteError || !quotationVersionFull) {
       msg.warning(quoteLoading ? '报价数据加载中，请稍后再提交' : '报价数据加载失败，无法提交审批');
       return;
@@ -497,7 +498,7 @@ const DeliveryDetail: React.FC = () => {
     try {
       const flushed = flushPendingDateChanges(project);
       await deliveryService.saveNodes(project.id, flushed.nodes);
-      pendingDateChangesRef.current.clear(); // ⚠️ 保存成功后才清空待处理日期变更（失败保留，重试仍生成历史）
+      pendingDateChangesRef.current.clear(); // 保存成功后才清空待处理日期变更（失败保留，重试仍生成历史）
       setProject(flushed);
       setHasChanges(false);
     } catch {
@@ -509,7 +510,7 @@ const DeliveryDetail: React.FC = () => {
     const totalAccountingPrice = ver?.totalAccountingPrice || 0;
     const discountedPrice = ver?.discountedPrice || 0;
     const gp3ProfitRate = ver?.gp3ProfitRate || 0;
-    // ⚠️ ver.totalCost 已包含 commercialCost（calcProjectSummary 公式），无需再加
+    // ver.totalCost 已包含 commercialCost（calcProjectSummary 公式），无需再加
     const totalCost = ver?.totalCost || 0;
     approvalService.create({
       approvalType: 'plan',
@@ -544,8 +545,8 @@ const DeliveryDetail: React.FC = () => {
 
   const handleOpenSubmitCost = useCallback(() => {
     if (!project) return;
-    // ⚠️ 最终审计修正：校验改为「至少一项 >0 的实际成本」——此前只看 key 数量，
-    //   录入后全清空（0 值）也算有数据，可提交 0 成本审批，违背提交语义
+    // 校验改为「至少一项 >0 的实际成本」
+    // 录入后全清空（0 值）也算有数据，可提交 0 成本审批，违背提交语义
     if (!costLines.some(l => l.key !== '_warranty' && l.actual > 0)) {
       msg.warning('请至少录入一项实际成本再提交');
       return;
@@ -554,7 +555,7 @@ const DeliveryDetail: React.FC = () => {
   }, [project, costLines, msg]);
 
   const handleSubmitCost = useCallback(async () => {
-    if (!project || submittingApproval) return; // ⚠️ 审计修复 BU-3：防双击并发提交
+    if (!project || submittingApproval) return; // 防双击并发提交
     if (quoteLoading || quoteError || !quotationVersionFull) {
       msg.warning(quoteLoading ? '报价数据加载中，请稍后再提交' : '报价数据加载失败，无法提交审批');
       return;
@@ -574,8 +575,8 @@ const DeliveryDetail: React.FC = () => {
     }
     const ver = quotationVersionFull;
     const taxRate = quotationVersion?.taxRate ?? TAX_RATE;
-    const actProfit = exTax - grandActual;                // 未税利润（与概览条一致）
-    const actGP3 = exTax > 0 ? actProfit / exTax : 0;    // GP3（未税=含税）
+    const actProfit = exTax - grandActual; // 未税利润（与概览条一致）
+    const actGP3 = exTax > 0 ? actProfit / exTax : 0; // GP3（未税=含税）
     // gp3Amount 存含税利润，gp3 存费率（未税/含税相同 totalCost 存未税值供对照）
     approvalService.create({
       approvalType: 'cost',
@@ -594,7 +595,7 @@ const DeliveryDetail: React.FC = () => {
       totalAccountingPrice: ver?.totalAccountingPrice || 0,
       discountedPrice: ver?.discountedPrice || 0,
       discountRate: ver?.discountRate || 0,
-      gp3Amount: Math.round(actProfit * (1 + taxRate)) || 0,  // 含税利润
+      gp3Amount: Math.round(actProfit * (1 + taxRate)) || 0, // 含税利润
       submitter: modifierName,
     }).then(() => {
       setProject(prev => prev ? { ...prev, costStatus: 'pending' } : prev);
@@ -610,12 +611,12 @@ const DeliveryDetail: React.FC = () => {
 
   const handleExportPlan = useCallback(() => {
     if (!project) return;
-    // F08：节点状态文案收敛单源 constants.NODE_STATUS_META（此前与 DeliveryNodeTimeline.STATUS_LABELS 逐字重复）
+    // 节点状态文案收敛单源 constants.NODE_STATUS_META
     const statusMap = NODE_STATUS_META;
     let rows = '';
     for (let i = 0; i < project.nodes.length; i++) {
       const n = project.nodes[i];
-      // ⚠️ 共享延期判定：基线 = 初始审批实施计划；无基线显示 —
+      // 共享延期判定：基线 = 初始审批实施计划；无基线显示 —
       const { hasBaseline, days } = getNodeDelay(n);
       const delayStr = hasBaseline ? (days > 0 ? '+' + days : String(days)) : '—';
       rows += '<tr>' +
@@ -637,7 +638,7 @@ const DeliveryDetail: React.FC = () => {
 
   const handleExportCost = useCallback(() => {
     if (!project) return;
-    // ⚠️ 成本分解单一来源 buildCostLines（与 ItemCostTable 共享），消除重复聚合逻辑
+    // 成本分解单一来源 buildCostLines（与 ItemCostTable 共享），消除重复聚合逻辑
     const lines = costLines;
     let totalEst = 0, totalAct = 0;
     let rows = '';
@@ -651,7 +652,7 @@ const DeliveryDetail: React.FC = () => {
         '<td class="amount" style="color:' + (varAmt > 0 ? 'red' : 'green') + '">' + (est > 0 ? (varAmt / est * 100).toFixed(1) + '%' : '—') + '</td></tr>';
     };
     for (const line of lines) {
-      // 项次：设计/装配保持「编码 名称」格式，其余 code||detail||'—'（保持原导出输出）
+      // 项次：设计/装配保持「编码名称」格式，其余 code||detail||'—'（保持原导出输出）
       const code = line.code === 'SV-DESIGN-000000-V1.0' || line.code === 'SV-INSASS-000000-V1.0'
         ? line.code + ' ' + line.detail
         : (line.code || line.detail || '—');
@@ -681,7 +682,7 @@ const DeliveryDetail: React.FC = () => {
   let estProfit = 0, actProfit = 0, estGP3 = 0, actGP3 = 0;
   if (project) {
     const ta = actualTotal;
-    // F08：estGP3 直接用 computeDeliveryEstGP3 已返回字段（此前用 ge 重复推导同公式，口径漂移风险）
+    // estGP3 直接用 computeDeliveryEstGP3 已返回字段
     const { exTax, grandEstimated: ge, warrantyCost: wc, estGP3: calcEstGP3 } = computeDeliveryEstGP3(project.contractAmount, quotationGroups, quotationVersion);
     grandActual = ta + wc;
     contractExTax = exTax; grandEstimated = ge;
@@ -763,9 +764,9 @@ const DeliveryDetail: React.FC = () => {
                   okButtonProps: { style: { background: COLORS.success, borderColor: COLORS.success } },
                   onOk: async () => {
                     try {
-                      // ⚠️ A140：完成门禁按「本地未保存节点」判定，但原实现只写 status——
-                      //   未点保存就完成项目会让 DB 节点15仍 pending，刷新后回退，且完成日口径漂移。
-                      //   完成前先把节点（含待处理日期变更）落库，再切状态。
+                      // 完成门禁按「本地未保存节点」判定，但只写 status 会
+                      // 未点保存就完成项目会让 DB 节点15仍 pending，刷新后回退，且完成日口径漂移
+                      // 完成前先把节点（含待处理日期变更）落库，再切状态
                       const flushed = flushPendingDateChanges(project);
                       await deliveryService.saveNodes(project.id, flushed.nodes);
                       pendingDateChangesRef.current.clear();
@@ -877,7 +878,7 @@ const DeliveryDetail: React.FC = () => {
             <span>项目延期：
               <strong style={{ color: COLORS.danger }}>
                 {(() => {
-                  // ⚠️ 共享延期判定：以节点15为准；无基线显示 —
+                  // 共享延期判定：以节点15为准；无基线显示 —
                   const { hasBaseline, days } = getProjectDelay(project);
                   return hasBaseline ? (days > 0 ? '+' + days + '天' : days + '天') : '—';
                 })()}
@@ -885,7 +886,7 @@ const DeliveryDetail: React.FC = () => {
             </span>
           </div>
           <Card size="small" styles={{ body: { padding: 0 } }} style={{ borderRadius: 4, border: 'none', boxShadow: 'none', background: 'transparent' }}>
-            {/* ⚠️ 保存期间锁定：避免保存成功 setProject(flushed) 回退保存期间并发编辑的日期 */}
+            {/* 保存期间锁定：避免保存成功 setProject(flushed) 回退保存期间并发编辑的日期 */}
             <DeliveryNodeTimeline
               nodes={project.nodes}
               locked={planLocked || savingPlan}

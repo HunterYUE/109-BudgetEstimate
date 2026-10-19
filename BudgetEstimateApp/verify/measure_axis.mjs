@@ -57,10 +57,10 @@ const out = await page.evaluate(() => {
       xLabelPx: hStat(xLabels),
       yLabelPx: hStat(yLabels),
       barValPx: hStat(barVals),
-      zeroY,            // 期望：延期P=85；延期(平衡)=181
-      negFloor,         // 期望：205（两者皆）
-      minBarTop,        // 期望：延期P=50（正值柱顶）、延期(平衡)=50
-      maxBarH,          // 期望：延期P=120（最深负柱）、延期(平衡)=24（钳制）
+      zeroY, // 期望：延期P=85；延期(平衡)=181
+      negFloor, // 期望：205（两者皆）
+      minBarTop, // 期望：延期P=50（正值柱顶）、延期(平衡)=50
+      maxBarH, // 期望：延期P=120（最深负柱）、延期(平衡)=24（钳制）
     });
   });
   return res;

@@ -2,11 +2,11 @@ import cron from 'node-cron';
 import { query } from '../db/index.js';
 
 /**
- * 通知清理：每月 1/16 日 04:10（Asia/Shanghai）删除 90 天前的通知。
+ * 通知清理：每月 1/16 日 04:10（Asia/Shanghai）删除 90 天前的通知
  *
  * 通知是可消费的指针（用户点击即删、删任务级联清），无人消费则持续留存；
  * 定时清理封顶表规模，防止 GET /notifications 排序与 weeklyReminder 的
- * NOT EXISTS 子查询随表增长逐年变慢。保留 90 天足以覆盖审批/驳回/提醒回溯窗口。
+ * NOT EXISTS 子查询随表增长逐年变慢。保留 90 天足以覆盖审批/驳回/提醒回溯窗口
  */
 
 const CRON_EXPR = '10 4 1,16 * *';

@@ -19,10 +19,10 @@ export const REVIEW_DECISIONS = ['approved', 'rejected'] as const;
 const router = Router();
 
 /**
- * POST /api/v1/components/:id/review —— 物料审核决策（通过/驳回）。
- * ⚠️ A143：审核权限从「新增物料」写权中拆出——此前任何能新增物料的人都能通过自己提交的删除申请，
- *   造成「自己申请、自己审批、物料被永久删除」。审核动作须「审批管理/全部查看权限」。
- * 删除申请通过时在同一事务内校验引用并删除；驳回只清工作流标记，保留业务备注。
+ * POST /api/v1/components/:id/review —— 物料审核决策（通过/驳回）
+ * 审核权限从「新增物料」写权中拆出，审核动作须「审批管理/全部查看权限」，
+ * 防止提交人自行审批删除申请导致物料被永久删除
+ * 删除申请通过时在同一事务内校验引用并删除；驳回只清工作流标记，保留业务备注
  */
 router.post('/:id/review', async (req, res, next) => {
   try {
@@ -45,7 +45,8 @@ router.post('/:id/review', async (req, res, next) => {
       if (action === 'approved' && row.review_action === 'delete') {
         // 与 beforeDelete 同规则：被报价引用时不可删除
         const ref = (await client.query(
-          'SELECT 1 FROM group_items WHERE component_id = $1 LIMIT 1', [row.id]
+          'SELECT 1 FROM group_items WHERE component_id = $1 OR code = (SELECT code FROM components WHERE id = $1) LIMIT 1',
+          [row.id]
         )).rows[0];
         if (ref) throw new AppError(409, '该物料已被报价编制引用，无法删除。请先从报价中移除该编码。');
         await client.query('DELETE FROM components WHERE id = $1', [row.id]);
@@ -74,39 +75,45 @@ router.post('/:id/review', async (req, res, next) => {
 const crud = crudRoutes('components', fields, {
   searchFields: ['code', 'name_cn', 'brand', 'model'],
   orderBy: 'updated_at DESC',
-  // ⚠️ F9 修复：tags 是 TEXT[] 列，空数组需序列化为 '{}'（'[]' 对 PG 数组字面量非法）
+  // tags 是 TEXT[] 列，空数组需序列化为 '{}'（'[]' 对 PG 数组字面量非法）
   textArrayCols: ['tags'],
-  // ⚠️ A143：创建一律进入待审核——review_status/review_action 由 beforeCreate 强制覆盖
-  //   （不能放进 excludeOnCreate：排除后 beforeCreate 的赋值也不会入库）
+  // 创建一律进入待审核——review_status/review_action 由 beforeCreate 强制覆盖
+  // （不能放进 excludeOnCreate：排除后 beforeCreate 的赋值也不会入库）
   excludeOnCreate: ['id', 'created_at', 'updated_at'],
   beforeCreate: async (snakeBody) => {
     snakeBody.review_status = 'pending';
     // 新建记录只可能是「新建申请」，忽略客户端动作值
     snakeBody.review_action = 'create';
   },
-  // ⚠️ A143：任何内容修改都重新进入待审核；终态只能经 /:id/review 流转
+  // 任何内容修改都重新进入待审核；终态只能经 /:id/review 流转
   beforeUpdate: async (req, _id, snakeBody) => {
     const contentFields = fields.filter(f => !['id', 'created_at', 'updated_at', 'review_status', 'review_action'].includes(f));
-    if (snakeBody.review_status && ['approved', 'rejected'].includes(snakeBody.review_status)) {
-      if (!hasPermission(req.user?.permissions, '审批管理', '全部查看权限')) {
-        throw new AppError(403, '无物料审核权限，请使用审核操作');
-      }
+    if (snakeBody.review_status !== undefined && ['approved', 'rejected'].includes(snakeBody.review_status)) {
+      throw new AppError(400, '审核终态只能通过审核接口流转');
     }
     if (snakeBody.review_action !== undefined
       && !(REVIEW_ACTIONS as readonly string[]).includes(snakeBody.review_action)) {
       throw new AppError(400, '无效审核动作');
     }
-    if (contentFields.some(f => snakeBody[f] !== undefined)) {
-      // 内容变更一律重新进入待审核，客户端传 draft/approved 也不能跳过
+    if (contentFields.some(f => snakeBody[f] !== undefined) || snakeBody.review_action !== undefined) {
+      // 内容变更或提交删除申请一律进入待审核
       snakeBody.review_status = 'pending';
       if (snakeBody.review_action === undefined) snakeBody.review_action = 'update';
     }
   },
-  // ⚠️ 物料被报价引用时禁止删除（group_items.component_id 有 NO ACTION 外键，硬删撞约束给通用 400）
+  // 物料被报价引用时禁止删除（按 component_id 或编码匹配，兼容历史未写 component_id 的明细）
   beforeDelete: async (id) => {
-    const ref = (await query('SELECT group_id FROM group_items WHERE component_id = $1 LIMIT 1', [id])).rows[0];
+    const ref = (await query(
+      'SELECT 1 FROM group_items WHERE component_id = $1 OR code = (SELECT code FROM components WHERE id = $1) LIMIT 1',
+      [id]
+    )).rows[0];
     if (ref) throw new AppError(409, '该物料已被报价编制引用，无法删除。请先从报价中移除该编码。');
   },
+});
+
+// 禁止绕过审核流程硬删除；删除只能经 POST /:id/review 通过删除申请
+router.delete('/:id', (_req, _res, next) => {
+  next(new AppError(409, '请通过审核流程删除物料'));
 });
 
 router.use(crud);

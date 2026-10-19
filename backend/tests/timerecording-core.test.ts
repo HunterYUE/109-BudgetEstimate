@@ -16,9 +16,9 @@ import {
   assertBackfillWindow,
 } from '../src/routes/timerecording.js';
 
-// 服务端权威计算（S4 修复）：hours/hour_type 一律由后端按起止时间与日期重算，不信任前端传入值。
+// 服务端权威计算：hours/hour_type 一律由后端按起止时间与日期重算，不信任前端传入值
 // 这批纯函数决定所有工时记录的正确性（时长换算/加班判定/ISO 周归属/请休假判定/角色矩阵），
-// 提取导出后直测，覆盖核心业务逻辑（后端门禁 tsc && vitest run 自动回归）。
+// 提取导出后直测，覆盖核心业务逻辑（后端门禁 tsc && vitest run 自动回归）
 
 describe('toMinutes 起止时间解析（"HH:MM"/"HH:MM:SS" → 当日分钟数）', () => {
   it('标准时刻', () => {

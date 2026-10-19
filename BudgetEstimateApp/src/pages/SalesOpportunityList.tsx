@@ -31,7 +31,7 @@ import { BARE_INPUT_STYLE, tabItemStyle, parseMoneyInput } from '../utils/tableU
 
 const STAGE_OPTIONS = ['信息', '线索', '机会', '投标', '议价', '中标'];
 
-// 状态色（过程中/赢/输/冻结）就地定义；阶段色 STAGE_COLORS 已收敛至 constants.ts（B14，与 SalesAnalysis 单源）
+// 状态色（过程中/赢/输/冻结）就地定义；阶段色 STAGE_COLORS 已收敛至 constants.ts（，与 SalesAnalysis 单源）
 const statusColors: Record<string, string> = {
 
   过程中: COLORS.primary, 赢: COLORS.success, 输: COLORS.danger, 冻结: COLORS.textLight,
@@ -40,7 +40,7 @@ const statusColors: Record<string, string> = {
 
 const getWinRateColumn = (tab: string, setOpp: (o: SalesOpportunity | null) => void, setOpen: (v: boolean) => void, canEditBlueTable: boolean) => {
   if (tab === 'info') return [];
-  // ⚠️ 区间连续无缝隙：首段含下界，后续段上开下闭（>lo && <=hi），非整数赢率也有归属
+  // 区间连续无缝隙：首段含下界，后续段上开下闭（>lo && <=hi），非整数赢率也有归属
   const WIN_RATE_RANGES = [
     { label: '0-25%', lo: 0, hi: 25, loExclusive: false },
     { label: '26-50%', lo: 25, hi: 50, loExclusive: true },
@@ -51,7 +51,7 @@ const getWinRateColumn = (tab: string, setOpp: (o: SalesOpportunity | null) => v
     title: '赢率', dataIndex: 'winRate', width: 30, align: 'center' as const,
     filters: [{ text: '全部', value: '__all__' }, ...WIN_RATE_RANGES.map(r => ({
       text: r.label,
-      // ⚠️ 赢率区间对象作筛选值，antd FilterValue 类型仅收 Key|boolean，需显式 cast（合法互操作）
+      // 赢率区间对象作筛选值，antd FilterValue 类型仅收 Key|boolean，需显式 cast（合法互操作）
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       value: r as any,
     }))],
@@ -107,23 +107,26 @@ const SalesOpportunityList: React.FC = () => {
 
   const navigate = useNavigate();
   const { user } = useAuth();
-  // ⚠️ A1 复核：写按钮按细粒度权限门控（与后端 writeGuard 同源）——无对应写权用户仅可查看
+  // 写按钮按细粒度权限门控（与后端 writeGuard 同源）——无对应写权用户仅可查看
   const perms = user?.permissions || [];
   const canCreateOpp = hasPermission(perms, ['新建信息/线索/机会', '全部查看权限']);
   const canConvert = hasPermission(perms, ['转线索/转机会', '编辑销售机会', '全部查看权限']);
+  // 晋升审批后端只接受「转线索/转机会」或万能权限（编辑权限不能创建 promote 审批）
+  const canPromote = hasPermission(perms, ['转线索/转机会', '全部查看权限']);
   // 行内编辑/阶段/状态写权限（与后端 selectOpportunityPerms 的 PUT 集合同源）
   const canEdit = hasPermission(perms, ['编辑销售机会', '转线索/转机会', '全部查看权限']);
   // 蓝表编辑权（仅「销售蓝表编辑」，与后端 OPP_BLUE_TABLE_WRITE 同源）
   const canBlueTable = hasPermission(perms, ['销售蓝表编辑', '全部查看权限']);
 
   const [msg, ctx] = message.useMessage();
-  const { modal } = App.useApp(); // ⚠️ B24：静态 Modal.warning 消费 antd 主题上下文
+  const { modal } = App.useApp(); // 静态 Modal.warning 消费 antd 主题上下文
 
   const [opportunities, setOpportunities] = useState<SalesOpportunity[]>([]);
+  const [loadError, setLoadError] = useState(false);
   const [enterpriseClients, setEnterpriseClients] = useState<Array<{ name: string; salesman: string; type?: string }>>([]);
 
   const loadClients = useCallback(() => {
-    // ⚠️ 传 limit: LIST_LIMIT：客户下拉/企业校验依赖全量客户，默认 100 会截断导致下拉缺失、校验误拒
+    // 传 limit: LIST_LIMIT：客户下拉/企业校验依赖全量客户，默认 100 会截断导致下拉缺失、校验误拒
     clientService.list({ limit: LIST_LIMIT }).then(data => {
       if (data) setEnterpriseClients(data.filter((c: Client) => c.type === 'enterprise'));
     }).catch(() => {});
@@ -139,10 +142,11 @@ const SalesOpportunityList: React.FC = () => {
 
   const loadOpportunities = useCallback(async () => {
     try {
-      // ⚠️ 传 limit: LIST_LIMIT，避免后端默认 limit=100 导致列表截断（对齐其他页面）
+      // 传 limit: LIST_LIMIT，避免后端默认 limit=100 导致列表截断（对齐其他页面）
       const data = await opportunityService.list({ limit: LIST_LIMIT });
       setOpportunities(data || []);
-    } catch { setOpportunities([]); }
+      setLoadError(false);
+    } catch { setOpportunities([]); setLoadError(true); }
   }, []);
 
   useEffect(() => {
@@ -193,8 +197,8 @@ const SalesOpportunityList: React.FC = () => {
   });
 
 
-  // ⚠️ B31 修复：locked/terminated 状态存入 ref，touch 不依赖 opportunities 数组——
-  //   锁定状态经 effect 同步、恒为最新，避免失焦编辑触发 setOpportunities → columns 重建 → 整表重渲染
+  // locked/terminated 状态存入 ref，touch 不依赖 opportunities 数组——
+  // 锁定状态经 effect 同步、恒为最新，避免失焦编辑触发 setOpportunities → columns 重建 → 整表重渲染
   const lockedRef = useRef<Set<string>>(new Set());
   // 失败回滚需要「保存前的值」：用 ref 同步最新列表，避免把 opportunities 加进 touch 依赖导致 columns 重建
   const opportunitiesRef = useRef<SalesOpportunity[]>([]);
@@ -207,7 +211,7 @@ const SalesOpportunityList: React.FC = () => {
 
   const touch = useCallback((id: string, updates: Partial<SalesOpportunity>) => {
     if (lockedRef.current.has(id)) return;
-    // 乐观更新 + 失败回滚：原实现失败只提示，界面保留未落库的值，刷新后“回弹”
+    // 乐观更新 + 失败回滚：失败只提示会让界面保留未落库的值，刷新后回弹
     const old = opportunitiesRef.current.find(o => o.id === id);
     const rollback = old
       ? Object.fromEntries(Object.keys(updates).map(k => [k, (old as unknown as Record<string, unknown>)[k]]))
@@ -239,7 +243,7 @@ const SalesOpportunityList: React.FC = () => {
 
       if (!showTerminated && o.terminated) return false;
 
-      // ⚠️ 财年归属用共享 oppEffectiveEnd（赢→wonAt/输→lostAt，不用 updatedAt），与分析页同口径
+      // 财年归属用共享 oppEffectiveEnd（赢→wonAt/输→lostAt，不用 updatedAt），与分析页同口径
       const created = new Date(o.createdAt);
       if (created > fyRange.end || oppEffectiveEnd(o) < fyRange.start) return false;
 
@@ -276,7 +280,7 @@ const SalesOpportunityList: React.FC = () => {
     if (action === 'loss' && reasonModal.winner) {
       updates.winner = reasonModal.winner;
     }
-    // ⚠️ 输单记录当次时间；离开输状态（赢/冻结）清空本地 lostAt（与后端 now()/NULL 一致）
+    // 输单记录当次时间；离开输状态（赢/冻结）清空本地 lostAt（与后端 now()/NULL 一致）
     updates.lostAt = action === 'loss' ? nowISO() : undefined;
     // 如果原因弹窗附加了阶段变更（如"中标"→赢），同步更新 stage
     if (reasonModal.pendingStage) {
@@ -345,9 +349,9 @@ const SalesOpportunityList: React.FC = () => {
     const calc = calcBlueTableWinRate(blueTable);
     const winRate = calc.finalRate;
     try {
-      // ⚠️ A136：赢率随蓝表一并提交（后端同事务写入），并用返回值替换本地状态——
-      //   后端会保留已有角色 id、把新角色临时 id 换发 UUID 并回写 targets，
-      //   若继续用本地旧对象，重开蓝表时 target.roleId 指向不存在的临时 id。
+      // 赢率随蓝表一并提交（后端同事务写入），并用返回值替换本地状态——
+      // 后端会保留已有角色 id、把新角色临时 id 换发 UUID 并回写 targets，
+      // 若继续用本地旧对象，重开蓝表时 target.roleId 指向不存在的临时 id
       const saved = await opportunityService.saveBlueTable(blueTableOpp.id, blueTable, winRate);
       const updates: Partial<SalesOpportunity> = {
         blueTable: saved,
@@ -375,7 +379,7 @@ const SalesOpportunityList: React.FC = () => {
     const opp = deliveryOpp;
     if (!opp) return;
     if (opp.terminated) { msg.warning('该项目已转交付'); setDeliveryOpp(null); return; }
-    // ⚠️ 转交付必须有关联报价：delivery_projects.quotation_id 为 UUID NOT NULL，传 '' 会撞后端 500
+    // 转交付必须有关联报价：delivery_projects.quotation_id 为 UUID NOT NULL，传 '' 会撞后端 500
     if (!opp.quotationId) {
       msg.warning('该机会未关联报价，无法转交付。请先在报价编制中创建并审批报价。');
       setDeliveryOpp(null);
@@ -397,7 +401,7 @@ const SalesOpportunityList: React.FC = () => {
         name,
         nodeNo: i + 1,
         status: 'pending' as const,
-        // ⚠️ 用本地日期字符串（toISOString 是 UTC，北京时间早 8 点前会差一天）
+        // 用本地日期字符串（toISOString 是 UTC，北京时间早 8 点前会差一天）
         plannedStartDate: ps.toLocaleDateString('en-CA'),
         plannedEndDate: pe.toLocaleDateString('en-CA'),
         comments: '', history: [],
@@ -405,12 +409,12 @@ const SalesOpportunityList: React.FC = () => {
     });
 
     try {
-      // ⚠️ B64 修复：转交付三步（创建→存节点→标 terminated）非原子，任一步失败后重试会重复创建
-      //   交付项目（后端 A104 现对重复转交付返回 409）。此处先按 -E 销售编号查询既有交付，命中则复用
-      //   继续补节点与终止标记，实现幂等重试；后端 409 场景（罕见竞态）也走 catch 复用而非报错。
+      // 转交付三步（创建→存节点→标 terminated）非原子，任一步失败后重试会重复创建
+      // 交付项目（后端现对重复转交付返回 409）。此处先按 -E 销售编号查询既有交付，命中则复用
+      // 继续补节点与终止标记，实现幂等重试；后端 409 场景（罕见竞态）也走 catch 复用而非报错
       const newSalesNo = opp.salesNo.replace(/-S$/, "-E");
       const existingDels = await deliveryService.list({ search: newSalesNo }, { noCache: true });
-      // ⚠️ 声明为最小形状 {id}：existingDels（完整 DeliveryProject）与 create（Omit<nodes>）都满足，且本处仅用 id
+      // 声明为最小形状 {id}：existingDels（完整 DeliveryProject）与 create（Omit<nodes>）都满足，且本处仅用 id
       let newDel: { id: string } | undefined = existingDels.find(d => d.opportunityId === opp.id);
       if (!newDel) {
         // 1. 创建交付项目
@@ -419,9 +423,9 @@ const SalesOpportunityList: React.FC = () => {
           salesNo: newSalesNo,
           clientName: opp.clientName,
           projectName: opp.projectName,
-          // ⚠️ 审计修复 BU-1'：转交付金额优先取报价折后价（quotationAmount），与列表 UI 显示口径一致；
-          //   此前用 opp.amount——报价未审批时该值为陈旧预估（后端仅在报价审批通过后同步 opp.amount←报价金额），
-          //   导致写入交付的合同金额与页面显示的 quotationAmount 不一致
+          // 转交付金额取报价折后价（quotationAmount），与列表 UI 显示口径一致；
+          // opp.amount 在报价未审批时是陈旧预估（后端仅在报价审批通过后同步），
+          // 会导致写入交付的合同金额与页面显示不一致
           contractAmount: opp.quotationAmount ?? opp.amount,
           quotationId: bestQuoteId,
           status: '进行中',
@@ -483,14 +487,14 @@ const SalesOpportunityList: React.FC = () => {
             // 通过项目ID获取版本财务数据
             if (qt.projectId) {
               const projectData = await projectService.getFull(qt.projectId);
-              // ⚠️ 只采用报价所指版本的已审批数据，无该版本的已审批数据时阻止提交
-              //   （审计修复 BU-7：移除「回退到任意已审批版本」兜底——后端 promote 审批按报价版本号精确取数
-              //   (approvals.ts)，前端若静默改用另一已审批版本会造成提交数据与后端自动填充不一致）
+              // 只采用报价所指版本的已审批数据，无该版本的已审批数据时阻止提交
+              // （：移除「回退到任意已审批版本」兜底——后端 promote 审批按报价版本号精确取数
+              // (approvals.ts)，前端若静默改用另一已审批版本会造成提交数据与后端自动填充不一致）
               const ver = projectData.versions?.find(v => v.versionNo === qt.versionNo && v.reviewStatus === 'approved');
               if (ver) {
                 foundApproved = true;
                 versionNo = ver.versionNo;
-                // ⚠️ 所有财务数据一律从数据库已存储的值直接读取，不重新计算
+                // 所有财务数据一律从数据库已存储的值直接读取，不重新计算
                 totalAccountingPrice = ver.totalAccountingPrice || 0;
                 discountedPrice = ver.discountedPrice || 0;
                 discountRate = ver.discountRate || 0;
@@ -498,7 +502,7 @@ const SalesOpportunityList: React.FC = () => {
                 taxRate = ver.taxRate || TAX_RATE;
                 amount = ver.discountedPrice || amount;
                 gp3 = ver.gp3ProfitRate || 0;
-                // ⚠️ 优先读存储的 gp3Amount，为 0 时从汇总值回退计算（兼容旧数据；本系统 0 表示缺失而非真实零值）
+                // 优先读存储的 gp3Amount，为 0 时从汇总值回退计算（兼容旧数据；本系统 0 表示缺失而非真实零值）
                 gp3Amount = ver.gp3Amount || Math.round((ver.discountedPrice || 0) - Math.round((ver.totalCost || 0) * (1 + (ver.taxRate || TAX_RATE))));
                 profitRate = rateToPercent(ver.gp3ProfitRate || 0);
               } else {
@@ -537,8 +541,8 @@ const SalesOpportunityList: React.FC = () => {
           status: 'pending',
         });
 
-        // ⚠️ 后端审批创建已在事务内 promote_locked=true（approvals.ts:43），前端无需再 update 锁定；
-        //    冗余 update 在 F1 权限收紧后对销售经理（无『全部查看权限』）必 403，导致假报错 + 重试重复审批
+        // 后端审批创建已在事务内 promote_locked=true（approvals.ts:43），前端无需再 update 锁定；
+        // 冗余 update 在权限收紧后对销售经理（无『全部查看权限』）必 403，导致假报错 + 重试重复审批
         // 更新本地状态（立即生效，无需刷新页面）
         setOpportunities(prev => prev.map(o =>
           o.id === opp.id ? { ...o, promoteLocked: true } : o
@@ -562,15 +566,22 @@ const SalesOpportunityList: React.FC = () => {
     setTerminateOpp(opp);
   }, []);
 
-  const confirmTerminate = useCallback(() => {
+  const confirmTerminate = useCallback(async () => {
     const opp = terminateOpp;
     if (!opp) return;
     setOpportunities(prev => prev.map(o =>
       o.id === opp.id ? { ...o, terminated: true, updatedAt: nowISO() } : o
     ));
-    opportunityService.update(opp.id, { terminated: true, updatedAt: nowISO() }).catch(e => console.warn('[Terminate] 保存失败', e));
-    setTerminateOpp(null);
-    msg.success('项目已终止');
+    try {
+      await opportunityService.update(opp.id, { terminated: true, updatedAt: nowISO() });
+      setTerminateOpp(null);
+      msg.success('项目已终止');
+    } catch (e) {
+      setOpportunities(prev => prev.map(o =>
+        o.id === opp.id ? { ...o, terminated: opp.terminated, updatedAt: opp.updatedAt } : o
+      ));
+      msg.error('终止失败：' + ((e as Error).message || '请重试'));
+    }
   }, [terminateOpp, msg]);
 
 
@@ -612,13 +623,13 @@ const SalesOpportunityList: React.FC = () => {
         const resp = await api.get<{ salesNo: string }>('/opportunities/next-sales-no');
         salesNo = resp.salesNo;
       } catch {
-        // ⚠️ 不本地计数兜底：本地计数与服务端 MAX 不一致，并发/未刷新时会产生重复销售编号（撞 UNIQUE 约束），直接提示重试
+        // 不本地计数兜底：本地计数与服务端 MAX 不一致，并发/未刷新时会产生重复销售编号（撞 UNIQUE 约束），直接提示重试
         msg.error('获取销售编号失败，请重试');
         return;
       }
 
       const createdStage = formData.stage || '信息';
-      // ⚠️ B25 修复：局部变量不与模块级 nowISO() 函数同名，避免遮蔽误读
+      // 局部变量不与模块级 nowISO() 函数同名，避免遮蔽误读
       const createdAt = new Date().toISOString();
       const hasStage = (arr: string[]) => arr.includes(createdStage);
       opportunityService.create({
@@ -656,11 +667,11 @@ const SalesOpportunityList: React.FC = () => {
 
 
 
-  // ⚠️ B7 修复：columns 依赖收敛为「销售员+预计结单日期」签名串，而非整个 opportunities 数组——
-  //   签名只在销售员/结单日期集合变化时改变，普通单元格编辑（touch→setOpportunities）不再触发列重建
+  // columns 依赖收敛为「销售员+预计结单日期」签名串，而非整个 opportunities 数组——
+  // 签名只在销售员/结单日期集合变化时改变，普通单元格编辑（touch→setOpportunities）不再触发列重建
   const salesDateSignature = opportunities.map(o => `${o.salesman ?? ''}|${o.expectedCloseDate ?? ''}`).join('~');
   // 筛选下拉选项独立 memo，仅依赖「销售员+结单日期」签名串：签名不变即数组引用稳定，
-  // columns 依赖这两个稳定数组而非整个 opportunities，普通单元格编辑不触发列重建（B7）
+  // columns 依赖这两个稳定数组而非整个 opportunities，普通单元格编辑不触发列重建
   const salesmanFilterOptions = useMemo(() =>
     Array.from(new Set(opportunities.map(o => o.salesman).filter(Boolean))).map(s => ({ text: s, value: s })),
   // eslint-disable-next-line react-hooks/exhaustive-deps -- 签名串已完整编码该投影，仅其变化才重建
@@ -687,8 +698,8 @@ const SalesOpportunityList: React.FC = () => {
       render: (v: string, rec: SalesOpportunity) => (!canEdit || rec.terminated || rec.promoteLocked)
         ? <span style={{ fontSize: 13, color: COLORS.textLight }}>{v || '—'}</span>
         : (
-        <input type="text" defaultValue={v || ''}
-          onBlur={e => touch(rec.id, { notes: e.target.value })}
+        <input type="text" key={'notes-' + (v || '')} defaultValue={v || ''}
+          onBlur={e => { if (e.target.value !== (v || '')) touch(rec.id, { notes: e.target.value }); }}
           placeholder="—"
           style={{ ...CELL_INPUT, color: COLORS.chartGray }}
         />
@@ -703,10 +714,10 @@ const SalesOpportunityList: React.FC = () => {
           return <span style={{ color: COLORS.textLight, fontWeight: 600, fontSize: 13 }}>¥{formatMoney(displayVal)}</span>;
         }
         return (
-          <input type="text" defaultValue={'¥' + formatMoney(v)}
+          <input type="text" key={'amt-' + v} defaultValue={'¥' + formatMoney(v)}
             onBlur={e => {
               const val = parseMoneyInput(e.target.value);
-              touch(rec.id, { amount: val });
+              if (val !== Math.round(v)) touch(rec.id, { amount: val });
               e.target.value = '¥' + val.toLocaleString();
             }}
             style={{ ...CELL_INPUT, color: COLORS.primary, fontWeight: 600, textAlign: 'right' }}
@@ -755,8 +766,8 @@ const SalesOpportunityList: React.FC = () => {
         const hasInvalidSep = v && /[^一-龥a-zA-Z0-9、， /]/.test(v);
         return (
           <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <input type="text" defaultValue={v || ''}
-              onBlur={e => touch(rec.id, { competitor: e.target.value })}
+            <input type="text" key={'comp-' + (v || '')} defaultValue={v || ''}
+              onBlur={e => { if (e.target.value !== (v || '')) touch(rec.id, { competitor: e.target.value }); }}
               placeholder="—"
               style={CELL_INPUT}
             />
@@ -780,7 +791,7 @@ const SalesOpportunityList: React.FC = () => {
             <Tag color={COLORS.textLight} style={{ margin: 0, fontSize: 12 }}>{v}</Tag>
           </Tooltip>
         );
-        // ⚠️ 所有状态显示全部可用操作，排除当前状态自身
+        // 所有状态显示全部可用操作，排除当前状态自身
         const ALL_STATUS_ACTIONS: { icon: React.ReactNode; action: string; label: string; target: string; colorKey: string }[] = [
           { icon: <CheckCircleOutlined />, action: 'win', label: '赢单', target: '赢', colorKey: '赢' },
           { icon: <CloseCircleOutlined />, action: 'loss', label: '输单', target: '输', colorKey: '输' },
@@ -818,8 +829,8 @@ const SalesOpportunityList: React.FC = () => {
       render: (v: string, rec: SalesOpportunity) => (!canEdit || rec.terminated || rec.promoteLocked)
         ? <span style={{ fontSize: 13, color: COLORS.textLight }}>{v || '—'}</span>
         : (
-        <input type="text" defaultValue={v || ''}
-          onBlur={e => touch(rec.id, { expectedCloseDate: e.target.value })}
+        <input type="text" key={'ecd-' + (v || '')} defaultValue={v || ''}
+          onBlur={e => { if (e.target.value !== (v || '')) touch(rec.id, { expectedCloseDate: e.target.value }); }}
           placeholder="yyyy-mm-dd"
           style={{ width: '100%', ...BARE_INPUT_STYLE, fontSize: 13, color: COLORS.textPrimary }}
         />
@@ -850,7 +861,7 @@ const SalesOpportunityList: React.FC = () => {
               onClick={() => handleConfirmTerminate(rec)}
               style={{ color: COLORS.purple }} title="确认终止" />
           ) : <span style={{ fontSize: 12, color: COLORS.textLight }}>—</span>;
-          return canConvert ? (
+          return canPromote ? (
             <Button type="text" size="small" icon={<CheckOutlined style={{ fontSize: 18 }} />}
               onClick={() => handlePromote(rec, '线索')}
               style={{ color: COLORS.purple }} title="转线索" />
@@ -863,7 +874,7 @@ const SalesOpportunityList: React.FC = () => {
               onClick={() => handleConfirmTerminate(rec)}
               style={{ color: COLORS.purple }} title="确认终止" />
           ) : <span style={{ fontSize: 12, color: COLORS.textLight }}>—</span>;
-          return canConvert ? (
+          return canPromote ? (
             <Button type="text" size="small" icon={<CheckOutlined style={{ fontSize: 18 }} />}
               onClick={() => handlePromote(rec, '机会')}
               style={{ color: COLORS.purple }} title="转机会" />
@@ -889,7 +900,7 @@ const SalesOpportunityList: React.FC = () => {
     },
     { title: '操作日期', dataIndex: 'updatedAt', width: 100,
       render: (v: string) => <span style={{ fontSize: 13, color: COLORS.textLight }}>{formatBeijing(v)}</span> },
-  ], [tabFilter, touch, canConvert, canEdit, canBlueTable, handlePromote, handleConfirmTerminate, handleWinDeliver, salesmanFilterOptions, closeDateFilterOptions, handleStatusAction, navigate]);
+  ], [tabFilter, touch, canConvert, canPromote, canEdit, canBlueTable, handlePromote, handleConfirmTerminate, handleWinDeliver, salesmanFilterOptions, closeDateFilterOptions, handleStatusAction, navigate]);
 
 
 
@@ -904,6 +915,11 @@ const SalesOpportunityList: React.FC = () => {
         <span style={{ marginLeft: -35 }}><FYSelector value={fySelect} onChange={setFySelect} /></span>
         <Switch size="small" checked={showTerminated} onChange={setShowTerminated} />
       </div>
+      {loadError && (
+        <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 4, background: '#fff2f0', color: COLORS.danger, fontSize: 12 }}>
+          销售机会加载失败，请刷新页面重试。
+        </div>
+      )}
 
 
 
@@ -956,7 +972,7 @@ const SalesOpportunityList: React.FC = () => {
         dataSource={filtered}
         columns={columns}
         rowKey="id"
-        pagination={false}
+        pagination={{ pageSize: 100, showSizeChanger: false, hideOnSinglePage: true }}
         size="small"
         scroll={{ x: 1436 }}
         bordered

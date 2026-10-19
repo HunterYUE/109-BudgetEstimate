@@ -4,6 +4,7 @@ import { AppError } from '../middleware/index.js';
 import { requirePermission, hasPermission } from '../middleware/auth.js';
 import { crudRoutes, logAudit, objKeysToSnake, withTransaction, buildSearchWhere, parsePagination, round2 } from './helpers.js';
 import { selectApprovalPerms } from '../permissions.js';
+import { pgErrorResponse } from '../middleware/errorHandler.js';
 
 const fields = [
   'id', 'approval_type', 'quotation_id', 'opportunity_id', 'delivery_id',
@@ -28,7 +29,7 @@ export function isFinalApprovalStatus(status: string | undefined): boolean {
   return !!status && (FINAL_APPROVAL_STATUS as readonly string[]).includes(status);
 }
 
-/** 审批类型白名单（DB 枚举，C2 预校验：非法值直插抛 PG 枚举错误被 500 吞） */
+/** 审批类型白名单（DB 枚举，预校验：非法值直插抛 PG 枚举错误被 500 吞） */
 export const APPROVAL_TYPES = ['quotation', 'plan', 'cost', 'promote'] as const;
 
 /** 创建禁直设列（status/submit_time/submitter 只能经审批流程流转，防绕过状态机直设终态） */
@@ -41,7 +42,7 @@ export function approvalTypeToDupColumn(type: string): string {
     : 'delivery_id';
 }
 
-/** 审批类型 → 父实体表名（查重 FOR UPDATE 锁父行用，BE-4 防并发重复待审） */
+/** 审批类型 → 父实体表名（查重 FOR UPDATE 锁父行用， 防并发重复待审） */
 export function approvalTypeToParentTable(type: string): string {
   return type === 'quotation' ? 'quotations'
     : type === 'promote' ? 'sales_opportunities'
@@ -49,7 +50,7 @@ export function approvalTypeToParentTable(type: string): string {
 }
 
 /** 晋升审批自动回填（??= 语义：body 已有值不覆盖；tax_rate 兜底 0.13，其余 parseFloat || 0）。
- *  versionNo 取报价行版本号，pv 取 project_versions 行（snake_case 键） */
+ * versionNo 取报价行版本号，pv 取 project_versions 行（snake_case 键） */
 export function applyPromoteDefaults(body: Record<string, any>, versionNo: unknown, pv: Record<string, any>): Record<string, any> {
   const out = { ...body };
   out.version_no ??= versionNo;
@@ -75,16 +76,19 @@ export function buildAppraisalJson(reviewer: string, action: string, comment: st
 const crudRouter = crudRoutes('approval_requests', fields, {
   searchFields: ['sales_no', 'client_name', 'project_name', 'submitter'],
   orderBy: 'updated_at DESC',
-  // ⚠️ A19 修复：顶层已注册自定义列表（含 latest_record），跳过 crudRoutes 中被遮蔽的默认 LIST
+  // 顶层已注册自定义列表（含 latest_record），跳过 crudRoutes 中被遮蔽的默认 LIST
   skipList: true,
+  // 创建/删除由上方自定义事务端点接管，关闭 crudRoutes 中不可达的默认处理器
+  skipCreate: true,
+  skipDelete: true,
   excludeOnCreate: ['id', 'created_at', 'updated_at'],
-  // ⚠️ L1 修复：status 只能经 POST /:id/records 走审批状态机（写记录+级联），禁止通用 PUT 直改（会绕过级联/审计断链）
+  // status 只能经 POST /:id/records 走审批状态机（写记录+级联），禁止通用 PUT 直改（会绕过级联/审计断链）
   // 身份/关联字段创建后不可改：改 approval_type 会绕过创建时的权限拆分与级联口径
   excludeOnUpdate: [
     'id', 'created_at', 'updated_at', 'status', 'submit_time',
     'approval_type', 'quotation_id', 'opportunity_id', 'delivery_id',
   ],
-  // ⚠️ 最终审计修正：已终审审批不允许经通用 PUT 改财务字段（展示/审计口径污染；此前 excludeOnUpdate 只挡 status/submit_time）
+  // 已终审审批不允许经通用 PUT 改财务字段（展示/审计口径污染
   beforeUpdate: async (_req, id) => {
     const existing = (await query('SELECT status FROM approval_requests WHERE id = $1', [id])).rows[0];
     if (existing && isFinalApprovalStatus(existing.status)) {
@@ -101,25 +105,25 @@ router.post('/', async (req, res, next) => {
   try {
     let body = objKeysToSnake({ ...req.body });
     const { approval_type, opportunity_id, delivery_id } = body;
-    // ⚠️ C2 审计修复：approval_type 枚举白名单——DB 列为 PG 枚举（quotation/plan/cost/promote），
-    //   非法值直插会抛 PG 枚举错误被 500 兜底吞掉（泄漏内部错误语义）；显式预校验给 400
+    // approval_type 枚举白名单——DB 列为 PG 枚举（quotation/plan/cost/promote），
+    // 非法值直插会抛 PG 枚举错误被 500 兜底吞掉（泄漏内部错误语义）；显式预校验给 400
     if (!(APPROVAL_TYPES as readonly string[]).includes(approval_type)) {
       throw new AppError(400, '无效审批类型，允许值：quotation, plan, cost, promote');
     }
-    // ⚠️ A110 纵深防御：挂载层按归一化后的类型选权限，处理器这里再按最终落库类型校验一次——
-    //   两处口径一致，未来若键名归一化/挂载逻辑调整，也不会让越权类型进入事务。
+    // 纵深防御：挂载层按归一化后的类型选权限，处理器这里再按最终落库类型校验一次——
+    // 两处口径一致，未来若键名归一化/挂载逻辑调整，也不会让越权类型进入事务
     if (!hasPermission(req.user?.permissions, ...selectApprovalPerms(approval_type))) {
       throw new AppError(403, '无权提交该类型审批');
     }
 
-    // ⚠️ A15：事务样板收敛为 withTransaction
+    // 事务样板收敛为 withTransaction
     const record = await withTransaction(async (client) => {
-      // ⚠️ K4 修复：同一实体同一审批类型不得存在多条 pending（防直调 API 重复提交产生重复待审/级联重复）
+      // 同一实体同一审批类型不得存在多条 pending（防直调 API 重复提交产生重复待审/级联重复）
       const dupCol = approvalTypeToDupColumn(approval_type);
       const dupVal = (body as Record<string, any>)[dupCol];
       if (dupVal) {
-        // ⚠️ 审计修复 BE-4：先锁父实体行（FOR UPDATE）再查重——两并发提交同刻都查无 pending 时，
-        //   行锁串行化：后者等前者事务提交后重查必见 pending → 409，杜绝并发重复待审记录
+        // 先锁父实体行（FOR UPDATE）再查重——两并发提交同刻都查无 pending 时，
+        // 行锁串行化：后者等前者事务提交后重查必见 pending → 409，杜绝并发重复待审记录
         const parentTable = approvalTypeToParentTable(approval_type);
         await client.query(`SELECT 1 FROM ${parentTable} WHERE id = $1 FOR UPDATE`, [dupVal]);
         const dup = (await client.query(
@@ -135,9 +139,9 @@ router.post('/', async (req, res, next) => {
         await client.query('UPDATE delivery_projects SET cost_status = $1, updated_at = now() WHERE id = $2', ['pending', delivery_id]);
       }
 
-      // ⚠️ A114：报价审批由服务端在同一事务内落 pending 并锁定版本——
-      //   此前完全依赖客户端先 saveVersion(pending)+sync(pending)，直调 API 创建审批时报价仍可改，
-      //   审批人审阅期间金额/成本能被覆盖，通过时又按「当前值」回写机会，审批快照失真。
+      // 报价审批由服务端在同一事务内落 pending 并锁定版本——
+      // 不依赖客户端先 saveVersion(pending)+sync(pending)：直调 API 创建审批时报价也会被锁定，
+      // 审批人审阅期间金额/成本不可覆盖，通过时按报价行回写机会
       if (approval_type === 'quotation' && body.quotation_id) {
         const q = (await client.query(
           'SELECT project_id, version_no, status FROM quotations WHERE id = $1 FOR UPDATE',
@@ -187,11 +191,11 @@ router.post('/', async (req, res, next) => {
         }
       }
 
-      // ⚠️ M1 修复：status/submit_time 只能经审批流程（POST /:id/records）流转，禁止直设 approved/rejected（此前可创建即 approved）。
-      //   最终审计回归修正：创建即「提交审批」，必须落库为 pending——此前直接剔 status 依赖 DB 默认 draft，
-      //   新建审批不进待审批列表、UI 无审批按钮，整个审批流程卡死（生产回归）。现显式强制 status='pending'。
-      // ⚠️ 审计修复 BE-7：submitter 不再采信客户端——服务端从登录用户 display_name 派生（防伪造提交人）。
-      //   前端本就用 displayName 提交，派生值与既有存储一致；display_name 缺省兜底 '审批申请人'。
+      // status/submit_time 只能经审批流程（POST /:id/records）流转，禁止直设 approved/rejected
+      // 创建即「提交审批」，必须落库为 pending
+      // 新建审批不进待审批列表、UI 无审批按钮，整个审批流程卡死（生产回归）。现显式强制 status='pending'
+      // submitter 不再采信客户端——服务端从登录用户 display_name 派生（防伪造提交人）
+      // 前端本就用 displayName 提交，派生值与既有存储一致；display_name 缺省兜底 '审批申请人'
       const insertCols = fields.filter(f => !APPROVAL_INSERT_EXCLUDE.includes(f) && body[f] !== undefined);
       if (insertCols.length === 0) throw new AppError(400, '没有要插入的字段');
       body.submitter = req.user?.display_name || '审批申请人';
@@ -207,8 +211,13 @@ router.post('/', async (req, res, next) => {
     res.status(201).json(record);
   } catch (err) {
     if (err instanceof AppError) return next(err);
-    // 不向客户端泄漏内部错误详情（此前拼接 err.message 暴露 SQL/表结构）
+    // 不向客户端泄漏内部错误详情；PG 错误码映射为 4xx/409，避免参数错误被当成服务故障
     console.error('[Approvals] 创建审批失败:', (err as Error).message);
+    const pgCode = (err as { code?: string }).code;
+    if (pgCode) {
+      const mapped = pgErrorResponse(pgCode);
+      return next(new AppError(mapped.status, mapped.message));
+    }
     return next(new AppError(500, '创建审批失败'));
   }
 });
@@ -218,7 +227,7 @@ router.get('/', async (req, res, next) => {
   try {
     const { search } = req.query;
     const params: any[] = [];
-    // ⚠️ A10/A14：搜索与分页收敛为共享 helper（统一 ILIKE 转义口径）
+    // 搜索与分页收敛为共享 helper（统一 ILIKE 转义口径）
     const where = buildSearchWhere(search, ['sales_no', 'client_name', 'project_name', 'submitter'], params, 'ar');
     const { limit, offset } = parsePagination(req.query);
     const result = await query(
@@ -254,30 +263,29 @@ router.post('/:id/records', async (req, res, next) => {
     const { action, comment } = req.body;
     if (!action) throw new AppError(400, '缺少必填字段：action');
     if (!isValidApprovalAction(action)) throw new AppError(400, `无效操作: ${action}`);
-    // ⚠️ 权限检查前置：先鉴权再读数据（此前先 SELECT 审批再鉴权，未授权也能探测审批详情）
+    // 权限检查前置：先鉴权再读数据
     if (!hasPermission(req.user?.permissions, '审批管理', '全部查看权限')) throw new AppError(403, '无审批权限');
-    // ⚠️ M3 修复：reviewer 强制取自登录用户（防伪造审批人），不再接受 body 传入的 reviewer
+    // reviewer 强制取自登录用户（防伪造审批人），不再接受 body 传入的 reviewer
     const approver = (await query('SELECT display_name, email FROM users WHERE id = $1', [req.user?.userId])).rows[0];
     const reviewer = approver?.display_name || req.user?.email || '未知用户';
 
-    // ⚠️ A7 修复：终审状态检查移入事务并对审批行 FOR UPDATE 锁行（此前检查在事务外，
-    //   并发双击可双双通过检查 → 双写记录/状态翻转）。A15：事务样板收敛为 withTransaction。
+    // 终审状态检查在事务内完成，并对审批行 FOR UPDATE 锁行，防并发双击双写记录/状态翻转
     const { record, approvalType } = await withTransaction(async (client) => {
       const ar = (await client.query('SELECT * FROM approval_requests WHERE id = $1 FOR UPDATE', [id])).rows[0];
       if (!ar) throw new AppError(404, '审批请求未找到');
-      // ⚠️ F11 修复：已终审的审批不允许再次写入记录（防双击重复/状态翻转；驳回后重提会新建审批，不在此流转）
+      // 已终审的审批不允许再次写入记录（防双击重复/状态翻转；驳回后重提会新建审批，不在此流转）
       if (isFinalApprovalStatus(ar.status)) {
         throw new AppError(409, '该审批已处理完毕，不可重复审批');
       }
       const record = (await client.query('INSERT INTO approval_records (approval_request_id, reviewer, action, comment) VALUES ($1,$2,$3,$4) RETURNING *', [id, reviewer, action, comment || ''])).rows[0];
       const newStatus = action === 'approved' ? 'approved' : 'rejected';
       await client.query('UPDATE approval_requests SET status = $1, updated_at = now() WHERE id = $2', [newStatus, id]);
-      // ⚠️ 审批结果 JSONB：写入交付项目的 plan_approval/cost_approval（与审批记录一致），
-      //    使后端 /records 事务内完成全部级联，前端无需重复更新（避免双重应用与状态不一致）
+      // 审批结果 JSONB：写入交付项目的 plan_approval/cost_approval（与审批记录一致），
+      // 使后端 /records 事务内完成全部级联，前端无需重复更新（避免双重应用与状态不一致）
       const appraisal = buildAppraisalJson(reviewer, action, comment || '', new Date().toISOString());
       if (ar.approval_type === 'promote' && ar.opportunity_id) {
         await client.query('UPDATE sales_opportunities SET promote_locked = false, updated_at = now() WHERE id = $1', [ar.opportunity_id]);
-        // ⚠️ L3 修复：晋升到"机会"须写 lead_at/opportunity_at（COALESCE 首次写入不覆盖，与 opportunities.ts 阶段规则一致），否则财年归集丢失
+        // 晋升到"机会"须写 lead_at/opportunity_at（COALESCE 首次写入不覆盖，与 opportunities.ts 阶段规则一致），否则财年归集丢失
         // 仅允许在信息/线索/机会阶段内推进，防把审批期间已中标/已赢/已输的机会降级回「机会」
         if (newStatus === 'approved') await client.query(
           `UPDATE sales_opportunities
@@ -299,8 +307,8 @@ router.post('/:id/records', async (req, res, next) => {
       }
       if (ar.approval_type === 'quotation' && ar.quotation_id) {
         await client.query('UPDATE quotations SET locked = false, status = $1, updated_at = now() WHERE id = $2', [newStatus, ar.quotation_id]);
-        // ⚠️ A115 修复：版本回写以「报价行当前 project_id + version_no」为准，不再采信审批行里的
-        //   客户端快照 ar.version_no——否则可把审批结果写到未送审版本/其它项目。
+        // 版本回写以「报价行当前 project_id + version_no」为准，不再采信审批行里的
+        // 客户端快照 ar.version_no——否则可把审批结果写到未送审版本/其它项目
         const qt = (await client.query(
           'SELECT project_id, version_no, opportunity_id, amount FROM quotations WHERE id = $1',
           [ar.quotation_id]
@@ -333,22 +341,22 @@ router.use((req, res, next) => {
   next();
 });
 
-// ⚠️ F5 修复：删除审批须回滚其创建时设置的级联状态（promote_locked / plan_status / cost_status），
-//    否则机会被永久锁定、交付状态永久停在 pending（此前通用 DELETE 只删审批行，级联残留）
+// 删除审批须回滚其创建时设置的级联状态（promote_locked / plan_status / cost_status），
+// 否则机会被永久锁定、交付状态永久停在 pending
 router.delete('/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
-    // ⚠️ A15：事务样板收敛为 withTransaction
+    // 事务样板收敛为 withTransaction
     let deletedRow: { approval_type?: string; sales_no?: string } | undefined;
     await withTransaction(async (client) => {
-      // ⚠️ A116：锁行后再判定终态——先查后删无锁时，审批事务可在两步之间把 pending 改成 approved，
-      //   导致已终审记录被删除（审批历史随之 CASCADE 丢失）。
+      // 锁行后再判定终态——先查后删无锁时，审批事务可在两步之间把 pending 改成 approved，
+      // 导致已终审记录被删除（审批历史随之 CASCADE 丢失）
       const row = (await client.query(
         'SELECT approval_type, opportunity_id, delivery_id, quotation_id, status, sales_no FROM approval_requests WHERE id = $1 FOR UPDATE', [id]
       )).rows[0];
       if (!row) throw new AppError(404, '审批请求不存在');
-      // ⚠️ 审计修复：已终审（approved/rejected）的审批是历史证据，删除会抹掉审批决策痕迹——拒绝删除；
-      //   pending 审批可删（=取消提交）。与 beforeUpdate「终审禁改财务字段」口径一致。
+      // 已终审（approved/rejected）的审批是历史证据，删除会抹掉审批决策痕迹——拒绝删除；
+      // pending 审批可删（=取消提交）。与 beforeUpdate「终审禁改财务字段」口径一致
       if (isFinalApprovalStatus(row.status)) {
         throw new AppError(409, '该审批已处理完毕，不可删除');
       }
@@ -363,7 +371,7 @@ router.delete('/:id', async (req, res, next) => {
       if (row.approval_type === 'promote' && row.opportunity_id) {
         await client.query(`UPDATE sales_opportunities SET promote_locked = false, updated_at = now() WHERE id = $1 AND promote_locked = true`, [row.opportunity_id]);
       }
-      // ⚠️ 报价审批：删除后回滚前端提交时写入的 pending 状态（报价与版本），避免永久卡在 pending
+      // 报价审批：删除后回滚前端提交时写入的 pending 状态（报价与版本），避免永久卡在 pending
       if (row.approval_type === 'quotation' && row.quotation_id) {
         await client.query(`UPDATE quotations SET status = 'draft', updated_at = now() WHERE id = $1 AND status = 'pending'`, [row.quotation_id]);
         const qi = (await client.query('SELECT project_id, version_no FROM quotations WHERE id = $1', [row.quotation_id])).rows[0];

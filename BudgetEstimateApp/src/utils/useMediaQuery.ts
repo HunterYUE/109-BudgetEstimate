@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 
 /** 响应式媒体查询 hook（对齐工时应用 utils/useMediaQuery）：统一「监听窗口尺寸→更新布尔」逻辑。
- *  KPI 概览卡片桌面/窄屏换行切换等共用，避免各页自行挂 resize 监听。 */
+ * KPI 概览卡片桌面/窄屏换行切换等共用，避免各页自行挂 resize 监听 */
 export default function useMediaQuery(query: string): boolean {
   const [matches, setMatches] = useState<boolean>(
     () => typeof window !== 'undefined' && window.matchMedia(query).matches,

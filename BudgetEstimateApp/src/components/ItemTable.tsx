@@ -34,8 +34,8 @@ function getColumnConfig(groupType: GroupType) {
 
 /**
  * 数值输入框：受控显示 + 本地编辑态
- * ⚠️ B1：行内数值用受控 value 而非 defaultValue——CodeCell 选码回填 unitCost/designHours/assemblyHours 时，
- * 行 key 不变、非受控输入不会刷新，旧值残留与 state 脱节。此处本地 text 随外部 value 同步，保证回填即刷新。
+ * 行内数值用受控 value 而非 defaultValue——CodeCell 选码回填 unitCost/designHours/assemblyHours 时，
+ * 行 key 不变、非受控输入不会刷新，旧值残留与 state 脱节。此处本地 text 随外部 value 同步，保证回填即刷新
  */
 const EditableNumberInput: React.FC<{
   value?: number | null;
@@ -106,7 +106,7 @@ const CodeCell: React.FC<{ value: string; onSelect: (item: Component) => void }>
   const [catalog, setCatalog] = React.useState<Component[]>([]);
   useEffect(() => { loadCatalog().then(setCatalog); }, []);
   const results = search.trim()
-    ? catalog.filter((c: Component) => c.code?.toLowerCase().includes(search.toLowerCase()) || c.nameCn?.toLowerCase().includes(search.toLowerCase()) || (c.tags || []).some((t: string) => t.includes(search)))
+    ? catalog.filter((c: Component) => c.code?.toLowerCase().includes(search.toLowerCase()) || c.nameCn?.toLowerCase().includes(search.toLowerCase()))
     : [];
   return (
     <Popover
@@ -115,7 +115,7 @@ const CodeCell: React.FC<{ value: string; onSelect: (item: Component) => void }>
       trigger="click" placement="bottomLeft"
       content={
         <div style={{ width: 300, maxHeight: 200, overflowY: 'auto' }}>
-          <Input size="small" placeholder="搜索编码 / 名称 / 标签"
+          <Input size="small" placeholder="搜索编码 / 名称"
             value={search} onChange={e => setSearch(e.target.value)} autoFocus
             style={{ marginBottom: 4, fontSize: 12 }} />
           {results.length === 0 && search.trim() && (
@@ -195,7 +195,7 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
     render: (v: string, _record: GroupItem, idx: number) => {
       const fontSize = 13;
       const TYPES: ItemType[] = ['COMPLETE_SET', 'COMPONENT', 'SOFTWARE', 'SERVICE', 'PART'];
-      // ⚠️ 审计修复 U5：补 PART 类型标签（此前 PART 物料类型列显示原始值 'PART' 而非缩写 'PA'，与其余四种不一致）
+      // 补 PART 类型标签
       const LABELS = { COMPLETE_SET: 'CS', COMPONENT: 'CP', SOFTWARE: 'SW', SERVICE: 'SV', PART: 'PA' } as Record<string, string>;
       const typeLabel = LABELS[v] || v;
       const nextType = () => { const cur = TYPES.indexOf(v as ItemType); return TYPES[(cur + 1) % TYPES.length]; };
@@ -236,7 +236,7 @@ const EditableItemTable: React.FC<Props> = ({ items, onItemsChange, onDeleteItem
       }
       const matched = isInDB(v);
       return <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-        <CodeCell value={v} onSelect={(item) => updateItem(idx, { code: item.code, description: item.nameCn, itemType: item.category, unitCost: item.unitCost, sourcingType: item.sourcingType, designHours: item.designHours, assemblyHours: item.assemblyHours, designHourRate: _rec.designHourRate || 175, assemblyHourRate: _rec.assemblyHourRate || 85, unit: item.unit || '套', hasWarranty: item.hasWarranty })} />
+        <CodeCell value={v} onSelect={(item) => updateItem(idx, { componentId: item.id, code: item.code, description: item.nameCn, itemType: item.category, unitCost: item.unitCost, sourcingType: item.sourcingType, designHours: item.designHours, assemblyHours: item.assemblyHours, designHourRate: _rec.designHourRate ?? 175, assemblyHourRate: _rec.assemblyHourRate ?? 85, unit: item.unit || '套', hasWarranty: item.hasWarranty })} />
         {v && matched === false && (
           <Tooltip title="此编码不在组件数据库中，请先注册">
             <span style={{ color: 'red', fontWeight: 700, fontSize: 16, lineHeight: 1, flexShrink: 0 }}>!</span>

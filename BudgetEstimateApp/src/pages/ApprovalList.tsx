@@ -45,9 +45,10 @@ const ApprovalList: React.FC = () => {
   const [requests, setRequests] = useState<ApprovalRequest[]>([]);
   const [draftQuotations, setDraftQuotations] = useState<QuotationSummary[]>([]);
   const [draftDeliveries, setDraftDeliveries] = useState<DeliveryProject[]>([]);
+  const [loadError, setLoadError] = useState(false);
 
-  // ⚠️ B35 修复：草稿清单单独成函数——审批通过/驳回后端级联会改变草稿状态（报价转交付会新增交付草稿、
-  //   已审批单据不再停留草稿），此前草稿仅挂载时加载一次，审批操作后不刷新导致草稿 Tab 数据陈旧
+  // 草稿清单单独成函数——审批通过/驳回后端级联会改变草稿状态（报价转交付会新增交付草稿、
+  // 已审批单据不再停留草稿）
   const loadDrafts = useCallback(() => {
     quotationService.list({ limit: LIST_LIMIT }).then(res => setDraftQuotations(res)).catch(() => setDraftQuotations([]));
     deliveryService.list({ limit: LIST_LIMIT }).then(res => setDraftDeliveries(res)).catch(() => setDraftDeliveries([]));
@@ -55,8 +56,8 @@ const ApprovalList: React.FC = () => {
 
   useEffect(() => {
     let cancelled = false;
-    // ⚠️ 全部传 limit: LIST_LIMIT，避免后端默认 limit=100 导致列表截断
-    approvalService.list({ limit: LIST_LIMIT }).then(res => { if (!cancelled) setRequests(res); }).catch(() => { if (!cancelled) setRequests([]); });
+    // 全部传 limit: LIST_LIMIT，避免后端默认 limit=100 导致列表截断
+    approvalService.list({ limit: LIST_LIMIT }).then(res => { if (!cancelled) { setRequests(res); setLoadError(false); } }).catch(() => { if (!cancelled) { setRequests([]); setLoadError(true); } });
     loadDrafts();
     return () => { cancelled = true; };
   }, [loadDrafts]);
@@ -69,7 +70,7 @@ const ApprovalList: React.FC = () => {
   const filtered = useMemo(() => {
     const q = searchText.toLowerCase();
     const filteredBySearch = requests.filter(r => {
-      // ⚠️ 字段判空防御（|| ''），避免个别字段缺失时 toLowerCase 抛错
+      // 字段判空防御（|| ''），避免个别字段缺失时 toLowerCase 抛错
       if (q && !(r.clientName || '').toLowerCase().includes(q) &&
           !(r.salesNo || '').toLowerCase().includes(q) &&
           !(r.projectName || '').toLowerCase().includes(q) &&
@@ -84,8 +85,8 @@ const ApprovalList: React.FC = () => {
     });
     if (filter === 'pending') return sorted.filter(r => r.status === 'pending');
     if (filter === 'done') return sorted.filter(r => r.status !== 'pending');
-    // ⚠️ 审计修复 BU-9：displayName 空时回退『审批申请人』——后端 BE-7 强制以 display_name 派生 submitter、
-    //   空时兜底『审批申请人』；此前前端回退空串永不匹配落库名，我的提交 Tab 漏显示
+    // displayName 空时回退『审批申请人』——后端 强制以 display_name 派生 submitter、
+    // 空时兜底『审批申请人』
     if (filter === 'mine') return sorted.filter(r => r.submitter === (user?.displayName || '审批申请人'));
     return sorted;
   }, [requests, filter, searchText, typeFilter, user]);
@@ -104,8 +105,8 @@ const ApprovalList: React.FC = () => {
 
   const [approvalModal, setApprovalModal] = useState<{ req: ApprovalRequest; action: 'approved' | 'rejected' } | null>(null);
   const [approvalComment, setApprovalComment] = useState('');
-  // ⚠️ 审计修复 BU-3：审批提交重入守卫——双击确认/回车会并发发两次 POST /:id/records（后端虽以
-  //   FOR UPDATE + 终态检查拦截第二次，但前端应避免重复请求与双弹错误提示）
+  // 审批提交重入守卫——双击确认/回车会并发发两次 POST /:id/records（后端虽以
+  // FOR UPDATE + 终态检查拦截第二次，但前端应避免重复请求与双弹错误提示）
   const submittingRef = useRef(false);
 
   /** 打开审批详情（转机会→首页；交付→交付详情；报价→报价编制） */
@@ -119,7 +120,7 @@ const ApprovalList: React.FC = () => {
   const tabCounts = useMemo(() => ({
     pending: requests.filter(r => r.status === 'pending').length,
     done: requests.filter(r => r.status !== 'pending').length,
-    // ⚠️ 审计修复 BU-9：与 mine 过滤同兜底口径（见 filtered）
+    // 与 mine 过滤同兜底口径（见 filtered）
     mine: requests.filter(r => r.submitter === (user?.displayName || '审批申请人')).length,
     all: requests.length,
   }), [requests, user]);
@@ -137,14 +138,14 @@ const ApprovalList: React.FC = () => {
   const confirmApproval = useCallback(async () => {
     const modal = approvalModal;
     if (!modal) return;
-    if (submittingRef.current) return; // ⚠️ 审计修复 BU-3：防双击并发提交
+    if (submittingRef.current) return; // 防双击并发提交
     if (modal.action === 'rejected' && !approvalComment.trim()) {
       msg.warning('驳回必须填写原因');
       return;
     }
     submittingRef.current = true;
     try {
-      // ⚠️ 后端 POST /:id/records 在事务内完成全部级联（请求状态/报价/版本/交付/机会/审批记录/plan_approval）
+      // 后端 POST /:id/records 在事务内完成全部级联（请求状态/报价/版本/交付/机会/审批记录/plan_approval）
       // 前端只需提交审批记录，不再重复级联——避免双重应用与"后端成功但前端级联失败"的状态不一致
       await approvalService.createRecord(modal.req.id, {
         reviewer: user?.displayName || '审批人',
@@ -153,7 +154,7 @@ const ApprovalList: React.FC = () => {
       });
       // 重新加载列表确保 latestRecord 数据最新
       approvalService.list({ limit: LIST_LIMIT }).then(res => setRequests(res)).catch(() => {});
-      loadDrafts(); // ⚠️ B35 修复：审批后同步刷新草稿清单（后端级联可能新增/移除草稿项）
+      loadDrafts(); // 审批后同步刷新草稿清单（后端级联可能新增/移除草稿项）
       if (modal.action === 'approved') msg.success('已通过');
       else msg.warning('已驳回');
       setApprovalModal(null);
@@ -168,6 +169,11 @@ const ApprovalList: React.FC = () => {
     <div>
       {ctx}
       <div style={{ fontSize: 17, fontWeight: 700, color: COLORS.textDark, marginBottom: 24 }}>审批管理</div>
+      {loadError && (
+        <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 4, background: '#fff2f0', color: COLORS.danger, fontSize: 12 }}>
+          审批数据加载失败，请刷新页面重试。
+        </div>
+      )}
 
       <div style={{ display: 'flex', gap: 0, marginBottom: 20 }}>
         <div onClick={() => setFilter('draft')} style={tabItemStyle(filter === 'draft', COLORS.textLight, COLORS.textSecondary)}>草稿({draftItems.length})</div>

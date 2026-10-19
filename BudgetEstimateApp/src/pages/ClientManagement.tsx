@@ -29,9 +29,9 @@ const ClientManagement: React.FC = () => {
   const [gradeFilter, setGradeFilter] = useState('');
   const [drawerClient, setDrawerClient] = useState<Client | null>(null);
   const [messageApi, msgContextHolder] = message.useMessage();
-  const { modal } = App.useApp(); // ⚠️ B24：静态 Modal.confirm 消费 antd 主题上下文
+  const { modal } = App.useApp(); // 静态 Modal.confirm 消费 antd 主题上下文
   const { user } = useAuth();
-  // ⚠️ A1 复核：写动作需「新建客户」权限（与后端 writeGuard 同源）；无写权用户隐藏 新建客户/编辑 按钮，仅可查看
+  // 写动作需「新建客户」权限（与后端 writeGuard 同源）；无写权用户隐藏新建客户/编辑按钮，仅可查看
   const canWrite = hasPermission(user?.permissions, ['新建客户', '全部查看权限']);
 
   const [contactCounts, setContactCounts] = useState<Record<string, number>>({});
@@ -40,7 +40,7 @@ const ClientManagement: React.FC = () => {
     setLoading(true);
     try {
       const [data, counts] = await Promise.all([
-        // ⚠️ 传 limit: LIST_LIMIT，避免后端默认 limit=100 导致列表截断
+        // 传 limit: LIST_LIMIT，避免后端默认 limit=100 导致列表截断
         clientService.list({ limit: LIST_LIMIT }),
         clientService.getContactCounts().catch(() => ({}) as Record<string, number>),
       ]);
@@ -58,7 +58,7 @@ const ClientManagement: React.FC = () => {
   // 编辑弹窗
   const [editOpen, setEditOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const editRequestRef = useRef(0); // ⚠️ B5：编辑请求自增号，丢弃过期 getDetail 结果
+  const editRequestRef = useRef(0); // 编辑请求自增号，丢弃过期 getDetail 结果
   const [editForm, setEditForm] = useState<Partial<Client>>({});
   const [editContacts, setEditContacts] = useState<Contact[]>([]);
 
@@ -138,15 +138,15 @@ const ClientManagement: React.FC = () => {
   }, [currentGrade, areaCode, editCity, editingId]);
 
   const openEdit = useCallback(async (client: Client) => {
-    // ⚠️ B5 修复：快速连点不同客户时，前一次 getDetail 的异步结果晚到会覆盖后一次的表单。
-    // 用自增请求号标记最新一次请求，过期结果直接丢弃。
+    // 快速连点不同客户时，前一次 getDetail 的异步结果晚到会覆盖后一次的表单
+    // 用自增请求号标记最新一次请求，过期结果直接丢弃
     const reqId = ++editRequestRef.current;
     setEditingId(client.id);
     // 从编码解析城市
     const codeMatch = client.code?.match(/^(?:[ABC]-)?([A-Z]{2})-([A-Z]{2,4})-\d{4}$/);
     if (codeMatch) setEditCity(codeMatch[2]);
-    // 获取完整数据（含联系人）。⚠️ A142：详情失败不能回退列表行——列表不包含 contacts，
-    //   回退后保存会把该客户全部联系人清空。加载失败直接中止本次编辑。
+    // 获取完整数据（含联系人）。详情失败不能回退列表行——列表不包含 contacts，
+    // 回退后保存会把该客户全部联系人清空。加载失败直接中止本次编辑
     let detail: Client;
     try {
       detail = await clientService.getDetail(client.id);
@@ -154,7 +154,7 @@ const ClientManagement: React.FC = () => {
       if (reqId === editRequestRef.current) messageApi.error('客户详情加载失败，请稍后重试');
       return;
     }
-    if (reqId !== editRequestRef.current) return; // ⚠️ 已有更新的编辑请求，丢弃本次过期结果
+    if (reqId !== editRequestRef.current) return; // 已有更新的编辑请求，丢弃本次过期结果
     setEditForm({
       code: detail.code,
       name: detail.name,
@@ -181,7 +181,7 @@ const ClientManagement: React.FC = () => {
       parentId: undefined,
       industry: '其他',
       region: '东区',
-      salesman: '',  // 销售员从客户管理维护，不硬编码
+      salesman: '', // 销售员从客户管理维护，不硬编码
       creditLevel: 'B',
       grade: 'B',
       createdAt: todayBeijing(),
@@ -223,6 +223,9 @@ const ClientManagement: React.FC = () => {
           creditLevel: (editForm.creditLevel as CreditLevel) || 'B',
           grade: (editForm.grade as ClientGrade) || 'B',
         });
+        // 主表已创建：立即回填到列表并切换为编辑态，联系人保存失败时重试不会再次 create 撞编码唯一约束
+        setClients(prev => [...prev, created]);
+        setEditingId(created.id);
         if (editContacts.length > 0) {
           const saved = await clientService.saveWithContacts(created.id, {
             ...created,
@@ -263,8 +266,8 @@ const ClientManagement: React.FC = () => {
     const parent = clients.find(c => c.id === subParentId);
     if (!parent) { messageApi.error('未找到母公司'); return; }
     try {
-      // ⚠️ B5 修复：自动生成子公司编码时去重——-SUB(n) 递增直到不与现存编码冲突
-      //   （schema UNIQUE(code)，固定 -SUB 会撞约束）；手动填写的编码仍如实校验
+      // 自动生成子公司编码时去重——-SUB(n) 递增直到不与现存编码冲突
+      // （schema UNIQUE(code)，固定 -SUB 会撞约束）；手动填写的编码仍如实校验
       let subCode = (subForm.code || '').trim();
       if (!subCode) {
         const taken = new Set(clients.map(c => c.code));
@@ -327,7 +330,7 @@ const ClientManagement: React.FC = () => {
         }
         const parent = clients.find(c => c.id === record.parentId);
         return (
-          <span style={{ color: '#555', fontSize: 12 }}>
+          <span style={{ color: '', fontSize: 12 }}>
             {parent?.name}（{v}）
           </span>
         );
@@ -444,7 +447,7 @@ const ClientManagement: React.FC = () => {
         </tbody>
       </table>
 
-      <div style={{ fontSize: 12, color: '#888', marginBottom: 8 }}>&nbsp;</div>
+      <div style={{ fontSize: 12, color: '', marginBottom: 8 }}>&nbsp;</div>
 
       {/* 树形表格 */}
       <div style={{

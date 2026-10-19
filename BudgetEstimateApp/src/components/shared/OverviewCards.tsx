@@ -16,11 +16,11 @@ export interface KpiCardItem {
 }
 
 /**
- * KPI 概览卡片行（Dashboard / SalesAnalysis / DeliveryAnalysis 共享）。
+ * KPI 概览卡片行（Dashboard / SalesAnalysis / DeliveryAnalysis 共享）
  * 样式对齐工时应用仪表盘 KpiCards：左侧 38×38 彩色图标块（淡色底）+ 右侧深色大数值在上 + 浅灰小标签在下，
- * 卡片圆角 10 / 边框 #e8edf4 / 轻阴影；桌面端（≥1280）单行等分填满行宽，窄屏回退 wrap + 160px 基准换行。
- * prevValues 为本项目「上月/前月」对比扩展（参考应用无此特性）。
- * 本组件不做 memo（三个调用方均内联构建 items，memo 命中无意义）；卡片 hoverable 渲染。
+ * 卡片圆角 10 / 边框 #e8edf4 / 轻阴影；桌面端（≥1280）单行等分填满行宽，窄屏回退 wrap + 160px 基准换行
+ * prevValues 为本项目「上月/前月」对比扩展（参考应用无此特性）
+ * 本组件不做 memo（三个调用方均内联构建 items，memo 命中无意义）；卡片 hoverable 渲染
  */
 export const OverviewCards: React.FC<{
   items: KpiCardItem[];

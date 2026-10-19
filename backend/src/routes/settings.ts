@@ -38,8 +38,8 @@ router.put('/', async (req, res, next) => {
       if ((value as string).length > 10000) throw new AppError(400, `设置项 ${key} 的值过长`);
     }
 
-    // ⚠️ F16 修复：批量 upsert 放入同一事务，中途失败不会部分写入
-    // ⚠️ A15：事务样板收敛为 withTransaction
+    // 批量 upsert 放入同一事务，中途失败不会部分写入
+    // 事务样板收敛为 withTransaction
     await withTransaction(async (client) => {
       for (const [key, value] of Object.entries(body)) {
         if (typeof value !== 'string') continue;

@@ -77,14 +77,14 @@ export { POSITIONING_LABELS, POSITIONING_EXPLANATIONS, REACTION_LABELS, REACTION
 
 interface CalcIntermediate {
   vetoed: boolean;
-  baseSupportScore: number;           // 基础支持度分 0~100
-  rolePenalty: number;                // 角色缺失修正系数
-  reactionFactor: number;             // 反应模式修正系数
-  pricingAdjustment: number;          // 价格竞争力修正值（百分点）
-  budgetPenalty: number;              // 预算紧张扣减（百分点）
-  timelinePenalty: number;            // 节点中性扣减（百分点）
-  midRate: number;                    // 乘法链后的中间值
-  finalRate: number;                  // 最终赢率 0~90
+  baseSupportScore: number; // 基础支持度分 0~100
+  rolePenalty: number; // 角色缺失修正系数
+  reactionFactor: number; // 反应模式修正系数
+  pricingAdjustment: number; // 价格竞争力修正值（百分点）
+  budgetPenalty: number; // 预算紧张扣减（百分点）
+  timelinePenalty: number; // 节点中性扣减（百分点）
+  midRate: number; // 乘法链后的中间值
+  finalRate: number; // 最终赢率 0~90
   missingEB: boolean;
   missingCoach: boolean;
 }
@@ -137,7 +137,7 @@ export function calcBlueTableWinRate(blueTable: BlueTable): CalcIntermediate {
   let weightedSupport = 0;
 
   for (const role of roles) {
-    // ⚠️ Number(?? 0) 防御畸形数据：字段缺失/NaN 时不再污染加权和
+    // Number(?? 0) 防御畸形数据：字段缺失/NaN 时不再污染加权和
     const w = Number(role.influenceWeight ?? 0);
     const normSupport = (Number(role.support ?? 0) + 5) / 10; // -5→0, 0→0.5, +5→1
     totalWeight += w;

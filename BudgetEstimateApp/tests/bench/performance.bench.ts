@@ -6,7 +6,7 @@ import type { Group } from '../../src/types';
 
 // ── Budget 成本核算纯函数性能基准（真实形状大样本，测量工具、无断言）──
 // 运行：npm run bench（vitest.bench.config.ts，不进默认 build 门禁）
-// 目标：报价编制表/成本对比的批量核算耗时基线，防灾难级回归。
+// 目标：报价编制表/成本对比的批量核算耗时基线，防灾难级回归
 
 interface BenchRow { fn: string; median_ms: string; mean_ms: string; ops_per_s: number }
 

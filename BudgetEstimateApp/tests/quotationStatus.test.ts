@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest';
 import type { ReviewStatus } from '../src/types';
 import { reviewStatusForSave } from '../src/utils/quotationStatus';
 
-// 报价保存状态降级契约（B61+B4）：终态 approved/rejected 被再次编辑保存须降级为 draft，
-// 防绕过审批状态机；pending/draft 保持不动。提取纯函数锁定，防内联漂移（F08/F12）。
+// 报价保存状态降级契约：终态 approved/rejected 被再次编辑保存须降级为 draft，
+// 防绕过审批状态机；pending/draft 保持不动。提取纯函数锁定，防内联漂移
 
 describe('reviewStatusForSave 报价保存状态降级', () => {
   it('approved → draft（已通过被改，防绕过审批状态机）', () => {

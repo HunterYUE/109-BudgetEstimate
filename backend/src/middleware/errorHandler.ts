@@ -12,7 +12,7 @@ export class AppError extends Error {
 
 /**
  * PG 错误码 → 对外响应（消息 + 状态码）。errorHandler 分支的纯函数化提取（行为等价）：
- * A110 不透传 DB detail（服务端 console.error 保留完整信息），按码给出可定位提示。
+ * 不透传 DB detail（服务端 console.error 保留完整信息），按码给出可定位提示
  */
 export function pgErrorResponse(code: string): { message: string; status: number } {
   switch (code) {
@@ -52,7 +52,7 @@ export function errorHandler(
     return;
   }
 
-  // ⚠️ L8 修复：上传超限等 Multer 错误返回 413/400（此前落入通用 500）
+  // 上传超限等 Multer 错误返回 413/400
   if (err && (err as { name?: string }).name === 'MulterError') {
     const code = (err as { code?: string }).code;
     if (code === 'LIMIT_FILE_SIZE') {
@@ -67,8 +67,8 @@ export function errorHandler(
   const pgErr = err as { code?: string; severity?: string; message?: string; detail?: string; constraint?: string };
   if (pgErr.code && pgErr.severity) {
     console.error(`[DB ERROR] ${requestInfo} — ${pgErr.code}: ${pgErr.message}`, pgErr.detail || '');
-    // ⚠️ A110 修复：detail 含表/列名等内部结构（如 `Key (email)=(...) already exists`、`enum quotations_status`），
-    //   此前透传给前端泄漏数据库结构；服务端 console.error 已保留完整 detail，排障不受影响
+    // detail 含表/列名等内部结构（如 `Key (email)=(...) already exists`、`enum quotations_status`），
+    // 透传给前端会泄漏数据库结构；服务端 console.error 已保留完整 detail，排障不受影响
     const { message: msg, status } = pgErrorResponse(pgErr.code);
     res.status(status).json({ error: msg });
     return;

@@ -80,7 +80,7 @@ export const ProfitChart: React.FC<{
   // 与 VerticalBarChart「textScale 归一、任意宽度恒为设计值×0.7」不一致，默认卡 2.1px/居中卡 1.75px
   // 此处同样测渲染宽算 effectiveScale，textScale=0.7/effectiveScale：
   // 框线 strokeWidth=2.5×textScale → 恒 1.75px；文字（X 11/Y 10/柱顶主副值 11）×textScale →
-  // 恒 7.7/7/7.7px，与左列 延期天数/节点分析 完全一致。两行柱顶标签间距 ±10/±24×textScale 防重叠
+  // 恒 7.7/7/7.7px，与左列延期天数/节点分析完全一致。两行柱顶标签间距 ±10/±24×textScale 防重叠
   const svgRef = useRef<SVGSVGElement>(null);
   const [svgW, setSvgW] = useState<number | null>(null);
   useLayoutEffect(() => {
@@ -105,7 +105,7 @@ export const ProfitChart: React.FC<{
   const allValues = slots.flatMap(s => [s.estProfit, s.actProfit ?? 0]);
   const rawMax = Math.max(...allValues, 0);
   const rawMin = Math.min(...allValues, 0);
-  // 移植 VerticalBarChart #13 负数刻度算法——存在亏损（负利润）时按真实量程 [rawMin, rawMax] 铺开、
+  // 移植 VerticalBarChart 负数刻度算法——存在亏损（负利润）时按真实量程 [rawMin, rawMax] 铺开、
   // 0 基线按比例定位、负值柱向下探，纯正值路径与旧公式（zeroY=底部）完全一致，无视觉回归
   const hasNeg = rawMin < 0;
   const effectiveMax = hasNeg ? Math.max(rawMax - rawMin, 1) : Math.max(1, rawMax);
@@ -143,7 +143,7 @@ export const ProfitChart: React.FC<{
           const cx = pad.left + i * slotW + slotW / 2;
           const barW = Math.min(slotW * 0.75, 40);
           // 负利润柱自 0 基线向下探（正值 barTop=zeroY-estH、负值 barTop=zeroY）——
-          // 此前负值被当正值从底部上探，亏损项目表现为 0 高矮柱误导分析
+          // 负值不得当正值从底部上探，否则亏损项目表现为 0 高矮柱误导分析
           const estH = Math.max(2, (Math.abs(item.estProfit) / effectiveMax) * chartH);
           const estTop = item.estProfit >= 0 ? zeroY - estH : zeroY;
           const hasAct = item.actProfit != null;
@@ -275,7 +275,7 @@ const GanttTooltip: React.FC<{
       {slot.status === 'completed' && slot.actualDate ? (
         <>
           <text x={ttx + 12} y={tty + 46} fontSize={11} fill={COLORS.textLight}>实际时间</text>
-          <text x={ttx + tooltipW - 12} y={tty + 46} fontSize={11} fill="#444" textAnchor="end">
+          <text x={ttx + tooltipW - 12} y={tty + 46} fontSize={11} fill="" textAnchor="end">
             {fmtShort(slot.startDate)}~{fmtShort(slot.actualDate)}
           </text>
         </>
@@ -287,7 +287,7 @@ const GanttTooltip: React.FC<{
               <text x={ttx + 12} y={tty + 46} fontSize={11} fill={overdue ? COLORS.danger : COLORS.textLight}>
                 {overdue ? '超期进行' : '进行中'}
               </text>
-              <text x={ttx + tooltipW - 12} y={tty + 46} fontSize={11} fill="#444" textAnchor="end">
+              <text x={ttx + tooltipW - 12} y={tty + 46} fontSize={11} fill="" textAnchor="end">
                 {fmtShort(slot.startDate)}~{overdue ? '至今' : fmtShort(slot.plannedEndDate)}
               </text>
             </>
@@ -296,14 +296,14 @@ const GanttTooltip: React.FC<{
       ) : (
         <>
           <text x={ttx + 12} y={tty + 46} fontSize={11} fill={COLORS.textLight}>计划时间</text>
-          <text x={ttx + tooltipW - 12} y={tty + 46} fontSize={11} fill="#444" textAnchor="end">
+          <text x={ttx + tooltipW - 12} y={tty + 46} fontSize={11} fill="" textAnchor="end">
             {fmtShort(slot.plannedStartDate)}~{fmtShort(slot.plannedEndDate)}
           </text>
         </>
       )}
       {/* 基线参考 */}
       <text x={ttx + 12} y={tty + 66} fontSize={11} fill={COLORS.textLight}>基线计划</text>
-      <text x={ttx + tooltipW - 12} y={tty + 66} fontSize={11} fill="#444" textAnchor="end">
+      <text x={ttx + tooltipW - 12} y={tty + 66} fontSize={11} fill="" textAnchor="end">
         {slot.baselineDate ? `${fmtShort(slot.plannedStartDate)}~${fmtShort(slot.baselineDate)}` : '—'}
       </text>
     </g>
@@ -399,7 +399,7 @@ export const ProjectGantt: React.FC<{
           return (
             <g key={`m-${i}`}>
               <line x1={x} y1={67} x2={x} y2={H - 4} stroke={COLORS.borderLight} strokeWidth={1} />
-              {i < 12 && <text x={x + chartW / 24} y={36} textAnchor="middle" fontSize={12} fill="#444">{months[i]}</text>}
+              {i < 12 && <text x={x + chartW / 24} y={36} textAnchor="middle" fontSize={12} fill="">{months[i]}</text>}
             </g>
           );
         })}
@@ -439,7 +439,7 @@ export const ProjectGantt: React.FC<{
                 </text>
               </g>
               {/* 项目编号，右对齐 */}
-              <text fontSize={11} fill="#444" textAnchor="end">
+              <text fontSize={11} fill="" textAnchor="end">
                 {proj.name.length > 8 ? (
                   <><tspan x={labelW - 8} y={rowCenter(pi) - 4}>{proj.name.slice(0, 4)}</tspan><tspan x={labelW - 8} y={rowCenter(pi) + 10}>{proj.name.slice(4)}</tspan></>
                 ) : (
@@ -488,7 +488,7 @@ const BubbleNode: React.FC<{
         style={{ transition: 'opacity 0.15s, stroke-width 0.15s' }}>
         <title>{item.name}</title>
       </circle>
-      <text x={cx} y={cy + r + 10} textAnchor="middle" fontSize={9} fill="#222">
+      <text x={cx} y={cy + r + 10} textAnchor="middle" fontSize={9} fill="">
         {item.delayDays}d / {item.costDeviation.toFixed(1)}%
       </text>
     </g>
@@ -526,7 +526,7 @@ const BubbleTooltip: React.FC<{
       </text>
       <line x1={ttx + 12} y1={tty + 29} x2={ttx + tooltipW - 12} y2={tty + 29} stroke={COLORS.borderLight} strokeWidth={1} />
       <text x={ttx + 12} y={tty + 49} fontSize={11} fill={COLORS.textLight}>合同金额</text>
-      <text x={ttx + tooltipW - 12} y={tty + 49} fontSize={12} fill="#222" textAnchor="end" fontWeight={600}>
+      <text x={ttx + tooltipW - 12} y={tty + 49} fontSize={12} fill="" textAnchor="end" fontWeight={600}>
         {fmtK(item.contractAmount)}
       </text>
       <text x={ttx + 12} y={tty + 72} fontSize={11} fill={COLORS.textLight}>延期天数</text>
@@ -630,8 +630,8 @@ export const BubbleChart: React.FC<{
         })}
         <line x1={pad.left + chartW / 2} y1={pad.top} x2={pad.left + chartW / 2} y2={pad.top + chartH} stroke="#ddd" strokeWidth={1} />
         <line x1={pad.left} y1={yPos(0)} x2={W - pad.right} y2={yPos(0)} stroke="#ddd" strokeWidth={1} />
-        <text x={pad.left + chartW / 2} y={H + 21} textAnchor="middle" fontSize={10} fill="#444">延期天数</text>
-        <text x={8} y={pad.top + chartH / 2} textAnchor="middle" fontSize={10} fill="#444" transform={`rotate(-90, 24, ${pad.top + chartH / 2})`}>成本偏差率</text>
+        <text x={pad.left + chartW / 2} y={H + 21} textAnchor="middle" fontSize={10} fill="">延期天数</text>
+        <text x={8} y={pad.top + chartH / 2} textAnchor="middle" fontSize={10} fill="" transform={`rotate(-90, 24, ${pad.top + chartH / 2})`}>成本偏差率</text>
         {data.map(d => {
           const cx = pad.left + chartW / 2 + (d.delayDays / maxTick) * chartW / 2;
           const cy = yPos(d.costDeviation);

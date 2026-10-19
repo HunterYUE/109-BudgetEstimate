@@ -67,8 +67,8 @@ const profitData: ProfitItem[] = [
 
 // ══ 精确复现生产布局 ══
 // Row1: DeliveryAnalysis 主行（flex, gap16, alignItems stretch）
-//   child1: flex '0 0 calc(3/7 * (100% - 96px) + 32px)'（延期卡 + 节点分析 上下 gap16）
-//   child2: flex 1（BubbleChart 占位）
+// child1: flex '0 0 calc(3/7 * (100% - 96px) + 32px)'（延期卡 + 节点分析 上下 gap16）
+// child2: flex 1（BubbleChart 占位）
 // Row2: SalesAnalysis 竞对/取消/放弃（flex, gap16, justifyContent center, 25%-12px）
 // Row3: SalesAnalysis 排行 4 卡（grid auto-fit minmax(220px,1fr) gap16 gridAutoRows 213）
 const App = () => (

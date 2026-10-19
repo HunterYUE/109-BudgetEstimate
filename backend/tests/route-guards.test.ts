@@ -6,7 +6,7 @@ import { selectApprovalPerms, selectDeliveryPerms, PERM_ALL } from '../src/permi
 import { isValidApprovalAction, isFinalApprovalStatus } from '../src/routes/approvals.js';
 
 // ── 路由行为层守卫测试（纯函数直测真实生产路径，无 mock）──
-// 覆盖目标：A2/A3 excludeOnCreate 字段剥除、A1/A101 守卫选择映射、审批状态机、守卫接线结构。
+// 覆盖目标：excludeOnCreate 字段剥除、守卫选择映射、审批状态机、守卫接线结构
 
 describe('computeInsertCols（A2/A3 排除字段剥除契约）', () => {
   const fields = ['id', 'sales_no', 'amount', 'total_cost', 'status', 'locked', 'plan_status', 'cost_status', 'plan_approval', 'cost_approval', 'unit_cost'];
@@ -116,7 +116,7 @@ describe('守卫接线结构（routes/index.ts 静态断言）', () => {
   const src = readFileSync(fileURLToPath(new URL('../src/routes/index.ts', import.meta.url)), 'utf8');
 
   it('禁止内联权限数组直接进守卫（须引用 permissions.ts 常量）', () => {
-    // writeGuard/readGuard/requirePermission 后紧跟 `[` = 内联字面量（A1 漂移温床）
+    // writeGuard/readGuard/requirePermission 后紧跟 `[` = 内联字面量（配置漂移温床）
     const inline = src.match(/(?:writeGuard|readGuard|requirePermission)\(\s*\[/g) || [];
     expect(inline).toEqual([]);
   });

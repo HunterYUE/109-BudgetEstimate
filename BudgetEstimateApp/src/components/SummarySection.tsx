@@ -1,5 +1,4 @@
 import React from 'react';
-import { exAmount } from '../utils/analysisShared';
 import { Card, Row, Col } from 'antd';
 import type { Group, ProjectVersion } from '../types';
 import { calcProjectSummary, formatMoney } from '../utils/calculations';
@@ -22,7 +21,7 @@ const CostCard: React.FC<{ label: string; value: number; unit?: string; highligh
   ({ label, value, unit = '¥', highlight, accent }) => (
     <div style={{
       flex: 1, minWidth: 0, padding: '12px 16px',
-      background: highlight ? `linear-gradient(135deg, ${COLORS.primary}, #003d7a)` : COLORS.bgLight,
+      background: highlight ? `linear-gradient(135deg, ${COLORS.primary}, d7a)` : COLORS.bgLight,
       borderRadius: 8, border: `1px solid ${highlight ? 'transparent' : COLORS.borderLight}`,
     }}>
       <div style={{ fontSize: 12, color: highlight ? 'rgba(255,255,255,0.7)' : COLORS.textSecondary, marginBottom: 4, letterSpacing: 0.3 }}>
@@ -61,8 +60,9 @@ const PctBadge: React.FC<{ value: number; label: string; onClick?: () => void }>
 
 const SummarySection: React.FC<Props> = ({ groups, version, onDiscountChange, onVersionUpdate, readOnly }) => {
   // calcProjectSummary 的 discountedPrice 参数需为未税值，从含税版本值转换回
+  // 不取整：与保存链路一致，避免 100 元经 88→99 的 ±1 漂移
   const untaxedDiscounted = version.discountedPrice
-    ? exAmount(version.discountedPrice, version.taxRate)
+    ? version.discountedPrice / (1 + (version.taxRate ?? TAX_RATE))
     : undefined;
   const summary = calcProjectSummary(groups, version, untaxedDiscounted);
   const { materialCost, laborCost, projectExpense } = summary;
@@ -206,9 +206,9 @@ const SummarySection: React.FC<Props> = ({ groups, version, onDiscountChange, on
               </div>
             ) : (
             <input type="text" inputMode="numeric"
-              // ⚠️ 显示存储的含税值（直接展示避免含税↔未税往返取整 ±1 漂移；calcProjectSummary 内部另算未税值供 GP3）
-              // ⚠️ B1 修复：加 key=折后报价——折后价变化（折扣调整/版本切换）时强制重挂载刷新 defaultValue；
-              //   此前无 key，React 复用旧 input，改折后价不重渲染、输入框残留旧值（与上方 com-cost 键位同款模式）
+              // 显示存储的含税值（直接展示避免含税↔未税往返取整 ±1 漂移；calcProjectSummary 内部另算未税值供 GP3）
+              // 加 key=折后报价——折后价变化（折扣调整/版本切换）时强制重挂载刷新 defaultValue；
+              // 无 key 时 React 复用旧 input，改折后价不重渲染、输入框残留旧值（与上方 com-cost 键位同款模式）
               key={'disc-' + Math.round(displayDiscounted)}
               defaultValue={'¥' + formatMoney(displayDiscounted)}
               onInput={(e) => {
@@ -245,7 +245,7 @@ const SummarySection: React.FC<Props> = ({ groups, version, onDiscountChange, on
         <Col span={8}>
           <div style={{
             padding: '18px 20px', borderRadius: 10,
-            background: `linear-gradient(135deg, ${COLORS.primary}, #003d7a)`,
+            background: `linear-gradient(135deg, ${COLORS.primary}, d7a)`,
             height: '100%', color: '#fff',
           }}>
             <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.65)', marginBottom: 6, letterSpacing: 0.5, textTransform: 'uppercase' }}>
