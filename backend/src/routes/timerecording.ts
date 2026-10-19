@@ -2,7 +2,7 @@ import { Router, type RequestHandler } from 'express';
 import bcrypt from 'bcryptjs';
 import rateLimit from 'express-rate-limit';
 import { query } from '../db/index.js';
-import { requireAuth, requireRole, signToken, setAuthCookie, clearAuthCookie, COOKIE_NAME_TR } from '../middleware/auth.js';
+import { requireAuth, requireRole, signToken, setAuthCookie, clearAuthCookie, COOKIE_NAME_TR, COOKIE_NAME_BUDGET } from '../middleware/auth.js';
 import { AppError } from '../middleware/index.js';
 import { logAudit, round2, normalizeEmail, resetUserPassword, withTransaction, assertCanManage, ROLE_RANK, DUMMY_PASSWORD_HASH, parsePagination } from './helpers.js';
 import { PAGE_LIMIT } from '../constants.js';
@@ -439,9 +439,11 @@ router.get('/auth/me', ...trAuth, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-/** POST /api/v1/timerecording/auth/logout - 清除认证 cookie（幂等；无需鉴权，HttpOnly cookie 只有服务端能清） */
+/** POST /api/v1/timerecording/auth/logout - 清除认证 cookie（幂等；无需鉴权，HttpOnly cookie 只有服务端能清）。
+ *  requireAuth 认任一应用 cookie，与预算登出同口径：两个 cookie 一并清除，否则另一应用的 cookie 仍可继续访问。 */
 router.post('/auth/logout', (_req, res) => {
   clearAuthCookie(res, COOKIE_NAME_TR);
+  clearAuthCookie(res, COOKIE_NAME_BUDGET);
   res.json({ ok: true });
 });
 
