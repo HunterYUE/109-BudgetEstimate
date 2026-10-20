@@ -1,18 +1,8 @@
 :root {
-  --color-primary: #00509e;
-  --color-primary-hover: #0066cc;
-  --color-success: #1a6b3c;
-  --color-danger: #c62828;
-  --color-warning: #e65100;
-  --color-orange: #d46b08;
+  /* 仅保留实际被 var() 引用的令牌；其余颜色统一走 styles/colors.ts 的 COLORS 常量 */
   --color-text-dark: #0d1b2a;
-  --color-text-secondary: #666;
-  --color-text-light: #999;
-  --color-border: #e8e8e8;
-  --color-bg-light: #fafafa;
   --color-bg-selected: #f0f6ff;
 }
-
 body {
   margin: 0;
   padding: 0;
@@ -242,7 +232,7 @@ td .code-input .ant-select-selection-search-input {
   color: var(--color-text-dark) !important; padding: 6px 12px;
 }
 
-/* ── 登录页（.login- 专属，原 Login.tsx 内联样式迁移；.login-card 类为死代码已删） ── */
+/* ── 登录页（.login- 专属样式类） ── */
 .login-root {
   min-height: 100vh; display: flex;
   background: linear-gradient(135deg, #0c1445 0%, #1a237e 30%, #283593 60%, #3949ab 100%);

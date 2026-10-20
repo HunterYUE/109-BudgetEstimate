@@ -400,7 +400,7 @@ const TagManagement: React.FC = () => {
                           style={{ width: 18, height: 18, lineHeight: '18px', color: COLORS.textMuted, fontSize: 11 }} title="下移" />
                       </span>
                     </td>
-                    <td style={{ padding: '2px 4px', verticalAlign: 'middle', fontSize: 12, color: '', position: 'relative', borderLeft: `1px solid ${COLORS.borderInner}`, lineHeight: '18px' }}>
+                    <td style={{ padding: '2px 4px', verticalAlign: 'middle', fontSize: 12, color: '#888', position: 'relative', borderLeft: `1px solid ${COLORS.borderInner}`, lineHeight: '18px' }}>
                       {descEditId === node.id ? (
                         <input value={descEditValue}
                           onChange={e => setDescEditValue(e.target.value)}

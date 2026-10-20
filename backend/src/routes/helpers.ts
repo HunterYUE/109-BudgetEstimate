@@ -68,9 +68,9 @@ export function objKeysToSnake(obj: Record<string, any>): Record<string, any> {
 
 // ── 共享工具（分页/事务/搜索/邮箱/密码重置，全后端唯一来源） ──
 
-/** 解析分页参数（limit 钳制 [1, PAGE_LIMIT]，offset ≥ 0）。取代各列表各自手写的 parseInt 样板。
+/** 解析分页参数（limit 钳制 [1, PAGE_LIMIT]，offset ≥ 0）。
  * defaultLimit：未传 limit 时的默认值（默认 DEFAULT_PAGE_SIZE=100；工时列表等「全量读取」端点
- * 传 PAGE_LIMIT=1000 保持原口径——前端聚合调用亦显式传 limit，防数据量上涨后静默截断） */
+ * 传 PAGE_LIMIT 保持全量口径——前端聚合调用亦显式传 limit，防数据量上涨后静默截断） */
 export function parsePagination(query: Record<string, any>, defaultLimit: number = DEFAULT_PAGE_SIZE): { limit: number; offset: number } {
   const { limit, offset } = query;
   const limitNum = Math.min(PAGE_LIMIT, Math.max(1, parseInt(String(limit), 10) || defaultLimit));
@@ -78,7 +78,7 @@ export function parsePagination(query: Record<string, any>, defaultLimit: number
   return { limit: limitNum, offset: offsetNum };
 }
 
-/** 事务封装：BEGIN→fn(client)→COMMIT，异常 ROLLBACK，finally release。取代 getClient+BEGIN/COMMIT/ROLLBACK 样板 */
+/** 事务封装：BEGIN→fn(client)→COMMIT，异常 ROLLBACK，finally release */
 export async function withTransaction<T>(fn: (client: any) => Promise<T>): Promise<T> {
   const client = await getClient();
   try {

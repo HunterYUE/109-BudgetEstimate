@@ -63,6 +63,12 @@ export function errorHandler(
     return;
   }
 
+  // 请求体超过解析上限（body-parser 抛 PayloadTooLargeError，带 status=413 或 type=entity.too.large）
+  if ((err as { status?: number }).status === 413 || (err as { type?: string }).type === 'entity.too.large') {
+    res.status(413).json({ error: '请求体过大' });
+    return;
+  }
+
   // 处理 PostgreSQL 错误（不暴露原始 SQL/表结构，但按错误码给出可定位的提示）
   const pgErr = err as { code?: string; severity?: string; message?: string; detail?: string; constraint?: string };
   if (pgErr.code && pgErr.severity) {

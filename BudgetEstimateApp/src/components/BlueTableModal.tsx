@@ -71,9 +71,9 @@ function createEmptyBlueTable(): BlueTable {
 const TriangleArrows: React.FC<{ onUp: () => void; onDown: () => void }> = ({ onUp, onDown }) => (
   <div style={{ display: 'flex', flexDirection: 'column', gap: 0, lineHeight: 1 }}>
     <span onClick={onUp}
-      style={{ cursor: 'pointer', color: '', fontSize: 9, lineHeight: 1, height: 12, display: 'block', userSelect: 'none' }}>▲</span>
+      style={{ cursor: 'pointer', color: '#999', fontSize: 9, lineHeight: 1, height: 12, display: 'block', userSelect: 'none' }}>▲</span>
     <span onClick={onDown}
-      style={{ cursor: 'pointer', color: '', fontSize: 9, lineHeight: 1, height: 12, display: 'block', userSelect: 'none' }}>▼</span>
+      style={{ cursor: 'pointer', color: '#999', fontSize: 9, lineHeight: 1, height: 12, display: 'block', userSelect: 'none' }}>▼</span>
   </div>
 );
 // ── 子组件：三角形数字增减 ──
@@ -287,7 +287,7 @@ const BlueTableModal: React.FC<BlueTableModalProps> = ({ open, opportunity, onSa
       render: (_: unknown, rec: BlueTableRole) => (
         <TriangleNumberCell value={rec.support} onChange={v => updateRole(rec.id, { support: v })}
           min={-5} max={5}
-          getColor={v => v <= -3 ? COLORS.danger : v <= 0 ? '' : COLORS.success} />
+          getColor={v => v <= -3 ? COLORS.danger : v <= 0 ? '#888' : COLORS.success} />
       ),
     },
     {
@@ -295,7 +295,7 @@ const BlueTableModal: React.FC<BlueTableModalProps> = ({ open, opportunity, onSa
       render: (_: unknown, rec: BlueTableRole) => (
         <TriangleNumberCell value={rec.demandFit} onChange={v => updateRole(rec.id, { demandFit: v })}
           min={1} max={5}
-          getColor={v => v <= 2 ? COLORS.danger : v === 3 ? '' : COLORS.success} />
+          getColor={v => v <= 2 ? COLORS.danger : v === 3 ? '#888' : COLORS.success} />
       ),
     },
     {
@@ -303,7 +303,7 @@ const BlueTableModal: React.FC<BlueTableModalProps> = ({ open, opportunity, onSa
       render: (_: unknown, rec: BlueTableRole) => (
         <TriangleNumberCell value={rec.relationship} onChange={v => updateRole(rec.id, { relationship: v })}
           min={1} max={5}
-          getColor={v => v <= 2 ? COLORS.danger : v === 3 ? '' : COLORS.success} />
+          getColor={v => v <= 2 ? COLORS.danger : v === 3 ? '#888' : COLORS.success} />
       ),
     },
     {
@@ -416,7 +416,7 @@ const BlueTableModal: React.FC<BlueTableModalProps> = ({ open, opportunity, onSa
                 {(() => {
                   const TIMELINE_OPTS = [
                     { v: 'optimistic' as TimelineOption, label: '乐观', color: COLORS.success },
-                    { v: 'neutral' as TimelineOption, label: '中性', color: '' },
+                    { v: 'neutral' as TimelineOption, label: '中性', color: '#888' },
                     { v: 'negative' as TimelineOption, label: '消极', color: COLORS.danger },
                   ];
                   const curIdx = TIMELINE_OPTS.findIndex(o => o.v === bt.timelineOption);
@@ -596,7 +596,7 @@ const BlueTableModal: React.FC<BlueTableModalProps> = ({ open, opportunity, onSa
                         <div style={{ width: 70, padding: '4px 8px', textAlign: 'center', borderRight: `1px solid ${COLORS.borderLight}` }}>
                           <span style={{
                             fontSize: 13, fontWeight: 700,
-                            color: (role?.support ?? 0) <= -3 ? COLORS.danger : (role?.support ?? 0) <= 0 ? '' : COLORS.success,
+                            color: (role?.support ?? 0) <= -3 ? COLORS.danger : (role?.support ?? 0) <= 0 ? '#888' : COLORS.success,
                           }}>
                             {role?.support ?? '-'}
                           </span>
@@ -605,7 +605,7 @@ const BlueTableModal: React.FC<BlueTableModalProps> = ({ open, opportunity, onSa
                         <div style={{ width: 80, padding: '4px 8px', textAlign: 'center', borderRight: `1px solid ${COLORS.borderLight}` }}>
                           <TriangleNumberCell value={t.targetSupport} onChange={v => updateTarget(i, { targetSupport: v })}
                             min={-5} max={5}
-                            getColor={v => v <= -3 ? COLORS.danger : v <= 0 ? '' : COLORS.success} />
+                            getColor={v => v <= -3 ? COLORS.danger : v <= 0 ? '#888' : COLORS.success} />
                         </div>
                         {/* 行动计划 */}
                         <div style={{ flex: 1, padding: '3px 8px' }}>
@@ -727,7 +727,7 @@ const BlueTableModal: React.FC<BlueTableModalProps> = ({ open, opportunity, onSa
             ].map((item, i) => (
               <span key={i} style={{
                 fontSize: 12, display: 'inline-flex', alignItems: 'center',
-                color: '',
+                color: '#000',
                 background: item.ok ? '#e8f5e9' : '#e3f2fd',
                 padding: '3px 12px', borderRadius: 12,
               }}>
@@ -743,7 +743,7 @@ const BlueTableModal: React.FC<BlueTableModalProps> = ({ open, opportunity, onSa
         {!readOnly && <Button type="text" icon={<DeleteOutlined />} onClick={handleClear}
           style={{ color: COLORS.danger, fontSize: 16, width: 36, height: 36, borderRadius: 3 }} />}
         <Button type="text" icon={<CloseOutlined />} onClick={onClose}
-          style={{ color: '', fontSize: 16, width: 36, height: 36, borderRadius: 3 }} />
+          style={{ color: '#999', fontSize: 16, width: 36, height: 36, borderRadius: 3 }} />
         {!readOnly && <Button type="text" icon={<CheckOutlined />} onClick={handleSave}
           style={{ color: COLORS.primary, fontSize: 16, width: 36, height: 36, borderRadius: 3 }} />}
       </div>

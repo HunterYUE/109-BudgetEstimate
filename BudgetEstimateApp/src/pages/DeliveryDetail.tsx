@@ -107,11 +107,11 @@ const DeliveryDetail: React.FC = () => {
   useEffect(() => {
     if (!id) return;
     let cancelled = false;
-    // 切换交付项目（id 变更）时重置成本缓存——initialCostsLoaded 原本防的是「同项目内保存/刷新
-    // 不覆盖在编成本」，但路由复用组件换 id 后 ref 仍为 true，新项目 actualCosts 永不载入；同时 actualCosts
-    // 残留上一项目数据造成串项目显示
+    // 切换交付项目（路由复用组件换 id）时重置成本缓存与项目本身：
+    // initialCostsLoaded 只防「同项目内保存/刷新覆盖在编成本」，换 id 后须复位，否则新项目成本永不载入
     initialCostsLoaded.current = false;
     setActualCosts({});
+    setProject(null);
     setLoading(true);
     // 切换项目时清空上一项目的报价/附件/编辑态，防串项目显示与提交（路由复用组件不卸载）
     setQuotationProject(null);
@@ -177,20 +177,28 @@ const DeliveryDetail: React.FC = () => {
         const assyRate = assyComps?.[0]?.unitCost || DEFAULT_ASSEMBLY_HOURLY_RATE;
         setLaborRates({ design: Number(designRate), assembly: Number(assyRate) });
       }).catch(err => console.warn('[DeliveryDetail] 工时费率查询失败，使用默认费率', (err as Error).message));
-    }).catch(() => {/* empty */}).finally(() => setLoading(false));
+    }).catch(() => {
+      if (!cancelled) { setProject(null); msg.error('交付项目加载失败，请刷新重试'); }
+    }).finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [id]);
+  }, [id, msg]);
 
   const [deliveryFiles, setDeliveryFiles] = useState<DeliveryFile[]>([]);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [activeFileKey, setActiveFileKey] = useState<string>('');
 
+  // 当前交付 id：异步回调返回时若已切项目，丢弃旧项目结果（路由复用组件不卸载）
+  const idRef = useRef(id);
+  useEffect(() => { idRef.current = id; }, [id]);
+
   const loadFiles = useCallback(async () => {
     if (!id) return;
+    const targetId = id;
     setDeliveryFiles([]); // 切换项目先清空，防旧项目附件短暂串显
     try {
-      const data = await deliveryFileService.list(id);
+      const data = await deliveryFileService.list(targetId);
+      if (targetId !== idRef.current) return;
       setDeliveryFiles(data);
     } catch { /* 文件加载失败时保持空列表 */ }
   }, [id]);
@@ -213,6 +221,7 @@ const DeliveryDetail: React.FC = () => {
       await deliveryFileService.upload(id, activeFileKey, file);
       clearCache('/deliveries'); // upload 走原生 fetch（非 api.*），不会自动清缓存；只需清交付前缀
       const fresh = await deliveryFileService.list(id);
+      if (id !== idRef.current) return; // 上传期间已切换项目：只提示成功，不覆盖新项目附件列表
       setDeliveryFiles(fresh);
       msg.success('上传成功');
     } catch {
@@ -305,8 +314,8 @@ const DeliveryDetail: React.FC = () => {
   const handleNodeStatusClick = useCallback((nodeId: string, newStatus?: string) => {
     if (!project) return;
     // 节点15（项目总结）切到"已完成"需要成本对比已通过 + 其余全部节点 completed
-    // 原仅校验成本审批——成本通过后节点3 仍 pending 即可提前勾完节点15，
-    // 而分析以节点15完成日做交付完结归集，会把未完成项目计为已完结；现与「完成项目」按钮共用门禁
+    // 门禁与「完成项目」按钮同口径：仅校验成本审批时，其他节点未完成也能勾完节点15，
+    // 而分析以节点15完成日做交付完结归集，会把未完成项目计为已完结
     const targetNode = project.nodes.find(n => n.id === nodeId);
     if (!targetNode) return;
     // 目标节点唯一，nextStatus 只需计算一次
@@ -999,8 +1008,8 @@ const DeliveryDetail: React.FC = () => {
               laborRates={laborRates}
             />
           </Card>
-          {costCanEdit && (
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 16, marginTop: 16 }}>
+            {costCanEdit && (<>
             <IconButton icon={<SaveOutlined style={{ fontWeight: 700 }} />}
               onClick={async () => { if (!project) return; const ta = actualTotal; const { warrantyCost } = computeDeliveryEstGP3(project.contractAmount, quotationGroups, quotationVersion); try { await deliveryService.update(project.id, { totalActualCost: ta + warrantyCost, actualCosts }); setCostDirty(false); msg.success('成本对比已保存'); } catch { msg.error('保存失败，请重试'); } }}
               color={COLORS.amber} hoverBg="#fff7e6" title="保存"
@@ -1011,10 +1020,11 @@ const DeliveryDetail: React.FC = () => {
               color={COLORS.primary} hoverBg="#e6f0fa" title="提交审批"
               disabled={!costDirty && Object.keys(actualCosts).length === 0} />
             )}
+            </>)}
+            {/* 导出不受编辑态限制：审批通过后的最终成本表同样需要导出 */}
             <IconButton icon={<DownloadOutlined style={{ fontWeight: 700 }} />}
               onClick={handleExportCost} color={COLORS.success} hoverBg="#e8f5e9" title="导出" />
           </div>
-          )}
         </div>
           </ConfigProvider>
       )}

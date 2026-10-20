@@ -61,7 +61,7 @@ interface VerticalBarChartProps {
   yTickCount?: number;
   /** 值 ≤ 0 时不渲染柱体（仅保留数值/displayValue 标签）——Dashboard 原 CSS 柱体行为 */
   skipNonPositive?: boolean;
-  /** X 轴标签颜色（默认 ；Dashboard 原为 textSecondary ） */
+  /** X 轴标签颜色（默认 '#444'；Dashboard 传 COLORS.textSecondary） */
   xLabelColor?: string;
   /** 多行 X 轴标签第一行锚定到单行标签位置（height-5）实现水平对齐；默认 false 保持 height-19（两行块整体位于 SVG 内） */
   xLabelAlignFirstLine?: boolean;
@@ -82,7 +82,7 @@ export const VerticalBarChart: React.FC<VerticalBarChartProps> = ({
   cardBorder = true, barLabelGap = 18, valueFontSize = CHART_FONT.VALUE, xLabelFontSize = CHART_FONT.X, yLabelFontSize = CHART_FONT.Y,
   padLeft = 42, padRight = 26,
   hoverable = false, centeredSvg = false,
-  groupGaps, gapSize, baseGap, unit, yTickCount, skipNonPositive, xLabelColor = '', minBarH = 2, xLabelAlignFirstLine,
+  groupGaps, gapSize, baseGap, unit, yTickCount, skipNonPositive, xLabelColor = '#444', minBarH = 2, xLabelAlignFirstLine,
 }) => {
   const [hoveredTip, setHoveredTip] = useState<{ lines: string[]; cx: number; barTop: number; chartW?: number } | null>(null);
   // 根因App.css `.app-content svg { max-width: 100%; height: auto }` 使 SVG 渲染高 = 容器宽 x vbH / vbW，
@@ -304,7 +304,7 @@ export const VerticalBarChart: React.FC<VerticalBarChartProps> = ({
               <text x={tx + 8} y={hoveredTip.barTop + 2} fontSize={12} fontWeight={700} fill={COLORS.textDark}>{hoveredTip.lines[0]}</text>
               <line x1={tx + 8} y1={hoveredTip.barTop + 10} x2={tx + 8 + tw - 16} y2={hoveredTip.barTop + 10} stroke={COLORS.borderLight} strokeWidth={1} />
               {hoveredTip.lines.slice(1).map((line, li) => (
-                <text key={li} x={tx + 8} y={hoveredTip.barTop + 32 + li * 18} fontSize={11} fill="">{line}</text>
+                <text key={li} x={tx + 8} y={hoveredTip.barTop + 32 + li * 18} fontSize={11} fill="#444">{line}</text>
               ))}
             </g>
           );

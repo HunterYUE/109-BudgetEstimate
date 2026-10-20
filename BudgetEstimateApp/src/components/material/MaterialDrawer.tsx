@@ -46,10 +46,10 @@ const renderDrawerContent = (item: Component, tagPathMap: { id: string; path: st
             </Tag>
           </div>
           {action === 'create' && (
-            <div style={{ fontSize: 12, color: '' }}>此物料为新注册，等待审核通过后生效。</div>
+            <div style={{ fontSize: 12, color: '#555' }}>此物料为新注册，等待审核通过后生效。</div>
           )}
           {action === 'update' && (
-            <div style={{ fontSize: 12, color: '' }}>此物料的信息更新已提交审核。</div>
+            <div style={{ fontSize: 12, color: '#555' }}>此物料的信息更新等待审核通过后生效。</div>
           )}
           {action === 'delete' && (
             <div style={{ fontSize: 12, color: COLORS.danger }}>此物料提交了删除申请，审核通过后将永久移除。</div>

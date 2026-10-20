@@ -164,8 +164,9 @@ const DeliveryAnalysis: React.FC = () => {
         if (idx < 0 || idx >= NODE_COUNT) continue;
         // 节点级财年裁剪（与节点按时率/甘特图同口径）：
         // 已完成节点：完成日 ∈ 财年才计入；未完成节点：计划窗口与财年有交集才计入
-        if (n.status === 'completed' && n.actualDate) {
-          const doneD = new Date(n.actualDate);
+        const doneDate = n.actualDate || n.actualEndDate; // actualDate 优先，兼容旧数据 actualEndDate
+        if (n.status === 'completed' && doneDate) {
+          const doneD = new Date(doneDate);
           if (doneD < fyRange.start || doneD > fyRange.end) continue;
         } else if (new Date(n.plannedEndDate) < fyRange.start || new Date(n.plannedStartDate) > fyRange.end) {
           continue;
@@ -262,8 +263,9 @@ const DeliveryAnalysis: React.FC = () => {
         for (const n of p.nodes) {
           // 节点按时率：仅统计已完成节点（完成日 ∈ [财年起点, 截止月]），
           // 与实际完成日对比最初的基线：≤基线 = 正常/提前（计入分子），>基线 = 延期
-          if (n.status !== 'completed' || !n.actualDate) continue;
-          const actual = new Date(n.actualDate);
+          const doneDate = n.actualDate || n.actualEndDate; // 兼容旧数据 actualEndDate
+          if (n.status !== 'completed' || !doneDate) continue;
+          const actual = new Date(doneDate);
           if (actual < fyRange.start || actual > mEnd) continue;
           const refEnd = getNodeBaseline(n);
           if (!refEnd) continue; // 无基线不判定
@@ -272,7 +274,8 @@ const DeliveryAnalysis: React.FC = () => {
           if (actual <= refD) onT++;
         }
         // 成本偏差（仅统计已完成交付项目，与「已完成项目」KPI 同源；概算成本取自报价编制表持久化数据）
-        if (n15done && p.costStatus === 'approved' && p.totalActualCost != null) {
+        // 无报价信息的项目不算成本偏差：estProfitOf 缺省 0 会让概算成本退化为合同额，算出虚假大幅节约
+        if (n15done && p.costStatus === 'approved' && p.totalActualCost != null && deliveryQuoteInfo.has(p.id)) {
           const grandEstimated = grandEstimatedOf(p, deliveryQuoteInfo);
           costDevNumerator += (p.totalActualCost - grandEstimated);
           costDevDenominator += grandEstimated;
@@ -334,19 +337,21 @@ const DeliveryAnalysis: React.FC = () => {
       // 仅保留计划时间与 12 月时间线有交集的节点，超出范围的节点不绘制
       const slots = p.nodes.filter(n => {
         // 已完成节点用实际完成日判断，其余用计划时间判断
-        if (n.status === 'completed' && n.actualDate) {
+        const doneDate = n.actualDate || n.actualEndDate; // 兼容旧数据 actualEndDate
+        if (n.status === 'completed' && doneDate) {
           // 完成日必须落在时间线窗口内——财年后完成的节点不得被钳到时间线末端（虚假节点条/虚假负荷）
-          const actual = new Date(n.actualDate);
+          const actual = new Date(doneDate);
           return actual >= tlStart && actual <= tlEnd;
         }
         return new Date(n.plannedEndDate) >= tlStart && new Date(n.plannedStartDate) <= tlEnd;
       }).map(n => {
         let start: Date, end: Date;
         const baselineEnd = n.baselinePlannedEndDate;
-        if (n.status === 'completed' && n.actualDate) {
+        const doneDate = n.actualDate || n.actualEndDate; // actualDate 优先，兼容旧数据 actualEndDate
+        if (n.status === 'completed' && doneDate) {
           // 已完成节点：开始=实际开始(优先)或计划开始，结束=实际完成
           start = n.actualStartDate ? new Date(n.actualStartDate) : new Date(n.plannedStartDate);
-          end = new Date(n.actualDate);
+          end = new Date(doneDate);
           if (start > end) start = end;
         } else if (n.status === 'in_progress') {
           // 进行中：开始=实际开始（人为设定开始的时刻），已超最新计划则结束=now
@@ -439,7 +444,7 @@ const DeliveryAnalysis: React.FC = () => {
       const projDelay = calcProjDelay(p);
       const exTax = deliveryExTax(p, deliveryQuoteInfo);
       const estTotal = grandEstimatedOf(p, deliveryQuoteInfo);
-      const costDev = p.costStatus === 'approved' && p.totalActualCost != null && estTotal > 0
+      const costDev = p.costStatus === 'approved' && p.totalActualCost != null && estTotal > 0 && deliveryQuoteInfo.has(p.id)
         ? (p.totalActualCost - estTotal) / estTotal * 100 : 0;
 
       const weightedAmount = wl?.amount ?? 0;

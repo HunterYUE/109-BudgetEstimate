@@ -320,9 +320,8 @@ const Dashboard: React.FC = () => {
       return effEnd >= fyRange.start;
     });
     const onTimeRate = [...inFyDels].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).map(p => {
-      // 无基线节点不判定——提取为共享纯函数 computeProjectOnTimeRate，
-      // 与 DeliveryAnalysis 节点按时率「无基线不判定」口径一致（原内联实现把无基线已完节点计为按时，
-      // 未审批实施计划的项目节点按时率恒 100%）
+      // 无基线节点不判定：与 DeliveryAnalysis 节点按时率同口径（共享纯函数 computeProjectOnTimeRate），
+      // 否则未审批实施计划的项目节点按时率恒为 100%
       const { scheduled, rate } = computeProjectOnTimeRate(p, now);
       const hasDue = scheduled > 0;
       return {

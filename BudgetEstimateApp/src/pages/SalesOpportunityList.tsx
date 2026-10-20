@@ -31,7 +31,7 @@ import { BARE_INPUT_STYLE, tabItemStyle, parseMoneyInput } from '../utils/tableU
 
 const STAGE_OPTIONS = ['信息', '线索', '机会', '投标', '议价', '中标'];
 
-// 状态色（过程中/赢/输/冻结）就地定义；阶段色 STAGE_COLORS 已收敛至 constants.ts（，与 SalesAnalysis 单源）
+// 状态色（过程中/赢/输/冻结）就地定义；阶段色统一取 constants.ts 的 STAGE_COLORS（与 SalesAnalysis 单源）
 const statusColors: Record<string, string> = {
 
   过程中: COLORS.primary, 赢: COLORS.success, 输: COLORS.danger, 冻结: COLORS.textLight,
@@ -171,6 +171,8 @@ const SalesOpportunityList: React.FC = () => {
 
   // ── 新建弹窗 ──
   const [modalOpen, setModalOpen] = useState(false);
+  // 创建中守卫：取号与创建之间没有按钮 loading，双击会并发创建两条机会
+  const creatingRef = useRef(false);
   const [formData, setFormData] = useState<Partial<SalesOpportunity>>({});
 
 
@@ -499,11 +501,11 @@ const SalesOpportunityList: React.FC = () => {
                 discountedPrice = ver.discountedPrice || 0;
                 discountRate = ver.discountRate || 0;
                 totalCost = ver.totalCost || 0;
-                taxRate = ver.taxRate || TAX_RATE;
+                taxRate = ver.taxRate ?? TAX_RATE; // 0% 是合法税率
                 amount = ver.discountedPrice || amount;
                 gp3 = ver.gp3ProfitRate || 0;
                 // 优先读存储的 gp3Amount，为 0 时从汇总值回退计算（兼容旧数据；本系统 0 表示缺失而非真实零值）
-                gp3Amount = ver.gp3Amount || Math.round((ver.discountedPrice || 0) - Math.round((ver.totalCost || 0) * (1 + (ver.taxRate || TAX_RATE))));
+                gp3Amount = ver.gp3Amount || Math.round((ver.discountedPrice || 0) - Math.round((ver.totalCost || 0) * (1 + (ver.taxRate ?? TAX_RATE))));
                 profitRate = rateToPercent(ver.gp3ProfitRate || 0);
               } else {
                 discountedPrice = qt.amount || 0;
@@ -617,6 +619,8 @@ const SalesOpportunityList: React.FC = () => {
       return;
     }
 
+    if (creatingRef.current) return;
+    creatingRef.current = true;
     // 从后端API获取下一个销售编号（避免本地计数不准确导致重复）
       let salesNo: string;
       try {
@@ -625,6 +629,7 @@ const SalesOpportunityList: React.FC = () => {
       } catch {
         // 不本地计数兜底：本地计数与服务端 MAX 不一致，并发/未刷新时会产生重复销售编号（撞 UNIQUE 约束），直接提示重试
         msg.error('获取销售编号失败，请重试');
+        creatingRef.current = false;
         return;
       }
 
@@ -655,7 +660,7 @@ const SalesOpportunityList: React.FC = () => {
         msg.success('机会已创建');
       }).catch(() => {
         msg.error('创建失败，请重试');
-      });
+      }).finally(() => { creatingRef.current = false; });
 
     setModalOpen(false);
 

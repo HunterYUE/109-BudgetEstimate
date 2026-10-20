@@ -18,8 +18,8 @@ export function escapeHtml(s: string | number | null | undefined): string {
     .replace(/'/g, '&#39;');
 }
 
-/** 导出文件名清洗——非法字符 + Windows 保留名/尾随点空格（此前只清非法字符，
- * `CON`/`PRN`/`COM1` 等保留名与尾随 `.`/空格在 Windows 下载失败或静默改名）。纯函数便于单测 */
+/** 导出文件名清洗：非法字符、Windows 保留名（CON/PRN/COM1 等）与尾随点/空格——
+ * 保留名与尾随点在 Windows 下会下载失败或静默改名。纯函数便于单测 */
 export function sanitizeExportFilename(filename: string): string {
   return filename
     .replace(/[\\/:*?"<>|]/g, '_')           // 非法字符

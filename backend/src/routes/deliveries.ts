@@ -18,9 +18,7 @@ const fields = [
 const UPLOAD_DIR = path.resolve(process.cwd(), 'uploads', 'delivery');
 const MAX_SIZE = 3 * 1024 * 1024; // 3MB
 
-/** 上传文件名净化（Windows/URL 非法字符 / \ : 替换为下划线，防路径穿越/非法文件名）。
- * 提取时修正：原 `/[/\:]/` 中 `\:` 是转义冒号，反斜杠从未被匹配（Windows 路径分隔符可做
- * `unique-..\..\x.pdf` 穿越）；改为字面反斜杠 `[/\\:]` 对齐注释宣称的三字符净化语义 */
+/** 上传文件名净化：正斜杠、反斜杠、冒号替换为下划线（防路径穿越与非法文件名） */
 export function sanitizeFileName(name: string): string {
   return name.replace(/[/\\:]/g, '_');
 }
@@ -92,7 +90,7 @@ router.get('/', async (req, res, next) => {
         ) AS nodes
       FROM delivery_projects dp`;
     sql += buildSearchWhere(search, ['sales_no', 'client_name', 'project_name'], params, 'dp');
-    // 与 crudRoutes 配置的 orderBy 一致：最近更新优先（原 project_name DESC 为遗留，中文名排序无意义）
+    // 与 crudRoutes 配置的 orderBy 一致：最近更新优先（中文项目名排序无意义）
     const { limit, offset } = parsePagination(req.query);
     sql += ` ORDER BY dp.updated_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
     const result = await query(sql, [...params, limit, offset]);
@@ -135,7 +133,7 @@ const crudRouter = crudRoutes('delivery_projects', fields, {
   // 完成门禁/审批中成本锁从「仅前端」下沉到服务端
   // status 不可直接 PUT 为已完成（分析按完成日归集订单/销售），须通过节点与成本审批门禁；
   // cost_status='pending' 时实际成本也可被覆盖，审批快照与落库值分叉
-  beforeUpdate: async (_req, id, snakeBody) => {
+  beforeUpdate: async (req, id, snakeBody) => {
     if (!isValidDeliveryStatus(snakeBody.status)) {
       throw new AppError(400, `无效交付状态，允许值：${DELIVERY_STATUSES.join('、')}`);
     }
@@ -154,6 +152,10 @@ const crudRouter = crudRoutes('delivery_projects', fields, {
     if (touchesCost) {
       const dp = (await query('SELECT cost_status FROM delivery_projects WHERE id = $1', [id])).rows[0];
       if (dp?.cost_status === 'pending') throw new AppError(409, '成本对比审批中，不可修改实际成本');
+      // 已审批成本默认锁定：仅总监/管理员可解锁覆盖（前端只对总监显示解锁入口，后端是权威防线）
+      if (dp?.cost_status === 'approved' && req.user?.role !== 'director' && req.user?.role !== 'admin') {
+        throw new AppError(403, '成本对比已审批，仅总监可覆盖修改');
+      }
     }
   },
   // 已审批交付的成本被覆盖修改须审计留痕（DeliveryDetail 总监解锁覆盖成本场景）——

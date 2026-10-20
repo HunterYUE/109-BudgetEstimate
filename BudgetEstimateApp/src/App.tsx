@@ -27,7 +27,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const location = useLocation();
 
   if (loading) {
-    return <div style={{ padding: 60, textAlign: 'center', color: '' }}>加载中...</div>;
+    return <div style={{ padding: 60, textAlign: 'center', color: '#999' }}>加载中...</div>;
   }
 
   if (!user) {
@@ -59,7 +59,7 @@ function RoleGuard({ path, children }: { path: string; children: React.ReactNode
       return (
         <div style={{ padding: 60, textAlign: 'center' }}>
           <div style={{ fontSize: 40, marginBottom: 12 }}>🚫</div>
-          <p style={{ color: '', fontSize: 15 }}>您当前没有可访问的模块，请联系管理员分配权限。</p>
+          <p style={{ color: '#666', fontSize: 15 }}>您当前没有可访问的模块，请联系管理员分配权限。</p>
         </div>
       );
     }
@@ -77,7 +77,7 @@ function AppRoutes() {
   const { user } = useAuth();
 
   return (
-    <Suspense fallback={<div style={{ padding: 40, textAlign: 'center', color: '' }}>加载中...</div>}>
+    <Suspense fallback={<div style={{ padding: 40, textAlign: 'center', color: '#999' }}>加载中...</div>}>
     <Routes>
       {/* 登录页（无需登录） */}
       <Route path="/login" element={

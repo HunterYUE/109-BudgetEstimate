@@ -18,7 +18,7 @@ export const XAxisLabel: React.FC<{
   fill?: string;
   /** 多行 X 轴标签第一行锚定到单行标签位置（height-5）；默认 false 保持 height-19 */
   alignFirstLine?: boolean;
-}> = ({ cx, height, name, textScale, fontSize = CHART_FONT.X, fill = '', alignFirstLine = false }) => (
+}> = ({ cx, height, name, textScale, fontSize = CHART_FONT.X, fill = '#444', alignFirstLine = false }) => (
   <text x={cx} textAnchor="middle" fontSize={fontSize * textScale} fill={fill}>
     {name.includes('\n') ? (
       name.split('\n').map((part, li) =>

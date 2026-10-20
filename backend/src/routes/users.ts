@@ -4,7 +4,7 @@ import { query } from '../db/index.js';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { AppError } from '../middleware/index.js';
 import { logAudit, objKeysToSnake, normalizeEmail, EMAIL_RE, resetUserPassword, withTransaction, assertCanManage, ROLE_RANK, PASSWORD_MAX, assertUserDeletable } from './helpers.js';
-import { PAGE_LIMIT } from '../constants.js';
+import { PAGE_LIMIT, PASSWORD_MIN } from '../constants.js';
 
 const router = Router();
 
@@ -13,6 +13,17 @@ router.use(requireAuth);
 router.use(requirePermission('用户管理', '系统配置', '全部查看权限'));
 
 const USER_FIELDS = 'id, email, display_name, title, phone, role, is_active, created_at, permissions';
+
+/** UUID 文本比较（大小写不敏感）：URL 参数与 JWT 中的 id 大小写可能不同（PG 的 uuid 比较本身不区分大小写），
+ * 直接字符串比较会让自保护被绕过 */
+const sameUserId = (a: string, b: string) => String(a).toLowerCase() === String(b).toLowerCase();
+
+/** 职务校验：类型 + 长度 ≤50。跨应用访问限制按 title 精确匹配，PUT /:id 与 PUT /:id/role 须同口径 */
+function assertTitleValue(title: unknown): void {
+  if (title === undefined) return;
+  if (typeof title !== 'string') throw new AppError(400, '职务必须为字符串');
+  if (title.length > 50) throw new AppError(400, '职务不能超过 50 字');
+}
 
 // ── 用户管理安全常量与越级保护 ──
 export const VALID_ROLES = ['admin', 'director', 'manager', 'user'];
@@ -43,9 +54,9 @@ export function validateNewUserInput(input: Record<string, any>, actorRole: stri
     throw new AppError(400, `无效角色，允许值：${VALID_ROLES.join(', ')}`);
   }
   assertCanManage(actorRole, ROLE_RANK[role] ?? 0);
-  // 与重置路径（≥8）统一：创建时也校验弱口令
-  if (password.length < 8) {
-    throw new AppError(400, '密码至少8位');
+  // 与重置路径同一常量：创建时也校验弱口令
+  if (password.length < PASSWORD_MIN) {
+    throw new AppError(400, `密码至少${PASSWORD_MIN}位`);
   }
   if (password.length > PASSWORD_MAX) {
     throw new AppError(400, `密码不能超过${PASSWORD_MAX}位`);
@@ -100,7 +111,7 @@ router.post('/', async (req, res, next) => {
       [emailNorm, display_name, title, phone, passwordHash, role]
     );
 
-    logAudit(req, '创建用户', 'user', `创建用户 ${email} (${display_name}) 角色:${role}`);
+    logAudit(req, '创建用户', 'user', `创建用户 ${emailNorm} (${display_name}) 角色:${role}`);
 
     res.status(201).json(result.rows[0]);
   } catch (err) { next(err); }
@@ -115,15 +126,14 @@ router.put('/:id', async (req, res, next) => {
     const existing = await query('SELECT role FROM users WHERE id = $1', [id]);
     if (existing.rows.length === 0) throw new AppError(404, '用户不存在');
     // 越级保护：只能管理「角色等级 ≤ 自己」的账号（assertCanManage 依 ROLE_RANK 纯等级比较——
-    // 同级可管理、仅高等级受拒；此注释与 helpers.ts 行为对齐，勿改回"同级禁止"表述）
+    // 同级可管理，仅更高等级受拒）
     assertCanManage(req.user!.role, ROLE_RANK[existing.rows[0].role] ?? 0);
 
     // 类型校验（防非法值触发 PG 类型错误 500）
     if (display_name !== undefined && typeof display_name !== 'string') throw new AppError(400, '姓名必须为字符串');
-    if (title !== undefined && typeof title !== 'string') throw new AppError(400, '职务必须为字符串');
-    if (title !== undefined && title.length > 50) throw new AppError(400, '职务不能超过 50 字');
+    assertTitleValue(title);
     // 跨应用访问限制依据 title，禁止本人修改自己的职务（否则受限账号可自助解除限制）
-    if (title !== undefined && id === req.user!.userId) {
+    if (title !== undefined && sameUserId(id, req.user!.userId)) {
       throw new AppError(403, '不能修改自己的职务');
     }
     if (phone !== undefined && typeof phone !== 'string') throw new AppError(400, '电话必须为字符串');
@@ -150,22 +160,36 @@ router.put('/:id', async (req, res, next) => {
     if (is_active !== undefined) { fields.push(`is_active = $${idx++}`); values.push(is_active); }
 
     if (fields.length === 0) throw new AppError(400, '没有要更新的字段');
-
-    values.push(id);
-    const result = await query(
-      `UPDATE users SET ${fields.join(', ')} WHERE id = $${idx} RETURNING ${USER_FIELDS}`,
-      values
-    );
-
-    // 邮箱变更双写 timerecording.profiles（冗余展示字段，无 FK）——不同步会让工时侧
-    // /auth/me 等返回旧邮箱、数据自相矛盾；timerecording schema 未部署时 to_regclass 探测跳过
-    if (emailNorm !== undefined) {
-      const sc = (await query(`SELECT to_regclass('timerecording.profiles') AS p`)).rows[0];
-      if (sc?.p) await query('UPDATE timerecording.profiles SET email = $1 WHERE id = $2', [emailNorm, id]);
+    if (is_active === false && sameUserId(id, req.user!.userId)) {
+      throw new AppError(400, '不能停用自己的账号');
     }
 
-    // 用户编辑/停用属敏感操作，必须留痕
-    const updated = result.rows[0];
+    values.push(id);
+    // 主表更新、停用保护与工时侧邮箱双写放在同一事务：任一步失败都不留半成品状态
+    const updated = await withTransaction(async (client) => {
+      if (is_active === false && existing.rows[0].role === 'admin') {
+        // 锁住全部启用管理员行，防并发停用把最后一名管理员停掉
+        const admins = (await client.query(
+          "SELECT id FROM users WHERE role = 'admin' AND is_active FOR UPDATE"
+        )).rows as { id: string }[];
+        if (!admins.some(a => !sameUserId(a.id, id))) {
+          throw new AppError(409, '系统至少需保留一个启用的管理员账号');
+        }
+      }
+      const result = await client.query(
+        `UPDATE users SET ${fields.join(', ')} WHERE id = $${idx} RETURNING ${USER_FIELDS}`,
+        values
+      );
+      // 邮箱变更双写 timerecording.profiles（冗余展示字段，无 FK）——不同步会让工时侧
+      // /auth/me 等返回旧邮箱；timerecording schema 未部署时 to_regclass 探测跳过
+      if (emailNorm !== undefined) {
+        const sc = (await client.query(`SELECT to_regclass('timerecording.profiles') AS p`)).rows[0];
+        if (sc?.p) await client.query('UPDATE timerecording.profiles SET email = $1 WHERE id = $2', [emailNorm, id]);
+      }
+      return result.rows[0];
+    });
+
+    // 用户编辑/停用属敏感操作，必须留痕（提交成功后再记，避免记录未落地的变更）
     logAudit(
       req,
       is_active === false ? '停用用户' : is_active === true ? '启用用户' : '更新用户',
@@ -204,7 +228,8 @@ router.put('/:id/role', async (req, res, next) => {
     const { role, title, permissions } = objKeysToSnake({ ...req.body });
 
     // 自保护：不能修改自己的角色/权限（防持有"用户管理"权限者自提权为 admin/director）
-    if (id === req.user!.userId) throw new AppError(400, '不能修改自己的角色/权限');
+    if (sameUserId(id, req.user!.userId)) throw new AppError(400, '不能修改自己的角色/权限');
+    assertTitleValue(title);
 
     if (role && !VALID_ROLES.includes(role)) {
       throw new AppError(400, `无效角色，允许值：${VALID_ROLES.join(', ')}`);
@@ -251,7 +276,7 @@ router.delete('/:id', async (req, res, next) => {
     const { id } = req.params;
     const currentUser = req.user!;
 
-    if (currentUser.userId === id) {
+    if (sameUserId(currentUser.userId, id)) {
       throw new AppError(400, '不能删除自己的账号');
     }
 
@@ -259,9 +284,6 @@ router.delete('/:id', async (req, res, next) => {
     const targetRow = (await query('SELECT role FROM users WHERE id = $1', [id])).rows[0];
     if (!targetRow) throw new AppError(404, '用户不存在');
     assertCanManage(currentUser.role, ROLE_RANK[targetRow.role] ?? 0);
-    // 与工时删除入口同口径：已审核工时/审核记录不可随删号清空
-    await assertUserDeletable(id);
-
     // 先删 timerecording.profiles（引用 users.id），再删 users，同一事务避免孤儿/外键冲突
     // ① timerecording schema 可能未部署，用 to_regclass 探测，避免 .catch 吞错导致事务 abort；
     // ② 先清空以该用户为 reviewer/created_by 的引用（无 ON DELETE 动作），否则 FK 阻塞删除
@@ -272,6 +294,11 @@ router.delete('/:id', async (req, res, next) => {
                 to_regclass('timerecording.time_records') AS tr,
                 to_regclass('timerecording.task_assignments') AS ta`
       )).rows[0];
+      // 先锁住该用户的档案与工时行，再做可删性复查：检查与删除之间若有人审为 approved，
+      // 级联删除会静默清掉已审核工时（原检查在事务外，挡不住这段竞态）
+      if (sc?.p) await client.query('SELECT id FROM timerecording.profiles WHERE id = $1 FOR UPDATE', [id]);
+      if (sc?.tr) await client.query('SELECT id FROM timerecording.time_records WHERE user_id = $1 FOR UPDATE', [id]);
+      await assertUserDeletable(id);
       if (sc?.p) {
         const hasProfile = (await client.query('SELECT id FROM timerecording.profiles WHERE id = $1', [id])).rows.length > 0;
         if (hasProfile) {

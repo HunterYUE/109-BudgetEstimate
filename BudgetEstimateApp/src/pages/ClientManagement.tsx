@@ -134,6 +134,8 @@ const ClientManagement: React.FC = () => {
       const newCode = generateClientCode(currentGrade, areaCode, editCity, clients.map(c => c.code));
       setEditForm(p => ({ ...p, code: newCode }));
     }
+  // 仅等级/区域/城市/编辑态变化时重算编码；clients 与 editForm.code 也是输入，但纳入依赖会在每次列表刷新或
+  // 用户手改编码后被覆盖，故显式排除
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentGrade, areaCode, editCity, editingId]);
 
@@ -330,7 +332,7 @@ const ClientManagement: React.FC = () => {
         }
         const parent = clients.find(c => c.id === record.parentId);
         return (
-          <span style={{ color: '', fontSize: 12 }}>
+          <span style={{ color: '#555', fontSize: 12 }}>
             {parent?.name}（{v}）
           </span>
         );
@@ -447,7 +449,7 @@ const ClientManagement: React.FC = () => {
         </tbody>
       </table>
 
-      <div style={{ fontSize: 12, color: '', marginBottom: 8 }}>&nbsp;</div>
+      <div style={{ fontSize: 12, color: '#888', marginBottom: 8 }}>&nbsp;</div>
 
       {/* 树形表格 */}
       <div style={{

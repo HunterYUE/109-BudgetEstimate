@@ -82,7 +82,7 @@ const HeaderUserMenu: React.FC = () => {
     >
       <div style={{
         width: 32, height: 32, borderRadius: '50%',
-        background: 'linear-gradient(135deg, 09e, 0e0)',
+        background: 'linear-gradient(135deg, #00509e, #4060e0)',
         color: '#fff',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         fontSize: 14, fontWeight: 700, cursor: 'pointer',

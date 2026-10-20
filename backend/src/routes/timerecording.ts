@@ -6,9 +6,12 @@ import { requireAuth, requireRole, signToken, setAuthCookie, clearAuthCookie, CO
 import { AppError } from '../middleware/index.js';
 import { logAudit, round2, normalizeEmail, resetUserPassword, withTransaction, assertCanManage, ROLE_RANK, DUMMY_PASSWORD_HASH, parsePagination, EMAIL_RE, PASSWORD_MAX, assertUserDeletable } from './helpers.js';
 import { PAGE_LIMIT } from '../constants.js';
-import { ensureCostCenters, recentFiscalYears, availableCostCenterFys, fiscalYearLabel } from '../jobs/costCenterSync.js';
+import { recentFiscalYears, availableCostCenterFys, fiscalYearLabel } from '../jobs/costCenterSync.js';
 
 const router = Router();
+
+/** 可执行查询的连接：检查与写入须在同一事务时传入事务 client，避免检查-写入之间的竞态 */
+type Queryable = { query(text: string, params?: any[]): Promise<{ rows: any[] }> };
 
 /** 是否为工时系统管理员（director/admin，JWT role） */
 export const isTrAdmin = (u: { role?: string } | undefined): boolean => !!u && (u.role === 'director' || u.role === 'admin');
@@ -97,12 +100,14 @@ export async function assertNoTimeOverlap(
   start: string | null | undefined,
   end: string | null | undefined,
   excludeId?: string,
+  db?: Queryable,
 ): Promise<void> {
   const s = toMinutes(start), e = toMinutes(end);
   if (s == null || e == null) return;
   const params: any[] = [userId, date];
   if (excludeId) params.push(excludeId);
-  const rows = (await query(
+  const run = db ? db.query.bind(db) : query;
+  const rows = (await run(
     `SELECT start_time, end_time FROM timerecording.time_records
      WHERE user_id = $1 AND date = $2 AND start_time IS NOT NULL AND end_time IS NOT NULL
        AND status <> 'rejected'
@@ -123,8 +128,10 @@ export async function assertWeekNotCommitted(
   year: number,
   week: number,
   excludeIds: string[] = [],
+  db?: Queryable,
 ): Promise<void> {
-  const row = (await query(
+  const run = db ? db.query.bind(db) : query;
+  const row = (await run(
     `SELECT 1 FROM timerecording.time_records
      WHERE user_id = $1 AND year = $2 AND week_number = $3
        AND status IN ('submitted', 'approved', 'locked')
@@ -168,11 +175,13 @@ async function assertLeaveValid(opts: {
   code: string | null | undefined;
   type?: string | null;
   excludeId?: string;
+  db?: Queryable;
 }): Promise<void> {
   if (!isLeaveCostCenter(opts.code, opts.type)) return;
   if (opts.hourType === 'overtime') throw new AppError(400, '请休假不能用于晚班/周末/节假日时段');
   const params = opts.excludeId ? [opts.userId, opts.date, opts.excludeId] : [opts.userId, opts.date];
-  const dayTotal = (await query(
+  const run = opts.db ? opts.db.query.bind(opts.db) : query;
+  const dayTotal = (await run(
     `SELECT COALESCE(SUM(hours), 0) AS total FROM timerecording.time_records
      WHERE user_id = $1 AND date = $2${opts.excludeId ? ' AND id <> $3' : ''}
        AND status <> 'rejected'
@@ -232,7 +241,7 @@ const trAppGuard: RequestHandler = (req, res, next) => {
   }
   next();
 };
-/** 工时受保护路由鉴权组合：requireAuth 加载用户 → trAppGuard 拦截销售经理（替代裸 requireAuth） */
+/** 工时受保护路由鉴权组合：requireAuth 加载用户 → trAppGuard 拦截销售经理 */
 const trAuth: RequestHandler[] = [requireAuth, trAppGuard];
 
 // ── 服务端权威计算 ──
@@ -462,7 +471,7 @@ router.post('/auth/logout', (_req, res) => {
 router.get('/profiles', ...trAuth, async (req, res, next) => {
   try {
     const admin = isTrAdmin(req.user);
-    // 显式支持 limit 查询参数（钳制 [1, PAGE_LIMIT]，缺省 1000 保持全量读取口径），
+    // 显式支持 limit 查询参数（钳制 [1, PAGE_LIMIT]，缺省取 PAGE_LIMIT 保持全量读取口径），
     // 供调用方显式声明所需条数，防数据量上涨后静默截断
     const { limit } = parsePagination(req.query, PAGE_LIMIT);
     const select = admin ? 'p.id, p.employee_id, p.name, p.email, p.role, p.is_active, p.created_at' : 'p.id, p.employee_id, p.name, p.is_active, p.created_at';
@@ -520,6 +529,8 @@ router.put('/profiles/:id', ...trAuth, async (req, res, next) => {
     let emailNorm: string | undefined;
     if (emailChanging) {
       emailNorm = normalizeEmail(String(req.body.email));
+      // 与建号路径同口径：非法/空邮箱会让用户下次登录直接被拒（"if (!email) 400"），必须在写入前拦下
+      if (!EMAIL_RE.test(emailNorm)) throw new AppError(400, '邮箱格式无效');
       const clash = (await query(
         'SELECT id FROM users WHERE LOWER(email) = $1 AND id != $2',
         [emailNorm, req.params.id]
@@ -568,11 +579,7 @@ router.get('/cost-centers', ...trAuth, async (req, res, next) => {
     if (!available.includes(fyLabel) && !recentFiscalYears(3).includes(fyLabel)) {
       throw new AppError(400, '财年超出可查询范围');
     }
-    // 仅当请求财年不在可用窗口（如查看已归档财年）才补建码表；
-    // 可用窗口内的码表由启动 + 每小时同步保证存在，纯读请求不触发写库
-    if (!available.includes(fyLabel)) {
-      await ensureCostCenters([fyLabel]);
-    }
+    // 纯读请求不写库：码表由启动同步与每小时任务维护；非可用窗口的财年直接返回空集合
 
     // 部门/个人/请休假仅在「请求财年 ∈ 可用窗口」时返回，否则为空数组（已归档/未生成不可用）；
     // typeRows 统一三类码表查询（type 恒为代码内固定字面量，参数化无注入面）
@@ -583,7 +590,7 @@ router.get('/cost-centers', ...trAuth, async (req, res, next) => {
     const [salesRows, projectRows, warrantyRows, deptRows, personalRows, leaveRows] = await Promise.all([
       query(`SELECT sales_no, project_name, client_name FROM sales_opportunities WHERE sales_no LIKE 'A%-S' ORDER BY sales_no`),
       query(`SELECT sales_no, project_name, client_name FROM delivery_projects WHERE sales_no LIKE 'A%-E' ORDER BY sales_no`),
-      // 关联子查询 → LEFT JOIN：delivery_projects.sales_no 唯一且有索引，单次连接替代每行一次子查询
+      // 单次 LEFT JOIN：delivery_projects.sales_no 唯一且有索引，避免逐行子查询
       query(`
         SELECT cc.code, cc.name, dp.client_name
         FROM timerecording.cost_centers cc
@@ -629,7 +636,7 @@ router.get('/time-records', ...trAuth, async (req, res, next) => {
     if (date_from) { conditions.push(`date >= $${idx++}`); params.push(date_from); }
     if (date_to) { conditions.push(`date <= $${idx++}`); params.push(date_to); }
     // 截断重规划：按审批时间过滤（AdminApproval 已审核历史仅展示近 3 个月，reviewed_from 服务端有界拉取，
-    // 取代「全量拉取后客户端再过滤」——历史随年份无限增长，固定 limit 迟早截断）
+    // 服务端按审批时间有界拉取——历史随年份无限增长，固定 limit 迟早截断）
     if (reviewed_from) { conditions.push(`reviewed_at >= $${idx++}`); params.push(reviewed_from); }
     if (year) {
       const y = parseInt(year as string, 10);
@@ -649,7 +656,7 @@ router.get('/time-records', ...trAuth, async (req, res, next) => {
     }
     if (cost_center) { conditions.push(`cost_center = $${idx++}`); params.push(cost_center); }
 
-    // 显式支持 limit 查询参数（缺省 1000 保持全量口径；聚合/全量拉取由前端显式传 limit）
+    // 显式支持 limit 查询参数（缺省取 PAGE_LIMIT 保持全量口径；聚合/全量拉取由前端显式传 limit）
     const { limit } = parsePagination(req.query, PAGE_LIMIT);
     const sql = `SELECT * FROM timerecording.time_records${conditions.length ? ' WHERE ' + conditions.join(' AND ') : ''} ORDER BY date DESC, created_at DESC LIMIT $${idx}`;
     params.push(limit);
@@ -661,7 +668,7 @@ router.get('/time-records', ...trAuth, async (req, res, next) => {
 router.post('/time-records', ...trAuth, async (req, res, next) => {
   try {
     const user = req.user!;
-    // 总监/管理员也可填报工时（需求调整
+    // 总监/管理员同样可填报工时（提交与审核路径一致）
     const { date, start_time, end_time, cost_center, cost_center_type, task_description } = req.body;
     // 所有用户只能为自己建记录
     const targetUserId = user.userId;
@@ -687,20 +694,27 @@ router.post('/time-records', ...trAuth, async (req, res, next) => {
       throw new AppError(400, 'cost_center_type 无效');
     }
     const effectiveType = resolveCostCenterType(cost_center, cost_center_type);
-    // 周级状态机：已提交/已审核周冻结
-    await assertWeekNotCommitted(targetUserId, iso.year, iso.week);
-    // 同日时段不得重叠（防重复插入同一时段放大工时）
-    await assertNoTimeOverlap(targetUserId, date, start_time, end_time);
-    // 请休假硬性校验（POST/PUT 共用 assertLeaveValid）：晚班/周末/节假日拒绝；单日合计 ≤ 8 小时
-    await assertLeaveValid({ userId: targetUserId, date, hours, hourType: hour_type, code: cost_center, type: effectiveType });
     const desc = typeof task_description === 'string' ? task_description : '';
     if (desc.length > 500) throw new AppError(400, '工作内容不能超过 500 字');
 
-    const r = (await query(
-      `INSERT INTO timerecording.time_records (user_id, date, week_number, year, start_time, end_time, hours, hour_type, cost_center, cost_center_type, task_description)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
-      [targetUserId, date, iso.week, iso.year, start_time, end_time, hours, hour_type, cost_center, effectiveType, desc]
-    )).rows[0];
+    // 检查与写入放在同一事务，并以「用户 + ISO 周」咨询锁串行化：
+    // 并发重复点击不再能同时通过重叠/请假校验各插一条（单日工时翻倍），提交与新增也互斥
+    const r = await withTransaction(async (client) => {
+      await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`tr-week:${targetUserId}:${iso.year}:${iso.week}`]);
+      // 周级状态机：已提交/已审核周冻结
+      await assertWeekNotCommitted(targetUserId, iso.year, iso.week, [], client);
+      // 同日时段不得重叠（防重复插入同一时段放大工时）
+      await assertNoTimeOverlap(targetUserId, date, start_time, end_time, undefined, client);
+      // 请休假硬性校验：晚班/周末/节假日拒绝；单日合计 ≤ 8 小时
+      await assertLeaveValid({
+        userId: targetUserId, date, hours, hourType: hour_type, code: cost_center, type: effectiveType, db: client,
+      });
+      return (await client.query(
+        `INSERT INTO timerecording.time_records (user_id, date, week_number, year, start_time, end_time, hours, hour_type, cost_center, cost_center_type, task_description)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+        [targetUserId, date, iso.week, iso.year, start_time, end_time, hours, hour_type, cost_center, effectiveType, desc]
+      )).rows[0];
+    });
     res.status(201).json(r);
   } catch (err) { next(err); }
 });
@@ -715,7 +729,7 @@ router.put('/time-records/:id', ...trAuth, async (req, res, next) => {
     // 先取当前行，合并入请求字段后由服务端重算 hours/hour_type（不信任前端）；
     // 带 user_id/cost_center/cost_center_type 供请休假校验判断记录归属与类型（合并后口径）
     const existing = (await query(
-      `SELECT user_id, date, start_time, end_time, hours, hour_type, cost_center, cost_center_type FROM timerecording.time_records WHERE id = $1${admin ? '' : ' AND user_id = $2'}`,
+      `SELECT user_id, date, year, week_number, start_time, end_time, hours, hour_type, cost_center, cost_center_type FROM timerecording.time_records WHERE id = $1${admin ? '' : ' AND user_id = $2'}`,
       admin ? [req.params.id] : [req.params.id, user.userId]
     )).rows[0];
     if (!existing) throw new AppError(404, admin ? '记录不存在' : '记录不存在或无权修改');
@@ -778,6 +792,10 @@ router.put('/time-records/:id', ...trAuth, async (req, res, next) => {
     }
     // year/week_number 由 date 服务端权威重算（忽略前端值）
     const iso = isoWeekOf(merged.date);
+    // 跨周改期须按目标周重新做冻结校验：否则草稿可被改到已提交/已审核的周，再随该周提交绕过整周冻结
+    if (iso.year !== existing.year || iso.week !== existing.week_number) {
+      await assertWeekNotCommitted(existing.user_id, iso.year, iso.week, [req.params.id]);
+    }
     updates.push(`year = $${idx++}`, `week_number = $${idx++}`);
     values.push(iso.year, iso.week);
     // 工作流优化：驳回记录允许编辑修正，编辑后自动回到 draft（可重新提交）
@@ -927,7 +945,7 @@ router.post('/time-records/submit-batch', ...trAuth, async (req, res, next) => {
           const totalHours = round2(rows.filter((r: any) => !isLeaveCostCenter(r.cost_center, r.cost_center_type))
             .reduce((s: number, r: any) => s + parseFloat(r.hours || 0), 0));
           const submitter = (await query('SELECT name FROM timerecording.profiles WHERE id = $1', [req.user!.userId])).rows[0]?.name || '员工';
-          // 单条 INSERT 覆盖全部管理员（替代 for 循环 N 次往返）
+          // 单条 INSERT 覆盖全部管理员，避免逐条往返
           await query(
             `INSERT INTO timerecording.notifications (user_id, title, message, type, link_url)
              SELECT a.id, $1, $2, 'submission', '/admin/approval'
@@ -984,6 +1002,14 @@ router.post('/time-records/review-batch', ...trAuth, requireRole('director', 'ad
       // 批审须保证周原子性 —— 所有记录同一员工同一周、且全部处于 submitted
       // UPDATE 不得静默跳过非 submitted 的 id，否则会造成部分审批；跨员工/跨周混批还会让
       // 单条通知口径失真。前端按 user+week 分组调用，正常不会触发；此处作为纵深防御显式 400
+      // 先探出锁键（用户 + 周），加咨询锁后重新读取：提交期间不得再插入新草稿，
+      // 否则「整周原子提交」会出现提交后仍有未提交草稿的半周状态
+      const probe = (await client.query(
+        `SELECT user_id, year, week_number FROM timerecording.time_records WHERE id = ANY($1::uuid[]) LIMIT 1`, [ids]
+      )).rows[0] as { user_id: string; year: number; week_number: number } | undefined;
+      if (probe) {
+        await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`tr-week:${probe.user_id}:${probe.year}:${probe.week_number}`]);
+      }
       const before = (await client.query(
         `SELECT user_id, year, week_number, status FROM timerecording.time_records WHERE id = ANY($1::uuid[])`,
         [ids]
@@ -994,6 +1020,10 @@ router.post('/time-records/review-batch', ...trAuth, requireRole('director', 'ad
       const batchWeeks = new Set(before.map((b: any) => `${b.year}-${b.week_number}`));
       if (batchUsers.size !== 1 || batchWeeks.size !== 1) throw new AppError(400, '批审记录须属于同一员工同一周');
       const first = before[0] as { user_id: string; year: number; week_number: number };
+      // 自审拦截：审批人不得审批自己的周工时（同一账号可填报、提交并审批时审批链形同虚设）
+      if (String(first.user_id).toLowerCase() === String(reviewer.userId).toLowerCase()) {
+        throw new AppError(403, '不能审批自己提交的工时');
+      }
       const weekSubmitted = (await client.query(
         `SELECT id FROM timerecording.time_records
          WHERE user_id = $1 AND year = $2 AND week_number = $3 AND status = 'submitted'`,
@@ -1014,7 +1044,7 @@ router.post('/time-records/review-batch', ...trAuth, requireRole('director', 'ad
       // 请休假是存储记录不是工时：通知「共 Xh」按工作工时口径，排除请休假记录（type/code 任一命中 LE 即排除）
       const totalHours = round2(rows.filter((r: any) => !isLeaveCostCenter(r.cost_center, r.cost_center_type))
         .reduce((s: number, r: any) => s + parseFloat(r.hours || 0), 0));
-      await notifyReview({ ...rows[0], user_id: rows[0].user_id }, action, `${review_notes || ''}${rows.length > 1 ? `（共 ${rows.length} 条，${totalHours}h）` : ''}`);
+      await notifyReview(rows[0], action, `${review_notes || ''}${rows.length > 1 ? `（共 ${rows.length} 条，${totalHours}h）` : ''}`);
     }
     res.json(rows);
   } catch (err) {
@@ -1042,7 +1072,7 @@ router.get('/task-assignments', ...trAuth, async (req, res, next) => {
     // 窗口过滤：只返回与 [start, end] 有交集的任务（甘特按 14 周窗口拉取，避免全量返回 + 窗口外任务条撑高行高）
     if (start) { conditions.push(`end_datetime >= $${idx++}`); params.push(start); }
     if (end) { conditions.push(`start_datetime <= $${idx++}`); params.push(end); }
-    // 显式支持 limit 查询参数（缺省 1000 保持全量口径）
+    // 显式支持 limit 查询参数（缺省取 PAGE_LIMIT 保持全量口径）
     const { limit } = parsePagination(req.query, PAGE_LIMIT);
     const sql = `SELECT * FROM timerecording.task_assignments${conditions.length ? ' WHERE ' + conditions.join(' AND ') : ''} ORDER BY start_datetime LIMIT $${idx}`;
     params.push(limit);
@@ -1226,7 +1256,7 @@ router.get('/notifications', ...trAuth, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// 查看后消除：点击通知即删除（替代旧的「标记已读」——已读通知仍留库会随使用持续累积）
+// 查看后消除：点击通知即删除（已读通知若留库会随使用持续累积）
 // 通知是可消费的指针（审批/任务/提醒的跳转入口），底层业务数据（工时/任务）均独立持久化，删除通知无数据损失
 router.delete('/notifications/:id', ...trAuth, async (req, res, next) => {
   try {
@@ -1241,7 +1271,7 @@ router.delete('/notifications/:id', ...trAuth, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// ── 通知写入（替代 RPC） ──
+// ── 通知写入 ──
 
 router.post('/notifications', ...trAuth, async (req, res, next) => {
   try {

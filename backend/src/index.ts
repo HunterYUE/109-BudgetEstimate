@@ -45,6 +45,17 @@ const loginLimiter = rateLimit({
   legacyHeaders: false,
 });
 app.use('/api/v1/auth/login', loginLimiter);
+// 全局接口限速：未认证的大包请求在 JSON 解析前被挡下（体量上限之外的第二道防线；信任 nginx 转发的真实 IP）
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 600,
+  message: { error: '请求过于频繁，请稍后重试' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use('/api/v1', apiLimiter);
+// 认证接口的请求体远小于业务接口（报价 BOM 可达数 MB），单独收紧上限，避免大包在鉴权前被完整解析
+app.use('/api/v1/auth', express.json({ limit: '64kb' }));
 app.use(express.json({ limit: '20mb' }));
 
 // 健康检查（含数据库状态）

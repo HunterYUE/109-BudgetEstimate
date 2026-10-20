@@ -280,6 +280,20 @@ router.post('/project-groups/batch', requireBudgetAuth, writeGuard(WRITE_GUARD['
     }
 
     await withTransaction(async (client) => {
+      // 事务内先锁版本行并复查审批冻结：检查放在事务外时，审批请求可能在「检查通过 → 事务提交」之间落地，
+      // 审批人审阅的 BOM 会被随后的批量保存整体替换
+      const lockedVer = (await client.query(
+        'SELECT version_no FROM project_versions WHERE id = $1 AND project_id = $2 FOR UPDATE',
+        [version_id, project_id]
+      )).rows[0];
+      if (!lockedVer) throw new AppError(400, '版本不属于该项目');
+      const pendingInTx = (await client.query(
+        `SELECT 1 FROM approval_requests ar
+         JOIN quotations q ON q.id = ar.quotation_id
+         WHERE q.project_id = $1 AND q.version_no = $2 AND ar.status = 'pending' LIMIT 1`,
+        [project_id, lockedVer.version_no]
+      )).rows[0];
+      if (pendingInTx) throw new AppError(409, '该版本报价待审批中，不可修改项目组');
       await client.query('DELETE FROM project_groups WHERE project_id = $1 AND version_id = $2', [project_id, version_id]);
       for (const g of normalized) {
         const group = (await client.query(
@@ -325,138 +339,6 @@ router.post('/project-groups/batch', requireBudgetAuth, writeGuard(WRITE_GUARD['
 
     logAudit(req, '保存项目组', 'project', `版本 ${version_id.slice(0, 8)} 保存 ${savedGroups.length} 组 / ${totalItems} 条明细`);
     res.status(201).json(savedGroups);
-  } catch (err) { next(err); }
-});
-
-// ── 项目组和明细保存（事务保护，报价编制写操作） ──
-router.post('/project-groups', requireBudgetAuth, writeGuard(WRITE_GUARD['project-groups']), async (req, res, next) => {
-  try {
-    const body = objKeysToSnake(req.body ?? {});
-    const { project_id, version_id, group_no, group_type, name,
-        is_fixed = false, items: rawItems = [] } = body;
-    if (!Array.isArray(rawItems) || rawItems.some((it: unknown) => !it || typeof it !== 'object' || Array.isArray(it))) {
-      throw new AppError(400, '明细必须为对象数组');
-    }
-    const items = rawItems as any[];
-
-    if (!project_id || !version_id || group_no === undefined || !group_type || !name) {
-      throw new AppError(400, '缺少必填字段：project_id、version_id、group_no、group_type、name');
-    }
-
-    // 事务样板收敛为 withTransaction
-    const group = await withTransaction(async (client) => {
-      // 版本必须属于本项目——project_groups 的 project_id/version_id 是两个独立外键，
-      // 不校验时可将 A 项目的组挂到 B 项目的版本，形成读取不到的孤儿组（还会污染版本隔离判断）
-      const versionRow = (await client.query(
-        'SELECT 1 FROM project_versions WHERE id = $1 AND project_id = $2',
-        [version_id, project_id]
-      )).rows[0];
-      if (!versionRow) throw new AppError(400, '版本不属于该项目');
-      const groupId = req.body.id || undefined;
-      const existing = groupId
-        ? (await client.query('SELECT id, version_id, project_id FROM project_groups WHERE id = $1', [groupId])).rows[0]
-        : null;
-
-      // 组归属校验——只允许操作自己项目名下的组
-      if (existing && existing.project_id !== project_id) {
-        throw new AppError(400, '无权修改该项目组');
-      }
-      let groupResult;
-      if (existing) {
-        // 检查版本号：版本不同则 INSERT 新记录（版本隔离），同版本则 UPDATE（version_id 已在上面一次查询取回）
-        const currentVerId = existing.version_id;
-        if (currentVerId && currentVerId !== version_id) {
-          // 版本迭代，创建新组
-          groupResult = (await client.query(
-            `INSERT INTO project_groups (project_id, version_id, group_no, group_type, name, is_fixed, sort_order)
-             VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-            [project_id, version_id, group_no, group_type, name, is_fixed, group_no]
-          )).rows[0];
-        } else {
-          groupResult = (await client.query(
-            `UPDATE project_groups SET group_no=$1, group_type=$2, name=$3, is_fixed=$4, updated_at=now()
-             WHERE id=$5 AND project_id=$6 RETURNING *`,
-            [group_no, group_type, name, is_fixed, groupId, project_id]
-          )).rows[0];
-          await client.query('DELETE FROM group_items WHERE group_id = $1', [groupId]);
-        }
-      } else {
-        groupResult = (await client.query(
-          `INSERT INTO project_groups (project_id, version_id, group_no, group_type, name, is_fixed, sort_order)
-           VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-          [project_id, version_id, group_no, group_type, name, is_fixed, group_no]
-        )).rows[0];
-      }
-
-      // 插入新明细（items 中每个对象的 key 需转蛇形）
-      for (let i = 0; i < items.length; i++) {
-        const item = objKeysToSnake(items[i]);
-        await client.query(
-          `INSERT INTO group_items (group_id, item_no, item_type, component_id, code, description,
-            qty_total, unit, sourcing_type, unit_cost, design_hours, assembly_hours,
-            design_hour_rate, assembly_hour_rate, direct_cost, margin_rate,
-            basic_price, accounting_price, has_warranty, note)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
-          [groupResult.id, i + 1, item.item_type || 'COMPONENT', item.component_id || null,
-           item.code || '', item.description || '', item.qty_total ?? 1, item.unit || '个',
-           item.sourcing_type || 'SELF_MANUFACTURED', item.unit_cost || 0,
-           item.design_hours || 0, item.assembly_hours || 0,
-           item.design_hour_rate || 0, item.assembly_hour_rate || 0,
-           item.direct_cost || 0, item.margin_rate || 0,
-           item.basic_price || 0, item.accounting_price || 0,
-           item.has_warranty || false, item.note || '']
-        );
-      }
-
-      return groupResult;
-    });
-
-    logAudit(req, '保存项目组', 'project', '项目组 ' + name + ' 已保存');
-
-    // 返回完整组（含明细）
-    const savedGroup = (await query('SELECT * FROM project_groups WHERE id = $1', [group.id])).rows[0];
-    const savedItems = (await query(
-      'SELECT * FROM group_items WHERE group_id = $1 ORDER BY item_no', [group.id]
-    )).rows;
-    savedGroup.items = savedItems;
-
-    res.status(201).json(savedGroup);
-  } catch (err) {
-    next(err);
-  }
-});
-
-// 删除指定版本的所有组和明细（必须在 /:id 之前注册，否则 by-version 被 :id 捕获）
-router.delete('/project-groups/by-version/:versionId', requireBudgetAuth, writeGuard(WRITE_GUARD['project-groups']), async (req, res, next) => {
-  try {
-    const { versionId } = req.params;
-    // 按版本删除必须带项目归属，防凭版本 UUID 删除其他项目的全部组
-    const projectId = String(req.query.project_id || '');
-    if (!projectId) throw new AppError(400, '缺少 project_id');
-    const versionRow = (await query(
-      'SELECT 1 FROM project_versions WHERE id = $1 AND project_id = $2', [versionId, projectId]
-    )).rows[0];
-    if (!versionRow) throw new AppError(404, '版本不属于该项目');
-    // group_items 通过外键 ON DELETE CASCADE 自动删除
-    // 检查实际删除行数，删除不存在版本返回 404
-    const result = await query('DELETE FROM project_groups WHERE version_id = $1 AND project_id = $2 RETURNING id', [versionId, projectId]);
-    // 版本存在但无组时保持幂等（并发/多标签页重复清理不应中断保存链路）
-    logAudit(req, '删除组', 'project', '版本 ' + versionId.slice(0,8) + ' 的所有组已删除');
-    res.json({ deleted: true, count: result.rows.length });
-  } catch (err) { next(err); }
-});
-
-// 删除单个项目组
-router.delete('/project-groups/:id', requireBudgetAuth, writeGuard(WRITE_GUARD['project-groups']), async (req, res, next) => {
-  try {
-    const { id } = req.params;
-    const projectId = String(req.query.project_id || '');
-    if (!projectId) throw new AppError(400, '缺少 project_id');
-    // 检查实际删除行数，删除不存在的组返回 404
-    const result = await query('DELETE FROM project_groups WHERE id = $1 AND project_id = $2 RETURNING id', [id, projectId]);
-    if (result.rows.length === 0) throw new AppError(404, '未找到该项目组');
-    logAudit(req, '删除组', 'project', '组ID ' + id.slice(0,8) + ' 已删除');
-    res.json({ deleted: true, id });
   } catch (err) { next(err); }
 });
 

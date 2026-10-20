@@ -162,11 +162,11 @@ const ItemCostTable: React.FC<Props> = ({ groups, actualCosts, onActualCostChang
       title: '实际成本', width: 140, align: 'right' as const,
       render: (_text: unknown, rec: FlatRow) => {
         if (rec._type === 'header') {
-          return <span style={{ fontWeight: 700, fontSize: 13, color: '', display: 'block', textAlign: 'right', padding: '2px 4px' }}>¥{formatMoney(rec.actual)}</span>;
+          return <span style={{ fontWeight: 700, fontSize: 13, color: '#000', display: 'block', textAlign: 'right', padding: '2px 4px' }}>¥{formatMoney(rec.actual)}</span>;
         }
         // 质保行不可编辑（handleActualChange 会拦截其写入），必须渲染为只读，否则输入被静默丢弃
         if (locked || !onActualCostChange || rec._warrantyItem) {
-          return <span style={{ fontWeight: 600, fontSize: 13, color: '', display: 'block', textAlign: 'right', padding: '2px 4px' }}>¥{formatMoney(rec.actual)}</span>;
+          return <span style={{ fontWeight: 600, fontSize: 13, color: '#000', display: 'block', textAlign: 'right', padding: '2px 4px' }}>¥{formatMoney(rec.actual)}</span>;
         }
         return <MoneyInput value={rec.actual} onCommit={v => handleActualChange(rec, v)} />;
       },

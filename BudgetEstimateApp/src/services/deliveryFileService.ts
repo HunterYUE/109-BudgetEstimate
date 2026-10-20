@@ -6,6 +6,7 @@ const API_BASE = import.meta.env.VITE_API_BASE || '/api/v1';
  * 否则会话过期时附件上传/下载只会提示「失败」，用户得不到重新登录的指引 */
 function assertAuthorized(res: Response): void {
   if (res.status !== 401) return;
+  /* eslint-disable-next-line no-direct-fetch/no-fetch -- 401 兜底须绕过 api.ts，否则清理动作自身再触发 401 处理 */
   fetch(API_BASE + '/auth/logout', { method: 'POST' }).catch(() => {});
   window.location.href = import.meta.env.BASE_URL + 'login';
   throw new Error('登录已过期，请重新登录');

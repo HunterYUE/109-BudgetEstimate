@@ -142,7 +142,8 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
       display_name: row.display_name,
     };
     next();
-  } catch {
+  } catch (err) {
+    console.error('[Auth] 加载用户状态失败:', err);
     res.status(500).json({ error: '服务器内部错误' });
   }
 }

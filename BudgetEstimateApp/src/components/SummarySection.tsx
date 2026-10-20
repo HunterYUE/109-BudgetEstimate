@@ -21,7 +21,7 @@ const CostCard: React.FC<{ label: string; value: number; unit?: string; highligh
   ({ label, value, unit = '¥', highlight, accent }) => (
     <div style={{
       flex: 1, minWidth: 0, padding: '12px 16px',
-      background: highlight ? `linear-gradient(135deg, ${COLORS.primary}, d7a)` : COLORS.bgLight,
+      background: highlight ? `linear-gradient(135deg, ${COLORS.primary}, #003d7a)` : COLORS.bgLight,
       borderRadius: 8, border: `1px solid ${highlight ? 'transparent' : COLORS.borderLight}`,
     }}>
       <div style={{ fontSize: 12, color: highlight ? 'rgba(255,255,255,0.7)' : COLORS.textSecondary, marginBottom: 4, letterSpacing: 0.3 }}>
@@ -186,7 +186,9 @@ const SummarySection: React.FC<Props> = ({ groups, version, onDiscountChange, on
               ¥{formatMoney(summary.totalAccountingPrice)}
             </div>
             <div style={{ marginTop: 8, fontSize: 12, color: COLORS.textSecondary }}>
-              欧元 <span style={{ fontWeight: 600, color: COLORS.textDark }}>€{formatMoney(Math.round(Math.round(summary.totalAccountingPrice / (1 + (version.taxRate ?? TAX_RATE))) / version.eurRate))}</span>
+              欧元 <span style={{ fontWeight: 600, color: COLORS.textDark }}>€{(version.eurRate ?? 0) > 0
+                ? formatMoney(Math.round(Math.round(summary.totalAccountingPrice / (1 + (version.taxRate ?? TAX_RATE))) / version.eurRate))
+                : '—'}</span>
             </div>
           </div>
         </Col>
@@ -245,7 +247,7 @@ const SummarySection: React.FC<Props> = ({ groups, version, onDiscountChange, on
         <Col span={8}>
           <div style={{
             padding: '18px 20px', borderRadius: 10,
-            background: `linear-gradient(135deg, ${COLORS.primary}, d7a)`,
+            background: `linear-gradient(135deg, ${COLORS.primary}, #003d7a)`,
             height: '100%', color: '#fff',
           }}>
             <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.65)', marginBottom: 6, letterSpacing: 0.5, textTransform: 'uppercase' }}>

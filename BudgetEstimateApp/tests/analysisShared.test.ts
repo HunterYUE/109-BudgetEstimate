@@ -16,7 +16,10 @@ describe('fmtK / fmtKBase（含负值）', () => {
     expect(fmtK(1234)).toBe('1K');
     expect(fmtK(-1234)).toBe('-1K');
     expect(fmtKBase(999)).toBe('1'); // 四舍五入
-    expect(fmtKBase(-200)).toBe('0'); // 负零归一（原实现输出 "-0"）
+    expect(fmtKBase(-200)).toBe('0'); // 负零归一为 0
+    // 负数按绝对值取整：Math.round(-1500/1000) = -1，会让亏损比同额盈利少显示 1K
+    expect(fmtKBase(1500)).toBe('2');
+    expect(fmtKBase(-1500)).toBe('-2');
   });
 });
 

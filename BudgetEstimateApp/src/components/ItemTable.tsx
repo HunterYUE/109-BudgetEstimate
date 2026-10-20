@@ -53,7 +53,9 @@ const EditableNumberInput: React.FC<{
     const cleaned = text.replace(/[^\d.]/g, '');
     const val = parseFloat(cleaned);
     if (!isNaN(val) && val >= min) {
-      onCommit(val);
+      // 值未变不回写：否则点进单元格再移开就置脏，提交按钮被禁用
+      if (val === Number(value)) setText(value != null ? String(value) : '');
+      else onCommit(val);
     } else {
       setText(value != null ? String(value) : '');
     }
@@ -75,14 +77,15 @@ const MarginInput: React.FC<{ value: number; onCommit: (val: number) => void }> 
   const [text, setText] = React.useState(String(Math.round(value * 100)));
 
   const commit = () => {
-    // 允许一位小数（12.5%）；原 `\D` 过滤会吞掉小数点（15.5 → 155%）
+    // 允许一位小数（12.5%）：只保留数字与小数点，否则小数点会被过滤掉（15.5 → 155%）
     const cleaned = text.replace(/[^\d.]/g, '');
     const val = Number.parseFloat(cleaned);
     if (Number.isFinite(val)) {
       // 毛利率必须 <100%，否则售价回退为成本价、利润被静默吞掉
       const clamped = Math.min(99.9, Math.max(0, val));
       setText(String(clamped));
-      onCommit(clamped / 100);
+      // 值未变不回写：避免点进单元格再移开就置脏
+      if (Math.abs(clamped / 100 - value) > 1e-9) onCommit(clamped / 100);
     } else {
       setText(String(Math.round(value * 100)));
     }

@@ -68,16 +68,6 @@ const DeliveryPeriodInput: React.FC<{ value: string; onChange: (v: string) => vo
 };
 
 const ProjectHeader: React.FC<Props> = ({ project, onUpdate, readOnly }) => {
-  // 组件卸载时清理拖拽/调整大小时的残留 window 事件监听器
-  const dragRefCleanup = React.useRef<(() => void) | null>(null);
-  React.useEffect(() => {
-    return () => {
-      if (dragRefCleanup.current) {
-        dragRefCleanup.current();
-        dragRefCleanup.current = null;
-      }
-    };
-  }, []);
   const v = project.currentVersion;
   const pct = parsePayment(project.paymentTerms);
 

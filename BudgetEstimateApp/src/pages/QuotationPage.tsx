@@ -177,7 +177,7 @@ const initProject = (): Project => {
     clientName: '新项目',
     clientCode: '',
     versionNo: 'V1.0',
-    projectScope: '24个月', // 质保期默认值，与 ProjectHeader WARRANTY_OPTIONS 对齐（历史误填 '2年质保' 不在选项内）
+    projectScope: '24个月', // 质保期默认值，取值须落在 ProjectHeader WARRANTY_OPTIONS 内
     projectName: '',
     projectStage: '方案设计',
     expectedAwardDate: '',
@@ -238,6 +238,8 @@ const QuotationPage: React.FC = () => {
   const [isSaving, setIsSaving] = useState(false);
   const savingRef = useRef(false); // 同步防重入锁（比 useState 更可靠）
   const oppIdRef = useRef<string | null>(null);
+  /** 是否存在真实待审请求：版本 pending 但无审批记录属提交中断残留，允许重新提交 */
+  const [pendingApprovalExists, setPendingApprovalExists] = useState(true);
   /** 物料编码→组件索引：用 Map 替代 componentDB.find/some 全表扫描（填充 effect/编码校验/添加条目） */
   const componentMap = useMemo(
     () => new Map(componentDB.map((c: Component) => [c.code, c])),
@@ -253,11 +255,13 @@ const QuotationPage: React.FC = () => {
           const quotation = await quotationService.get(quoteId);
           const pid = quotation.projectId;
           if (!pid) throw new Error('no project_id');
-          oppIdRef.current = quotation.opportunityId || null;
           const data = await projectService.getFull(pid);
           if (!cancelled) {
-            // 取与报价版本号匹配的版本。不再静默回退最新版——
-            // 版本号不一致时回退会让页面按错误版本加载，保存时又会把财务数据写到另一条版本上
+            // 归属写回须在取消检查之后：快速前进/后退时过期响应不得改写当前报价的机会关联
+            oppIdRef.current = quotation.opportunityId || null;
+            setPendingApprovalExists(quotation.hasPendingApproval !== false);
+            // 严格取与报价版本号匹配的版本：回退最新版会让页面按错误版本加载，
+            // 保存时把财务数据写到另一条版本上
             const quoteVerNo = quotation.versionNo || '';
             const matchedVersion = quoteVerNo
               ? data.versions?.find(v => v.versionNo === quoteVerNo)
@@ -348,6 +352,10 @@ const QuotationPage: React.FC = () => {
    */
   useEffect(() => {
     if (!project || componentMap.size === 0 || isLocked) return;
+    // 仅草稿/新报价回填：已通过/已驳回/审批中的报价以审批时成本为准，
+    // 回填会静默改写金额、把单据打回草稿并阻断导出
+    const versionStatus = project.currentVersion?.reviewStatus;
+    if (versionStatus && versionStatus !== 'draft') return;
     let changed = false;
     const designRateFromDB = componentMap.get('SV-DESIGN-000000-V1.0')?.unitCost ?? DEFAULT_DESIGN_HOURLY_RATE;
     const assemblyRateFromDB = componentMap.get('SV-INSASS-000000-V1.0')?.unitCost ?? DEFAULT_ASSEMBLY_HOURLY_RATE;
@@ -390,8 +398,9 @@ const QuotationPage: React.FC = () => {
       // 已通过与未保存的回填数据还会被导出。回填即视为未保存修改
       setHasChanges(true);
     }
+  // 回填结果写回 project.groups：若把整个 project 作为依赖会自触发重跑形成死循环，故只跟踪 id/groups/isLocked
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [componentMap, project?.id, project?.groups, isLocked]);
+  }, [componentMap, project?.id, project?.groups, isLocked, project?.currentVersion?.reviewStatus]);
 
   const handleGroupChange = useCallback((groupId: string, items: GroupItem[]) => {
     setProject(prev => {
@@ -711,7 +720,8 @@ const QuotationPage: React.FC = () => {
     if (!curVer.versionNo) { messageApi.warning('版本号异常'); return; }
     // 已通过/审批中的单据无变更时不得重复提交（会无意义地重置状态并新建审批）
     if (curVer.reviewStatus === 'approved') { messageApi.warning('该报价已审批通过，无需重复提交'); return; }
-    if (curVer.reviewStatus === 'pending') { messageApi.warning('该报价正在审批中，请勿重复提交'); return; }
+    // 仅真实待审时拦截：提交中断残留（pending 但无审批请求）须允许重新提交，否则报价永久卡死
+    if (curVer.reviewStatus === 'pending' && pendingApprovalExists) { messageApi.warning('该报价正在审批中，请勿重复提交'); return; }
     // 汇总值提前到 try 外计算，供失败回滚复用
     const submitUntaxed = toUntaxedDiscounted(curVer);
     const submitSummary = calcProjectSummary(project.groups || [], curVer, submitUntaxed);
@@ -742,7 +752,7 @@ const QuotationPage: React.FC = () => {
         totalCost: submitSummary.totalCost,
         profitRate: rateToPercent(submitSummary.gp3 || 0),
         gp3: submitSummary.gp3,
-        taxRate: curVer?.taxRate || TAX_RATE,
+        taxRate: curVer?.taxRate ?? TAX_RATE, // 0% 是合法税率，不能用 || 兜底成 13%
         totalAccountingPrice: submitSummary.totalAccountingPrice,
         discountedPrice: submitSummary.discountedPrice || 0,
         discountRate: submitSummary.discountRate || 0,
@@ -786,7 +796,7 @@ const QuotationPage: React.FC = () => {
       savingRef.current = false;
       setIsSaving(false);
     }
-  }, [validateCodes, messageApi, project, isLocked, catalogState, submitterName, saveGroups]);
+  }, [validateCodes, messageApi, project, isLocked, catalogState, submitterName, saveGroups, pendingApprovalExists]);
 
   // 所有 calcProjectSummary 调用必须传入未税 discountedPrice（已含税存储的 ÷(1+taxRate) 转换）
   const summary = useMemo(() => {
@@ -825,7 +835,8 @@ const QuotationPage: React.FC = () => {
         groupsHtml += '<tr><td style="text-align:center">' + g.groupNo + '.' + item.itemNo + '</td>' +
           '<td>' + escapeHtml(item.code || item.description || '—') + '</td>' +
           '<td style="text-align:center">' + item.qtyTotal + '</td>' +
-          '<td class="amount">¥' + formatMoney(item.accountingPrice / (item.qtyTotal || 1)) + '</td>' +
+          // 数量允许为 0（如仅有设计费的行）：除零不取 1，单价列留空
+          '<td class="amount">' + (item.qtyTotal > 0 ? '¥' + formatMoney(item.accountingPrice / item.qtyTotal) : '—') + '</td>' +
           '<td class="amount">¥' + formatMoney(item.accountingPrice) + '</td></tr>';
       }
     }
@@ -840,7 +851,7 @@ const QuotationPage: React.FC = () => {
     html += '<table style="width:100%;border-collapse:collapse;margin-top:12px">';
     html += '<tr><td style="border:none;text-align:right;padding:4px 10px;font-size:13px"><b>预期总价（含税）：</b>¥' + formatMoney(summary.totalAccountingPrice) + '</td></tr>';
     html += '<tr><td style="border:none;text-align:right;padding:4px 10px;font-size:13px"><b>折后报价（含税）：</b>¥' + formatMoney(summary.discountedPrice) + '</td></tr></table>';
-    html += '<p style="font-size:11px;color:;margin-top:16px">明细项/单价为不含税价格，预期总价/折后报价为含税价格</p>';
+    html += '<p style="font-size:11px;color:#999;margin-top:16px">明细项/单价为不含税价格，预期总价/折后报价为含税价格</p>';
 
     exportHtmlTable('报价表_' + project.clientName + '_' + project.salesNo, html);
   }, [project, summary, messageApi, hasChanges]);

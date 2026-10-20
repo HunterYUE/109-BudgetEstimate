@@ -3,8 +3,6 @@
 export const COLORS = {
   /** 主色 — 蓝色 */
   primary: '#00509e',
-  /** 主色悬浮 */
-  primaryHover: '#0066cc',
   /** 成功/已完成 — 深绿色 */
   success: '#1a6b3c',
   /** 危险/延期 — 红色 */
@@ -12,13 +10,13 @@ export const COLORS = {
   /** 警告 — 橙色 */
   warning: '#e65100',
   /** 次要文字 — 灰色 */
-  textSecondary: '',
+  textSecondary: '#666',
   /** 浅色文字 — 浅灰 */
-  textLight: '',
+  textLight: '#999',
   /** 深色文字 */
   textDark: '#0d1b2a',
   /** 主文字色 */
-  textPrimary: '',
+  textPrimary: '#333',
   /** 禁用/占位文字 */
   textDisabled: '#ccc',
   /** 表头/辅助文字 */
@@ -50,9 +48,7 @@ export const COLORS = {
   /** 琥珀色（甘特图项目色） */
   amber: '#c76a00',
   /** 灰色（甘特图项目色） */
-  chartGray: '',
-  /** 甘特图未执行节点 */
-  barPending: '#bbb',
+  chartGray: '#888',
 } as const;
 
 /** 标签背景色候选项 */

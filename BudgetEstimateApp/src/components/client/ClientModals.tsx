@@ -415,7 +415,7 @@ export const ClientSubModal: React.FC<ClientSubModalProps> = ({
         </div>
       }
     >
-      <div style={{ fontSize: 12, color: '', marginBottom: 14 }}>
+      <div style={{ fontSize: 12, color: '#888', marginBottom: 14 }}>
         母公司：{clients.find(c => c.id === subParentId)?.name}
       </div>
       <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>

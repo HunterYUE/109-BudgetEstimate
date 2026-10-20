@@ -146,7 +146,3 @@ export const SalesFunnel: React.FC<FunnelProps> = ({ funnelData, fyInfo, fyLead,
   );
 };
 
-/**
- * 竖状柱状图已收敛至 components/charts/VerticalBarChart.tsx 单源
- * （SalesAnalysis 与 DeliveryAnalysis 共用），此处不再重复定义
- */

@@ -72,13 +72,13 @@ export function buildOppStatusClauses(body: Record<string, any>, currentStatus: 
   if (body.terminated) {
     if (hasDelivery) {
       if (currentStatus === '赢') {
-        extra += `, won_at = COALESCE(won_at, now())`;
+        extra += `, won_at = COALESCE(won_at, now()), lost_at = NULL`;
       } else if (currentStatus === '输') {
         // 转交付 = 赢单终极确认——已标输的机会转入交付同样算赢单（置赢/中标 + won_at，清 lost_at）
         extra += `, status = '赢', stage = '中标', won_at = COALESCE(won_at, now()), lost_at = NULL`;
       } else {
-        // 过程中/冻结转交付 → 100% 确认为赢单
-        extra += `, status = '赢', stage = '中标', won_at = COALESCE(won_at, now())`;
+        // 过程中/冻结转交付 → 100% 确认为赢单（同时清掉可能残留的输单时间）
+        extra += `, status = '赢', stage = '中标', won_at = COALESCE(won_at, now()), lost_at = NULL`;
       }
     } else if (currentStatus !== '输') {
       // 转交付须真实存在交付项目——防仅持写权限者伪造 terminated 直接把机会标成赢单
@@ -358,21 +358,18 @@ router.put('/:id', async (req, res, next) => {
     const body = objKeysToSnake({ ...req.body });
     // promote_locked 是特权字段：只要 body 含它（无论是否伴随其他字段）都需『全部查看权限』，
     // 否则 { promote_locked:true, notes:'x' } 会落入 else 分支绕过检查
+    const existing = (await query(
+      'SELECT promote_locked, status, stage, terminated, won_at, quotation_id, amount FROM sales_opportunities WHERE id = $1',
+      [id]
+    )).rows[0];
+    if (!existing) throw new AppError(404, '记录不存在');
     if ('promote_locked' in body) {
       if (!hasPermission(req.user?.permissions, '全部查看权限')) {
         throw new AppError(403, '仅部门总监和管理员可锁定/解锁机会');
       }
-    } else {
-      const existing = (await query('SELECT promote_locked FROM sales_opportunities WHERE id = $1', [id])).rows[0];
-      if (existing?.promote_locked) {
-        throw new AppError(403, '该机会已提交转机会审批，审批完成前不可修改');
-      }
+    } else if (existing.promote_locked) {
+      throw new AppError(403, '该机会已提交转机会审批，审批完成前不可修改');
     }
-    const existing = (await query(
-      'SELECT status, stage, terminated, won_at, quotation_id, amount FROM sales_opportunities WHERE id = $1',
-      [id]
-    )).rows[0];
-    if (!existing) throw new AppError(404, '记录不存在');
 
     // 不可变归属字段：销售编号/客户/项目名称创建后只读；报价关联只允许首次写入或保持不变
     for (const f of ['sales_no', 'client_name', 'project_name']) {
@@ -401,6 +398,9 @@ router.put('/:id', async (req, res, next) => {
     // 通过检查后交给标准 CRUD PUT 处理（复用上面的 body 转换结果）
     // 阶段时间戳（lead_at/opportunity_at/bid_at/negotiation_at）禁直设——由下方阶段规则
     // COALESCE 服务端采集（首次写入不覆盖），客户端直写可伪造“进入某阶段的时间”污染财年归集口径
+    // 转交付时状态/阶段完全由服务端推导：客户端同时传 status='输' 与 terminated 会写出
+    // 「status=赢 且 lost_at 非空」的自相矛盾数据，污染财年归集的有效结束时间
+    if (body.terminated) { delete body.status; delete body.stage; }
     const updateCols = fields.filter(f =>
       !OPP_UPDATE_EXCLUDE.includes(f)
       && Object.prototype.hasOwnProperty.call(body, f)
@@ -409,7 +409,7 @@ router.put('/:id', async (req, res, next) => {
     if (updateCols.length === 0) throw new AppError(400, '没有要更新的字段');
     let setClause = updateCols.map((f, i) => `"${f}" = $${i + 1}`).join(', ');
     const rawValues = updateCols.map(f => body[f]);
-    // won_at 仅在转交付（terminated）时采集（69d3de6 语义，勿回归）：
+    // won_at 仅在转交付（terminated）时采集：
     // 手动标赢未转交付不算赢单，won_at 保持 NULL；转交付时由 buildOppStatusClauses 的 terminated 块 COALESCE 写入
     // 状态机决策（纯函数 buildOppStatusClauses）：输单 lost_at 采集/离开输单清除/四阶段 COALESCE/转交付三分支
     // 当前状态与交付存在性仅转交付时查询（仅在 terminated 块内查询，顺序 delivery→cur）

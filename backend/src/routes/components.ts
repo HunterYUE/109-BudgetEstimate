@@ -88,9 +88,9 @@ const crud = crudRoutes('components', fields, {
   // 任何内容修改都重新进入待审核；终态只能经 /:id/review 流转
   beforeUpdate: async (req, _id, snakeBody) => {
     const contentFields = fields.filter(f => !['id', 'created_at', 'updated_at', 'review_status', 'review_action'].includes(f));
-    if (snakeBody.review_status !== undefined && ['approved', 'rejected'].includes(snakeBody.review_status)) {
-      throw new AppError(400, '审核终态只能通过审核接口流转');
-    }
+    // 审核状态不接受客户端直写：终态走 /:id/review，内容变更时由下方规则统一置回 pending
+    // （只拦 approved/rejected 会让 draft/pending 可注入，把待审/已通过物料移出审核流）
+    if (snakeBody.review_status !== undefined) delete snakeBody.review_status;
     if (snakeBody.review_action !== undefined
       && !(REVIEW_ACTIONS as readonly string[]).includes(snakeBody.review_action)) {
       throw new AppError(400, '无效审核动作');

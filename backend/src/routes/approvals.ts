@@ -116,6 +116,13 @@ router.post('/', async (req, res, next) => {
       throw new AppError(403, '无权提交该类型审批');
     }
 
+    // 目标实体必填：缺外键的审批既无法查重、也不会级联父实体状态机，最终成为可被通过/驳回的悬空记录
+    const targetKey = approval_type === 'quotation' ? 'quotation_id'
+      : approval_type === 'promote' ? 'opportunity_id' : 'delivery_id';
+    if (!(body as Record<string, any>)[targetKey]) {
+      throw new AppError(400, `缺少审批目标：${targetKey}`);
+    }
+
     // 事务样板收敛为 withTransaction
     const record = await withTransaction(async (client) => {
       // 同一实体同一审批类型不得存在多条 pending（防直调 API 重复提交产生重复待审/级联重复）
@@ -153,7 +160,6 @@ router.post('/', async (req, res, next) => {
           throw new AppError(400, '审批版本号与报价当前版本不一致');
         }
         body.version_no = q.version_no;
-        body.project_id = q.project_id;
         await client.query(
           "UPDATE quotations SET status = 'pending', updated_at = now() WHERE id = $1",
           [body.quotation_id]
@@ -193,7 +199,7 @@ router.post('/', async (req, res, next) => {
 
       // status/submit_time 只能经审批流程（POST /:id/records）流转，禁止直设 approved/rejected
       // 创建即「提交审批」，必须落库为 pending
-      // 新建审批不进待审批列表、UI 无审批按钮，整个审批流程卡死（生产回归）。现显式强制 status='pending'
+      // 显式强制 status='pending'：新建审批必须进入待审批列表，否则整个审批流程不可推进
       // submitter 不再采信客户端——服务端从登录用户 display_name 派生（防伪造提交人）
       // 前端本就用 displayName 提交，派生值与既有存储一致；display_name 缺省兜底 '审批申请人'
       const insertCols = fields.filter(f => !APPROVAL_INSERT_EXCLUDE.includes(f) && body[f] !== undefined);

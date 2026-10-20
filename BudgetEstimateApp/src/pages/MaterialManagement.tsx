@@ -379,7 +379,7 @@ const MaterialManagement: React.FC = () => {
       },
     },
     { title: '名称', dataIndex: 'nameCn', width: 135, onCell: onCellLock(135),
-      render: (v: string) => <span style={{ fontSize: 12, color: '' }}>{v}</span>,
+      render: (v: string) => <span style={{ fontSize: 12, color: '#555' }}>{v}</span>,
     },
     {
       title: '类型', dataIndex: 'category', width: 60, align: 'center' as const, onCell: onCellLock(60),
@@ -395,7 +395,7 @@ const MaterialManagement: React.FC = () => {
       filters: [{ text: '全部', value: '__all__' }, ...brandFilterOptions],
       filterSearch: true,
       onFilter: (value: unknown, record: Component) => value === '__all__' || record.brand === value,
-      render: (v: string | undefined) => <span style={{ fontSize: 12, color: '' }}>{v || '—'}</span>,
+      render: (v: string | undefined) => <span style={{ fontSize: 12, color: '#555' }}>{v || '—'}</span>,
     },
     { title: '供应商', dataIndex: 'supplier', width: 80, onCell: onCellLock(80),
       filters: (() => {
@@ -404,16 +404,16 @@ const MaterialManagement: React.FC = () => {
       })(),
       filterSearch: true,
       onFilter: (value: unknown, record: Component) => value === '__all__' || record.supplier === value,
-      render: (v: string) => <span style={{ fontSize: 12, color: '' }}>{v || '—'}</span>,
+      render: (v: string) => <span style={{ fontSize: 12, color: '#555' }}>{v || '—'}</span>,
     },
     { title: '型号', dataIndex: 'model', width: 90, onCell: onCellLock(90),
-      render: (v: string) => <span style={{ fontSize: 12, color: '' }}>{v || '—'}</span>,
+      render: (v: string) => <span style={{ fontSize: 12, color: '#555' }}>{v || '—'}</span>,
     },
     { title: '单位', dataIndex: 'unit', width: 48, align: 'center' as const, onCell: onCellLock(48),
       filters: [{ text: '全部', value: '__all__' }, ...UNITS.map(u => ({ text: u, value: u }))],
       filterSearch: true,
       onFilter: (value: unknown, record: Component) => value === '__all__' || record.unit === value,
-      render: (v: string) => <span style={{ fontSize: 12, color: '' }}>{v || '—'}</span>,
+      render: (v: string) => <span style={{ fontSize: 12, color: '#555' }}>{v || '—'}</span>,
     },
     { title: '规格', dataIndex: 'specification', width: 210, onCell: onCellLock(210),
       render: (v: string) => <span title={v} style={{ fontSize: 12, color: COLORS.textSecondary, display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{v || '—'}</span>,
@@ -447,7 +447,7 @@ const MaterialManagement: React.FC = () => {
           const found = tagPathMap.find(t => t.id === id);
           return found ? found.path.join(' / ') : id;
         });
-        return <span style={{ fontSize: 12, color: '' }}>{labels.join('; ')}</span>;
+        return <span style={{ fontSize: 12, color: '#888' }}>{labels.join('; ')}</span>;
       },
     },
     { title: '单位成本', dataIndex: 'unitCost', width: 85, align: 'right' as const, onCell: onCellLock(85),

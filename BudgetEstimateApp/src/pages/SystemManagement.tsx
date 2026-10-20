@@ -612,7 +612,7 @@ const SystemManagement: React.FC = () => {
                         style={{
                           padding: '4px 14px', borderRadius: 4, cursor: 'pointer', fontSize: 13,
                           border: `1.5px solid ${permTitle === t ? COLORS.primary : '#d0d0d0'}`,
-                          color: permTitle === t ? '#fff' : '',
+                          color: permTitle === t ? '#fff' : '#555',
                           background: permTitle === t ? COLORS.primary : '#fff',
                           transition: 'all 0.15s', userSelect: 'none',
                         }}>{t}</div>

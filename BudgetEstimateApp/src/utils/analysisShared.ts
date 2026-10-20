@@ -2,9 +2,12 @@ import type { SalesOpportunity, DeliveryNode, DeliveryProject } from '../types';
 import { TAX_RATE } from './constants';
 import { COLORS } from '../styles/colors';
 
-/** 千单位数字（不带 K 后缀）：1234 → "1"（DeliveryCharts 旧 fmtKNum 与本函数重复，收敛共用） */
-// Math.round(-500/1000) 得到 -0，toLocaleString 输出 "-0"（与 +500 → "1K" 不对称）；统一归一为 0
-export const fmtKBase = (v: number) => (Math.round(v / 1000) || 0).toLocaleString();
+/** 千单位数字（不带 K 后缀）：1234 → "1"；按符号对称取整——
+ * Math.round 对 .5 向 +∞ 取整会让 -1.5K 显示 -1K（与 +1.5K → 2K 不对称），负数亏损被低估 */
+export const fmtKBase = (v: number) => {
+  const n = Math.sign(v) * Math.round(Math.abs(v) / 1000);
+  return (n || 0).toLocaleString(); // -0 归一为 0
+};
 /** 格式化数字为千单位显示（如 1234 → "1K"） */
 export const fmtK = (v: number) => fmtKBase(v) + 'K';
 /** 压缩销售编号：A2026-07-003-S → 2607003S */
@@ -20,11 +23,11 @@ export const chartLabel = (salesNo: string | undefined | null): string => {
   return s.length > 4 ? s.slice(0, 4) + '\n' + s.slice(4) : s;
 };
 
-/** 项目执行状态三态色：已完成绿、延期中（派生）红、否则蓝（DeliveryManagement/DeliveryCharts 6 处内联收敛单源，） */
+/** 项目执行状态三态色：已完成绿、延期中（派生）红、否则蓝（DeliveryManagement/DeliveryCharts 共用） */
 export const projectStatusColor = (status: string, delayed: boolean): string =>
   status === '已完成' ? COLORS.success : delayed ? COLORS.danger : COLORS.primary;
 
-/** 项目执行状态三态背景色：已完成绿、延期中红、否则浅蓝（与 projectStatusColor 配套，2 处内联收敛单源） */
+/** 项目执行状态三态背景色：已完成绿、延期中红、否则浅蓝（与 projectStatusColor 配套） */
 export const projectStatusBg = (status: string, delayed: boolean): string =>
   status === '已完成' ? '#e8f5e9' : delayed ? '#ffebee' : '#e6f0fa';
 
@@ -173,9 +176,8 @@ export interface ProjectOnTimeRate {
 }
 
 /** 无基线（baselinePlannedEndDate 缺失）的已完成节点无法判断按时性，
- * 必须从分子分母剔除——原 Dashboard 内联实现 `node.actualDate || delay.delayed` 会把这类节点
- * 计为「按时」，无审批实施计划的项目节点按时率恒 100%，与 DeliveryAnalysis 节点按时率
- * 「无基线不判定」（refEnd 缺失 continue）口径打架 */
+ * 必须从分子分母剔除：否则无审批实施计划的项目节点按时率恒为 100%，
+ * 与 DeliveryAnalysis「无基线不判定」（refEnd 缺失 continue）口径打架 */
 export const computeProjectOnTimeRate = (p: DeliveryProject, now: Date): ProjectOnTimeRate => {
   const due = (p.nodes || []).map(n => ({ node: n, delay: getNodeDelay(n, now) }));
   // 完成日字段与 getNodeDelay 同源：actualDate 优先，兼容旧数据 actualEndDate
@@ -191,8 +193,7 @@ export const computeProjectOnTimeRate = (p: DeliveryProject, now: Date): Project
 };
 
 /** 节点15（项目总结）完成 = 成本审批通过 + 其余全部节点 completed——
- * 原 DeliveryDetail 仅校验成本审批，成本通过后节点3 仍 pending 即可提前勾完节点15，
- * 而分析以节点15完成日做交付完结/订单/销售归集，未完成项目会被计为已完结
+ * 只校验成本审批时，其他节点未完成也能提前勾完节点15，而未完成项目会被分析计为已完结
  * excludeNodeNo 供「正在切换节点15」时跳过其自身（按钮场景不传 = 校验全部节点） */
 export const projectCompletionGate = (
   nodes: DeliveryNode[] | undefined,
